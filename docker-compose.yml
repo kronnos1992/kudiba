@@ -26,7 +26,33 @@ services:
       - kudiba-internal-network
 
   # ============================================================================
-  # 2. ESTADO EFÊMERO & CACHE PERIMÉTRICO (REDIS 7+)
+  # 2. MOTOR DE FACTURAÇÃO & FISCAL ENGINE (.NET 10 / C#)
+  # Conformidade: Decreto Presidencial n.º 71/25 (AGT Angola)
+  # ============================================================================
+  invoicing:
+    build:
+      context: ./Services/KudibaInvoicing
+      dockerfile: Dockerfile
+    container_name: kudiba-invoicing
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    environment:
+      - PORT=9090
+      - ASPNETCORE_ENVIRONMENT=Development
+      - DATABASE_URL=Host=postgres;Port=5432;Database=kudiba_erp;Username=kudiba;Password=kudiba_secret_pass
+      - AGT_RSA_PRIVATE_KEY_PEM=
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      kudiba-internal-network:
+        aliases:
+          - fiscal-engine
+          - kudiba-invoicing
+
+  # ============================================================================
+  # 3. ESTADO EFÊMERO & CACHE PERIMÉTRICO (REDIS 7+)
   # ============================================================================
   gateway-redis:
     image: redis:7.4-alpine
@@ -51,7 +77,6 @@ services:
   # Profile: "full", "infra"
   # ============================================================================
   postgres:
-    profiles: ["full", "infra"]
     image: postgres:16-alpine
     container_name: kudiba-postgres
     restart: unless-stopped
