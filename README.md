@@ -82,6 +82,7 @@ Com os containers em execução:
 
 Consulte a pasta [`docs/`](docs/) e [`Backend/docs/`](Backend/docs/) para aprofundamento:
 - [**Registo Técnico de Evolução e Passos Dados**](docs/PROCESSO_E_PASSOS_ARQUITETURA.md)
+- [**Arquitetura do Microserviço de Facturação (Clean Arch, UOW, Repo)**](Backend/docs/FISCAL_INVOICING_MICROSERVICE_ARCHITECTURE.md)
 - [**Guia de Integração gRPC, RabbitMQ e Kafka**](Backend/docs/ARCHITECTURE_INTEGRATION_GUIDE.md)
 - [**Arquitetura do API Gateway e ADRs**](Backend/docs/API_GATEWAY_ARCHITECTURE.md)
 - [**Especificação Técnica Mestre do ERP**](ESPECIFICACAO_TECNICA_ERP.md)
