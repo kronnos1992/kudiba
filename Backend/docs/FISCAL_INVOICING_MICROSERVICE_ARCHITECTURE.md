@@ -4,7 +4,7 @@
 **Documento:** Especificação Técnica de Engenharia e Arquitetura do Microserviço Fiscal  
 **Versão:** 1.0.0  
 **Data:** Outubro de 2026  
-**Padrões Arquiteturais:** Clean Architecture (Hexagonal/Ports & Adapters), Unit of Work (UOW), Repository Pattern, Transactional Outbox, Event-Driven Architecture  
+**Padrões Arquiteturais:** Clean Architecture (Hexagonal/Ports & Adapters), CQRS (Command Query Responsibility Segregation), Unit of Work (UOW), Repository Pattern, Transactional Outbox, Event-Driven Architecture  
 **Protocolos:** gRPC (Tonic / Protobuf) + PostgreSQL 16 ACID + AMQP/Kafka  
 
 ---
@@ -244,9 +244,102 @@ sequenceDiagram
 
 ---
 
-## 5. Modelo de Dados Relacional e Triggers de Imutabilidade
+## 5. Implementação de CQRS (Command Query Responsibility Segregation)
 
-### 5.1 Esquema DDL Otimizado (PostgreSQL 16)
+### 5.1 O Desafio da Assimetria: Carga de Checkout vs. Carga Analítica Tributária
+Em sistemas de facturação certificados pela AGT, existe um abismo operacional entre as duas principais operações do sistema:
+1. **Pilha de Escrita (Command Stack):**
+   - Operação de checkout de balcão (POS) ou faturamento em lote.
+   - Requer latência ultrabaixa ($p99 < 15\text{ ms}$), consistência imediata ACID, bloqueio pessimista serializado por série fiscal (`SELECT FOR UPDATE`), montagem canônica do buffer SHA-256 e assinatura digital RSA 2048-bit.
+   - As tabelas de escrita devem ser **estritamente normalizadas** para evitar anomalias de atualização ou escrita redundante.
+2. **Pilha de Leitura (Query Stack):**
+   - Operações analíticas, de auditoria e de gestão:
+     - Relatório Diário de Caixa / Memória Fiscal (Fecho Z / Leitura X).
+     - Mapas de IVA para declarações fiscais periódicas.
+     - Histórico do cliente com filtros por NIF, intervalo de datas e status.
+     - Exportação massiva do ficheiro **SAF-T AO (XML)** contendo centenas de milhares de faturas.
+   - Se essas consultas forem executadas sobre o modelo normalizado transacional no mesmo banco, elas geram `JOIN`s profundos em tabelas gigantescas (`invoices`, `invoice_lines`, `tax_entries`), esgotam o pool de conexões do banco e **provocam contenção de lock**, travando as operações de venda nos caixas do supermercado.
+
+### 5.2 Diagrama Arquitetural CQRS (Command Stack vs. Query Stack)
+
+```mermaid
+flowchart TD
+    subgraph Clients["Camada de Clientes & Ponto de Venda"]
+        POS["Kudiba Edge POS (Caixa / Checkout)"]
+        Backoffice["Backoffice & Contabilidade"]
+        AuditTax["Auditoria AGT / Exportador SAF-T"]
+    end
+
+    subgraph CommandStack["COMMAND STACK (Write Model - ACID & Imutabilidade)"]
+        CmdRouter["gRPC Command Handler\n(IssueInvoice / CancelInvoice)"]
+        DomainCore["Domain Model\n(FiscalSeries & Invoice Aggregates)"]
+        UOW["Unit of Work (SQLx Transaction)"]
+        WriteDB[("PostgreSQL 16 Master\n(Tabelas Normalizadas)")]
+        Outbox["Transactional Outbox Table"]
+    end
+
+    subgraph EventBus["PROJECTION & EVENT STREAMING"]
+        CDC["Outbox Worker / CDC Engine"]
+        Rabbit["RabbitMQ 3.13\n(Worker Tasks)"]
+        Kafka["Kafka / Redpanda\n(Audit Stream)"]
+    end
+
+    subgraph QueryStack["QUERY STACK (Read Model - Otimizado para Leitura)"]
+        QueryRouter["gRPC / REST Query Handler\n(GetInvoice, ListSummary, StreamSaft)"]
+        ReadProjections[("PostgreSQL Read Replicas / \nProjeções Desnormalizadas JSONB")]
+        RedisCache[("Redis 7.4\n(Cache de Fechos e Metadados)")]
+    end
+
+    POS -->|"IssueInvoiceCommand"| CmdRouter
+    CmdRouter --> DomainCore
+    DomainCore --> UOW
+    UOW -->|"ACID Commit"| WriteDB
+    UOW -->|"Atômico"| Outbox
+
+    Outbox -.->|"Asynchronous Poller"| CDC
+    CDC --> Rabbit
+    CDC --> Kafka
+    CDC -->|"Atualiza Projeções"| ReadProjections
+    CDC -->|"Invalida/Aquece Cache"| RedisCache
+
+    Backoffice -->|"GetDailySummaryQuery"| QueryRouter
+    AuditTax -->|"StreamSaftExportQuery"| QueryRouter
+    QueryRouter -->|"Direct SQL (No Domain/UOW Overhead)"| ReadProjections
+    QueryRouter -->|"Cache Hit"| RedisCache
+```
+
+### 5.3 Pilha de Comandos (Command Stack)
+- **Princípio:** O Command Stack é responsável por **mudar o estado** do sistema. Nunca é utilizado para alimentar relatórios ou telas de listagem genérica.
+- **Fluxo:**
+  1. Recebe um Comando imutável (ex: `IssueInvoiceCommand`).
+  2. Valida contratos e regras tributárias no domínio (`FiscalSeries`, `Invoice`, `ContingencyRules`).
+  3. Aloca a transação através do `UnitOfWork`.
+  4. Executa a assinatura RSA-SHA256 e o encadeamento de hash.
+  5. Grava nas tabelas transacionais normalizadas (`fiscal_series`, `invoices`, `invoice_lines`, `outbox_events`).
+  6. Comita a transação e retorna um DTO enxuto (`IssueInvoiceResult`).
+
+### 5.4 Pilha de Consultas (Query Stack)
+- **Princípio:** O Query Stack é responsável por **ler o estado** sem provocar efeitos colaterais (side-effects).
+- **Bypass Total do Domínio e do Unit of Work:**
+  - As queries não instanciam agregados de domínio nem passam pela camada transacional do UOW.
+  - Elas utilizam um pool dedicado de conexões com `READ ONLY` apontando para Réplicas de Leitura do PostgreSQL.
+  - A execução faz *Direct Projecting* utilizando queries SQL ultrarrápidas (`sqlx::query_as!`), mapeando diretamente para DTOs imutáveis de resposta.
+- **Zero Contenção de Locks:** Uma exportação massiva do ficheiro SAF-T de 500.000 faturas consome cursores somente-leitura na réplica sem disputar um único milissegundo de CPU ou lock no Master transacional.
+
+### 5.5 Tabelas de Projeção Desnormalizadas (Read Model)
+Para acelerar buscas complexas e relatórios fiscais sem recorrer a múltiplos `JOIN`s pesados:
+1. **`kudiba_fiscal.invoice_read_projections`:**
+   - Consolida cabeçalho, cliente, totais e um array JSONB com as linhas de itens e impostos pré-calculados.
+   - Uma busca por fatura completa é resolvida em **1 único lookup de chave primária ou índice**, sem `JOIN`s com `invoice_lines`.
+2. **`kudiba_fiscal.pos_daily_closings`:**
+   - Mantém o acumulador em tempo real das vendas do dia por série e operador (totais brutos, descontos, IVA discriminado por taxa de 14%, 5% e isento).
+   - O Fecho de Caixa (Relatório Z) é servido em tempo constante $O(1)$.
+
+---
+
+## 6. Modelo de Dados Relacional e Triggers de Imutabilidade
+
+### 6.1 Esquema DDL Otimizado (PostgreSQL 16)
 
 ```sql
 -- =============================================================================
@@ -393,9 +486,9 @@ FOR EACH ROW EXECUTE FUNCTION kudiba_fiscal.fn_enforce_invoice_immutability();
 
 ---
 
-## 6. Estrutura de Pastas do Microserviço
+## 7. Estrutura de Pastas do Microserviço
 
-Seguindo a Clean Architecture em Rust:
+Seguindo a Clean Architecture e CQRS em Rust:
 
 ```
 fiscal-engine/
@@ -421,30 +514,34 @@ fiscal-engine/
     │   │   ├── hash_calculator.rs        # Montagem canônica da string tributária
     │   │   └── contingency_rules.rs      # Validador da regra de teto dos 60 dias
     │   └── ports/
-    │       ├── invoice_repository.rs     # Interface de persistência da fatura
-    │       ├── series_repository.rs      # Interface de consulta e lock de séries
+    │       ├── invoice_repository.rs     # Interface de persistência da fatura (Write)
+    │       ├── series_repository.rs      # Interface de consulta e lock de séries (Write)
     │       ├── unit_of_work.rs           # Interface transacional do UOW
     │       └── crypto_signer.rs          # Interface para assinar buffers RSA
     │
-    ├── application/                      # Camada 2: Orquestração e Casos de Uso
+    ├── application/                      # Camada 2: Orquestração CQRS (Commands & Queries)
     │   ├── mod.rs
-    │   ├── dtos/
-    │   │   ├── issue_invoice_request.rs
-    │   │   └── issue_invoice_response.rs
-    │   ├── commands/
-    │   │   ├── issue_invoice.rs          # IssueInvoiceUseCase
-    │   │   └── cancel_invoice.rs         # CancelInvoiceUseCase (via Nota de Crédito)
-    │   └── queries/
-    │       ├── export_saft.rs            # Geração de streaming XML do SAF-T AO
-    │       └── validate_hash.rs          # Validação de integridade pública de hash
+    │   ├── commands/                     # COMMAND STACK (Escrita / Modificação de Estado)
+    │   │   ├── issue_invoice.rs          # IssueInvoiceCommandHandler (UOW + Domain)
+    │   │   ├── cancel_invoice.rs         # CancelInvoiceCommandHandler (Nota de Crédito)
+    │   │   └── open_series.rs            # OpenFiscalSeriesCommandHandler
+    │   └── queries/                      # QUERY STACK (Leitura Otimizada / Bypass de Domínio)
+    │       ├── get_daily_pos_summary.rs  # GetDailyPosSummaryQueryHandler
+    │       ├── get_invoice_by_id.rs      # GetInvoiceByIdQueryHandler
+    │       ├── export_saft.rs            # ExportSaftStreamingQueryHandler
+    │       └── validate_hash.rs          # ValidateInvoiceHashQueryHandler
     │
     ├── infrastructure/                   # Camada 3: Adaptadores de Entrada/Saída
     │   ├── mod.rs
     │   ├── persistence/
-    │   │   ├── postgres_uow.rs           # Implementação concreta do UOW em SQLx
-    │   │   ├── postgres_invoice_repo.rs  # Repositório concreto de faturas
-    │   │   ├── postgres_series_repo.rs   # Repositório com SELECT FOR UPDATE
-    │   │   └── postgres_outbox_repo.rs   # Gravação atômica no Outbox
+    │   │   ├── write/                    # Repositórios de Escrita (PostgreSQL Master Tx)
+    │   │   │   ├── postgres_uow.rs       # Implementação concreta do UOW em SQLx
+    │   │   │   ├── postgres_invoice_repo.rs
+    │   │   │   ├── postgres_series_repo.rs # Com SELECT ... FOR UPDATE
+    │   │   │   └── postgres_outbox_repo.rs
+    │   │   └── read/                     # Repositórios e Projeções de Leitura (Read Replicas)
+    │   │       ├── postgres_invoice_queries.rs
+    │   │       └── postgres_pos_summary_queries.rs
     │   ├── crypto/
     │   │   ├── rsa_signer.rs             # Assinador RSA-SHA256 com zeroize
     │   │   └── key_vault.rs              # Cache e carregamento seguro de chaves
@@ -465,11 +562,11 @@ fiscal-engine/
 
 ---
 
-## 7. Implementação do Código de Referência
+## 8. Implementação do Código de Referência
 
-Abaixo demonstram-se as interfaces centrais de Clean Architecture e Unit of Work:
+Abaixo demonstram-se as implementações concretas da separação CQRS e Unit of Work:
 
-### 7.1 Interface do Unit of Work e Repositórios (`domain/ports/`)
+### 8.1 Interface do Unit of Work e Repositórios (`domain/ports/`)
 
 ```rust
 use async_trait::async_trait;
@@ -648,11 +745,83 @@ impl IssueInvoiceUseCase {
 }
 ```
 
+### 8.3 Implementação do Query Handler (CQRS Read Stack) (`application/queries/get_daily_pos_summary.rs`)
+
+O Query Handler faz **bypass total de agregados de domínio e do Unit of Work**, executando uma consulta direta com projeção limpa sobre a réplica de leitura:
+
+```rust
+use sqlx::PgPool;
+use uuid::Uuid;
+use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DailyPosSummaryDto {
+    pub series_code: String,
+    pub fiscal_year: i32,
+    pub business_date: NaiveDate,
+    pub invoice_count: i64,
+    pub gross_total: rust_decimal::Decimal,
+    pub tax_total: rust_decimal::Decimal,
+    pub payable_amount: rust_decimal::Decimal,
+    pub first_sequence: i64,
+    pub last_sequence: i64,
+    pub last_document_hash: String,
+}
+
+pub struct GetDailyPosSummaryQuery {
+    pub tenant_id: Uuid,
+    pub series_code: String,
+    pub date: NaiveDate,
+}
+
+pub struct GetDailyPosSummaryQueryHandler {
+    read_pool: PgPool, // Pool dedicado apontando para PostgreSQL Read Replica (sem locks)
+}
+
+impl GetDailyPosSummaryQueryHandler {
+    pub fn new(read_pool: PgPool) -> Self {
+        Self { read_pool }
+    }
+
+    /// Executa leitura otimizada em tempo constante O(1) diretamente da tabela de projeção
+    pub async fn handle(&self, query: GetDailyPosSummaryQuery) -> Result<Option<DailyPosSummaryDto>, sqlx::Error> {
+        let result = sqlx::query_as!(
+            DailyPosSummaryDto,
+            r#"
+            SELECT 
+                series_code,
+                fiscal_year,
+                closing_date as "business_date!",
+                invoices_issued as "invoice_count!",
+                total_gross as "gross_total!",
+                total_tax as "tax_total!",
+                total_payable as "payable_amount!",
+                first_sequence as "first_sequence!",
+                last_sequence as "last_sequence!",
+                last_hash as "last_document_hash!"
+            FROM kudiba_fiscal.pos_daily_closings
+            WHERE tenant_id = $1 
+              AND series_code = $2 
+              AND closing_date = $3
+            "#,
+            query.tenant_id,
+            query.series_code,
+            query.date
+        )
+        .fetch_optional(&self.read_pool)
+        .await?;
+
+        Ok(result)
+    }
+}
+```
+
 ---
 
-## 8. Estratégias de Escalabilidade e Desempenho
+## 9. Estratégias de Escalabilidade e Desempenho
 
-### 8.1 Eliminação do Gargalo de Lock por Série
+### 9.1 Eliminação do Gargalo de Lock por Série
 Em sistemas ERP fiscais tradicionais, o `SELECT ... FOR UPDATE` na série fiscal pode virar um gargalo de concorrência se todo o sistema tentar emitir na mesma série `A`.
 - **Estratégia Kudiba:** O sistema incentiva e suporta **particionamento de séries por Ponto de Venda (POS)**:
   - Caixa 01 emite na série `POS01/2026`
@@ -660,11 +829,11 @@ Em sistemas ERP fiscais tradicionais, o `SELECT ... FOR UPDATE` na série fiscal
   - Faturamento Online emite na série `WEB/2026`
 - **Resultado:** O bloqueio de concorrência opera de forma totalmente independente por caixa. Cem lojas simultâneas podem emitir simultaneamente no mesmo milissegundo com zero contenção de locks na base de dados.
 
-### 8.2 Desacoplamento Assíncrono com Transactional Outbox
+### 9.2 Desacoplamento Assíncrono com Transactional Outbox
 A rota gRPC `EmitInvoice` síncrona **não renderiza PDFs nem envia e-mails**. Ela apenas assina, grava o documento e fecha a transação com a gravação no `outbox_events` em menos de 8 milissegundos.
 - Um worker assíncrono em background lê o outbox e dispara as tarefas secundárias via **RabbitMQ** (para workers de geração de PDF / envio de e-mails) e **Kafka / Redpanda** (para o log imutável de auditoria fiscal).
 
-### 8.3 Streaming de SAF-T AO (O(1) Memory Usage)
+### 9.3 Streaming de SAF-T AO (O(1) Memory Usage)
 Na exportação do arquivo anual SAF-T AO (que frequentemente ultrapassa centenas de megabytes de XML):
 - A query no PostgreSQL usa cursores (`CURSOR WITH HOLD` ou batches de 1.000 faturas via SQLx streaming).
 - Os nós XML são gravados diretamente no buffer de saída da conexão gRPC ou HTTP via `quick-xml`.
@@ -672,7 +841,7 @@ Na exportação do arquivo anual SAF-T AO (que frequentemente ultrapassa centena
 
 ---
 
-## 9. Próximos Passos de Desenvolvimento
+## 10. Próximos Passos de Desenvolvimento
 
 1. **Configuração do Crate e Dependências:**
    - Adicionar `tonic`, `prost`, `sqlx` (com runtime `tokio-rustls`), `rsa`, `sha2`, `zeroize`, `rust_decimal` e `quick-xml`.
