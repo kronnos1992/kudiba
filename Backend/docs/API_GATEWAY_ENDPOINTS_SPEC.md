@@ -6,6 +6,9 @@
 **Ambiente Base:** `https://api.kudiba.ao/api/v1` (Produção) | `https://staging-api.kudiba.ao/api/v1` (Homologação)  
 **Normas:** RFC 7807 (Problem Details), RFC 8935 (Idempotency), OpenAPI 3.1.0, Decreto Presidencial n.º 71/25  
 
+> [!NOTE]
+> **Status de Desenvolvimento:** O API Gateway (Rust) está com as rotas de infraestrutura e observabilidade (`/health`, `/ready`, `/metrics`, `/swagger-ui`) 100% implementadas e funcionais. Os endpoints de negócio listados neste documento representam a especificação técnica dos serviços que serão desenvolvidos (Core API e Motor Fiscal AGT), sem utilização de mocks ou respostas simuladas no Swagger.
+
 ---
 
 ## 1. Padrões Globais da API

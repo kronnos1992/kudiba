@@ -4,855 +4,177 @@ info:
   version: 1.0.0
   description: >
     API Gateway de entrada e orquestração perimétrica do ERP Kudiba.
-    Em conformidade rigorosa com a legislação tributária da República de Angola
-    (Decreto Presidencial n.º 71/25 de 20 de Março - Facturação Electrónica e Regime Jurídico de Facturas).
+    
+    Esta especificação documenta com rigor os endpoints nativos atualmente
+    desenvolvidos e operacionais no Gateway em Rust (Axum 0.8), incluindo
+    sondas de liveness/readiness, métricas Prometheus e catálogo OpenAPI.
+    
+    À medida que os serviços de negócio (Core API e Motor Fiscal AGT) forem sendo
+    desenvolvidos, os seus respectivos endpoints serão integrados e versionados aqui.
   contact:
-    name: Equipa de Arquitetura e Engenharia Kudiba
+    name: Equipa de Engenharia Kudiba
     email: engenharia@kudiba.ao
-servers:
-  - url: https://api.kudiba.ao/api/v1
-    description: Servidor de Produção (Cloud)
-  - url: https://staging-api.kudiba.ao/api/v1
-    description: Servidor de Testes & Homologação
-  - url: http://localhost:8080/api/v1
-    description: Ambiente de Desenvolvimento Local
 
-security:
-  - BearerAuth: []
-    TenantHeader: []
+servers:
+  - url: http://localhost:8080
+    description: API Gateway Local (Desenvolvimento / Docker)
 
 paths:
   # =========================================================================
-  # AUTENTICAÇÃO
-  # =========================================================================
-  /auth/login:
-    post:
-      summary: Autenticação de Operador / Utilizador
-      description: Valida credenciais e emite tokens JWT assimétricos (Ed25519) com dados do utilizador e tenant.
-      security: []
-      tags:
-        - Autenticação
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
-      responses:
-        '200':
-          description: Autenticação bem-sucedida
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResponse'
-        '401':
-          $ref: '#/components/responses/ProblemResponse'
-        '429':
-          $ref: '#/components/responses/ProblemResponse'
-
-  /auth/refresh:
-    post:
-      summary: Renovação de Token
-      description: Troca um refresh token por um novo par de access e refresh token (com rotação automática).
-      security: []
-      tags:
-        - Autenticação
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [refresh_token]
-              properties:
-                refresh_token:
-                  type: string
-      responses:
-        '200':
-          description: Token renovado com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResponse'
-        '401':
-          $ref: '#/components/responses/ProblemResponse'
-
-  /auth/logout:
-    post:
-      summary: Encerramento de Sessão
-      description: Invalida o token JWT atual imediatamente inserindo o respectivo JTI na lista de revogação do Redis.
-      tags:
-        - Autenticação
-      responses:
-        '204':
-          description: Sessão encerrada com sucesso
-        '401':
-          $ref: '#/components/responses/ProblemResponse'
-
-  /auth/.well-known/jwks.json:
-    get:
-      summary: Obtenção de Chaves Públicas (JWKS)
-      description: Retorna o conjunto de chaves públicas para verificação de assinaturas JWT no Gateway e clientes.
-      security: []
-      tags:
-        - Autenticação
-      responses:
-        '200':
-          description: Conjunto de chaves públicas
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  keys:
-                    type: array
-                    items:
-                      type: object
-
-  # =========================================================================
-  # ORGANIZAÇÕES & TENANTS
-  # =========================================================================
-  /tenants/current:
-    get:
-      summary: Informações Fiscais da Organização Atual
-      description: Consulta dados cadastrais, NIF angolano, certificado de software AGT e status do monitor de contingência.
-      tags:
-        - Multi-Tenancy
-      responses:
-        '200':
-          description: Dados fiscais da organização
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TenantDetails'
-        '401':
-          $ref: '#/components/responses/ProblemResponse'
-        '403':
-          $ref: '#/components/responses/ProblemResponse'
-
-  # =========================================================================
-  # FATURAÇÃO & MOTOR FISCAL (AGT)
-  # =========================================================================
-  /fiscal/invoices:
-    post:
-      summary: Emissão de Documento Fiscal (FT, FR, NC, ND)
-      description: >
-        Emite e assina digitalmente um documento fiscal com algoritmo RSA e SHA-256 encadeado.
-        Bloqueia a emissão com HTTP 423 caso a organização esteja há mais de 60 dias sem comunicação
-        com a AGT, em cumprimento ao Decreto Presidencial n.º 71/25.
-      tags:
-        - Motor Fiscal AGT
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKeyHeader'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateInvoiceRequest'
-      responses:
-        '201':
-          description: Documento fiscal emitido e assinado com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InvoiceResponse'
-        '400':
-          $ref: '#/components/responses/ProblemResponse'
-        '422':
-          $ref: '#/components/responses/ProblemResponse'
-        '423':
-          description: Emissão bloqueada por ultrapassar o limite legal de 60 dias de contingência (DP 71/25).
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetail'
-        '429':
-          $ref: '#/components/responses/ProblemResponse'
-
-  /fiscal/invoices/{id}:
-    get:
-      summary: Consulta Detalhada de Documento Fiscal
-      description: Retorna os dados completos, linhas de artigos, impostos e assinatura digital do documento.
-      tags:
-        - Motor Fiscal AGT
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Detalhes do documento fiscal
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InvoiceResponse'
-        '404':
-          $ref: '#/components/responses/ProblemResponse'
-
-  /fiscal/invoices/{id}/pdf:
-    get:
-      summary: Download do PDF / Ticket Fiscal
-      description: Gera e descarrega a representação impressa oficial da fatura com os 4 caracteres de validação e menção da certificação.
-      tags:
-        - Motor Fiscal AGT
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: format
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [A4, THERMAL_80MM]
-            default: A4
-      responses:
-        '200':
-          description: Documento PDF gerado
-          content:
-            application/pdf:
-              schema:
-                type: string
-                format: binary
-
-  /fiscal/invoices/{id}/annul:
-    post:
-      summary: Anulação de Documento Fiscal
-      description: Regista anulação nos termos legais (sem exclusão de dados) e emite Nota de Crédito correlacionada.
-      tags:
-        - Motor Fiscal AGT
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - $ref: '#/components/parameters/IdempotencyKeyHeader'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [reason, credit_note_series]
-              properties:
-                reason:
-                  type: string
-                  example: "Retificação do NIF do cliente"
-                credit_note_series:
-                  type: string
-                  example: "2026A"
-      responses:
-        '200':
-          description: Documento anulado e Nota de Crédito emitida
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InvoiceResponse'
-
-  /fiscal/series:
-    get:
-      summary: Listar Séries de Faturação
-      tags:
-        - Motor Fiscal AGT
-      responses:
-        '200':
-          description: Lista de séries
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/FiscalSeries'
-    post:
-      summary: Criar Nova Série de Faturação
-      tags:
-        - Motor Fiscal AGT
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [series_code, doc_type]
-              properties:
-                series_code:
-                  type: string
-                  example: "2026B"
-                doc_type:
-                  type: string
-                  enum: [FT, FR, NC, ND, FP, GT]
-      responses:
-        '201':
-          description: Série criada com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FiscalSeries'
-
-  # =========================================================================
-  # SINCRONIZAÇÃO POS OFFLINE-FIRST
-  # =========================================================================
-  /sync/pos/handshake:
-    post:
-      summary: Handshake e Registo de Terminal POS
-      description: Valida o estado do terminal POS, sincroniza a hora NTP com o servidor e autoriza sessão de sync.
-      tags:
-        - Sincronização POS (Edge)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [terminal_id, app_version, local_timestamp]
-              properties:
-                terminal_id:
-                  type: string
-                  example: "pos-terminal-luanda-loja-01"
-                app_version:
-                  type: string
-                  example: "1.4.2"
-                local_timestamp:
-                  type: string
-                  format: date-time
-                last_synced_sequence:
-                  type: integer
-      responses:
-        '200':
-          description: Sessão de sincronização autorizada
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  session_token:
-                    type: string
-                  server_ntp_timestamp:
-                    type: string
-                    format: date-time
-                  max_allowed_clock_skew_seconds:
-                    type: integer
-                  requires_full_sync:
-                    type: boolean
-
-  /sync/pos/upload-batch:
-    post:
-      summary: Upload em Lote de Faturas Emitidas em Modo Offline
-      description: Descarrega para o servidor as faturas emitidas no terminal durante quebras de conexão com validação de hashes.
-      tags:
-        - Sincronização POS (Edge)
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKeyHeader'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PosBatchUploadRequest'
-      responses:
-        '200':
-          description: Lote processado e faturas homologadas
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PosBatchUploadResponse'
-
-  /sync/pos/delta-download:
-    get:
-      summary: Descarregar Mutações do Catálogo para o POS Local
-      description: Fornece todas as alterações de produtos, preços e clientes desde o timestamp informado.
-      tags:
-        - Sincronização POS (Edge)
-      parameters:
-        - name: since_timestamp
-          in: query
-          required: true
-          schema:
-            type: integer
-            example: 1790890000
-      responses:
-        '200':
-          description: Pacote de alterações (delta) para o SQLite local
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  checkpoint_timestamp:
-                    type: integer
-                  updated_products:
-                    type: array
-                    items:
-                      type: object
-                  updated_customers:
-                    type: array
-                    items:
-                      type: object
-
-  # =========================================================================
-  # CATÁLOGO & FISCALIDADE
-  # =========================================================================
-  /catalog/taxes:
-    get:
-      summary: Tabela de Taxas de IVA e Motivos de Isenção AGT
-      description: Retorna as alíquotas legais de IVA (14%, 7%, 5%, 0%) e códigos de isenção oficiais vigentes em Angola.
-      tags:
-        - Catálogo & Artigos
-      responses:
-        '200':
-          description: Tabela tributária de Angola
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  iva_rates:
-                    type: array
-                    items:
-                      type: number
-                  exemption_codes:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/TaxExemptionItem'
-
-  # =========================================================================
-  # EXPORTAÇÃO SAF-T (AO)
-  # =========================================================================
-  /saft/export:
-    post:
-      summary: Solicitação de Extração SAF-T AO
-      description: Dispara job assíncrono para gerar o arquivo XML em conformidade com SAFT_AO_1.01.xsd.
-      tags:
-        - SAF-T (AO)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [fiscal_year, start_date, end_date, export_type]
-              properties:
-                fiscal_year:
-                  type: integer
-                  example: 2026
-                start_date:
-                  type: string
-                  format: date
-                  example: "2026-01-01"
-                end_date:
-                  type: string
-                  format: date
-                  example: "2026-01-31"
-                export_type:
-                  type: string
-                  enum: [BILLING, ACCOUNTING, INTEGRATED]
-      responses:
-        '202':
-          description: Processamento iniciado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  job_id:
-                    type: string
-                  status:
-                    type: string
-                  check_status_url:
-                    type: string
-
-  # =========================================================================
-  # MONITORAMENTO & SONDAS
+  # OBSERVABILIDADE & INFRAESTRUTURA
   # =========================================================================
   /health:
     get:
-      summary: Sonda de Vida (Liveness Probe)
-      security: []
+      summary: Verificação de Vida (Liveness Probe)
+      description: >
+        Retorna o estado de integridade do processo do API Gateway.
+        Utilizado pelo Docker, Kubernetes ou orquestradores de contêineres para liveness.
       tags:
-        - Infraestrutura & Observabilidade
+        - Observabilidade & Infraestrutura
       responses:
         '200':
-          description: O serviço do Gateway está operacional
+          description: O processo do Gateway está em execução ativa
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: "UP"
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "UP"
+                timestamp: "2026-10-03T08:50:00.000Z"
 
   /ready:
     get:
-      summary: Sonda de Prontidão (Readiness Probe)
-      security: []
+      summary: Verificação de Prontidão (Readiness Probe)
+      description: >
+        Valida a conectividade ativa entre o API Gateway e a camada de estado
+        e cache efêmero (Redis 7+). Garante que o Gateway só receba tráfego
+        externo quando todos os subsistemas perimétricos estiverem operacionais.
       tags:
-        - Infraestrutura & Observabilidade
+        - Observabilidade & Infraestrutura
       responses:
         '200':
-          description: O Gateway está conectado ao Redis e Core Services
+          description: Gateway e conexões perimétricas prontos para receber tráfego
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: "READY"
+                $ref: '#/components/schemas/ReadyResponse'
+              example:
+                status: "READY"
+                redis: "CONNECTED"
         '503':
-          description: Um ou mais componentes indispensáveis estão inacessíveis
+          description: Conexão perimétrica indisponível (modo degradado)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+              example:
+                status: "NOT_READY"
+                redis: "DISCONNECTED"
 
-# =========================================================================
-# COMPONENTES & ESQUEMAS
-# =========================================================================
-components:
-  securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: Token JWT assimétrico assinado por chave privada do Core Auth.
-    TenantHeader:
-      type: apiKey
-      in: header
-      name: X-Tenant-ID
-      description: UUID identificador do Tenant / Organização no ERP Kudiba.
-    ApiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-Api-Key
-      description: Chave de API para integrações de terceiros e webhooks.
+  /metrics:
+    get:
+      summary: Métricas de Observabilidade (Prometheus)
+      description: >
+        Exporta métricas de tráfego, latência e requisições HTTP no padrão
+        texto do Prometheus para consumo por agentes de monitorização e dashboards Grafana.
+      tags:
+        - Observabilidade & Infraestrutura
+      responses:
+        '200':
+          description: Métricas no formato padrão de exportação Prometheus
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP http_requests_total Total number of HTTP requests processed.
+                # TYPE http_requests_total counter
+                http_requests_total{status="200"} 124
 
-  parameters:
-    IdempotencyKeyHeader:
-      name: Idempotency-Key
-      in: header
-      required: true
-      schema:
-        type: string
-        format: uuid
-      description: Chave única de idempotência (UUIDv4) para evitar operações duplicadas.
-
-  responses:
-    ProblemResponse:
-      description: Erro padronizado segundo RFC 7807 (Problem Details)
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetail'
-
-  schemas:
-    LoginRequest:
-      type: object
-      required: [email, password, tenant_id]
-      properties:
-        email:
-          type: string
-          format: email
-          example: "operador@empresa.ao"
-        password:
-          type: string
-          format: password
-          example: "segredo123"
-        tenant_id:
-          type: string
-          format: uuid
-        terminal_identifier:
-          type: string
-          example: "caixa-loja-01"
-
-    LoginResponse:
-      type: object
-      properties:
-        access_token:
-          type: string
-        refresh_token:
-          type: string
-        token_type:
-          type: string
-          example: "Bearer"
-        expires_in:
-          type: integer
-          example: 3600
-        user:
-          type: object
-          properties:
-            id:
-              type: string
-              format: uuid
-            name:
-              type: string
-            email:
-              type: string
-            roles:
-              type: array
-              items:
+  /api-docs/openapi.yaml:
+    get:
+      summary: Especificação OpenAPI 3.1 Bruta
+      description: Retorna o manifesto YAML completo da especificação da API atualmente em vigor.
+      tags:
+        - Observabilidade & Infraestrutura
+      responses:
+        '200':
+          description: Ficheiro YAML da especificação OpenAPI
+          content:
+            application/yaml:
+              schema:
                 type: string
 
-    TenantDetails:
+components:
+  schemas:
+    HealthResponse:
       type: object
+      required:
+        - status
+        - timestamp
       properties:
-        id:
-          type: string
-          format: uuid
-        legal_name:
-          type: string
-        trade_name:
-          type: string
-        tax_id:
-          type: string
-          example: "5409876543"
-        agt_software_certificate:
-          type: string
-          example: "999/AGT/2026"
-        tax_regime:
-          type: string
-          example: "REGIME_GERAL"
-        contingency_status:
-          type: object
-          properties:
-            is_blocked:
-              type: boolean
-            last_agt_sync_at:
-              type: string
-              format: date-time
-            days_since_sync:
-              type: integer
-            max_allowed_days:
-              type: integer
-              example: 60
-
-    CreateInvoiceRequest:
-      type: object
-      required: [doc_type, series_code, customer, issue_date, items]
-      properties:
-        doc_type:
-          type: string
-          enum: [FT, FR, NC, ND, FP, GT]
-          example: "FT"
-        series_code:
-          type: string
-          example: "2026A"
-        customer:
-          type: object
-          required: [tax_id, name]
-          properties:
-            customer_id:
-              type: string
-              format: uuid
-            tax_id:
-              type: string
-              example: "5419998888"
-            name:
-              type: string
-              example: "Sonangol Distribuidora EP"
-            address:
-              type: string
-            country:
-              type: string
-              default: "AO"
-        payment_mechanism:
-          type: string
-          enum: [NUMERARIO, MULTICAIXA, TRANSFERENCIA, COMPENSACAO]
-          default: "MULTICAIXA"
-        issue_date:
-          type: string
-          format: date
-          example: "2026-10-02"
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/InvoiceLineItem'
-        withholding_tax_rate:
-          type: number
-          default: 0.00
-          example: 6.50
-
-    InvoiceLineItem:
-      type: object
-      required: [product_code, description, quantity, unit_price, tax_rate]
-      properties:
-        product_id:
-          type: string
-        product_code:
-          type: string
-          example: "PROD-001"
-        description:
-          type: string
-          example: "Saco de Cimento 50kg"
-        quantity:
-          type: number
-          example: 10.0
-        unit_price:
-          type: number
-          example: 4500.00
-        discount_amount:
-          type: number
-          default: 0.0
-        tax_rate:
-          type: number
-          example: 14.00
-        tax_exemption_code:
-          type: string
-          nullable: true
-          example: "M04"
-        tax_exemption_reason:
-          type: string
-          nullable: true
-          example: "Isenção nos termos da legislação em vigor"
-
-    InvoiceResponse:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        document_number:
-          type: string
-          example: "FT 2026A/000142"
-        doc_type:
-          type: string
-          example: "FT"
-        series_code:
-          type: string
-        sequence_number:
-          type: integer
-          example: 142
-        issue_date:
-          type: string
-          format: date
-        system_entry_date:
-          type: string
-          format: date-time
-        financials:
-          type: object
-          properties:
-            net_total:
-              type: number
-            tax_total:
-              type: number
-            withholding_tax_total:
-              type: number
-            gross_total:
-              type: number
-            currency:
-              type: string
-              example: "AOA"
-        fiscal_security:
-          type: object
-          properties:
-            hash:
-              type: string
-            hash_control:
-              type: string
-              example: "u9Za"
-            certificate_version:
-              type: string
-              example: "1.0"
-            agt_software_cert:
-              type: string
-              example: "999/AGT/2026"
-            qr_code_payload:
-              type: string
-        transmission_status:
-          type: string
-          example: "ENQUEUED_REALTIME"
-
-    FiscalSeries:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        series_code:
-          type: string
-          example: "2026A"
-        doc_type:
-          type: string
-          example: "FT"
-        current_sequence:
-          type: integer
-          example: 142
-        is_active:
-          type: boolean
-          example: true
-
-    PosBatchUploadRequest:
-      type: object
-      required: [batch_id, documents]
-      properties:
-        batch_id:
-          type: string
-          example: "batch-20261002-terminal01-004"
-        documents:
-          type: array
-          items:
-            type: object
-
-    PosBatchUploadResponse:
-      type: object
-      properties:
-        batch_id:
-          type: string
         status:
           type: string
-          example: "ACCEPTED"
-        processed_count:
-          type: integer
-        failed_count:
-          type: integer
-        synced_documents:
-          type: array
-          items:
-            type: object
+          description: Estado do processo do Gateway
+          enum: [UP, DOWN]
+        timestamp:
+          type: string
+          format: date-time
+          description: Carimbo temporal em formato ISO 8601 (UTC)
 
-    TaxExemptionItem:
+    ReadyResponse:
       type: object
+      required:
+        - status
+        - redis
       properties:
-        code:
+        status:
           type: string
-          example: "M04"
-        description:
+          description: Estado geral de prontidão
+          enum: [READY, NOT_READY]
+        redis:
           type: string
-          example: "Isenção nos termos do artigo 12.º do CIVA"
+          description: Estado da ligação ao cluster Redis
+          enum: [CONNECTED, DISCONNECTED]
 
-    ProblemDetail:
+    ProblemResponse:
       type: object
-      required: [type, title, status, detail, instance, code]
+      description: Estrutura oficial de erro em conformidade com a RFC 7807 (Problem Details for HTTP APIs).
+      required:
+        - type
+        - title
+        - status
+        - detail
+        - instance
+        - code
+        - timestamp
       properties:
         type:
           type: string
           format: uri
-          example: "https://api.kudiba.ao/errors/agt-communication-timeout"
+          description: URI de referência que identifica o tipo do problema
         title:
           type: string
-          example: "Limite Legal de Contingência Excedido"
+          description: Resumo curto e legível da falha
         status:
           type: integer
-          example: 423
+          description: Código de estado HTTP
         detail:
           type: string
-          example: "O sistema excedeu 60 dias sem comunicação com a AGT conforme Decreto Presidencial n.º 71/25."
+          description: Explicação detalhada e contextualizada do erro
         instance:
           type: string
-          example: "/api/v1/fiscal/invoices"
+          description: URI da requisição que originou o erro
         code:
           type: string
-          example: "AGT_CONTINGENCY_LIMIT_EXCEEDED"
+          description: Código de erro da aplicação (ex. UPSTREAM_UNAVAILABLE)
         timestamp:
           type: string
           format: date-time
+          description: Data e hora do registo do erro
         invalid_params:
           type: array
+          description: Lista de parâmetros inválidos quando aplicável
           items:
             type: object
             properties:
@@ -860,3 +182,50 @@ components:
                 type: string
               reason:
                 type: string
+
+  parameters:
+    CorrelationIdHeader:
+      name: X-Correlation-ID
+      in: header
+      description: Identificador de correlação distribuído (propagado através de todos os saltos de rede).
+      required: false
+      schema:
+        type: string
+        format: uuid
+
+    TenantHeader:
+      name: X-Tenant-ID
+      in: header
+      description: Identificador do Tenant (UUID v4) para orquestração multi-empresa.
+      required: false
+      schema:
+        type: string
+        format: uuid
+
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      description: Chave de idempotência (UUID v4) para prevenção de requisições duplicadas.
+      required: false
+      schema:
+        type: string
+        format: uuid
+
+  headers:
+    X-Correlation-ID:
+      description: Identificador único da requisição para rastreabilidade de ponta a ponta.
+      schema:
+        type: string
+        format: uuid
+    X-RateLimit-Limit:
+      description: Limite de requisições por janela temporal.
+      schema:
+        type: integer
+    X-RateLimit-Remaining:
+      description: Saldo de requisições restantes na janela atual.
+      schema:
+        type: integer
+    X-RateLimit-Reset:
+      description: Segundos restantes até à renovação da quota.
+      schema:
+        type: integer

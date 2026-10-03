@@ -70,18 +70,22 @@ O repositório possuía inicialmente:
 
 ### 3.4 Orquestração Multi-Serviço com Profiles (`docker-compose.yml`)
 - **Modo Padrão (`docker compose up -d`)**: Sobe Gateway (`:8080`) e Redis 7.4 (`:6379`).
-- **Modo Completo (`docker compose --profile full up -d`)**: Adiciona PostgreSQL 16 (`:5432`), RabbitMQ 3.13 Management (`:5672` / `:15672`), Core API (`:8081`) e Fiscal Engine (`:9090`).
+- **Modo Completo (`docker compose --profile full up -d`)**: Adiciona PostgreSQL 16 (`:5432`) e RabbitMQ 3.13 Management (`:5672` / `:15672`).
 - **Modo Streaming (`docker compose --profile streaming up -d`)**: Adiciona Kafka / Redpanda (`:19092`).
+
+### 3.5 Remoção Integral de Mocks e Saneamento do Swagger
+- **Eliminação de Mocks**: Removidos os scripts `mock_core_api.py` e `mock_fiscal_engine.py`, assim como os containers `kudiba-core-api` e `kudiba-fiscal-engine`. Não há simulação de respostas falsas.
+- **Saneamento do Swagger UI / OpenAPI 3.1**: Removidos todos os endpoints de negócio teóricos que ainda não foram desenvolvidos (`/auth/*`, `/fiscal/*`, `/pos/*`, `/catalog/*`, etc.).
+- **Catálogo Transparente**: O Swagger agora expõe exclusivamente os endpoints nativos reais e operacionais desenvolvidos no API Gateway Rust (`/health`, `/ready`, `/metrics`, `/api-docs/openapi.yaml`). Conforme novos módulos forem sendo desenvolvidos, os seus contratos reais serão adicionados.
 
 ---
 
-## 4. Estado Atual dos Serviços
+## 4. Estado Atual dos Serviços em Execução
 
-| Serviço | Porta | Tecnologia | Papel |
-| :--- | :--- | :--- | :--- |
-| **kudiba-api-gateway** | 8080 | Rust (Axum + Tokio) | Entrada única, Rate Limit, Tenant Resolver, Swagger UI |
-| **kudiba-gateway-redis** | 6379 | Redis 7.4 Alpine | Cache efêmero, sliding-window rate limiting e sessões |
-| **kudiba-postgres** | 5432 | PostgreSQL 16 Alpine | Banco relacional com triggers de imutabilidade da AGT |
-| **kudiba-rabbitmq** | 5672 / 15672 | RabbitMQ 3.13 Alpine | Fila de tarefas pesadas (SAF-T, emails, webhooks) |
-| **kudiba-core-api** | 8081 | Python (Mock) / Go | Lógica de negócio comercial e ERP |
-| **kudiba-fiscal-engine** | 9090 | Python (Mock) / gRPC | Criptografia RSA e regras do DP 71/25 |
+| Serviço | Porta | Tecnologia | Papel | Estado |
+| :--- | :--- | :--- | :--- | :--- |
+| **kudiba-api-gateway** | 8080 | Rust (Axum + Tokio) | Entrada única, Rate Limit, Tenant Resolver, Swagger UI | Ativo & Saudável (UP) |
+| **kudiba-gateway-redis** | 6379 | Redis 7.4 Alpine | Cache efêmero, sliding-window rate limiting e sessões | Ativo & Saudável (READY) |
+| **kudiba-postgres** | 5432 | PostgreSQL 16 Alpine | Banco relacional com triggers de imutabilidade da AGT | Ativo & Saudável |
+| **kudiba-rabbitmq** | 5672 / 15672 | RabbitMQ 3.13 Alpine | Fila de tarefas pesadas (SAF-T, emails, webhooks) | Ativo & Saudável |
+

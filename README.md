@@ -52,8 +52,8 @@ Inicia o API Gateway e a camada de cache/rate limit:
 docker compose up -d
 ```
 
-#### Modo Completo (`--profile full`): Todos os Serviços
-Inicia Gateway, Redis, PostgreSQL 16, RabbitMQ, Core API e Fiscal Engine:
+#### Modo Completo (`--profile full`): Todos os Serviços de Infraestrutura
+Inicia Gateway, Redis, PostgreSQL 16 e RabbitMQ:
 ```bash
 docker compose --profile full up -d
 ```

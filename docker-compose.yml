@@ -97,42 +97,9 @@ services:
     networks:
       - kudiba-internal-network
 
-  # ============================================================================
-  # 5. CORE API SERVER (UPSTREAM DE NEGÓCIO)
-  # Profile: "full", "app"
-  # ============================================================================
-  core-api:
-    profiles: ["full", "app"]
-    image: python:3.11-alpine
-    container_name: kudiba-core-api
-    restart: unless-stopped
-    command: ["python3", "/app/mock_core_api.py"]
-    volumes:
-      - ./Backend/deploy/mock_core_api.py:/app/mock_core_api.py:ro
-    ports:
-      - "8081:8081"
-    networks:
-      - kudiba-internal-network
 
   # ============================================================================
-  # 6. FISCAL ENGINE SERVICE (MOTOR FISCAL AGT N.º 71/25)
-  # Profile: "full", "app"
-  # ============================================================================
-  fiscal-engine:
-    profiles: ["full", "app"]
-    image: python:3.11-alpine
-    container_name: kudiba-fiscal-engine
-    restart: unless-stopped
-    command: ["python3", "/app/mock_fiscal_engine.py"]
-    volumes:
-      - ./Backend/deploy/mock_fiscal_engine.py:/app/mock_fiscal_engine.py:ro
-    ports:
-      - "9090:9090"
-    networks:
-      - kudiba-internal-network
-
-  # ============================================================================
-  # 7. EVENT STREAMING & AUDIT LOG (REDPANDA - KAFKA API COMPATIBLE)
+  # 5. EVENT STREAMING & AUDIT LOG (REDPANDA - KAFKA API COMPATIBLE)
   # Profile: "streaming"
   # ============================================================================
   kafka:
