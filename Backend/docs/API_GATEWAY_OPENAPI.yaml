@@ -1,16 +1,24 @@
 openapi: 3.1.0
 info:
-  title: Kudiba ERP - API Gateway Entrypoint
+  title: Kudiba ERP - API Gateway & Motor Fiscal
   version: 1.0.0
   description: >
-    API Gateway de entrada e orquestração perimétrica do ERP Kudiba.
+    API Gateway de entrada e orquestração perimétrica do ERP Kudiba, integrado
+    com o microserviço de facturação e motor fiscal KudibaInvoicing (.NET 10).
     
-    Esta especificação documenta com rigor os endpoints nativos atualmente
-    desenvolvidos e operacionais no Gateway em Rust (Axum 0.8), incluindo
-    sondas de liveness/readiness, métricas Prometheus e catálogo OpenAPI.
-    
-    À medida que os serviços de negócio (Core API e Motor Fiscal AGT) forem sendo
-    desenvolvidos, os seus respectivos endpoints serão integrados e versionados aqui.
+    ### Conformidade Regulatória
+    Conforme o **Decreto Presidencial n.º 71/25 de Angola (AGT)**:
+    - Assinatura digital RSA 2048-bit PKCS#1 v1.5 com encadeamento de hash SHA-256.
+    - 4 caracteres de controlo extraídos das posições 1ª, 11ª, 21ª e 31ª da assinatura.
+    - Bloqueio pessimista por série fiscal garantindo sequencialidade estrita sem lacunas (*zero gaps*).
+    - Imutabilidade de faturas com trigger no PostgreSQL.
+
+    ### Autenticação no Swagger
+    Clique no botão verde **Authorize** no topo direito e insira:
+    1. **BearerAuth:** `Bearer <token>` (ou apenas `<token>`).
+       - Token de Desenvolvimento Pré-Gerado (válido para testes locais):
+       `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLWFkbWluLWRlbW8iLCJ0ZW5hbnRfaWQiOiJhMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJicmFuY2hfaWQiOiJzZWRlLWx1YW5kYSIsInJvbGVzIjpbIkFETUlOIiwiT1BFUkFUT1IiLCJGSVNDQUxfQVVESVRPUiJdLCJleHAiOjIwODk4ODE2MDAsImp0aSI6ImRldi10b2tlbi1rdWRpYmEtMjAyNiJ9.6cn5UXJeLTv3tRFBq-6xOFK3_LtgBtpTI41ppXcGcR0`
+    2. **TenantHeader:** `a0000000-0000-0000-0000-000000000001`
   contact:
     name: Equipa de Engenharia Kudiba
     email: engenharia@kudiba.ao
@@ -18,78 +26,192 @@ info:
 servers:
   - url: http://localhost:8080
     description: API Gateway Local (Desenvolvimento / Docker)
+  - url: http://localhost:9090
+    description: KudibaInvoicing Direto (.NET 10 - Sem Middlewares de Gateway)
 
 paths:
+  # =========================================================================
+  # FACTURAÇÃO & MOTOR FISCAL (AGT ANGOLA)
+  # =========================================================================
+  /api/v1/invoices:
+    post:
+      summary: Emitir Fatura / Documento Fiscal com Assinatura Digital AGT
+      description: >
+        Emite um novo documento com relevância fiscal (FT, FR, NC, ND) com bloqueio pessimista
+        atômico da série fiscal (`SELECT ... FOR UPDATE`), numeração rigorosamente sequencial,
+        cálculo automático de IVA a 14% ou isenções (M00-M99), encadeamento de hash SHA-256 e
+        assinatura digital RSA 2048-bit nos termos do Decreto Presidencial n.º 71/25.
+      tags:
+        - Facturação & Motor Fiscal
+      security:
+        - BearerAuth: []
+          TenantHeader: []
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+        - $ref: '#/components/parameters/CorrelationIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueInvoiceRequest'
+            example:
+              tenantId: "a0000000-0000-0000-0000-000000000001"
+              documentType: "FT"
+              seriesCode: "KUD26"
+              fiscalYear: 2026
+              customerName: "Empresa de Transportes Sonangol EP"
+              customerNif: "5412345678"
+              currency: "AOA"
+              lines:
+                - productCode: "PROD-001"
+                  description: "Licenciamento Kudiba ERP Cloud Anual"
+                  quantity: 1
+                  unitPrice: 500000.00
+                  taxRate: 14.00
+                - productCode: "SERV-002"
+                  description: "Consultoria e Parametrização Fiscal AGT"
+                  quantity: 10
+                  unitPrice: 25000.00
+                  taxRate: 14.00
+      responses:
+        '201':
+          description: Documento fiscal emitido, assinado digitalmente e gravado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueInvoiceResponse'
+              example:
+                invoiceId: "9c68dc2d-c1d8-4e5b-9a09-3794af2b549a"
+                documentNumber: "FT KUD26/000001"
+                sequenceNumber: 1
+                netTotal: 750000.00
+                taxTotal: 105000.00
+                grossTotal: 855000.00
+                hashSha256: "5e0af1859bb4a4c170fd3ec53980df5b4623277c59e88a7bab1e18795f5366da"
+                signatureRsaBase64: "efOP2LZtH7t5y2sGim3ZwMqfn6+TnPUaX4SxrSmcpa5EM8OyThVwc+KfRnxm0FJURCpZWb7GwQMT6UPGM3ySoPM4k5kOEhJ8tAsNacKkWYZq00W1pnzFovRKjBYEhHVf9nMf55kntiEmD/yya2hJ7lk8BUUFCAF/Z8JEVDQxUg2W4n2E6tTMotB0MZNHLE7fpa1VUGEA3PaRblWYZ2HVg71DFZaeIV3cHLc35s9eQnetinZpG892gYITySpH6ljlwA5j99yskyj4xbFbGV6tLk7ovPDZnZHbXVgg1oJnhHi99hskJTA5gJgbcfHyBduFEXote4SlT6j0gAY0XlnijA=="
+                validationChars: "etwU"
+                issuedAt: "2026-10-03T00:00:00Z"
+                systemEntryDate: "2026-10-03T10:11:11.1753844Z"
+                isContingency: false
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '423':
+          description: Bloqueio legal de contingência AGT (limite de 60 dias sem comunicação excedido)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/invoices/{id}:
+    get:
+      summary: Consultar Fatura por ID
+      description: Recupera os dados completos da fatura emitida, incluindo as linhas de artigo e o bloco de assinatura digital.
+      tags:
+        - Facturação & Motor Fiscal
+      security:
+        - BearerAuth: []
+          TenantHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador UUID v4 da fatura
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationIdHeader'
+      responses:
+        '200':
+          description: Detalhes completos da fatura
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDetailResponse'
+        '404':
+          description: Fatura não encontrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Invoice not found."
+
+  /api/v1/fiscal/public-key:
+    get:
+      summary: Obter Chave Pública RSA da AGT
+      description: Retorna a chave pública RSA 2048-bit registrada para validação independente das assinaturas digitais dos documentos emitidos.
+      tags:
+        - Facturação & Motor Fiscal
+      security:
+        - BearerAuth: []
+          TenantHeader: []
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationIdHeader'
+      responses:
+        '200':
+          description: Chave pública e metadados de criptografia
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicKeyResponse'
+
   # =========================================================================
   # OBSERVABILIDADE & INFRAESTRUTURA
   # =========================================================================
   /health:
     get:
       summary: Verificação de Vida (Liveness Probe)
-      description: >
-        Retorna o estado de integridade do processo do API Gateway.
-        Utilizado pelo Docker, Kubernetes ou orquestradores de contêineres para liveness.
+      description: Retorna o estado de integridade do processo do API Gateway.
       tags:
         - Observabilidade & Infraestrutura
       responses:
         '200':
-          description: O processo do Gateway está em execução ativa
+          description: Gateway operacional
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
               example:
                 status: "UP"
-                timestamp: "2026-10-03T08:50:00.000Z"
+                timestamp: "2026-10-03T12:00:00.000Z"
 
   /ready:
     get:
       summary: Verificação de Prontidão (Readiness Probe)
-      description: >
-        Valida a conectividade ativa entre o API Gateway e a camada de estado
-        e cache efêmero (Redis 7+). Garante que o Gateway só receba tráfego
-        externo quando todos os subsistemas perimétricos estiverem operacionais.
+      description: Valida a conectividade ativa entre o API Gateway e a camada de estado e cache (Redis 7+).
       tags:
         - Observabilidade & Infraestrutura
       responses:
         '200':
-          description: Gateway e conexões perimétricas prontos para receber tráfego
+          description: Gateway e Redis operacionais
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReadyResponse'
-              example:
-                status: "READY"
-                redis: "CONNECTED"
         '503':
-          description: Conexão perimétrica indisponível (modo degradado)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReadyResponse'
-              example:
-                status: "NOT_READY"
-                redis: "DISCONNECTED"
+          description: Conexão perimétrica indisponível
 
   /metrics:
     get:
       summary: Métricas de Observabilidade (Prometheus)
-      description: >
-        Exporta métricas de tráfego, latência e requisições HTTP no padrão
-        texto do Prometheus para consumo por agentes de monitorização e dashboards Grafana.
+      description: Exporta métricas de tráfego, latência e requisições HTTP no padrão Prometheus.
       tags:
         - Observabilidade & Infraestrutura
       responses:
         '200':
-          description: Métricas no formato padrão de exportação Prometheus
+          description: Métricas no formato Prometheus
           content:
             text/plain:
               schema:
                 type: string
-              example: |
-                # HELP http_requests_total Total number of HTTP requests processed.
-                # TYPE http_requests_total counter
-                http_requests_total{status="200"} 124
 
   /api-docs/openapi.yaml:
     get:
@@ -99,14 +221,251 @@ paths:
         - Observabilidade & Infraestrutura
       responses:
         '200':
-          description: Ficheiro YAML da especificação OpenAPI
+          description: Arquivo YAML da especificação OpenAPI
           content:
             application/yaml:
               schema:
                 type: string
 
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Token JWT emitido pelo Kudiba contendo claims de utilizador e tenant.
+        Insira o token diretamente no campo abaixo.
+    TenantHeader:
+      type: apiKey
+      in: header
+      name: X-Tenant-ID
+      description: Identificador do Tenant (UUID v4), ex `a0000000-0000-0000-0000-000000000001`.
+
   schemas:
+    IssueInvoiceRequest:
+      type: object
+      required:
+        - tenantId
+        - documentType
+        - seriesCode
+        - fiscalYear
+        - customerName
+        - lines
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+          description: Identificador único da empresa/organização emissora
+        documentType:
+          type: string
+          enum: [FT, FR, FP, NC, ND, RC, GR, GT]
+          description: Tipo de documento fiscal nos termos da AGT
+          example: "FT"
+        seriesCode:
+          type: string
+          description: Código identificador da série documental (ex. KUD26, A, SEDE)
+          example: "KUD26"
+        fiscalYear:
+          type: integer
+          description: Ano fiscal de emissão
+          example: 2026
+        customerName:
+          type: string
+          description: Nome ou razão social do adquirente
+          example: "Empresa de Transportes Sonangol EP"
+        customerNif:
+          type: string
+          description: NIF do adquirente ou 'Consumidor Final'
+          default: "Consumidor Final"
+          example: "5412345678"
+        currency:
+          type: string
+          default: "AOA"
+          example: "AOA"
+        isContingency:
+          type: boolean
+          default: false
+        keyVersion:
+          type: string
+          default: "1"
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/InvoiceLineInput'
+
+    InvoiceLineInput:
+      type: object
+      required:
+        - productCode
+        - description
+        - quantity
+        - unitPrice
+        - taxRate
+      properties:
+        productCode:
+          type: string
+          example: "PROD-001"
+        description:
+          type: string
+          example: "Licenciamento Kudiba ERP Cloud Anual"
+        quantity:
+          type: number
+          format: double
+          example: 1.0
+        unitPrice:
+          type: number
+          format: double
+          example: 500000.00
+        taxRate:
+          type: number
+          format: double
+          description: Taxa de IVA aplicada em percentagem (ex. 14.00, 5.00, 0.00)
+          example: 14.00
+        taxExemptionCode:
+          type: string
+          nullable: true
+          description: Motivo legal de isenção AGT (M00 a M99) obrigatório se a taxa de IVA for 0%
+          example: null
+
+    IssueInvoiceResponse:
+      type: object
+      properties:
+        invoiceId:
+          type: string
+          format: uuid
+        documentNumber:
+          type: string
+          example: "FT KUD26/000001"
+        sequenceNumber:
+          type: integer
+          example: 1
+        netTotal:
+          type: number
+          format: double
+          example: 750000.00
+        taxTotal:
+          type: number
+          format: double
+          example: 105000.00
+        grossTotal:
+          type: number
+          format: double
+          example: 855000.00
+        hashSha256:
+          type: string
+          description: Hash SHA-256 gerado pelo encadeamento criptográfico do Decreto n.º 71/25
+        signatureRsaBase64:
+          type: string
+          description: Assinatura digital RSA 2048-bit em Base64
+        validationChars:
+          type: string
+          description: Os 4 caracteres de validação impressos no documento (posições 1, 11, 21, 31)
+          example: "etwU"
+        issuedAt:
+          type: string
+          format: date-time
+        systemEntryDate:
+          type: string
+          format: date-time
+        isContingency:
+          type: boolean
+
+    InvoiceDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        seriesId:
+          type: string
+          format: uuid
+        documentNumber:
+          type: string
+        sequenceNumber:
+          type: integer
+        documentType:
+          type: string
+        customerName:
+          type: string
+        customerNif:
+          type: string
+        currency:
+          type: string
+        netTotal:
+          type: number
+        taxTotal:
+          type: number
+        grossTotal:
+          type: number
+        hashSha256:
+          type: string
+        signatureRsaBase64:
+          type: string
+        validationChars:
+          type: string
+        keyVersion:
+          type: string
+        isContingency:
+          type: boolean
+        issuedAt:
+          type: string
+          format: date-time
+        systemEntryDate:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceLineDetail'
+
+    InvoiceLineDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoiceId:
+          type: string
+          format: uuid
+        lineNumber:
+          type: integer
+        productCode:
+          type: string
+        description:
+          type: string
+        quantity:
+          type: number
+        unitPrice:
+          type: number
+        taxRate:
+          type: number
+        taxExemptionCode:
+          type: string
+          nullable: true
+        lineTotal:
+          type: number
+
+    PublicKeyResponse:
+      type: object
+      properties:
+        keyVersion:
+          type: string
+          example: "1"
+        publicKeyPem:
+          type: string
+          example: "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A..."
+        algorithm:
+          type: string
+          example: "RSA-2048 / SHA-256 PKCS#1 v1.5"
+
     HealthResponse:
       type: object
       required:
@@ -115,31 +474,25 @@ components:
       properties:
         status:
           type: string
-          description: Estado do processo do Gateway
-          enum: [UP, DOWN]
+          example: "UP"
         timestamp:
           type: string
           format: date-time
-          description: Carimbo temporal em formato ISO 8601 (UTC)
 
     ReadyResponse:
       type: object
       required:
         - status
-        - redis
       properties:
         status:
           type: string
-          description: Estado geral de prontidão
-          enum: [READY, NOT_READY]
+          example: "READY"
         redis:
           type: string
-          description: Estado da ligação ao cluster Redis
-          enum: [CONNECTED, DISCONNECTED]
+          example: "CONNECTED"
 
-    ProblemResponse:
+    ProblemDetail:
       type: object
-      description: Estrutura oficial de erro em conformidade com a RFC 7807 (Problem Details for HTTP APIs).
       required:
         - type
         - title
@@ -152,42 +505,25 @@ components:
         type:
           type: string
           format: uri
-          description: URI de referência que identifica o tipo do problema
         title:
           type: string
-          description: Resumo curto e legível da falha
         status:
           type: integer
-          description: Código de estado HTTP
         detail:
           type: string
-          description: Explicação detalhada e contextualizada do erro
         instance:
           type: string
-          description: URI da requisição que originou o erro
         code:
           type: string
-          description: Código de erro da aplicação (ex. UPSTREAM_UNAVAILABLE)
         timestamp:
           type: string
           format: date-time
-          description: Data e hora do registo do erro
-        invalid_params:
-          type: array
-          description: Lista de parâmetros inválidos quando aplicável
-          items:
-            type: object
-            properties:
-              name:
-                type: string
-              reason:
-                type: string
 
   parameters:
     CorrelationIdHeader:
       name: X-Correlation-ID
       in: header
-      description: Identificador de correlação distribuído (propagado através de todos os saltos de rede).
+      description: Identificador de rastreamento distribuído (propagado através dos serviços).
       required: false
       schema:
         type: string
@@ -197,35 +533,32 @@ components:
       name: X-Tenant-ID
       in: header
       description: Identificador do Tenant (UUID v4) para orquestração multi-empresa.
-      required: false
+      required: true
       schema:
         type: string
         format: uuid
+        example: "a0000000-0000-0000-0000-000000000001"
 
     IdempotencyKeyHeader:
       name: Idempotency-Key
       in: header
-      description: Chave de idempotência (UUID v4) para prevenção de requisições duplicadas.
+      description: Chave de idempotência para prevenção de faturas duplicadas.
       required: false
       schema:
         type: string
-        format: uuid
+        example: "fatura-venda-001"
 
-  headers:
-    X-Correlation-ID:
-      description: Identificador único da requisição para rastreabilidade de ponta a ponta.
-      schema:
-        type: string
-        format: uuid
-    X-RateLimit-Limit:
-      description: Limite de requisições por janela temporal.
-      schema:
-        type: integer
-    X-RateLimit-Remaining:
-      description: Saldo de requisições restantes na janela atual.
-      schema:
-        type: integer
-    X-RateLimit-Reset:
-      description: Segundos restantes até à renovação da quota.
-      schema:
-        type: integer
+  responses:
+    BadRequestError:
+      description: Requisição inválida ou parâmetros ausentes
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    UnauthorizedError:
+      description: Autenticação ausente ou inválida
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
