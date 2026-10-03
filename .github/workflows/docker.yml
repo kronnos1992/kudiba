@@ -1,0 +1,42 @@
+name: Docker Build & Compose Check
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - 'docker-compose.yml'
+      - 'Backend/deploy/**'
+      - 'Backend/src/**'
+      - '.github/workflows/docker.yml'
+  pull_request:
+    branches: [ main, master, develop ]
+    paths:
+      - 'docker-compose.yml'
+      - 'Backend/deploy/**'
+      - 'Backend/src/**'
+      - '.github/workflows/docker.yml'
+
+jobs:
+  validate-docker:
+    name: Validate Docker Compose & Build Images
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose Configuration (Default)
+        run: docker compose config
+
+      - name: Validate Docker Compose Configuration (Full Profile)
+        run: docker compose --profile full config
+
+      - name: Validate Docker Compose Configuration (Streaming Profile)
+        run: docker compose --profile streaming config
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Gateway Docker Image
+        run: |
+          docker compose build gateway

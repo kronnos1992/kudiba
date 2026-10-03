@@ -1,0 +1,38 @@
+# Rust build artifacts
+target/
+Backend/target/
+**/*.rs.bk
+Cargo.lock.backup
+
+# Environment variables and secrets
+.env
+Backend/.env
+*.env.local
+*.env.*.local
+
+# Logs
+*.log
+logs/
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+
+# Docker volumes and local data
+postgres_data/
+rabbitmq_data/
+redis_gateway_data/
+redpanda_data/

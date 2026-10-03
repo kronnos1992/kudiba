@@ -1,0 +1,168 @@
+services:
+  # ============================================================================
+  # 1. PERÍMETRO & ENTRYPOINT (GATEWAY)
+  # ============================================================================
+  gateway:
+    build:
+      context: ./Backend
+      dockerfile: deploy/Dockerfile.gateway
+    container_name: kudiba-api-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - GATEWAY_PORT=8080
+      - GATEWAY_ENV=development
+      - REDIS_HOST=gateway-redis
+      - REDIS_PORT=6379
+      - CORE_API_URL=http://core-api:8081
+      - FISCAL_ENGINE_GRPC_TARGET=http://fiscal-engine:9090
+      - AGT_CONTINGENCY_MAX_DAYS=60
+    depends_on:
+      gateway-redis:
+        condition: service_healthy
+    networks:
+      - kudiba-perimeter-network
+      - kudiba-internal-network
+
+  # ============================================================================
+  # 2. ESTADO EFÊMERO & CACHE PERIMÉTRICO (REDIS 7+)
+  # ============================================================================
+  gateway-redis:
+    image: redis:7.4-alpine
+    container_name: kudiba-gateway-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_gateway_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - kudiba-perimeter-network
+      - kudiba-internal-network
+
+  # ============================================================================
+  # 3. BASE DE DADOS TRANSACIONAL ACID (POSTGRESQL 16+)
+  # Profile: "full", "infra"
+  # ============================================================================
+  postgres:
+    profiles: ["full", "infra"]
+    image: postgres:16-alpine
+    container_name: kudiba-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=kudiba_erp
+      - POSTGRES_USER=kudiba
+      - POSTGRES_PASSWORD=kudiba_secret_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./Backend/deploy/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kudiba -d kudiba_erp"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - kudiba-internal-network
+
+  # ============================================================================
+  # 4. MESSAGE BROKER & FILAS DE TAREFAS (RABBITMQ COM MANAGEMENT UI)
+  # Profile: "full", "messaging"
+  # ============================================================================
+  rabbitmq:
+    profiles: ["full", "messaging"]
+    image: rabbitmq:3.13-management-alpine
+    container_name: kudiba-rabbitmq
+    restart: unless-stopped
+    environment:
+      - RABBITMQ_DEFAULT_USER=kudiba
+      - RABBITMQ_DEFAULT_PASS=kudiba_rabbit_pass
+    ports:
+      - "5672:5672"    # AMQP Protocol
+      - "15672:15672"  # Management Web UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kudiba-internal-network
+
+  # ============================================================================
+  # 5. CORE API SERVER (UPSTREAM DE NEGÓCIO)
+  # Profile: "full", "app"
+  # ============================================================================
+  core-api:
+    profiles: ["full", "app"]
+    image: python:3.11-alpine
+    container_name: kudiba-core-api
+    restart: unless-stopped
+    command: ["python3", "/app/mock_core_api.py"]
+    volumes:
+      - ./Backend/deploy/mock_core_api.py:/app/mock_core_api.py:ro
+    ports:
+      - "8081:8081"
+    networks:
+      - kudiba-internal-network
+
+  # ============================================================================
+  # 6. FISCAL ENGINE SERVICE (MOTOR FISCAL AGT N.º 71/25)
+  # Profile: "full", "app"
+  # ============================================================================
+  fiscal-engine:
+    profiles: ["full", "app"]
+    image: python:3.11-alpine
+    container_name: kudiba-fiscal-engine
+    restart: unless-stopped
+    command: ["python3", "/app/mock_fiscal_engine.py"]
+    volumes:
+      - ./Backend/deploy/mock_fiscal_engine.py:/app/mock_fiscal_engine.py:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - kudiba-internal-network
+
+  # ============================================================================
+  # 7. EVENT STREAMING & AUDIT LOG (REDPANDA - KAFKA API COMPATIBLE)
+  # Profile: "streaming"
+  # ============================================================================
+  kafka:
+    profiles: ["streaming"]
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.8
+    container_name: kudiba-kafka
+    restart: unless-stopped
+    command:
+      - redpanda start
+      - --smp 1
+      - --memory 512M
+      - --overprovisioned
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://kafka:9092,external://localhost:19092
+    ports:
+      - "19092:19092"
+      - "9644:9644" # Admin API
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    networks:
+      - kudiba-internal-network
+
+networks:
+  kudiba-perimeter-network:
+    driver: bridge
+  kudiba-internal-network:
+    driver: bridge
+
+volumes:
+  redis_gateway_data:
+  postgres_data:
+  rabbitmq_data:
+  redpanda_data:

@@ -1,0 +1,49 @@
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.gateway
+    container_name: kudiba-api-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - GATEWAY_PORT=8080
+      - GATEWAY_ENV=development
+      - REDIS_HOST=gateway-redis
+      - REDIS_PORT=6379
+      - CORE_API_URL=http://core-api:8081
+      - FISCAL_ENGINE_GRPC_TARGET=fiscal-engine:9090
+      - AGT_CONTINGENCY_MAX_DAYS=60
+    depends_on:
+      gateway-redis:
+        condition: service_healthy
+    networks:
+      - kudiba-perimeter-network
+      - kudiba-internal-network
+
+  gateway-redis:
+    image: redis:7.4-alpine
+    container_name: kudiba-gateway-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_gateway_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - kudiba-perimeter-network
+
+networks:
+  kudiba-perimeter-network:
+    driver: bridge
+  kudiba-internal-network:
+    driver: bridge
+
+volumes:
+  redis_gateway_data:

@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package kudiba.events.v1;
+
+option go_package = "github.com/kudiba/kudiba-core/gen/events/v1;eventsv1";
+
+// =============================================================================
+// CONTRATO DE EVENTOS DE NEGÓCIO - ERP KUDIBA (EVENT-DRIVEN ARCHITECTURE)
+// Padrão: CloudEvents Envelope com particionamento por Tenant
+// =============================================================================
+
+// Evento emitido quando uma fatura ou nota comercial é finalizada
+message InvoiceIssuedEvent {
+  string event_id = 1;               // UUID do evento
+  string tenant_id = 2;              // Partição Kafka / Routing Key RabbitMQ
+  string document_number = 3;        // Ex: "FT KUD26/000001"
+  string document_type = 4;          // "FT", "FR", "NC", "ND", "RC"
+  string customer_nif = 5;           // NIF do cliente
+  string customer_name = 6;
+  double net_total = 7;
+  double tax_total = 8;
+  double gross_total = 9;
+  string currency = 10;              // "AOA"
+  string hash_sha256 = 11;           // Hash fiscal da AGT
+  string validation_chars = 12;      // 4 caracteres de validação
+  string issued_at = 13;             // Timestamp ISO-8601
+  string issued_by_user_id = 14;
+  repeated InvoiceItem items = 15;
+}
+
+message InvoiceItem {
+  string product_id = 1;
+  string product_code = 2;
+  string description = 3;
+  double quantity = 4;
+  double unit_price = 5;
+  double tax_rate = 6;               // Ex: 14.0 (IVA)
+  string tax_exemption_code = 7;     // Código AGT se isento (ex: "M02")
+  double total = 8;
+}
+
+// Evento de atualização/sincronização de stock
+message StockMovementEvent {
+  string event_id = 1;
+  string tenant_id = 2;
+  string warehouse_id = 3;
+  string product_id = 4;
+  double quantity_change = 5;        // Positivo (entrada) ou negativo (saída)
+  string movement_reason = 6;        // "SALE", "PURCHASE", "ADJUSTMENT", "TRANSFER"
+  string reference_document = 7;     // Número da fatura ou guia de remessa
+  string timestamp = 8;
+}
+
+// Evento de confirmação de pagamento (Multicaixa GPO / EMIS / Transferência)
+message PaymentConfirmedEvent {
+  string event_id = 1;
+  string tenant_id = 2;
+  string invoice_id = 3;
+  string payment_method = 4;         // "MULTICAIXA_GPO", "CASH", "TRANSFER", "EXPRESS"
+  double amount_paid = 5;
+  string transaction_reference = 6;  // Código de autorização EMIS/Bancário
+  string confirmed_at = 7;
+}
+
+// Evento de alerta de contingência AGT (Decreto Presidencial 71/25)
+message AgtContingencyAlertEvent {
+  string event_id = 1;
+  string tenant_id = 2;
+  int64 days_in_contingency = 3;     // Dias acumulados sem sincronizar com AGT
+  int64 max_allowed_days = 4;        // Limite legal (60 dias)
+  bool is_system_locked = 5;         // Verdadeiro se atingiu 60 dias (bloqueio mandatado)
+  string alert_level = 6;            // "INFO", "WARNING", "CRITICAL"
+  string timestamp = 7;
+}

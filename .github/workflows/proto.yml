@@ -1,0 +1,35 @@
+name: Protobuf Contracts Lint & Validation
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - 'proto/**'
+      - '.github/workflows/proto.yml'
+  pull_request:
+    branches: [ main, master, develop ]
+    paths:
+      - 'proto/**'
+      - '.github/workflows/proto.yml'
+
+jobs:
+  lint-proto:
+    name: Lint & Validate Protobuf Contracts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate Fiscal Protobuf Compilation
+        run: |
+          protoc -I proto --descriptor_set_out=/dev/null proto/fiscal/v1/fiscal_engine.proto
+
+      - name: Validate Events Protobuf Compilation
+        run: |
+          protoc -I proto --descriptor_set_out=/dev/null proto/events/v1/events.proto

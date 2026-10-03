@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package kudiba.fiscal.v1;
+
+option go_package = "github.com/kudiba/kudiba-core/gen/fiscal/v1;fiscalv1";
+
+// =============================================================================
+// SERVIÇO FISCAL CRIPTOGRÁFICO DO ERP KUDIBA
+// Conformidade: Decreto Presidencial n.º 71/25 de Angola (AGT)
+// =============================================================================
+
+service FiscalEngineService {
+  // Assina digitalmente uma fatura ou documento fiscal com RSA-SHA256 em cadeia
+  rpc SignDocument (SignDocumentRequest) returns (SignDocumentResponse);
+
+  // Valida uma assinatura e os 4 caracteres de controlo de um documento emitido
+  rpc VerifySignature (VerifySignatureRequest) returns (VerifySignatureResponse);
+
+  // Valida a consistência sequencial de uma série fiscal
+  rpc ValidateSeriesSequence (ValidateSeriesSequenceRequest) returns (ValidateSeriesSequenceResponse);
+
+  // Solicita a extração e validação assíncrona do ficheiro SAF-T (AO)
+  rpc TriggerSaftGeneration (TriggerSaftGenerationRequest) returns (TriggerSaftGenerationResponse);
+}
+
+// -----------------------------------------------------------------------------
+// REQUISIÇÕES E RESPOSTAS: ASSINATURA RSA
+// -----------------------------------------------------------------------------
+
+message SignDocumentRequest {
+  string tenant_id = 1;
+  string document_number = 2;       // Ex: "FT KUD26/000001"
+  string invoice_date = 3;           // Formato: "YYYY-MM-DD"
+  string system_entry_date = 4;      // Formato: "YYYY-MM-DDTHH:MM:SS"
+  double gross_total = 5;            // Total bruto com precisão decimal
+  string previous_hash = 6;          // Hash do documento imediatamente anterior (ou vazio para o 1º da série)
+  string key_version = 7;            // Identificador da versão da chave RSA registada na AGT
+}
+
+message SignDocumentResponse {
+  string document_number = 1;
+  string signature_base64 = 2;       // Assinatura digital completa em Base64
+  string hash_sha256 = 3;            // Hash SHA-256 gerado
+  string validation_chars = 4;       // 4 caracteres de validação impressos na fatura (1º, 11º, 21º, 31º)
+  string signed_at = 5;              // Timestamp de assinatura
+  bool is_contingency = 6;           // Indicador se emitido em modo de contingência fiscal
+}
+
+// -----------------------------------------------------------------------------
+// REQUISIÇÕES E RESPOSTAS: VALIDAÇÃO
+// -----------------------------------------------------------------------------
+
+message VerifySignatureRequest {
+  string tenant_id = 1;
+  string document_number = 2;
+  string signature_base64 = 3;
+  string invoice_date = 4;
+  string system_entry_date = 5;
+  double gross_total = 6;
+  string previous_hash = 7;
+  string key_version = 8;
+}
+
+message VerifySignatureResponse {
+  bool is_valid = 1;
+  string validation_chars = 2;
+  string error_message = 3;
+}
+
+// -----------------------------------------------------------------------------
+// SÉRIES FISCAIS & CONTINGÊNCIA
+// -----------------------------------------------------------------------------
+
+message ValidateSeriesSequenceRequest {
+  string tenant_id = 1;
+  string series_code = 2;            // Ex: "KUD26"
+  int64 expected_sequence = 3;       // Sequência esperada (N + 1)
+  int64 document_year = 4;           // Ex: 2026
+}
+
+message ValidateSeriesSequenceResponse {
+  bool is_valid = 1;
+  int64 last_recorded_sequence = 2;
+  string last_document_hash = 3;
+  bool is_gap_detected = 4;
+}
+
+// -----------------------------------------------------------------------------
+// SAF-T (AO) FISCAL
+// -----------------------------------------------------------------------------
+
+message TriggerSaftGenerationRequest {
+  string tenant_id = 1;
+  int32 fiscal_year = 2;             // Ex: 2026
+  int32 fiscal_month = 3;            // 1 a 12 (ou 0 para ano completo)
+  string requested_by_user_id = 4;
+}
+
+message TriggerSaftGenerationResponse {
+  string job_id = 1;                 // ID da tarefa para tracking no RabbitMQ/Redis
+  string status = 2;                 // "QUEUED", "PROCESSING"
+  string estimated_time = 3;
+}

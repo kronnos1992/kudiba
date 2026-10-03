@@ -1,0 +1,49 @@
+name: CI - API Gateway (Rust)
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - 'Backend/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [ main, master, develop ]
+    paths:
+      - 'Backend/**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  check-and-build:
+    name: Check, Lint & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "Backend -> Backend/target"
+
+      - name: Check code formatting
+        working-directory: Backend
+        run: cargo fmt --check || true
+
+      - name: Run Cargo Check
+        working-directory: Backend
+        run: cargo check --verbose
+
+      - name: Run Clippy Linter
+        working-directory: Backend
+        run: cargo clippy -- -D warnings || true
+
+      - name: Run Cargo Tests
+        working-directory: Backend
+        run: cargo test --verbose

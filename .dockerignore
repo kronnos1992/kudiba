@@ -1,0 +1,6 @@
+Backend/target/
+target/
+.git/
+.env
+*.log
+*.pdf
