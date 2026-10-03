@@ -64,9 +64,20 @@ async fn forward_request(client: &Client, base_url: &str, req: Request) -> Respo
             let status = upstream_resp.status();
             let mut response_builder = Response::builder().status(status.as_u16());
 
-            // Transfere cabeçalhos da resposta upstream
+            // Transfere cabeçalhos da resposta upstream, filtrando cabeçalhos hop-by-hop (RFC 9110 / RFC 7230)
             for (k, v) in upstream_resp.headers() {
-                response_builder = response_builder.header(k.as_str(), v.as_bytes());
+                let name = k.as_str().to_ascii_lowercase();
+                if name != "transfer-encoding"
+                    && name != "connection"
+                    && name != "keep-alive"
+                    && name != "proxy-authenticate"
+                    && name != "proxy-authorization"
+                    && name != "te"
+                    && name != "trailers"
+                    && name != "upgrade"
+                {
+                    response_builder = response_builder.header(k.as_str(), v.as_bytes());
+                }
             }
 
             match upstream_resp.bytes().await {

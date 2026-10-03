@@ -74,9 +74,11 @@ pub fn create_router(config: Config, redis_client: redis::Client) -> Router {
     // ROTAS PROTEGIDAS DO ENTRYPOINT (REVERSE PROXY)
     // =========================================================================
     let api_routes = Router::new()
-        // Rotas Fiscais de Alta Criticidade (AGT RSA & Séries)
+        // Rotas Fiscais de Alta Criticidade e Facturação (KudibaInvoicing)
         .route("/api/v1/fiscal/{*path}", any(forward_to_fiscal))
         .route("/api/v1/fiscal", any(forward_to_fiscal))
+        .route("/api/v1/invoices/{*path}", any(forward_to_fiscal))
+        .route("/api/v1/invoices", any(forward_to_fiscal))
         // Rotas de Sincronização POS (Edge Tauri) e Módulos Comerciais
         .route("/api/v1/{*path}", any(forward_to_core))
         .route("/api/v1", any(forward_to_core))
