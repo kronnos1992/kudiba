@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     }
 
-    let signer = std::sync::Arc::new(RsaCryptoSigner::from_env(&config.agt_key_version)?);
+    let signer = std::sync::Arc::new(RsaCryptoSigner::from_config(&config)?);
     tracing::info!(
         key_version = %signer.key_version(),
         "Chave RSA-2048 do motor fiscal carregada"
@@ -87,6 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         app_state.sign_direct.clone(),
         app_state.verify_signature.clone(),
         app_state.validate_series.clone(),
+        app_state.export_saft.clone(),
     );
 
     tokio::spawn(async move {

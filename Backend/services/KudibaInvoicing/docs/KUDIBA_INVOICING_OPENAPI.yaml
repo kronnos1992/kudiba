@@ -37,6 +37,12 @@ tags:
     description: Emissao, consulta e assinatura de documentos fiscais
   - name: Series Fiscais & Validacao
     description: Consistência de sequencia, assinatura directa e verificacao independente
+  - name: SAF-T (AO) & Auditoria
+    description: Exportacao de ficheiro mensal e anual SAF-T (AO) no schema oficial da AGT
+  - name: Conector AGT & Facturacao Electronica
+    description: Comunicacao em tempo real, liveness/heartbeat e despacho de lotes
+  - name: Gestao Criptografica
+    description: Geracao e validacao de chaves RSA-2048 para credenciacao AGT
   - name: Observabilidade & Documentacao
     description: Health check e documentacao da API
 
@@ -399,6 +405,160 @@ paths:
             application/yaml:
               schema:
                 type: string
+
+  # ===========================================================================
+  # SAF-T (AO) & FACTURACAO ELECTRONICA AGT
+  # ===========================================================================
+  /api/v1/fiscal/saft:
+    get:
+      summary: Exportar Ficheiro SAF-T (AO) Mensal ou Anual
+      description: >
+        Gera e descarrega o ficheiro XML de auditoria tributaria SAF-T (AO) v1.01_01
+        em estrita conformidade com o Decreto Executivo n.º 385/20 e o Decreto Presidencial n.º 71/25.
+      tags:
+        - SAF-T (AO) & Auditoria
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            example: 2026
+        - name: month
+          in: query
+          required: false
+          description: Mes fiscal (1 a 12). Se omitido, exporta o ano fiscal completo.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+            example: 10
+      responses:
+        '200':
+          description: Ficheiro XML SAF-T (AO) gerado com sucesso
+          content:
+            application/xml:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/fiscal/agt/status:
+    get:
+      summary: Verificar Conectividade e Liveness com a AGT
+      description: >
+        Executa um teste de comunicacao (heartbeat) com o canal de webservices da AGT
+        para medicao de latencia e determinacao de modo de contingencia fiscal.
+      tags:
+        - Conector AGT & Facturacao Electronica
+      responses:
+        '200':
+          description: Estado da comunicacao com a AGT
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isOnline:
+                    type: boolean
+                  endpoint:
+                    type: string
+                  latencyMs:
+                    type: integer
+                  checkedAt:
+                    type: string
+                    format: date-time
+                  contingencyActive:
+                    type: boolean
+                  message:
+                    type: string
+
+  /api/v1/fiscal/agt/sync:
+    post:
+      summary: Sincronizar / Despachar Lote de Faturas para a AGT
+      description: >
+        Despacha um lote de documentos emitidos e assinados localmente para os webservices
+        oficiais da AGT em tempo real.
+      tags:
+        - Conector AGT & Facturacao Electronica
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tenantId
+                - fiscalYear
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                fiscalYear:
+                  type: integer
+                  example: 2026
+                fiscalMonth:
+                  type: integer
+                  example: 10
+      responses:
+        '200':
+          description: Lote aceite e processado com protocolo AGT
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batchId:
+                    type: string
+                  protocolNumber:
+                    type: string
+                  status:
+                    type: string
+                  totalDocuments:
+                    type: integer
+                  acceptedCount:
+                    type: integer
+                  rejectedCount:
+                    type: integer
+                  processedAt:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
+  /api/v1/fiscal/keys/generate:
+    post:
+      summary: Gerar Novo Par de Chaves RSA-2048 para Credenciacao AGT
+      description: >
+        Utilitario administrativo que gera um par oficial de chaves RSA-2048 (PKCS#8 e X.509)
+        para homologacao do software e do produtor de faturas junto da AGT.
+      tags:
+        - Gestao Criptografica
+      responses:
+        '201':
+          description: Par de chaves RSA gerado com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keySizeBits:
+                    type: integer
+                    example: 2048
+                  privateKeyPem:
+                    type: string
+                  publicKeyPem:
+                    type: string
+                  instructions:
+                    type: string
 
 components:
   schemas:

@@ -46,8 +46,11 @@ services:
       - GRPC_PORT=9091
       - RUST_LOG=info,kudiba_invoicing=debug
       - DATABASE_URL=postgres://kudiba:kudiba_secret_pass@postgres:5432/kudiba_erp
-      # Chave privada RSA-2048 registada na AGT (vazio = chave efémera de desenvolvimento)
+      # Chave privada RSA-2048 registada na AGT (em produção exige chave oficial)
       - AGT_RSA_PRIVATE_KEY_PEM=
+      - AGT_RSA_PRIVATE_KEY_PATH=
+      - AGT_PLATFORM_URL=https://webservices.agt.minfin.gov.ao/facturacao-electronica
+      - ENVIRONMENT=development
       - AGT_KEY_VERSION=1
       - DB_MAX_CONNECTIONS=20
     depends_on:

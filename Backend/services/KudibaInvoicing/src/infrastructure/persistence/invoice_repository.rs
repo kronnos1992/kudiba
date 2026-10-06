@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use sqlx::postgres::PgRow;
 use sqlx::Row;
@@ -26,6 +28,24 @@ const SELECT_INVOICE_LINES: &str =
     "SELECT id, invoice_id, line_number, product_code, description, \
     quantity, unit_price, tax_rate, tax_exemption_code, line_total \
     FROM kudiba_core.invoice_lines WHERE invoice_id = $1 ORDER BY line_number ASC";
+
+const SELECT_INVOICES_BY_PERIOD: &str =
+    "SELECT id, tenant_id, series_id, document_number, sequence_number, document_type, \
+     customer_name, customer_nif, currency, net_total, tax_total, gross_total, hash_sha256, \
+     signature_rsa_base64, validation_chars, key_version, is_contingency, tax_regime_code, \
+     issued_at, system_entry_date, created_at \
+     FROM kudiba_core.invoices \
+     WHERE tenant_id = $1 \
+       AND EXTRACT(YEAR FROM issued_at)::INT = $2 \
+       AND ($3::INT IS NULL OR EXTRACT(MONTH FROM issued_at)::INT = $3) \
+     ORDER BY issued_at ASC, sequence_number ASC";
+
+const SELECT_LINES_FOR_INVOICES: &str =
+    "SELECT id, invoice_id, line_number, product_code, description, \
+     quantity, unit_price, tax_rate, tax_exemption_code, line_total \
+     FROM kudiba_core.invoice_lines \
+     WHERE invoice_id = ANY($1) \
+     ORDER BY invoice_id, line_number ASC";
 
 /// Repositório PostgreSQL de documentos fiscais e das respetivas linhas
 #[derive(Debug, Default, Clone, Copy)]
@@ -200,5 +220,50 @@ impl InvoiceRepository for PgInvoiceRepository {
             }
             None => Ok(None),
         }
+    }
+
+    async fn find_by_period(
+        &self,
+        session: &mut dyn DbSession,
+        tenant_id: Uuid,
+        fiscal_year: i32,
+        fiscal_month: Option<u32>,
+    ) -> Result<Vec<Invoice>, RepositoryError> {
+        let month_param: Option<i32> = fiscal_month.map(|m| m as i32);
+        let rows = sqlx::query(SELECT_INVOICES_BY_PERIOD)
+            .bind(tenant_id)
+            .bind(fiscal_year)
+            .bind(month_param)
+            .fetch_all(&mut *session.connection())
+            .await?;
+
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let invoice_ids: Vec<Uuid> = rows
+            .iter()
+            .map(|r| r.try_get::<Uuid, _>("id"))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let line_rows = sqlx::query(SELECT_LINES_FOR_INVOICES)
+            .bind(&invoice_ids)
+            .fetch_all(&mut *session.connection())
+            .await?;
+
+        let mut lines_by_invoice: HashMap<Uuid, Vec<InvoiceLine>> = HashMap::new();
+        for line_row in line_rows {
+            let line = Self::map_line(&line_row)?;
+            lines_by_invoice.entry(line.invoice_id).or_default().push(line);
+        }
+
+        let mut invoices = Vec::with_capacity(rows.len());
+        for row in rows {
+            let id: Uuid = row.try_get("id")?;
+            let lines = lines_by_invoice.remove(&id).unwrap_or_default();
+            invoices.push(Self::map_invoice(&row, lines)?);
+        }
+
+        Ok(invoices)
     }
 }

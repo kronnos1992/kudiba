@@ -8,12 +8,15 @@ use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::application::commands::sync_agt::SyncAgtCommand;
 use crate::application::dto::{
     CreateFiscalSeriesCommand, GetInvoiceQuery, GetTaxRegimeQuery, IssueInvoiceCommand,
     ResolveTaxRegimeCommand, SignDirectCommand, ValidateSeriesSequenceQuery, VerifySignatureQuery,
 };
+use crate::application::queries::export_saft::ExportSaftQuery;
 use crate::domain::error::DomainError;
 use crate::domain::ports::crypto_signer::CryptoSigner;
+use crate::infrastructure::crypto::rsa_signer::generate_agt_keypair;
 use crate::state::AppState;
 
 /// Constrói o router REST interno do motor fiscal
@@ -57,6 +60,13 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/fiscal/tax-regime/{tenant_id}/exemption-codes/{code}",
             get(validate_exemption_code_handler),
         )
+        // REST: Exportação mensal do SAF-T (AO) no schema oficial da AGT
+        .route("/api/v1/fiscal/saft", get(export_saft_handler))
+        // REST: Conector AGT (Heartbeat/Liveness e sincronização de lotes)
+        .route("/api/v1/fiscal/agt/status", get(agt_status_handler))
+        .route("/api/v1/fiscal/agt/sync", post(sync_agt_handler))
+        // REST: Gestão de chaves criptográficas para certificação AGT
+        .route("/api/v1/fiscal/keys/generate", post(generate_keys_handler))
         .merge(crate::presentation::http::scalar::router::<AppState>())
         .with_state(state)
 }
@@ -206,6 +216,74 @@ async fn validate_exemption_code_handler(
             "exists": exists,
         }))
         .into_response(),
+        Err(err) => domain_error(err),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SaftQueryParams {
+    #[serde(rename = "tenantId")]
+    pub tenant_id: Uuid,
+    pub year: i32,
+    pub month: Option<u32>,
+}
+
+async fn export_saft_handler(
+    State(state): State<AppState>,
+    Query(params): Query<SaftQueryParams>,
+) -> Response {
+    let query = ExportSaftQuery {
+        tenant_id: params.tenant_id,
+        fiscal_year: params.year,
+        fiscal_month: params.month,
+    };
+
+    match state.export_saft.execute(query).await {
+        Ok(result) => {
+            let mut headers = axum::http::HeaderMap::new();
+            headers.insert(
+                axum::http::header::CONTENT_TYPE,
+                axum::http::HeaderValue::from_static("application/xml; charset=utf-8"),
+            );
+            if let Ok(disposition) = axum::http::HeaderValue::from_str(&format!(
+                "attachment; filename=\"{}\"",
+                result.filename
+            )) {
+                headers.insert(axum::http::header::CONTENT_DISPOSITION, disposition);
+            }
+            (StatusCode::OK, headers, result.xml_content).into_response()
+        }
+        Err(err) => domain_error(err),
+    }
+}
+
+async fn agt_status_handler(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let status = state.agt_client.check_heartbeat().await;
+    Json(serde_json::to_value(status).unwrap_or_else(|_| json!({ "isOnline": false })))
+}
+
+async fn sync_agt_handler(
+    State(state): State<AppState>,
+    Json(command): Json<SyncAgtCommand>,
+) -> Response {
+    match state.sync_agt.execute(command).await {
+        Ok(result) => (StatusCode::OK, Json(result)).into_response(),
+        Err(err) => domain_error(err),
+    }
+}
+
+async fn generate_keys_handler() -> Response {
+    match generate_agt_keypair() {
+        Ok(keypair) => (
+            StatusCode::CREATED,
+            Json(json!({
+                "keySizeBits": keypair.key_size_bits,
+                "privateKeyPem": keypair.private_key_pem,
+                "publicKeyPem": keypair.public_key_pem,
+                "instructions": "Guarde a chave privada no servidor em AGT_RSA_PRIVATE_KEY_PATH e submeta a chave pública no portal da AGT para certificação de software fiscal."
+            })),
+        )
+            .into_response(),
         Err(err) => domain_error(err),
     }
 }

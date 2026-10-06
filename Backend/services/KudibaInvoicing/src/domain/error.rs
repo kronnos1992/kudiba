@@ -29,3 +29,10 @@ impl DomainError {
         DomainError::InvalidArgument(message.into())
     }
 }
+
+impl From<crate::domain::ports::db_session::RepositoryError> for DomainError {
+    fn from(err: crate::domain::ports::db_session::RepositoryError) -> Self {
+        DomainError::Persistence(err.to_string())
+    }
+}
+

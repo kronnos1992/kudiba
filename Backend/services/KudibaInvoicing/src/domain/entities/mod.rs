@@ -2,3 +2,4 @@
 pub mod fiscal_series;
 pub mod invoice;
 pub mod invoice_line;
+pub mod tenant;

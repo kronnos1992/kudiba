@@ -18,6 +18,14 @@ pub struct Config {
     pub db_max_connections: u32,
     /// Versão da chave privada RSA registada na AGT
     pub agt_key_version: String,
+    /// Caminho opcional do ficheiro PEM da chave privada RSA da AGT
+    pub agt_private_key_path: Option<String>,
+    /// Conteúdo PEM direto da chave privada RSA da AGT (opcional)
+    pub agt_private_key_pem: Option<String>,
+    /// URL base do webservice de Facturação Electrónica da AGT
+    pub agt_platform_url: String,
+    /// Ambiente de execução (development, staging, production)
+    pub environment: String,
     /// Versão do serviço exposta nos endpoints de metadados
     pub service_version: &'static str,
 }
@@ -25,6 +33,11 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Self {
         dotenvy::dotenv().ok();
+
+        let environment = env::var("ENVIRONMENT")
+            .or_else(|_| env::var("APP_ENV"))
+            .unwrap_or_else(|_| "development".to_string())
+            .to_lowercase();
 
         Self {
             http_port: read_port("PORT", 9090),
@@ -37,8 +50,18 @@ impl Config {
                 .and_then(|value| value.parse::<u32>().ok())
                 .unwrap_or(20),
             agt_key_version: env::var("AGT_KEY_VERSION").unwrap_or_else(|_| "1".to_string()),
+            agt_private_key_path: env::var("AGT_RSA_PRIVATE_KEY_PATH").ok().filter(|s| !s.trim().is_empty()),
+            agt_private_key_pem: env::var("AGT_RSA_PRIVATE_KEY_PEM").ok().filter(|s| !s.trim().is_empty()),
+            agt_platform_url: env::var("AGT_PLATFORM_URL")
+                .unwrap_or_else(|_| "https://webservices.agt.minfin.gov.ao/facturacao-electronica".to_string()),
+            environment,
             service_version: env!("CARGO_PKG_VERSION"),
         }
+    }
+
+    /// Devolve se o ambiente configurado é estritamente produção
+    pub fn is_production(&self) -> bool {
+        self.environment == "production" || self.environment == "prod"
     }
 
     /// Pool de ligações ACID para o motor fiscal

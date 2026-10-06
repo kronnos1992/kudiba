@@ -1144,6 +1144,7 @@ dependencies = [
  "dotenvy",
  "prost",
  "rand_core 0.6.4",
+ "reqwest",
  "rsa",
  "rust_decimal",
  "serde",

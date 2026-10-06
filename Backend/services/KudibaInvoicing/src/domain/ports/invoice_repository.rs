@@ -28,4 +28,13 @@ pub trait InvoiceRepository: Send + Sync {
         tenant_id: Uuid,
         document_number: &str,
     ) -> Result<Option<Invoice>, RepositoryError>;
+
+    /// Localiza todas as faturas de um tenant num dado período fiscal (ano ou mês) para o SAF-T (AO)
+    async fn find_by_period(
+        &self,
+        session: &mut dyn DbSession,
+        tenant_id: Uuid,
+        fiscal_year: i32,
+        fiscal_month: Option<u32>,
+    ) -> Result<Vec<Invoice>, RepositoryError>;
 }

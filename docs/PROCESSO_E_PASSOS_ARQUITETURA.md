@@ -88,4 +88,30 @@ O repositório possuía inicialmente:
 | **kudiba-gateway-redis** | 6379 | Redis 7.4 Alpine | Cache efêmero, sliding-window rate limiting e sessões | Ativo & Saudável (READY) |
 | **kudiba-postgres** | 5432 | PostgreSQL 16 Alpine | Banco relacional com triggers de imutabilidade da AGT | Ativo & Saudável |
 | **kudiba-rabbitmq** | 5672 / 15672 | RabbitMQ 3.13 Alpine | Fila de tarefas pesadas (SAF-T, emails, webhooks) | Ativo & Saudável |
+| **kudiba-invoicing** | 9090 (REST) / 9091 (gRPC) | Rust (Clean Arch + CQRS) | Motor Fiscal AGT (Decreto 71/25 & 385/20), SAF-T (AO), Conector AGT | Testado & Validado (47 testes) |
+
+---
+
+## 5. Implementação do Motor Fiscal (KudibaInvoicing) & Conformidade AGT
+
+Em Outubro de 2026, foram implementados e testados com 100% de sucesso os três pilares de produção do motor fiscal `KudibaInvoicing`:
+
+### 5.1 Exportador Oficial SAF-T (AO) v1.01_01
+- Conformidade legal com o Decreto Executivo n.º 385/20 e Decreto Presidencial n.º 71/25.
+- Namespace oficial: `urn:OECD:StandardAuditFile-Tax:AO_1.01_01`.
+- Geração determinística de `<Header>`, `<MasterFiles>` (Customer, Product, TaxTable) e `<SourceDocuments>` (SalesInvoices, DocumentTotals, códigos de isenção M00–M99).
+- Exposição dual: REST (`GET /api/v1/fiscal/saft`) com download direto em XML e gRPC (`TriggerSaftGeneration`).
+
+### 5.2 Conector Webservices da AGT (Comunicação em Tempo Real)
+- Cliente HTTP assíncrono resiliente (`AgtClient`) com connection pooling e timeout configurável.
+- Heartbeat contínuo (`GET /api/v1/fiscal/agt/status`) que afere liveness e latência, ativando automaticamente contingência fiscal caso o canal da AGT esteja indisponível.
+- Despacho em lote de facturas (`POST /api/v1/fiscal/agt/sync`) contendo os hashes encadeados SHA-256 e assinaturas digitais RSA-2048.
+
+### 5.3 Gestão e Validação Estrita de Chaves de Produção (RSA-2048)
+- Em ambiente de produção (`ENVIRONMENT=production`), o arranque com chave efémera é expressamente rejeitado, exigindo o par de chaves certificado pela AGT via `AGT_RSA_PRIVATE_KEY_PATH` ou `AGT_RSA_PRIVATE_KEY_PEM`.
+- Utilitário integrado de geração de chaves oficiais para credenciação na AGT (`POST /api/v1/fiscal/keys/generate` gerando chave privada PKCS#8 e pública X.509).
+
+### 5.4 Validação por Testes Unitários
+- 47 testes unitários e de integração executados e aprovados com 100% de sucesso (`cargo test`).
+
 

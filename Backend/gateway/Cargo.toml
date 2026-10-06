@@ -37,9 +37,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Configuração e Variáveis de Ambiente
 dotenvy = "0.15"
 
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
+

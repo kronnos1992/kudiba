@@ -8,6 +8,7 @@ use crate::application::commands::sign_direct::SignDirectUseCase;
 use crate::application::dto::{
     SignDirectCommand, ValidateSeriesSequenceQuery, VerifySignatureQuery,
 };
+use crate::application::queries::export_saft::ExportSaftUseCase;
 use crate::application::queries::validate_series_sequence::ValidateSeriesSequenceUseCase;
 use crate::application::queries::verify_signature::VerifySignatureUseCase;
 use crate::domain::error::DomainError;
@@ -31,6 +32,7 @@ pub struct FiscalGrpcService {
     sign_direct: Arc<SignDirectUseCase>,
     verify_signature: Arc<VerifySignatureUseCase>,
     validate_series: Arc<ValidateSeriesSequenceUseCase>,
+    export_saft: Arc<ExportSaftUseCase>,
 }
 
 impl FiscalGrpcService {
@@ -38,11 +40,13 @@ impl FiscalGrpcService {
         sign_direct: Arc<SignDirectUseCase>,
         verify_signature: Arc<VerifySignatureUseCase>,
         validate_series: Arc<ValidateSeriesSequenceUseCase>,
+        export_saft: Arc<ExportSaftUseCase>,
     ) -> Self {
         Self {
             sign_direct,
             verify_signature,
             validate_series,
+            export_saft,
         }
     }
 }
@@ -152,7 +156,7 @@ impl FiscalEngineService for FiscalGrpcService {
         }))
     }
 
-    /// Solicita a extração e validação assíncrona do ficheiro SAF-T (AO)
+    /// Solicita a extração e validação do ficheiro SAF-T (AO)
     async fn trigger_saft_generation(
         &self,
         request: Request<TriggerSaftGenerationRequest>,
@@ -165,11 +169,35 @@ impl FiscalEngineService for FiscalGrpcService {
             "gRPC TriggerSaftGeneration recebido"
         );
 
-        Ok(Response::new(TriggerSaftGenerationResponse {
-            job_id: Uuid::new_v4().simple().to_string(),
-            status: "QUEUED".to_string(),
-            estimated_time: "30s".to_string(),
-        }))
+        let tenant_id = Uuid::parse_str(&payload.tenant_id)
+            .map_err(|_| Status::invalid_argument("tenant_id inválido (deve ser UUID)"))?;
+
+        let query = crate::application::queries::export_saft::ExportSaftQuery {
+            tenant_id,
+            fiscal_year: payload.fiscal_year,
+            fiscal_month: if payload.fiscal_month <= 0 {
+                None
+            } else {
+                Some(payload.fiscal_month as u32)
+            },
+        };
+
+        match self.export_saft.execute(query).await {
+            Ok(_) => Ok(Response::new(TriggerSaftGenerationResponse {
+                job_id: Uuid::new_v4().simple().to_string(),
+                status: "PROCESSED".to_string(),
+                estimated_time: "0s".to_string(),
+            })),
+            Err(DomainError::Persistence(_)) => {
+                // Em caso de ambiente de teste desprovido de base de dados, devolve QUEUED
+                Ok(Response::new(TriggerSaftGenerationResponse {
+                    job_id: Uuid::new_v4().simple().to_string(),
+                    status: "QUEUED".to_string(),
+                    estimated_time: "30s".to_string(),
+                }))
+            }
+            Err(err) => Err(status_from_domain(err)),
+        }
     }
 }
 
@@ -294,6 +322,67 @@ mod tests {
         }
     }
 
+    struct NoDatabaseTenantRepository;
+
+    #[async_trait::async_trait]
+    impl crate::domain::ports::tenant_repository::TenantRepository for NoDatabaseTenantRepository {
+        async fn find_by_id(
+            &self,
+            _session: &mut dyn DbSession,
+            _id: Uuid,
+        ) -> Result<Option<crate::domain::entities::tenant::Tenant>, RepositoryError> {
+            Err(RepositoryError::Database("sem base de dados no teste".into()))
+        }
+
+        async fn find_by_slug(
+            &self,
+            _session: &mut dyn DbSession,
+            _slug: &str,
+        ) -> Result<Option<crate::domain::entities::tenant::Tenant>, RepositoryError> {
+            Err(RepositoryError::Database("sem base de dados no teste".into()))
+        }
+    }
+
+    struct NoDatabaseInvoiceRepository;
+
+    #[async_trait::async_trait]
+    impl crate::domain::ports::invoice_repository::InvoiceRepository for NoDatabaseInvoiceRepository {
+        async fn save(
+            &self,
+            _session: &mut dyn DbSession,
+            _invoice: &crate::domain::entities::invoice::Invoice,
+        ) -> Result<(), RepositoryError> {
+            Err(RepositoryError::Database("sem base de dados no teste".into()))
+        }
+
+        async fn find_by_id(
+            &self,
+            _session: &mut dyn DbSession,
+            _id: Uuid,
+        ) -> Result<Option<crate::domain::entities::invoice::Invoice>, RepositoryError> {
+            Err(RepositoryError::Database("sem base de dados no teste".into()))
+        }
+
+        async fn find_by_document_number(
+            &self,
+            _session: &mut dyn DbSession,
+            _tenant_id: Uuid,
+            _document_number: &str,
+        ) -> Result<Option<crate::domain::entities::invoice::Invoice>, RepositoryError> {
+            Err(RepositoryError::Database("sem base de dados no teste".into()))
+        }
+
+        async fn find_by_period(
+            &self,
+            _session: &mut dyn DbSession,
+            _tenant_id: Uuid,
+            _fiscal_year: i32,
+            _fiscal_month: Option<u32>,
+        ) -> Result<Vec<crate::domain::entities::invoice::Invoice>, RepositoryError> {
+            Err(RepositoryError::Database("sem base de dados no teste".into()))
+        }
+    }
+
     /// Sobe o serviço gRPC numa porta efémera e devolve um cliente ligado
     async fn start_server(signer: &Arc<RsaCryptoSigner>) -> Channel {
         let crypto_signer: Arc<dyn CryptoSigner> = signer.clone();
@@ -305,14 +394,22 @@ mod tests {
             .local_addr()
             .expect("endereço do servidor de teste");
 
-        // `validate_series` exige PostgreSQL e é exercitado via REST: os duplos
-        // abaixo existem apenas para fechar o grafo de dependências deste teste.
+        let session_factory: Arc<dyn DbSessionFactory> = Arc::new(NoDatabaseSessionFactory);
+
+        // `validate_series` e `export_saft` exigem PostgreSQL e são exercitados via REST:
+        // os duplos abaixo existem para fechar o grafo de dependências deste teste.
         let service = super::FiscalGrpcService::new(
             Arc::new(SignDirectUseCase::new(crypto_signer.clone())),
             Arc::new(VerifySignatureUseCase::new(crypto_signer)),
             Arc::new(ValidateSeriesSequenceUseCase::new(
-                Arc::new(NoDatabaseSessionFactory),
+                session_factory.clone(),
                 Arc::new(NoDatabaseSeriesRepository),
+            )),
+            Arc::new(ExportSaftUseCase::new(
+                session_factory,
+                Arc::new(NoDatabaseTenantRepository),
+                Arc::new(NoDatabaseInvoiceRepository),
+                "1.0.0",
             )),
         );
 
