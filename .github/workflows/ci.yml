@@ -1,15 +1,17 @@
-name: CI - API Gateway (Rust)
+name: CI - Backend Services & Gateway (Rust)
 
 on:
   push:
     branches: [ main, master, develop ]
     paths:
       - 'Backend/**'
+      - 'proto/**'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [ main, master, develop ]
     paths:
       - 'Backend/**'
+      - 'proto/**'
       - '.github/workflows/ci.yml'
 
 jobs:
@@ -26,6 +28,11 @@ jobs:
         with:
           toolchain: stable
           components: clippy, rustfmt
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2

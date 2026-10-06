@@ -4,8 +4,8 @@ services:
   # ============================================================================
   gateway:
     build:
-      context: ./Backend
-      dockerfile: deploy/Dockerfile.gateway
+      context: ./Backend/gateway
+      dockerfile: Dockerfile
     container_name: kudiba-api-gateway
     restart: unless-stopped
     ports:
@@ -16,7 +16,9 @@ services:
       - REDIS_HOST=gateway-redis
       - REDIS_PORT=6379
       - CORE_API_URL=http://core-api:8081
+      - FISCAL_ENGINE_URL=http://fiscal-engine:9090
       - FISCAL_ENGINE_GRPC_TARGET=http://fiscal-engine:9090
+      - JWT_SECRET=kudiba_jwt_secret_development_key_change_in_production_2026
       - AGT_CONTINGENCY_MAX_DAYS=60
     depends_on:
       gateway-redis:
@@ -26,22 +28,28 @@ services:
       - kudiba-internal-network
 
   # ============================================================================
-  # 2. MOTOR DE FACTURAÇÃO & FISCAL ENGINE (.NET 10 / C#)
+  # 2. MOTOR DE FACTURAÇÃO & FISCAL ENGINE (RUST / AXUM + TONIC)
   # Conformidade: Decreto Presidencial n.º 71/25 (AGT Angola)
   # ============================================================================
   invoicing:
+    # O contexto é a raiz do monorepo: o build.rs compila o contrato gRPC partilhado
     build:
-      context: ./Services/KudibaInvoicing
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Backend/services/KudibaInvoicing/Dockerfile
     container_name: kudiba-invoicing
     restart: unless-stopped
     ports:
-      - "9090:9090"
+      - "9090:9090" # REST (Axum) + Scalar
+      - "9091:9091" # gRPC (kudiba.fiscal.v1.FiscalEngineService)
     environment:
       - PORT=9090
-      - ASPNETCORE_ENVIRONMENT=Development
-      - DATABASE_URL=Host=postgres;Port=5432;Database=kudiba_erp;Username=kudiba;Password=kudiba_secret_pass
+      - GRPC_PORT=9091
+      - RUST_LOG=info,kudiba_invoicing=debug
+      - DATABASE_URL=postgres://kudiba:kudiba_secret_pass@postgres:5432/kudiba_erp
+      # Chave privada RSA-2048 registada na AGT (vazio = chave efémera de desenvolvimento)
       - AGT_RSA_PRIVATE_KEY_PEM=
+      - AGT_KEY_VERSION=1
+      - DB_MAX_CONNECTIONS=20
     depends_on:
       postgres:
         condition: service_healthy

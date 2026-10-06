@@ -1,0 +1,104 @@
+use std::env;
+use std::time::Duration;
+
+/// Configurações carregadas do ambiente com tipagem estrita e fallbacks seguros
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub port: u16,
+    pub env: String,
+    pub read_timeout: Duration,
+    pub write_timeout: Duration,
+    pub max_body_bytes: usize,
+    pub allowed_origins: String,
+
+    pub redis_url: String,
+
+    pub core_api_url: String,
+    pub fiscal_engine_url: String,
+
+    pub jwt_secret: String,
+
+    // Regulamentação AGT - Decreto Presidencial n.º 71/25
+    pub agt_contingency_max_days: i64,
+    pub agt_platform_url: String,
+}
+
+impl Config {
+    pub fn from_env() -> Self {
+        dotenvy::dotenv().ok();
+
+        let port = env::var("GATEWAY_PORT")
+            .unwrap_or_else(|_| "8080".to_string())
+            .parse::<u16>()
+            .unwrap_or(8080);
+
+        let env_mode = env::var("GATEWAY_ENV").unwrap_or_else(|_| "development".to_string());
+
+        let read_timeout_secs = env::var("GATEWAY_READ_TIMEOUT")
+            .unwrap_or_else(|_| "15".to_string())
+            .trim_end_matches('s')
+            .parse::<u64>()
+            .unwrap_or(15);
+
+        let write_timeout_secs = env::var("GATEWAY_WRITE_TIMEOUT")
+            .unwrap_or_else(|_| "30".to_string())
+            .trim_end_matches('s')
+            .parse::<u64>()
+            .unwrap_or(30);
+
+        let max_body_bytes = env::var("GATEWAY_MAX_BODY_BYTES")
+            .unwrap_or_else(|_| "10485760".to_string())
+            .parse::<usize>()
+            .unwrap_or(10 * 1024 * 1024);
+        
+        let redis_host = env::var("REDIS_HOST").unwrap_or_else(|_| "localhost".to_string());
+        let redis_port = env::var("REDIS_PORT").unwrap_or_else(|_| "6379".to_string());
+        let redis_password = env::var("REDIS_PASSWORD").unwrap_or_default();
+        let redis_db = env::var("REDIS_DB").unwrap_or_else(|_| "0".to_string());
+
+        let redis_url = if redis_password.is_empty() {
+            format!("redis://{}:{}/{}", redis_host, redis_port, redis_db)
+        } else {
+            format!("redis://:{}@{}:{}/{}", redis_password, redis_host, redis_port, redis_db)
+        };
+
+        let mut core_api_url = env::var("CORE_API_URL")
+            .unwrap_or_else(|_| "http://localhost:8081".to_string());
+        if !core_api_url.starts_with("http://") && !core_api_url.starts_with("https://") {
+            core_api_url = format!("http://{}", core_api_url);
+        }
+
+        let mut fiscal_engine_url = env::var("FISCAL_ENGINE_URL")
+            .or_else(|_| env::var("FISCAL_ENGINE_GRPC_TARGET"))
+            .unwrap_or_else(|_| "http://localhost:9090".to_string());
+        if !fiscal_engine_url.starts_with("http://") && !fiscal_engine_url.starts_with("https://") {
+            fiscal_engine_url = format!("http://{}", fiscal_engine_url);
+        }
+
+        let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| {
+            if env_mode == "production" {
+                tracing::error!("ALERTA DE SEGURANÇA: JWT_SECRET não configurado em ambiente de produção!");
+            }
+            "kudiba_jwt_secret_development_key_change_in_production_2026".to_string()
+        });
+
+        Self {
+            port,
+            env: env_mode,
+            read_timeout: Duration::from_secs(read_timeout_secs),
+            write_timeout: Duration::from_secs(write_timeout_secs),
+            max_body_bytes,
+            allowed_origins: env::var("CORS_ALLOWED_ORIGINS").unwrap_or_else(|_| "*".to_string()),
+            redis_url,
+            core_api_url,
+            fiscal_engine_url,
+            jwt_secret,
+            agt_contingency_max_days: env::var("AGT_CONTINGENCY_MAX_DAYS")
+                .unwrap_or_else(|_| "60".to_string())
+                .parse::<i64>()
+                .unwrap_or(60),
+            agt_platform_url: env::var("AGT_PLATFORM_URL")
+                .unwrap_or_else(|_| "https://webservices.agt.minfin.gov.ao/facturacao-electronica".to_string()),
+        }
+    }
+}

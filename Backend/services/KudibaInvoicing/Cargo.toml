@@ -1,0 +1,66 @@
+[package]
+name = "kudiba-invoicing"
+version = "1.0.0"
+edition = "2021"
+authors = ["Equipa de Arquitetura Kudiba <engenharia@kudiba.ao>"]
+description = "Motor Fiscal e Microserviço de Facturação do ERP Kudiba em Rust (Clean Architecture + CQRS)"
+publish = false
+
+[[bin]]
+name = "kudiba-invoicing"
+path = "src/main.rs"
+
+[dependencies]
+# Runtime assíncrono e Web Framework
+tokio = { version = "1.40", features = ["full"] }
+axum = { version = "0.8", features = ["macros"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "timeout"] }
+
+# Contratos gRPC (Serviço Fiscal exposto ao Edge POS e ao Core API)
+tonic = "0.14"
+tonic-prost = "0.14"
+prost = "0.14"
+
+# Persistência transacional ACID (PostgreSQL 16+)
+sqlx = { version = "0.9", default-features = false, features = [
+    "runtime-tokio",
+    "postgres",
+    "chrono",
+    "uuid",
+    "rust_decimal",
+] }
+
+# Serialização, tipos e aritmética decimal exata (128 bits)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.10", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1", features = ["serde", "maths", "serde-with-float"] }
+
+# Criptografia de conformidade AGT (RSA-2048 PKCS#1 v1.5 + SHA-256)
+rsa = { version = "0.9", features = ["sha2", "pem"] }
+sha2 = "0.10"
+base64 = "0.22"
+rand_core = { version = "0.6", features = ["getrandom"] }
+zeroize = { version = "1", features = ["derive"] }
+
+# Erros, DI assíncrono e observabilidade
+thiserror = "2"
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+dotenvy = "0.15"
+
+[dev-dependencies]
+# Stream de ligações TCP para o teste de integração gRPC (porta efémera)
+tokio-stream = { version = "0.1", features = ["net"] }
+
+[build-dependencies]
+tonic-prost-build = "0.14"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

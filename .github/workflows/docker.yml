@@ -5,15 +5,15 @@ on:
     branches: [ main, master, develop ]
     paths:
       - 'docker-compose.yml'
-      - 'Backend/deploy/**'
-      - 'Backend/src/**'
+      - 'Backend/**'
+      - 'proto/**'
       - '.github/workflows/docker.yml'
   pull_request:
     branches: [ main, master, develop ]
     paths:
       - 'docker-compose.yml'
-      - 'Backend/deploy/**'
-      - 'Backend/src/**'
+      - 'Backend/**'
+      - 'proto/**'
       - '.github/workflows/docker.yml'
 
 jobs:

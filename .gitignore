@@ -1,12 +1,12 @@
 # Rust build artifacts
 target/
-Backend/target/
+**/target/
 **/*.rs.bk
 Cargo.lock.backup
 
 # Environment variables and secrets
 .env
-Backend/.env
+**/.env
 *.env.local
 *.env.*.local
 
