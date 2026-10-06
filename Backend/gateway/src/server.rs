@@ -3,26 +3,24 @@ use axum::{
     extract::State,
     http::{header::CONTENT_TYPE, StatusCode},
     middleware as axum_mw,
-    response::{Html, IntoResponse, Json, Redirect, Response},
+    response::{Html, Json, Redirect, Response},
     routing::{any, get},
     Router,
 };
 use chrono::Utc;
 use reqwest::Client;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 
 use crate::config::Config;
 use crate::middleware::{
-    auth::auth_middleware,
-    contingency::agt_contingency_middleware,
-    correlation::correlation_id_middleware,
-    idempotency::idempotency_middleware,
-    ratelimit::rate_limit_middleware,
-    tenant::tenant_resolver_middleware,
+    auth::auth_middleware, contingency::agt_contingency_middleware,
+    correlation::correlation_id_middleware, idempotency::idempotency_middleware,
+    ratelimit::rate_limit_middleware, tenant::tenant_resolver_middleware,
 };
 use crate::proxy::{forward_to_core, forward_to_fiscal};
 
@@ -33,6 +31,9 @@ pub struct AppState {
     pub redis_client: redis::Client,
     pub redis_conn: Option<redis::aio::ConnectionManager>,
     pub http_client: Client,
+    pub start_time: Instant,
+    /// Memoização do relatório consolidado de saúde (`/health/services`)
+    pub health_cache: Arc<Mutex<Option<(Instant, crate::health::SystemHealthResponse)>>>,
 }
 
 impl AppState {
@@ -41,7 +42,9 @@ impl AppState {
             Some(conn.clone())
         } else {
             // Tenta inicializar sob demanda caso tenha falhado no startup
-            redis::aio::ConnectionManager::new(self.redis_client.clone()).await.ok()
+            redis::aio::ConnectionManager::new(self.redis_client.clone())
+                .await
+                .ok()
         }
     }
 }
@@ -66,6 +69,8 @@ pub fn create_router(
         redis_client,
         redis_conn,
         http_client,
+        start_time: Instant::now(),
+        health_cache: Arc::new(Mutex::new(None)),
     };
 
     // =========================================================================
@@ -77,6 +82,21 @@ pub fn create_router(
         .route("/metrics", get(metrics_handler));
 
     // =========================================================================
+    // DIAGNÓSTICO CONSOLIDADO DO CLUSTER (AUTENTICADO)
+    // =========================================================================
+    // Requer JWT válido: o relatório expõe hostnames e portas internas
+    // (postgres:5432, rabbitmq:5672, ...) e não pode ficar aberto no perímetro.
+    let services_routes = Router::new()
+        .route("/health/services", get(services_health_handler))
+        .route("/status", get(services_health_handler))
+        .layer(axum_mw::from_fn_with_state(state.clone(), auth_middleware))
+        // Rate limit antes da autenticação para limitar floods não autenticados
+        .layer(axum_mw::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ));
+
+    // =========================================================================
     // DOCUMENTAÇÃO INTERATIVA DA API (SCALAR API REFERENCE & OPENAPI 3.1)
     // =========================================================================
     let docs_routes = Router::new()
@@ -86,9 +106,18 @@ pub fn create_router(
         .route("/docs", get(scalar_handler))
         .route("/docs/", get(scalar_handler))
         .route("/docs/{*path}", get(scalar_handler))
-        .route("/swagger-ui", get(|| async { Redirect::permanent("/scalar") }))
-        .route("/swagger-ui/", get(|| async { Redirect::permanent("/scalar") }))
-        .route("/swagger-ui/{*path}", get(|| async { Redirect::permanent("/scalar") }))
+        .route(
+            "/swagger-ui",
+            get(|| async { Redirect::permanent("/scalar") }),
+        )
+        .route(
+            "/swagger-ui/",
+            get(|| async { Redirect::permanent("/scalar") }),
+        )
+        .route(
+            "/swagger-ui/{*path}",
+            get(|| async { Redirect::permanent("/scalar") }),
+        )
         .route("/swagger", get(|| async { Redirect::permanent("/scalar") }))
         .route("/api-docs/openapi.yaml", get(openapi_yaml_handler));
 
@@ -98,7 +127,10 @@ pub fn create_router(
     let auth_routes = Router::new()
         .route("/auth/{*path}", any(forward_to_core))
         .route("/auth", any(forward_to_core))
-        .layer(axum_mw::from_fn_with_state(state.clone(), rate_limit_middleware))
+        .layer(axum_mw::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ))
         .layer(axum_mw::from_fn(tenant_resolver_middleware));
 
     // =========================================================================
@@ -114,10 +146,19 @@ pub fn create_router(
         .route("/api/v1/{*path}", any(forward_to_core))
         .route("/api/v1", any(forward_to_core))
         // Encadeamento de Middlewares de Negócio e Segurança (executados em ordem)
-        .layer(axum_mw::from_fn_with_state(state.clone(), idempotency_middleware))
-        .layer(axum_mw::from_fn_with_state(state.clone(), agt_contingency_middleware))
+        .layer(axum_mw::from_fn_with_state(
+            state.clone(),
+            idempotency_middleware,
+        ))
+        .layer(axum_mw::from_fn_with_state(
+            state.clone(),
+            agt_contingency_middleware,
+        ))
         .layer(axum_mw::from_fn_with_state(state.clone(), auth_middleware))
-        .layer(axum_mw::from_fn_with_state(state.clone(), rate_limit_middleware))
+        .layer(axum_mw::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ))
         .layer(axum_mw::from_fn(tenant_resolver_middleware));
 
     // =========================================================================
@@ -154,6 +195,7 @@ pub fn create_router(
     // =========================================================================
     Router::new()
         .merge(infra_routes)
+        .merge(services_routes)
         .merge(docs_routes)
         .merge(auth_routes)
         .merge(api_routes)
@@ -175,7 +217,10 @@ async fn health_handler() -> Json<serde_json::Value> {
 async fn ready_handler(State(state): State<AppState>) -> (StatusCode, Json<serde_json::Value>) {
     let mut redis_ok = false;
     if let Some(mut conn) = state.get_redis_conn().await {
-        redis_ok = redis::cmd("PING").query_async::<String>(&mut conn).await.is_ok();
+        redis_ok = redis::cmd("PING")
+            .query_async::<String>(&mut conn)
+            .await
+            .is_ok();
     }
 
     if redis_ok {
@@ -202,6 +247,19 @@ async fn metrics_handler() -> String {
      # TYPE http_requests_total counter\n\
      http_requests_total{status=\"200\"} 0\n"
         .to_string()
+}
+
+/// Handler consolidado de diagnóstico e saúde de todos os serviços do ecossistema Kudiba
+async fn services_health_handler(
+    State(state): State<AppState>,
+) -> (StatusCode, Json<crate::health::SystemHealthResponse>) {
+    let report = crate::health::cached_system_health(&state).await;
+    let status_code = if report.status == "UNHEALTHY" {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::OK
+    };
+    (status_code, Json(report))
 }
 
 // =============================================================================

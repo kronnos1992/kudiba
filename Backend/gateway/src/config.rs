@@ -21,6 +21,12 @@ pub struct Config {
     // Regulamentação AGT - Decreto Presidencial n.º 71/25
     pub agt_contingency_max_days: i64,
     pub agt_platform_url: String,
+
+    // Infraestrutura de Serviços
+    pub postgres_host: String,
+    pub postgres_port: u16,
+    pub rabbitmq_host: String,
+    pub rabbitmq_port: u16,
 }
 
 impl Config {
@@ -50,7 +56,7 @@ impl Config {
             .unwrap_or_else(|_| "10485760".to_string())
             .parse::<usize>()
             .unwrap_or(10 * 1024 * 1024);
-        
+
         let redis_host = env::var("REDIS_HOST").unwrap_or_else(|_| "localhost".to_string());
         let redis_port = env::var("REDIS_PORT").unwrap_or_else(|_| "6379".to_string());
         let redis_password = env::var("REDIS_PASSWORD").unwrap_or_default();
@@ -59,11 +65,14 @@ impl Config {
         let redis_url = if redis_password.is_empty() {
             format!("redis://{}:{}/{}", redis_host, redis_port, redis_db)
         } else {
-            format!("redis://:{}@{}:{}/{}", redis_password, redis_host, redis_port, redis_db)
+            format!(
+                "redis://:{}@{}:{}/{}",
+                redis_password, redis_host, redis_port, redis_db
+            )
         };
 
-        let mut core_api_url = env::var("CORE_API_URL")
-            .unwrap_or_else(|_| "http://localhost:8081".to_string());
+        let mut core_api_url =
+            env::var("CORE_API_URL").unwrap_or_else(|_| "http://localhost:8081".to_string());
         if !core_api_url.starts_with("http://") && !core_api_url.starts_with("https://") {
             core_api_url = format!("http://{}", core_api_url);
         }
@@ -77,10 +86,15 @@ impl Config {
 
         let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| {
             if env_mode == "production" {
-                tracing::error!("ALERTA DE SEGURANÇA: JWT_SECRET não configurado em ambiente de produção!");
+                tracing::error!(
+                    "ALERTA DE SEGURANÇA: JWT_SECRET não configurado em ambiente de produção!"
+                );
             }
             "kudiba_jwt_secret_development_key_change_in_production_2026".to_string()
         });
+
+        let (postgres_host, postgres_port) = parse_postgres_config();
+        let (rabbitmq_host, rabbitmq_port) = parse_rabbitmq_config();
 
         Self {
             port,
@@ -97,8 +111,58 @@ impl Config {
                 .unwrap_or_else(|_| "60".to_string())
                 .parse::<i64>()
                 .unwrap_or(60),
-            agt_platform_url: env::var("AGT_PLATFORM_URL")
-                .unwrap_or_else(|_| "https://webservices.agt.minfin.gov.ao/facturacao-electronica".to_string()),
+            agt_platform_url: env::var("AGT_PLATFORM_URL").unwrap_or_else(|_| {
+                "https://webservices.agt.minfin.gov.ao/facturacao-electronica".to_string()
+            }),
+            postgres_host,
+            postgres_port,
+            rabbitmq_host,
+            rabbitmq_port,
         }
+    }
+}
+
+fn parse_postgres_config() -> (String, u16) {
+    if let Ok(host) = env::var("POSTGRES_HOST") {
+        let port = env::var("POSTGRES_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(5432);
+        return (host, port);
+    }
+
+    if let Some(hp) = host_from_url("DATABASE_URL", 5432) {
+        return hp;
+    }
+
+    ("localhost".to_string(), 5432)
+}
+
+fn parse_rabbitmq_config() -> (String, u16) {
+    if let Ok(host) = env::var("RABBITMQ_HOST") {
+        let port = env::var("RABBITMQ_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(5672);
+        return (host, port);
+    }
+
+    if let Some(hp) = host_from_url("RABBITMQ_URL", 5672) {
+        return hp;
+    }
+
+    ("localhost".to_string(), 5672)
+}
+
+/// Extrai `host` e `port` de uma URL `scheme://[user:pass@]host[:port]/caminho`.
+fn host_from_url(var: &str, default_port: u16) -> Option<(String, u16)> {
+    let url = env::var(var).ok()?;
+    let host_port = url.split('@').nth(1)?.split('/').next()?;
+    if host_port.is_empty() {
+        return None;
+    }
+    match host_port.split_once(':') {
+        Some((h, p)) => Some((h.to_string(), p.parse().unwrap_or(default_port))),
+        None => Some((host_port.to_string(), default_port)),
     }
 }

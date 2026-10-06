@@ -105,11 +105,21 @@ pub struct AgtClient {
     base_url: String,
     #[allow(dead_code)]
     api_token: Option<String>,
+    /// Heartbeat memoizado: o canal AGT não deve ser sondado a cada pedido de
+    /// estado, sob pena de taxa de utilização rejeitada pelo gateway tributário.
+    heartbeat_cache: std::sync::Arc<tokio::sync::Mutex<Option<(Instant, AgtHeartbeatStatus)>>>,
 }
+
+/// Janela mínima entre duas sondagens de heartbeat ao canal AGT
+const HEARTBEAT_CACHE_TTL: Duration = Duration::from_secs(30);
 
 impl AgtClient {
     /// Inicializa o conector HTTP com timeout e cabeçalhos de conformidade
-    pub fn new(base_url: &str, timeout: Duration, api_token: Option<String>) -> Result<Self, AgtClientError> {
+    pub fn new(
+        base_url: &str,
+        timeout: Duration,
+        api_token: Option<String>,
+    ) -> Result<Self, AgtClientError> {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         headers.insert(
@@ -128,7 +138,9 @@ impl AgtClient {
             .timeout(timeout)
             .connect_timeout(Duration::from_secs(5))
             .build()
-            .map_err(|e| AgtClientError::Network(format!("Falha ao construir cliente HTTP AGT: {e}")))?;
+            .map_err(|e| {
+                AgtClientError::Network(format!("Falha ao construir cliente HTTP AGT: {e}"))
+            })?;
 
         let sanitized_url = base_url.trim_end_matches('/').to_string();
 
@@ -136,12 +148,15 @@ impl AgtClient {
             client,
             base_url: sanitized_url,
             api_token,
+            heartbeat_cache: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
         })
     }
 
     /// Inicializa a partir das configurações do motor fiscal
     pub fn from_config(config: &Config) -> Result<Self, AgtClientError> {
-        let api_token = std::env::var("AGT_API_TOKEN").ok().filter(|s| !s.trim().is_empty());
+        let api_token = std::env::var("AGT_API_TOKEN")
+            .ok()
+            .filter(|s| !s.trim().is_empty());
         let timeout_secs = std::env::var("AGT_TIMEOUT_SECS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
@@ -154,8 +169,28 @@ impl AgtClient {
         )
     }
 
-    /// Executa um teste de conectividade (Heartbeat) contra o canal da AGT
+    /// Executa um teste de conectividade (Heartbeat) contra o canal da AGT.
+    ///
+    /// O resultado é memoizado durante [`HEARTBEAT_CACHE_TTL`]: o canal é
+    /// governamental e não deve ser sondado a cada pedido de estado. O bloqueio
+    /// é mantido durante a sondagem para que pedidos concorrentes partilhem a
+    /// mesma chamada em vez de dispararem uma onda contra a AGT.
     pub async fn check_heartbeat(&self) -> AgtHeartbeatStatus {
+        let mut cache = self.heartbeat_cache.lock().await;
+
+        if let Some((checked_at, status)) = cache.as_ref() {
+            if checked_at.elapsed() < HEARTBEAT_CACHE_TTL {
+                return status.clone();
+            }
+        }
+
+        let status = self.probe_heartbeat().await;
+        *cache = Some((Instant::now(), status.clone()));
+        status
+    }
+
+    /// Sonda efectiva ao canal AGT (sem memoização)
+    async fn probe_heartbeat(&self) -> AgtHeartbeatStatus {
         let heartbeat_url = format!("{}/health", self.base_url);
         let start = Instant::now();
 
@@ -192,7 +227,9 @@ impl AgtClient {
                     latency_ms,
                     checked_at: Utc::now(),
                     contingency_active: true,
-                    message: format!("Falha de ligação à AGT ({err}). Motor em modo de contingência fiscal."),
+                    message: format!(
+                        "Falha de ligação à AGT ({err}). Motor em modo de contingência fiscal."
+                    ),
                 }
             }
         }
@@ -297,7 +334,9 @@ impl AgtClient {
             accepted_count: invoices.len(),
             rejected_count: 0,
             processed_at: Utc::now(),
-            details: Some("Lote submetido e aceite pela plataforma da AGT com sucesso.".to_string()),
+            details: Some(
+                "Lote submetido e aceite pela plataforma da AGT com sucesso.".to_string(),
+            ),
         })
     }
 }
@@ -305,11 +344,75 @@ impl AgtClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     #[test]
     fn inicializa_cliente_com_headers_corretos() {
-        let client = AgtClient::new("https://webservices.agt.minfin.gov.ao", Duration::from_secs(5), None)
-            .expect("cliente AGT criado");
+        let client = AgtClient::new(
+            "https://webservices.agt.minfin.gov.ao",
+            Duration::from_secs(5),
+            None,
+        )
+        .expect("cliente AGT criado");
         assert_eq!(client.base_url, "https://webservices.agt.minfin.gov.ao");
+    }
+
+    /// Sobe um servidor de teste que devolve 200 em `/health` e conta os pedidos
+    async fn spawn_fake_agt(counter: Arc<AtomicUsize>) -> String {
+        use axum::{routing::get, Router};
+
+        let app = Router::new().route(
+            "/health",
+            get(move || {
+                let counter = counter.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    axum::Json(serde_json::json!({ "status": "ok" }))
+                }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind do servidor de teste");
+        let addr = listener.local_addr().expect("endereço local");
+
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("servidor de teste");
+        });
+
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn heartbeat_e_memoizado_entre_pedidos_concorrentes() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let base_url = spawn_fake_agt(counter.clone()).await;
+
+        let client = AgtClient::new(&base_url, Duration::from_secs(5), None).expect("cliente AGT");
+
+        let primeiro = client.check_heartbeat().await;
+        let segundo = client.check_heartbeat().await;
+
+        assert!(primeiro.is_online, "primeiro heartbeat deveria ter sucesso");
+        assert!(segundo.is_online);
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            1,
+            "o canal AGT só deve ser sondado uma vez dentro da janela de cache"
+        );
+    }
+
+    #[tokio::test]
+    async fn heartbeat_reporta_contingencia_quando_o_canal_falha() {
+        let client = AgtClient::new("http://127.0.0.1:1", Duration::from_millis(200), None)
+            .expect("cliente AGT");
+
+        let status = client.check_heartbeat().await;
+
+        assert!(!status.is_online);
+        assert!(status.contingency_active);
+        assert!(!status.message.is_empty());
     }
 }

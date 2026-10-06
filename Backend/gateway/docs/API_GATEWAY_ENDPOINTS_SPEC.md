@@ -7,7 +7,7 @@
 **Normas:** RFC 7807 (Problem Details), RFC 8935 (Idempotency), OpenAPI 3.1.0, Decreto Presidencial n.º 71/25  
 
 > [!NOTE]
-> **Status de Desenvolvimento:** O API Gateway (Rust) está com as rotas de infraestrutura e observabilidade (`/health`, `/ready`, `/metrics`, `/swagger-ui`) 100% implementadas e funcionais. Os endpoints de negócio listados neste documento representam a especificação técnica dos serviços que serão desenvolvidos (Core API e Motor Fiscal AGT), sem utilização de mocks ou respostas simuladas no Swagger.
+> **Status de Desenvolvimento:** O API Gateway (Rust) está com as rotas de infraestrutura e observabilidade (`/health`, `/ready`, `/metrics`, `/swagger-ui` (públicas) e `/health/services` (autenticada)) 100% implementadas e funcionais. Os endpoints de negócio listados neste documento representam a especificação técnica dos serviços que serão desenvolvidos (Core API e Motor Fiscal AGT), sem utilização de mocks ou respostas simuladas no Swagger.
 
 ---
 
@@ -466,6 +466,52 @@ Verifica a conectividade ativa com os servidores da AGT e o estado de contingên
 #### `GET /health` (Liveness Probe)
 Verifica se o processo do API Gateway está vivo e aceitando conexões de rede.
 * **Response `200 OK`:** `{"status": "UP"}`
+
+#### `GET /health/services` (Diagnóstico Consolidado do Cluster)
+Alias autenticado: `GET /status`. **Exige `Authorization: Bearer <JWT>`** (`401 Unauthorized` sem token) porque o relatório expõe hostnames e portas internas do cluster. Sonda em paralelo (timeout de 2s por serviço) o estado e a latência de cada componente do ecossistema e devolve um relatório consolidado. O resultado é memoizado durante 5 segundos, para que um painel em polling não dispare sondagens em cadeia.
+
+Serviços verificados: Redis (CACHE), PostgreSQL (DATABASE), Motor Fiscal `KudibaInvoicing` (FISCAL_ENGINE), RabbitMQ (MESSAGE_BROKER), Core API (CORE_API) e Webservices da AGT (EXTERNAL_GOV).
+
+A AGT não é contactada directamente pelo Gateway: o heartbeat tributário é da responsabilidade do Motor Fiscal, único componente autorizado a sair do perímetro para o canal governamental. O Gateway consulta `GET /api/v1/fiscal/agt/status` no Motor Fiscal e reflecte o estado (`isOnline`, `contingencyActive`, `checkedAt`).
+
+Regras de agregação:
+* `HEALTHY` — todos os serviços respondem;
+* `UNHEALTHY` — algum serviço crítico (Redis, PostgreSQL ou Motor Fiscal) está indisponível → `503`;
+* `DEGRADED` — apenas serviços não críticos falham (Core API, RabbitMQ, AGT em contingência) → `200`.
+
+* **Response `401 Unauthorized`:** sem `Authorization: Bearer <JWT>` válido (códigos `AUTH_TOKEN_MISSING` / `AUTH_TOKEN_INVALID`).
+* **Response `200 OK` / `503 Service Unavailable`:**
+```json
+{
+  "status": "DEGRADED",
+  "timestamp": "2026-10-06T09:12:44.120Z",
+  "gateway": {
+    "version": "1.0.0",
+    "environment": "development",
+    "port": 8080,
+    "uptimeSeconds": 4210
+  },
+  "services": [
+    {
+      "name": "Motor Fiscal (KudibaInvoicing)",
+      "serviceType": "FISCAL_ENGINE",
+      "status": "HEALTHY",
+      "endpoint": "http://fiscal-engine:9090",
+      "latencyMs": 7,
+      "message": "Motor fiscal operacional em conformidade com o Decreto Presidencial n.º 71/25."
+    },
+    {
+      "name": "AGT Webservices (Facturação Electrónica)",
+      "serviceType": "EXTERNAL_GOV",
+      "status": "DEGRADED",
+      "endpoint": "https://webservices.agt.minfin.gov.ao/...",
+      "latencyMs": 0,
+      "message": "Canal da AGT indisponível. Motor fiscal em modo de contingência fiscal (Decreto 71/25)."
+    }
+  ],
+  "summary": { "total": 6, "healthy": 4, "degraded": 1, "unavailable": 1 }
+}
+```
 
 #### `GET /ready` (Readiness Probe)
 Verifica se o Gateway tem conectividade com o cluster Redis e com o Core API antes de receber tráfego do balanceador Kubernetes/Nginx.

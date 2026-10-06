@@ -5,6 +5,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod config;
 mod errors;
+pub mod health;
 mod middleware;
 mod proxy;
 mod server;
@@ -15,7 +16,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ETAPA 1: INICIALIZAÇÃO DE LOGS ESTRUTURADOS E TELEMETRIA
     // =========================================================================
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,kudiba_gateway=debug".into()))
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,kudiba_gateway=debug".into()),
+        )
         .with(tracing_subscriber::fmt::layer().json())
         .init();
 
@@ -41,8 +45,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ETAPA 3: CONEXÃO COM A CAMADA DE ESTADO PERIMÉTRICO (REDIS 7+)
     // =========================================================================
     tracing::info!("Conectando ao cluster Redis...");
-    let redis_client = redis::Client::open(cfg.redis_url.clone())
-        .expect("URL de conexão Redis inválida");
+    let redis_client =
+        redis::Client::open(cfg.redis_url.clone()).expect("URL de conexão Redis inválida");
 
     let redis_conn = match redis::aio::ConnectionManager::new(redis_client.clone()).await {
         Ok(mgr) => {

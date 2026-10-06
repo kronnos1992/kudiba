@@ -1,7 +1,7 @@
 use axum::{
-    body::{Body, Bytes},
+    body::Body,
     extract::{Request, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use reqwest::Client;

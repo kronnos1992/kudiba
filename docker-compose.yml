@@ -18,6 +18,11 @@ services:
       - CORE_API_URL=http://core-api:8081
       - FISCAL_ENGINE_URL=http://fiscal-engine:9090
       - FISCAL_ENGINE_GRPC_TARGET=http://fiscal-engine:9090
+      # Sondas TCP do endpoint /health/services
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
       - JWT_SECRET=kudiba_jwt_secret_development_key_change_in_production_2026
       - AGT_CONTINGENCY_MAX_DAYS=60
     depends_on:

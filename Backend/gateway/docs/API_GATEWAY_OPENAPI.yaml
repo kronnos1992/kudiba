@@ -197,7 +197,67 @@ paths:
               schema:
                 $ref: '#/components/schemas/ReadyResponse'
         '503':
-          description: Conexão perimétrica indisponível
+          description: Conexão perimétrica indisponível (Gateway ou Redis fora de serviço)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+
+  /health/services:
+    get:
+      summary: Diagnóstico de Saúde de Todos os Serviços do Cluster
+      description: >
+        Realiza sondagens assíncronas concorrentes de integridade e latência em tempo real
+        contra todos os componentes do cluster Kudiba: Redis, Motor Fiscal (KudibaInvoicing /
+        Decreto 71/25), PostgreSQL, RabbitMQ, Core API e Webservices da AGT. O estado da AGT é
+        reportado pelo Motor Fiscal (único autorizado a contactar o canal governamental) e o
+        relatório é memoizado durante 5 segundos. Devolve 503 quando um serviço crítico
+        (Redis, PostgreSQL ou Motor Fiscal) está indisponível.
+
+        Requer JWT válido: o relatório expõe hostnames e portas internas do cluster.
+      tags:
+        - Observabilidade & Infraestrutura
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Diagnóstico concluído (status do cluster HEALTHY ou DEGRADED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemHealthResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '503':
+          description: Serviços essenciais indisponíveis (cluster UNHEALTHY)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemHealthResponse'
+
+  /status:
+    get:
+      summary: Alias do Diagnóstico de Saúde de Serviços
+      description: Rota alternativa compatível com orquestradores e painéis de observabilidade para /health/services.
+      tags:
+        - Observabilidade & Infraestrutura
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Diagnóstico concluído
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemHealthResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '503':
+          description: Serviços essenciais indisponíveis (cluster UNHEALTHY)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemHealthResponse'
 
   /metrics:
     get:
@@ -490,6 +550,84 @@ components:
         redis:
           type: string
           example: "CONNECTED"
+
+    SystemHealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - gateway
+        - services
+        - summary
+      properties:
+        status:
+          type: string
+          enum: [HEALTHY, DEGRADED, UNHEALTHY]
+          example: "HEALTHY"
+        timestamp:
+          type: string
+          format: date-time
+        gateway:
+          type: object
+          properties:
+            version:
+              type: string
+              example: "1.0.0"
+            environment:
+              type: string
+              example: "development"
+            port:
+              type: integer
+              example: 8080
+            uptimeSeconds:
+              type: integer
+              example: 120
+        services:
+          type: array
+          items:
+            type: object
+            required:
+              - name
+              - serviceType
+              - status
+              - endpoint
+              - latencyMs
+            properties:
+              name:
+                type: string
+                example: "Motor Fiscal (KudibaInvoicing)"
+              serviceType:
+                type: string
+                example: "FISCAL_ENGINE"
+              status:
+                type: string
+                enum: [HEALTHY, DEGRADED, UNAVAILABLE]
+                example: "HEALTHY"
+              endpoint:
+                type: string
+                example: "http://fiscal-engine:9090"
+              latencyMs:
+                type: integer
+                example: 8
+              message:
+                type: string
+              details:
+                type: object
+        summary:
+          type: object
+          properties:
+            total:
+              type: integer
+              example: 6
+            healthy:
+              type: integer
+              example: 5
+            degraded:
+              type: integer
+              example: 1
+            unavailable:
+              type: integer
+              example: 0
 
     ProblemDetail:
       type: object
