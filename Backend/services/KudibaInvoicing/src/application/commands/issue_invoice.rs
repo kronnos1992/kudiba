@@ -17,7 +17,9 @@ use crate::domain::ports::series_repository::FiscalSeriesRepository;
 use crate::domain::ports::tax_regime_repository::TaxRegimeRepository;
 use crate::domain::ports::unit_of_work::UnitOfWorkFactory;
 use crate::domain::services::chained_hash::{ChainedHashCalculator, MoneyCalculator};
-use crate::domain::services::tax_and_duty::{TaxAndDutyCalculator, STANDARD_SERVICE_WITHHOLDING_RATE};
+use crate::domain::services::tax_and_duty::{
+    TaxAndDutyCalculator, STANDARD_SERVICE_WITHHOLDING_RATE,
+};
 use crate::domain::services::tax_validator::{is_valid_exemption_code_format, TaxRateValidator};
 use crate::domain::value_objects::document_type::DocumentType;
 
@@ -76,7 +78,7 @@ impl IssueInvoiceUseCase {
         ) && command
             .source_document_number
             .as_deref()
-            .map_or(true, |reference| reference.trim().is_empty())
+            .is_none_or(|reference| reference.trim().is_empty())
         {
             return Err(DomainError::invalid(
                 "Notas de crédito e de débito exigem referência ao documento original.",
@@ -93,15 +95,15 @@ impl IssueInvoiceUseCase {
         if command
             .customer_address
             .as_deref()
-            .map_or(true, |value| value.trim().is_empty())
+            .is_none_or(|value| value.trim().is_empty())
             || command
                 .customer_city
                 .as_deref()
-                .map_or(true, |value| value.trim().is_empty())
+                .is_none_or(|value| value.trim().is_empty())
             || command
                 .customer_country
                 .as_deref()
-                .map_or(true, |value| value.trim().is_empty())
+                .is_none_or(|value| value.trim().is_empty())
         {
             return Err(DomainError::invalid(
                 "Morada, município e país do cliente são obrigatórios.",
@@ -388,7 +390,8 @@ impl IssueInvoiceUseCase {
             issued_at,
             system_entry_date,
             invoice_lines,
-        ).with_transport(command.transport.clone());
+        )
+        .with_transport(command.transport.clone());
 
         // Invariante do agregado antes da gravação: totais e coerência com o regime
         invoice.verify_totals()?;
@@ -675,6 +678,8 @@ mod tests {
             load_address: None,
             ..transport_valido.clone()
         };
-        assert!(transport_sem_carga.validate_for_document_type("GT").is_err());
+        assert!(transport_sem_carga
+            .validate_for_document_type("GT")
+            .is_err());
     }
 }

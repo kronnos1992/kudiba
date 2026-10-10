@@ -8,13 +8,13 @@
 //! - **Fecho Z (Z-Report)**: Encerramento fiscal diário obrigatório com emissão de número
 //!   sequencial Z (ex.: `Z 2026/000001`), congelação dos acumuladores e gravação em arquivo.
 
-use std::sync::Arc;
 use chrono::{DateTime, NaiveDate, Utc};
 use lopdf::content::{Content, Operation};
 use lopdf::{dictionary, Document, Object, Stream};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::domain::error::DomainError;
@@ -114,7 +114,13 @@ impl PosReportsUseCase {
         &self,
         query: PosDailyReportQuery,
     ) -> Result<PosDailyReportResult, DomainError> {
-        let mut report = self.calculate_daily_summary(query.tenant_id, query.date, query.pos_terminal_id.as_deref()).await?;
+        let mut report = self
+            .calculate_daily_summary(
+                query.tenant_id,
+                query.date,
+                query.pos_terminal_id.as_deref(),
+            )
+            .await?;
         report.report_type = "LEITURA_X".to_string();
         Ok(report)
     }
@@ -124,7 +130,11 @@ impl PosReportsUseCase {
         &self,
         command: CloseZReportCommand,
     ) -> Result<PosDailyReportResult, DomainError> {
-        let mut session = self.session_factory.open().await.map_err(persistence_error)?;
+        let mut session = self
+            .session_factory
+            .open()
+            .await
+            .map_err(persistence_error)?;
 
         // 1. Verifica se já existe um Fecho Z para a mesma data (idempotência fiscal diária)
         let existing = sqlx::query(
@@ -141,9 +151,19 @@ impl PosReportsUseCase {
         .map_err(|e| DomainError::Persistence(e.to_string()))?;
 
         if let Some(row) = existing {
-            let z_num: String = row.try_get("z_number").map_err(|e| DomainError::Persistence(e.to_string()))?;
-            let seq: i64 = row.try_get("sequence_number").map_err(|e| DomainError::Persistence(e.to_string()))?;
-            let mut report = self.calculate_daily_summary(command.tenant_id, command.date, command.pos_terminal_id.as_deref()).await?;
+            let z_num: String = row
+                .try_get("z_number")
+                .map_err(|e| DomainError::Persistence(e.to_string()))?;
+            let seq: i64 = row
+                .try_get("sequence_number")
+                .map_err(|e| DomainError::Persistence(e.to_string()))?;
+            let mut report = self
+                .calculate_daily_summary(
+                    command.tenant_id,
+                    command.date,
+                    command.pos_terminal_id.as_deref(),
+                )
+                .await?;
             report.report_type = "FECHO_Z".to_string();
             report.z_report_sequence = Some(seq);
             report.z_report_number = Some(z_num);
@@ -151,7 +171,13 @@ impl PosReportsUseCase {
         }
 
         // 2. Calcula os acumuladores do dia
-        let mut report = self.calculate_daily_summary(command.tenant_id, command.date, command.pos_terminal_id.as_deref()).await?;
+        let mut report = self
+            .calculate_daily_summary(
+                command.tenant_id,
+                command.date,
+                command.pos_terminal_id.as_deref(),
+            )
+            .await?;
         report.report_type = "FECHO_Z".to_string();
 
         // 3. Obtém o próximo número sequencial Z do ano fiscal
@@ -180,7 +206,11 @@ impl PosReportsUseCase {
         let payments_json_str = serde_json::to_string(&report.payments)
             .map_err(|e| DomainError::invalid(format!("Erro ao serializar pagamentos: {e}")))?;
 
-        let opened_at = command.date.and_hms_opt(0, 0, 0).unwrap_or_default().and_utc();
+        let opened_at = command
+            .date
+            .and_hms_opt(0, 0, 0)
+            .unwrap_or_default()
+            .and_utc();
         let closed_at = Utc::now();
 
         sqlx::query(
@@ -232,7 +262,11 @@ impl PosReportsUseCase {
         date: NaiveDate,
         _pos_terminal_id: Option<&str>,
     ) -> Result<PosDailyReportResult, DomainError> {
-        let mut session = self.session_factory.open().await.map_err(persistence_error)?;
+        let mut session = self
+            .session_factory
+            .open()
+            .await
+            .map_err(persistence_error)?;
 
         // 1. Dados da Empresa
         let tenant_row = sqlx::query(
@@ -245,9 +279,12 @@ impl PosReportsUseCase {
 
         let (company_name, company_nif, agt_cert_number) = match tenant_row {
             Some(row) => (
-                row.try_get("company_name").unwrap_or_else(|_| "Kudiba ERP".to_string()),
-                row.try_get("nif").unwrap_or_else(|_| "999999999".to_string()),
-                row.try_get("agt_cert_number").unwrap_or_else(|_| "CERT-AGT-2026/0001".to_string()),
+                row.try_get("company_name")
+                    .unwrap_or_else(|_| "Kudiba ERP".to_string()),
+                row.try_get("nif")
+                    .unwrap_or_else(|_| "999999999".to_string()),
+                row.try_get("agt_cert_number")
+                    .unwrap_or_else(|_| "CERT-AGT-2026/0001".to_string()),
             ),
             None => (
                 "Kudiba ERP".to_string(),
@@ -325,9 +362,15 @@ impl PosReportsUseCase {
             .into_iter()
             .map(|row| {
                 Ok(PosTaxBreakdown {
-                    tax_rate: row.try_get("tax_rate").map_err(|e: sqlx::Error| DomainError::Persistence(e.to_string()))?,
-                    taxable_base: row.try_get("taxable_base").map_err(|e: sqlx::Error| DomainError::Persistence(e.to_string()))?,
-                    tax_amount: row.try_get("tax_amount").map_err(|e: sqlx::Error| DomainError::Persistence(e.to_string()))?,
+                    tax_rate: row
+                        .try_get("tax_rate")
+                        .map_err(|e: sqlx::Error| DomainError::Persistence(e.to_string()))?,
+                    taxable_base: row
+                        .try_get("taxable_base")
+                        .map_err(|e: sqlx::Error| DomainError::Persistence(e.to_string()))?,
+                    tax_amount: row
+                        .try_get("tax_amount")
+                        .map_err(|e: sqlx::Error| DomainError::Persistence(e.to_string()))?,
                 })
             })
             .collect::<Result<Vec<_>, DomainError>>()?;
@@ -353,13 +396,19 @@ impl PosReportsUseCase {
         let payments: Vec<PosPaymentBreakdown> = payment_rows
             .into_iter()
             .map(|row| {
-                let code: String = row.try_get("pm").map_err(|e: sqlx::Error| DomainError::Persistence(e.to_string()))?;
+                let code: String = row
+                    .try_get("pm")
+                    .map_err(|e: sqlx::Error| DomainError::Persistence(e.to_string()))?;
                 let name = map_payment_method_name(&code);
                 Ok(PosPaymentBreakdown {
                     payment_method: code,
                     payment_method_name: name,
-                    total_amount: row.try_get("total_amount").map_err(|e: sqlx::Error| DomainError::Persistence(e.to_string()))?,
-                    transaction_count: row.try_get("tx_count").map_err(|e: sqlx::Error| DomainError::Persistence(e.to_string()))?,
+                    total_amount: row
+                        .try_get("total_amount")
+                        .map_err(|e: sqlx::Error| DomainError::Persistence(e.to_string()))?,
+                    transaction_count: row
+                        .try_get("tx_count")
+                        .map_err(|e: sqlx::Error| DomainError::Persistence(e.to_string()))?,
                 })
             })
             .collect::<Result<Vec<_>, DomainError>>()?;
@@ -379,13 +428,23 @@ impl PosReportsUseCase {
             last_document_number: totals_row.try_get("last_document_number").ok(),
             invoices_count: totals_row.try_get("invoices_count").unwrap_or(0),
             credit_notes_count: totals_row.try_get("credit_notes_count").unwrap_or(0),
-            gross_sales_total: totals_row.try_get("gross_sales_total").unwrap_or(Decimal::ZERO),
+            gross_sales_total: totals_row
+                .try_get("gross_sales_total")
+                .unwrap_or(Decimal::ZERO),
             discounts_total,
-            credit_notes_total: totals_row.try_get("credit_notes_total").unwrap_or(Decimal::ZERO),
-            net_sales_total: totals_row.try_get("net_sales_total").unwrap_or(Decimal::ZERO),
+            credit_notes_total: totals_row
+                .try_get("credit_notes_total")
+                .unwrap_or(Decimal::ZERO),
+            net_sales_total: totals_row
+                .try_get("net_sales_total")
+                .unwrap_or(Decimal::ZERO),
             vat_total: totals_row.try_get("vat_total").unwrap_or(Decimal::ZERO),
-            withholding_total: totals_row.try_get("withholding_total").unwrap_or(Decimal::ZERO),
-            stamp_duty_total: totals_row.try_get("stamp_duty_total").unwrap_or(Decimal::ZERO),
+            withholding_total: totals_row
+                .try_get("withholding_total")
+                .unwrap_or(Decimal::ZERO),
+            stamp_duty_total: totals_row
+                .try_get("stamp_duty_total")
+                .unwrap_or(Decimal::ZERO),
             final_total: totals_row.try_get("final_total").unwrap_or(Decimal::ZERO),
             taxes,
             payments,
@@ -445,33 +504,60 @@ impl PosReportsUseCase {
         out.push_str(&"-".repeat(width));
         out.push('\n');
 
-        out.push_str(&format!("{:<28} {:>15.2} AOA\n", "Vendas Brutas:", report.gross_sales_total));
+        out.push_str(&format!(
+            "{:<28} {:>15.2} AOA\n",
+            "Vendas Brutas:", report.gross_sales_total
+        ));
         if !report.discounts_total.is_zero() {
-            out.push_str(&format!("{:<28} {:>15.2} AOA\n", "Descontos Comerciais:", -report.discounts_total));
+            out.push_str(&format!(
+                "{:<28} {:>15.2} AOA\n",
+                "Descontos Comerciais:", -report.discounts_total
+            ));
         }
         if !report.credit_notes_total.is_zero() {
-            out.push_str(&format!("{:<28} {:>15.2} AOA\n", "Notas de Credito (NC):", -report.credit_notes_total));
+            out.push_str(&format!(
+                "{:<28} {:>15.2} AOA\n",
+                "Notas de Credito (NC):", -report.credit_notes_total
+            ));
         }
         out.push_str(&"-".repeat(width));
         out.push('\n');
-        out.push_str(&format!("{:<28} {:>15.2} AOA\n", "Incidencia Liquida:", report.net_sales_total));
-        out.push_str(&format!("{:<28} {:>15.2} AOA\n", "Total IVA Liquidado:", report.vat_total));
+        out.push_str(&format!(
+            "{:<28} {:>15.2} AOA\n",
+            "Incidencia Liquida:", report.net_sales_total
+        ));
+        out.push_str(&format!(
+            "{:<28} {:>15.2} AOA\n",
+            "Total IVA Liquidado:", report.vat_total
+        ));
         if !report.stamp_duty_total.is_zero() {
-            out.push_str(&format!("{:<28} {:>15.2} AOA\n", "Imposto de Selo:", report.stamp_duty_total));
+            out.push_str(&format!(
+                "{:<28} {:>15.2} AOA\n",
+                "Imposto de Selo:", report.stamp_duty_total
+            ));
         }
         if !report.withholding_total.is_zero() {
-            out.push_str(&format!("{:<28} {:>15.2} AOA\n", "Retencao na Fonte:", -report.withholding_total));
+            out.push_str(&format!(
+                "{:<28} {:>15.2} AOA\n",
+                "Retencao na Fonte:", -report.withholding_total
+            ));
         }
         out.push_str(&"=".repeat(width));
         out.push('\n');
-        out.push_str(&format!("{:<24} {:>19.2} AOA\n", "TOTAL GERAL FATURADO:", report.final_total));
+        out.push_str(&format!(
+            "{:<24} {:>19.2} AOA\n",
+            "TOTAL GERAL FATURADO:", report.final_total
+        ));
         out.push_str(&"=".repeat(width));
         out.push('\n');
 
         if !report.taxes.is_empty() {
             out.push_str(&center_text("DESDOBRAMENTO DE IVA", width));
             out.push('\n');
-            out.push_str(&format!("{:<10} {:>17} {:>17}\n", "Taxa", "Incidencia", "Imposto"));
+            out.push_str(&format!(
+                "{:<10} {:>17} {:>17}\n",
+                "Taxa", "Incidencia", "Imposto"
+            ));
             out.push_str(&"-".repeat(width));
             out.push('\n');
             for t in &report.taxes {
@@ -480,7 +566,10 @@ impl PosReportsUseCase {
                 } else {
                     format!("{:.2}%", t.tax_rate)
                 };
-                out.push_str(&format!("{:<10} {:>17.2} {:>17.2}\n", rate_str, t.taxable_base, t.tax_amount));
+                out.push_str(&format!(
+                    "{:<10} {:>17.2} {:>17.2}\n",
+                    rate_str, t.taxable_base, t.tax_amount
+                ));
             }
             out.push_str(&"-".repeat(width));
             out.push('\n');
@@ -493,7 +582,10 @@ impl PosReportsUseCase {
             out.push_str(&"-".repeat(width));
             out.push('\n');
             for p in &report.payments {
-                out.push_str(&format!("{:<22} {:>6} {:>16.2}\n", p.payment_method_name, p.transaction_count, p.total_amount));
+                out.push_str(&format!(
+                    "{:<22} {:>6} {:>16.2}\n",
+                    p.payment_method_name, p.transaction_count, p.total_amount
+                ));
             }
             out.push_str(&"-".repeat(width));
             out.push('\n');
@@ -547,9 +639,25 @@ impl PosReportsUseCase {
         let mut y = page_height - 20.0;
 
         // Cabeçalho da Empresa
-        add_centered_pdf_text(&mut operations, "F2", 11.0, y, &report.company_name, page_width, (0.0, 0.0, 0.0));
+        add_centered_pdf_text(
+            &mut operations,
+            "F2",
+            11.0,
+            y,
+            &report.company_name,
+            page_width,
+            (0.0, 0.0, 0.0),
+        );
         y -= 13.0;
-        add_centered_pdf_text(&mut operations, "F1", 8.0, y, &format!("NIF: {}", report.company_nif), page_width, (0.2, 0.2, 0.2));
+        add_centered_pdf_text(
+            &mut operations,
+            "F1",
+            8.0,
+            y,
+            &format!("NIF: {}", report.company_nif),
+            page_width,
+            (0.2, 0.2, 0.2),
+        );
         y -= 14.0;
 
         let title = if report.report_type == "FECHO_Z" {
@@ -557,56 +665,159 @@ impl PosReportsUseCase {
         } else {
             "LEITURA DE CONTROLO X"
         };
-        add_centered_pdf_text(&mut operations, "F2", 10.0, y, title, page_width, (0.0, 0.0, 0.0));
+        add_centered_pdf_text(
+            &mut operations,
+            "F2",
+            10.0,
+            y,
+            title,
+            page_width,
+            (0.0, 0.0, 0.0),
+        );
         y -= 12.0;
 
         if let Some(ref z_num) = report.z_report_number {
-            add_centered_pdf_text(&mut operations, "F2", 9.0, y, &format!("N.º {}", z_num), page_width, (0.1, 0.1, 0.1));
+            add_centered_pdf_text(
+                &mut operations,
+                "F2",
+                9.0,
+                y,
+                &format!("N.º {}", z_num),
+                page_width,
+                (0.1, 0.1, 0.1),
+            );
             y -= 12.0;
         }
 
         add_pdf_line(&mut operations, 10.0, y, page_width - 10.0, y, 1.0);
         y -= 12.0;
 
-        add_pdf_text(&mut operations, "F1", 7.5, 12.0, y, &format!("Data: {}", report.date), (0.2, 0.2, 0.2));
-        add_pdf_text(&mut operations, "F1", 7.5, 115.0, y, &format!("Hora: {}", report.generated_at.format("%H:%M:%S")), (0.2, 0.2, 0.2));
+        add_pdf_text(
+            &mut operations,
+            "F1",
+            7.5,
+            12.0,
+            y,
+            &format!("Data: {}", report.date),
+            (0.2, 0.2, 0.2),
+        );
+        add_pdf_text(
+            &mut operations,
+            "F1",
+            7.5,
+            115.0,
+            y,
+            &format!("Hora: {}", report.generated_at.format("%H:%M:%S")),
+            (0.2, 0.2, 0.2),
+        );
         y -= 11.0;
 
-        add_pdf_text(&mut operations, "F1", 7.0, 12.0, y, &format!("Docs: {} Faturas | {} NCs", report.invoices_count, report.credit_notes_count), (0.2, 0.2, 0.2));
+        add_pdf_text(
+            &mut operations,
+            "F1",
+            7.0,
+            12.0,
+            y,
+            &format!(
+                "Docs: {} Faturas | {} NCs",
+                report.invoices_count, report.credit_notes_count
+            ),
+            (0.2, 0.2, 0.2),
+        );
         y -= 12.0;
 
         add_pdf_line(&mut operations, 10.0, y, page_width - 10.0, y, 0.5);
         y -= 12.0;
 
         // Linhas financeiras
-        add_pdf_row(&mut operations, "Vendas Brutas:", &format!("{:.2} AOA", report.gross_sales_total), 12.0, page_width - 12.0, y, false);
+        add_pdf_row(
+            &mut operations,
+            "Vendas Brutas:",
+            &format!("{:.2} AOA", report.gross_sales_total),
+            12.0,
+            page_width - 12.0,
+            y,
+            false,
+        );
         y -= 11.0;
 
         if !report.credit_notes_total.is_zero() {
-            add_pdf_row(&mut operations, "Notas de Credito:", &format!("-{:.2} AOA", report.credit_notes_total), 12.0, page_width - 12.0, y, false);
+            add_pdf_row(
+                &mut operations,
+                "Notas de Credito:",
+                &format!("-{:.2} AOA", report.credit_notes_total),
+                12.0,
+                page_width - 12.0,
+                y,
+                false,
+            );
             y -= 11.0;
         }
 
-        add_pdf_row(&mut operations, "Incidencia Liquida:", &format!("{:.2} AOA", report.net_sales_total), 12.0, page_width - 12.0, y, false);
+        add_pdf_row(
+            &mut operations,
+            "Incidencia Liquida:",
+            &format!("{:.2} AOA", report.net_sales_total),
+            12.0,
+            page_width - 12.0,
+            y,
+            false,
+        );
         y -= 11.0;
-        add_pdf_row(&mut operations, "IVA Liquidado:", &format!("{:.2} AOA", report.vat_total), 12.0, page_width - 12.0, y, false);
+        add_pdf_row(
+            &mut operations,
+            "IVA Liquidado:",
+            &format!("{:.2} AOA", report.vat_total),
+            12.0,
+            page_width - 12.0,
+            y,
+            false,
+        );
         y -= 13.0;
 
         add_pdf_line(&mut operations, 10.0, y, page_width - 10.0, y, 1.0);
         y -= 13.0;
-        add_pdf_row(&mut operations, "TOTAL FATURADO:", &format!("{:.2} AOA", report.final_total), 12.0, page_width - 12.0, y, true);
+        add_pdf_row(
+            &mut operations,
+            "TOTAL FATURADO:",
+            &format!("{:.2} AOA", report.final_total),
+            12.0,
+            page_width - 12.0,
+            y,
+            true,
+        );
         y -= 14.0;
         add_pdf_line(&mut operations, 10.0, y, page_width - 10.0, y, 1.0);
         y -= 14.0;
 
         // Desdobramento de IVA
         if !report.taxes.is_empty() {
-            add_centered_pdf_text(&mut operations, "F2", 8.0, y, "RESUMO DE IVA", page_width, (0.0, 0.0, 0.0));
+            add_centered_pdf_text(
+                &mut operations,
+                "F2",
+                8.0,
+                y,
+                "RESUMO DE IVA",
+                page_width,
+                (0.0, 0.0, 0.0),
+            );
             y -= 11.0;
             for t in &report.taxes {
-                let rate_label = if t.tax_rate.is_zero() { "Isento (0%)".to_string() } else { format!("{:.1}%", t.tax_rate) };
+                let rate_label = if t.tax_rate.is_zero() {
+                    "Isento (0%)".to_string()
+                } else {
+                    format!("{:.1}%", t.tax_rate)
+                };
                 let val_str = format!("Base: {:.2} | IVA: {:.2}", t.taxable_base, t.tax_amount);
-                add_pdf_row(&mut operations, &rate_label, &val_str, 12.0, page_width - 12.0, y, false);
+                add_pdf_row(
+                    &mut operations,
+                    &rate_label,
+                    &val_str,
+                    12.0,
+                    page_width - 12.0,
+                    y,
+                    false,
+                );
                 y -= 10.0;
             }
             y -= 4.0;
@@ -614,10 +825,26 @@ impl PosReportsUseCase {
 
         // Meios de Pagamento
         if !report.payments.is_empty() {
-            add_centered_pdf_text(&mut operations, "F2", 8.0, y, "MEIOS DE PAGAMENTO", page_width, (0.0, 0.0, 0.0));
+            add_centered_pdf_text(
+                &mut operations,
+                "F2",
+                8.0,
+                y,
+                "MEIOS DE PAGAMENTO",
+                page_width,
+                (0.0, 0.0, 0.0),
+            );
             y -= 11.0;
             for p in &report.payments {
-                add_pdf_row(&mut operations, &p.payment_method_name, &format!("{:.2} AOA", p.total_amount), 12.0, page_width - 12.0, y, false);
+                add_pdf_row(
+                    &mut operations,
+                    &p.payment_method_name,
+                    &format!("{:.2} AOA", p.total_amount),
+                    12.0,
+                    page_width - 12.0,
+                    y,
+                    false,
+                );
                 y -= 10.0;
             }
             y -= 4.0;
@@ -631,11 +858,32 @@ impl PosReportsUseCase {
         } else {
             "*** LEITURA X - CONTROLO INTERNO ***"
         };
-        add_centered_pdf_text(&mut operations, "F2", 7.5, y, footer, page_width, (0.1, 0.1, 0.1));
+        add_centered_pdf_text(
+            &mut operations,
+            "F2",
+            7.5,
+            y,
+            footer,
+            page_width,
+            (0.1, 0.1, 0.1),
+        );
         y -= 10.0;
-        add_centered_pdf_text(&mut operations, "F1", 6.5, y, &format!("Software Certificado AGT: {}", report.agt_cert_number), page_width, (0.4, 0.4, 0.4));
+        add_centered_pdf_text(
+            &mut operations,
+            "F1",
+            6.5,
+            y,
+            &format!("Software Certificado AGT: {}", report.agt_cert_number),
+            page_width,
+            (0.4, 0.4, 0.4),
+        );
 
-        let content_stream = Stream::new(dictionary! {}, Content { operations }.encode().map_err(|e| DomainError::invalid(e.to_string()))?);
+        let content_stream = Stream::new(
+            dictionary! {},
+            Content { operations }
+                .encode()
+                .map_err(|e| DomainError::invalid(e.to_string()))?,
+        );
         let content_id = doc.add_object(content_stream);
 
         let page_id = doc.add_object(dictionary! {
@@ -660,8 +908,9 @@ impl PosReportsUseCase {
         doc.trailer.set("Root", catalog_id);
 
         let mut buffer = Vec::new();
-        doc.save_to(&mut buffer)
-            .map_err(|err| DomainError::invalid(format!("Falha ao gerar PDF de fecho POS: {err}")))?;
+        doc.save_to(&mut buffer).map_err(|err| {
+            DomainError::invalid(format!("Falha ao gerar PDF de fecho POS: {err}"))
+        })?;
 
         Ok(buffer)
     }
@@ -698,8 +947,14 @@ fn add_pdf_text(
 ) {
     operations.push(Operation::new("q", vec![]));
     operations.push(Operation::new("BT", vec![]));
-    operations.push(Operation::new("rg", vec![color.0.into(), color.1.into(), color.2.into()]));
-    operations.push(Operation::new("Tf", vec![font.to_string().into(), size.into()]));
+    operations.push(Operation::new(
+        "rg",
+        vec![color.0.into(), color.1.into(), color.2.into()],
+    ));
+    operations.push(Operation::new(
+        "Tf",
+        vec![font.to_string().into(), size.into()],
+    ));
     operations.push(Operation::new("Td", vec![x.into(), y.into()]));
     operations.push(Operation::new("Tj", vec![Object::string_literal(text)]));
     operations.push(Operation::new("ET", vec![]));
@@ -732,7 +987,11 @@ fn add_pdf_row(
 ) {
     let font = if is_bold { "F2" } else { "F1" };
     let size = if is_bold { 8.5 } else { 7.5 };
-    let color = if is_bold { (0.0, 0.0, 0.0) } else { (0.2, 0.2, 0.2) };
+    let color = if is_bold {
+        (0.0, 0.0, 0.0)
+    } else {
+        (0.2, 0.2, 0.2)
+    };
     add_pdf_text(operations, font, size, left_x, y, label, color);
 
     let approx_char_width = size * 0.50;
@@ -741,17 +1000,13 @@ fn add_pdf_row(
     add_pdf_text(operations, font, size, val_x, y, value, color);
 }
 
-fn add_pdf_line(
-    operations: &mut Vec<Operation>,
-    x1: f64,
-    y1: f64,
-    x2: f64,
-    y2: f64,
-    width: f64,
-) {
+fn add_pdf_line(operations: &mut Vec<Operation>, x1: f64, y1: f64, x2: f64, y2: f64, width: f64) {
     operations.push(Operation::new("q", vec![]));
     operations.push(Operation::new("w", vec![width.into()]));
-    operations.push(Operation::new("RG", vec![0.3.into(), 0.3.into(), 0.3.into()]));
+    operations.push(Operation::new(
+        "RG",
+        vec![0.3.into(), 0.3.into(), 0.3.into()],
+    ));
     operations.push(Operation::new("m", vec![x1.into(), y1.into()]));
     operations.push(Operation::new("l", vec![x2.into(), y2.into()]));
     operations.push(Operation::new("S", vec![]));

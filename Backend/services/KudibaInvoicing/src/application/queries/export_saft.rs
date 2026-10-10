@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use rust_decimal::Decimal;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::domain::error::DomainError;
@@ -64,7 +64,10 @@ impl ExportSaftUseCase {
             .find_by_id(&mut *session, query.tenant_id)
             .await?
             .ok_or_else(|| {
-                DomainError::invalid(format!("Organização (Tenant) '{}' não encontrada.", query.tenant_id))
+                DomainError::invalid(format!(
+                    "Organização (Tenant) '{}' não encontrada.",
+                    query.tenant_id
+                ))
             })?;
 
         // 2. Obter as facturas e linhas do período fiscal solicitado em lotes paginados (O(1) buffer)
@@ -104,7 +107,8 @@ impl ExportSaftUseCase {
 
         let mut xml_bytes = Vec::with_capacity(16 * 1024 + invoice_count * 1024);
         SaftXmlGenerator::write_xml_stream(&mut xml_bytes, &metadata, &invoices)?;
-        let xml_content = String::from_utf8(xml_bytes).map_err(|e| DomainError::invalid(e.to_string()))?;
+        let xml_content =
+            String::from_utf8(xml_bytes).map_err(|e| DomainError::invalid(e.to_string()))?;
 
         crate::infrastructure::saft::SaftValidator::validate_xml(&xml_content)?;
 

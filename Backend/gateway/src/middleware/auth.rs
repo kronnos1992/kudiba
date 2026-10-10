@@ -36,7 +36,11 @@ pub async fn auth_middleware(
         return next.run(req).await;
     }
 
-    let auth_header = match req.headers().get("Authorization").and_then(|h| h.to_str().ok()) {
+    let auth_header = match req
+        .headers()
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok())
+    {
         Some(header) if header.starts_with("Bearer ") => &header[7..],
         _ => {
             return ProblemDetail::new(
@@ -64,7 +68,8 @@ pub async fn auth_middleware(
                 "A assinatura do token não confere ou o prazo de validade expirou.",
                 path,
                 "AUTH_TOKEN_INVALID",
-            ).into_response();
+            )
+            .into_response();
         }
     };
 
@@ -167,8 +172,14 @@ pub async fn auth_middleware(
 
     // 3. Validação Cruzada de Tenant:
     // O tenant resolvido (UUID ou slug) deve corresponder ao tenant do JWT
-    let resolved_tenant = req.headers().get("X-Resolved-Tenant-ID").and_then(|h| h.to_str().ok());
-    let resolved_slug = req.headers().get("X-Resolved-Tenant-Slug").and_then(|h| h.to_str().ok());
+    let resolved_tenant = req
+        .headers()
+        .get("X-Resolved-Tenant-ID")
+        .and_then(|h| h.to_str().ok());
+    let resolved_slug = req
+        .headers()
+        .get("X-Resolved-Tenant-Slug")
+        .and_then(|h| h.to_str().ok());
 
     let mut tenant_matches = false;
     if let Some(res_t) = resolved_tenant {
@@ -197,7 +208,8 @@ pub async fn auth_middleware(
 
     // Garante que o header downstream contenha o UUID canônico do tenant
     if let Ok(tenant_uuid_val) = HeaderValue::from_str(&claims.tenant_id) {
-        req.headers_mut().insert("X-Resolved-Tenant-ID", tenant_uuid_val);
+        req.headers_mut()
+            .insert("X-Resolved-Tenant-ID", tenant_uuid_val);
     }
 
     // 4. Injeta cabeçalhos autenticados seguros para os serviços internos downstream
@@ -223,14 +235,17 @@ mod tests {
     #[test]
     fn claims_sem_iat_continuam_desserializaveis() {
         let json = r#"{"sub":"u1","tenant_id":"t1","roles":["ADMIN"],"exp":999,"jti":"j1"}"#;
-        let claims: KudibaClaims = serde_json::from_str(json).expect("deve desserializar claims legadas");
+        let claims: KudibaClaims =
+            serde_json::from_str(json).expect("deve desserializar claims legadas");
         assert_eq!(claims.iat, None);
     }
 
     #[test]
     fn claims_com_iat_sao_lidas_para_verificacao_de_revogacao() {
-        let json = r#"{"sub":"u1","tenant_id":"t1","roles":["ADMIN"],"exp":999,"iat":123,"jti":"j1"}"#;
-        let claims: KudibaClaims = serde_json::from_str(json).expect("deve desserializar claims com iat");
+        let json =
+            r#"{"sub":"u1","tenant_id":"t1","roles":["ADMIN"],"exp":999,"iat":123,"jti":"j1"}"#;
+        let claims: KudibaClaims =
+            serde_json::from_str(json).expect("deve desserializar claims com iat");
         assert_eq!(claims.iat, Some(123));
     }
 }

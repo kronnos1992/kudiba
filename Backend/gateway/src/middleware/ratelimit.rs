@@ -56,7 +56,12 @@ pub async fn rate_limit_middleware(
         .unwrap_or_else(|| "unknown".to_string());
 
     let (limit, window_sec) = get_rate_limit_policy(&path);
-    let key = format!("ratelimit:{}:{}:{}", tenant_id, client_ip, sanitize_path(&path));
+    let key = format!(
+        "ratelimit:{}:{}:{}",
+        tenant_id,
+        client_ip,
+        sanitize_path(&path)
+    );
     let now_unix = Utc::now().timestamp();
     let req_id = Uuid::new_v4().to_string();
 
@@ -86,9 +91,16 @@ pub async fn rate_limit_middleware(
         Ok((allowed, remaining)) => {
             if allowed == 1 {
                 let mut response = next.run(req).await;
-                response.headers_mut().insert("X-RateLimit-Limit", HeaderValue::from(limit));
-                response.headers_mut().insert("X-RateLimit-Remaining", HeaderValue::from(remaining));
-                response.headers_mut().insert("X-RateLimit-Reset", HeaderValue::from(now_unix + window_sec));
+                response
+                    .headers_mut()
+                    .insert("X-RateLimit-Limit", HeaderValue::from(limit));
+                response
+                    .headers_mut()
+                    .insert("X-RateLimit-Remaining", HeaderValue::from(remaining));
+                response.headers_mut().insert(
+                    "X-RateLimit-Reset",
+                    HeaderValue::from(now_unix + window_sec),
+                );
                 response
             } else {
                 let mut problem_resp = ProblemDetail::new(
@@ -100,7 +112,9 @@ pub async fn rate_limit_middleware(
                     "RATE_LIMIT_EXCEEDED",
                 ).into_response();
 
-                problem_resp.headers_mut().insert("Retry-After", HeaderValue::from(window_sec));
+                problem_resp
+                    .headers_mut()
+                    .insert("Retry-After", HeaderValue::from(window_sec));
                 problem_resp
             }
         }
@@ -150,7 +164,10 @@ fn rate_limit_unavailable(path: String) -> Response {
 }
 
 fn is_probe(path: &str) -> bool {
-    matches!(path.trim_end_matches('/'), "/health" | "/ready" | "/metrics")
+    matches!(
+        path.trim_end_matches('/'),
+        "/health" | "/ready" | "/metrics"
+    )
 }
 
 #[cfg(test)]

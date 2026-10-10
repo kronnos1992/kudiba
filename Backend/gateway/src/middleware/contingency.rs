@@ -39,7 +39,8 @@ pub async fn agt_contingency_middleware(
 
                 if let Some(timestamp_str) = last_sync_raw {
                     if let Ok(last_sync) = DateTime::parse_from_rfc3339(&timestamp_str) {
-                        let duration = Utc::now().signed_duration_since(last_sync.with_timezone(&Utc));
+                        let duration =
+                            Utc::now().signed_duration_since(last_sync.with_timezone(&Utc));
                         let days_offline = duration.num_days();
 
                         if days_offline > state.config.agt_contingency_max_days {

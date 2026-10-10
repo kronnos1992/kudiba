@@ -5,8 +5,8 @@
 //! devolução ou anulação exige a emissão legal de uma Nota de Crédito (NC) que referencie
 //! o documento original no campo `source_document_number`.
 
-use std::sync::Arc;
 use chrono::{Datelike, Utc};
+use std::sync::Arc;
 
 use crate::application::commands::issue_invoice::IssueInvoiceUseCase;
 use crate::application::dto::{
@@ -81,7 +81,10 @@ impl CancelInvoiceWithCreditNoteUseCase {
 
         // 5. Determinação da série fiscal da Nota de Crédito
         let series_code = command.series_code.unwrap_or_else(|| {
-            let parts: Vec<&str> = original_invoice.document_number.split_whitespace().collect();
+            let parts: Vec<&str> = original_invoice
+                .document_number
+                .split_whitespace()
+                .collect();
             if parts.len() >= 2 {
                 let series_and_seq: Vec<&str> = parts[1].split('/').collect();
                 series_and_seq[0].to_string()
@@ -233,4 +236,3 @@ mod tests {
         assert!(validate_not_credit_note("VD").is_ok());
     }
 }
-

@@ -57,7 +57,13 @@ impl TransportMovement {
                     "Em documentos do tipo '{doc}', a indicação do local de carga é obrigatória pelo Decreto 71/25."
                 )));
             }
-            if self.unload_address.as_deref().unwrap_or("").trim().is_empty() {
+            if self
+                .unload_address
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .is_empty()
+            {
                 return Err(DomainError::invalid(format!(
                     "Em documentos do tipo '{doc}', a indicação do local de descarga é obrigatória pelo Decreto 71/25."
                 )));

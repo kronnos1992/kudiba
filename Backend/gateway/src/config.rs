@@ -85,8 +85,8 @@ impl Config {
             fiscal_engine_url = format!("http://{}", fiscal_engine_url);
         }
 
-        let mut auth_service_url = env::var("AUTH_SERVICE_URL")
-            .unwrap_or_else(|_| "http://localhost:8082".to_string());
+        let mut auth_service_url =
+            env::var("AUTH_SERVICE_URL").unwrap_or_else(|_| "http://localhost:8082".to_string());
         if !auth_service_url.starts_with("http://") && !auth_service_url.starts_with("https://") {
             auth_service_url = format!("http://{}", auth_service_url);
         }
@@ -103,10 +103,14 @@ impl Config {
         });
         if is_production {
             let origins = if allowed_origins.trim_start().starts_with('[') {
-                serde_json::from_str::<Vec<String>>(&allowed_origins)
-                    .unwrap_or_else(|_| panic!("CORS_ALLOWED_ORIGINS must be a JSON array or comma-separated list."))
+                serde_json::from_str::<Vec<String>>(&allowed_origins).unwrap_or_else(|_| {
+                    panic!("CORS_ALLOWED_ORIGINS must be a JSON array or comma-separated list.")
+                })
             } else {
-                allowed_origins.split(',').map(|origin| origin.trim().to_string()).collect()
+                allowed_origins
+                    .split(',')
+                    .map(|origin| origin.trim().to_string())
+                    .collect()
             };
             if origins.is_empty()
                 || origins.iter().any(|origin| {
@@ -127,9 +131,7 @@ impl Config {
             }
             Err(_) => DEVELOPMENT_JWT_SECRET.to_string(),
         };
-        if is_production
-            && (jwt_secret == DEVELOPMENT_JWT_SECRET || jwt_secret.as_bytes().len() < 32)
-        {
+        if is_production && (jwt_secret == DEVELOPMENT_JWT_SECRET || jwt_secret.len() < 32) {
             panic!("Production JWT_SECRET must be a non-default secret of at least 32 bytes.");
         }
 

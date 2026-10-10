@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::domain::error::DomainError;
@@ -41,7 +41,10 @@ impl SyncAgtUseCase {
         }
     }
 
-    pub async fn execute(&self, command: SyncAgtCommand) -> Result<AgtSubmissionResult, DomainError> {
+    pub async fn execute(
+        &self,
+        command: SyncAgtCommand,
+    ) -> Result<AgtSubmissionResult, DomainError> {
         let mut session = self.session_factory.open().await?;
 
         // 1. Obter os dados da organização (Tenant)
@@ -50,7 +53,10 @@ impl SyncAgtUseCase {
             .find_by_id(&mut *session, command.tenant_id)
             .await?
             .ok_or_else(|| {
-                DomainError::invalid(format!("Organização '{}' não encontrada.", command.tenant_id))
+                DomainError::invalid(format!(
+                    "Organização '{}' não encontrada.",
+                    command.tenant_id
+                ))
             })?;
 
         // 2. Obter as facturas a submeter

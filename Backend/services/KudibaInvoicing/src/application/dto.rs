@@ -253,7 +253,6 @@ pub struct CancelInvoiceResult {
     pub issued_at: DateTime<Utc>,
 }
 
-
 /// Comando de abertura/recuperação de uma série fiscal
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -117,7 +117,11 @@ impl AgtQrCodeService {
             .map_err(|err| DomainError::invalid(format!("Falha ao gerar QR Code ASCII: {err}")))?;
 
         // Rendezação usando blocos unicode compactos
-        Ok(code.render::<char>().quiet_zone(true).module_dimensions(2, 1).build())
+        Ok(code
+            .render::<char>()
+            .quiet_zone(true)
+            .module_dimensions(2, 1)
+            .build())
     }
 }
 
@@ -174,8 +178,11 @@ mod tests {
         let invoice = sample_invoice();
         let payload = AgtQrCodeService::build_payload(&invoice, "999/AGT/2026");
 
-        assert!(payload.starts_with("A:5412345678*B:5498765432*C:AO*D:FT*E:N*F:2026-10-07*G:FT KUD26/000042"));
-        assert!(payload.contains("*H:0*I1:AO*I7:100000.00*I8:14000.00*N:1000.00*O:114000.00*Q:a8b2*R:999/AGT/2026"));
+        assert!(payload
+            .starts_with("A:5412345678*B:5498765432*C:AO*D:FT*E:N*F:2026-10-07*G:FT KUD26/000042"));
+        assert!(payload.contains(
+            "*H:0*I1:AO*I7:100000.00*I8:14000.00*N:1000.00*O:114000.00*Q:a8b2*R:999/AGT/2026"
+        ));
     }
 
     #[test]

@@ -66,7 +66,10 @@ mod tests {
             "/api/v1/auth/users",
             "/api/v1/auth/switch-tenant",
         ] {
-            assert!(is_auth_service_path(path), "{path} deve ser encaminhada ao Auth");
+            assert!(
+                is_auth_service_path(path),
+                "{path} deve ser encaminhada ao Auth"
+            );
         }
         assert!(!is_auth_service_path("/api/v1/invoices"));
     }

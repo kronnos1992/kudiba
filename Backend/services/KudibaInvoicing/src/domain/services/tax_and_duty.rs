@@ -59,10 +59,8 @@ mod tests {
     fn calcula_retencao_de_servico_a_6_e_meio_por_cento() {
         // Exemplo: Serviço de 100.000 Kz -> 6.5% de retenção = 6.500 Kz
         let base = Decimal::from(100000);
-        let withholding = TaxAndDutyCalculator::calculate_withholding(
-            base,
-            STANDARD_SERVICE_WITHHOLDING_RATE,
-        );
+        let withholding =
+            TaxAndDutyCalculator::calculate_withholding(base, STANDARD_SERVICE_WITHHOLDING_RATE);
         assert_eq!(withholding, Decimal::from(6500));
     }
 
@@ -70,10 +68,8 @@ mod tests {
     fn calcula_retencao_com_arredondamento_afastando_do_zero() {
         // Base de 333.33 Kz a 6.5% = 21.66645 -> 21.67 Kz
         let base = Decimal::new(33333, 2);
-        let withholding = TaxAndDutyCalculator::calculate_withholding(
-            base,
-            STANDARD_SERVICE_WITHHOLDING_RATE,
-        );
+        let withholding =
+            TaxAndDutyCalculator::calculate_withholding(base, STANDARD_SERVICE_WITHHOLDING_RATE);
         assert_eq!(withholding, Decimal::new(2167, 2));
     }
 
@@ -92,7 +88,10 @@ mod tests {
     #[test]
     fn base_ou_taxa_zerada_retorna_zero() {
         assert_eq!(
-            TaxAndDutyCalculator::calculate_withholding(Decimal::ZERO, STANDARD_SERVICE_WITHHOLDING_RATE),
+            TaxAndDutyCalculator::calculate_withholding(
+                Decimal::ZERO,
+                STANDARD_SERVICE_WITHHOLDING_RATE
+            ),
             Decimal::ZERO
         );
         assert_eq!(

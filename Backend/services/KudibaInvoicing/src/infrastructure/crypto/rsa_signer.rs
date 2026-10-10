@@ -211,13 +211,17 @@ pub fn generate_agt_keypair() -> Result<AgtGeneratedKeypair, DomainError> {
 
     let private_key_pem = private_key
         .to_pkcs8_pem(LineEnding::LF)
-        .map_err(|err| DomainError::Crypto(format!("Falha ao exportar chave privada PKCS#8: {}", err)))?
+        .map_err(|err| {
+            DomainError::Crypto(format!("Falha ao exportar chave privada PKCS#8: {}", err))
+        })?
         .to_string();
 
     let public_key = RsaPublicKey::from(&private_key);
     let public_key_pem = public_key
         .to_public_key_pem(LineEnding::LF)
-        .map_err(|err| DomainError::Crypto(format!("Falha ao exportar chave pública X.509: {}", err)))?;
+        .map_err(|err| {
+            DomainError::Crypto(format!("Falha ao exportar chave pública X.509: {}", err))
+        })?;
 
     Ok(AgtGeneratedKeypair {
         private_key_pem,
@@ -308,7 +312,10 @@ mod tests {
         config.agt_private_key_pem = None;
 
         let result = RsaCryptoSigner::from_config(&config);
-        assert!(result.is_err(), "produção deve rejeitar ausência de chave oficial");
+        assert!(
+            result.is_err(),
+            "produção deve rejeitar ausência de chave oficial"
+        );
     }
 
     #[test]

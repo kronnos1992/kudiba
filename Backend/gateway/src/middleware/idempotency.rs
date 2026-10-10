@@ -85,12 +85,19 @@ pub async fn idempotency_middleware(
                 let status = StatusCode::from_u16(cached.status).unwrap_or(StatusCode::OK);
                 let mut resp = Response::builder().status(status);
                 for (k, v) in cached.headers {
-                    if let (Ok(hk), Ok(hv)) = (k.parse::<axum::http::HeaderName>(), HeaderValue::from_str(&v)) {
+                    if let (Ok(hk), Ok(hv)) = (
+                        k.parse::<axum::http::HeaderName>(),
+                        HeaderValue::from_str(&v),
+                    ) {
                         resp = resp.header(hk, hv);
                     }
                 }
-                let mut final_resp = resp.body(Body::from(cached.body)).unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
-                final_resp.headers_mut().insert("Idempotent-Replay", HeaderValue::from_static("true"));
+                let mut final_resp = resp
+                    .body(Body::from(cached.body))
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+                final_resp
+                    .headers_mut()
+                    .insert("Idempotent-Replay", HeaderValue::from_static("true"));
                 return final_resp;
             }
         }
@@ -103,7 +110,9 @@ pub async fn idempotency_middleware(
     // 3. APENAS respostas bem-sucedidas (2xx) são cacheadas por 24 horas (86400 segundos)
     if status.is_success() {
         let (parts, body) = response.into_parts();
-        let bytes = to_bytes(body, state.config.max_body_bytes).await.unwrap_or_default();
+        let bytes = to_bytes(body, state.config.max_body_bytes)
+            .await
+            .unwrap_or_default();
 
         let mut headers_map = HashMap::new();
         for (k, v) in &parts.headers {

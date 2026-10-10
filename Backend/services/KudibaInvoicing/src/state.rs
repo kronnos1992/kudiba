@@ -40,7 +40,8 @@ pub struct AppState {
     pub signer: Arc<RsaCryptoSigner>,
     pub agt_client: Arc<AgtClient>,
     pub issue_invoice: Arc<IssueInvoiceUseCase>,
-    pub cancel_invoice: Arc<crate::application::commands::cancel_invoice::CancelInvoiceWithCreditNoteUseCase>,
+    pub cancel_invoice:
+        Arc<crate::application::commands::cancel_invoice::CancelInvoiceWithCreditNoteUseCase>,
     pub create_series: Arc<CreateFiscalSeriesUseCase>,
     pub get_invoice: Arc<GetInvoiceUseCase>,
     pub sign_direct: Arc<SignDirectUseCase>,
@@ -151,9 +152,11 @@ impl AppState {
                 config.service_version,
             )),
             fiscal_reports: Arc::new(FiscalReportsUseCase::new(read_session_factory.clone())),
-            pos_reports: Arc::new(crate::application::queries::pos_reports::PosReportsUseCase::new(
-                read_session_factory.clone(),
-            )),
+            pos_reports: Arc::new(
+                crate::application::queries::pos_reports::PosReportsUseCase::new(
+                    read_session_factory.clone(),
+                ),
+            ),
             sync_agt: Arc::new(SyncAgtUseCase::new(
                 read_session_factory.clone(),
                 tenant_repository,
@@ -161,16 +164,20 @@ impl AppState {
                 agt_client.clone(),
             )),
             event_publisher: {
-                Arc::new(crate::infrastructure::outbox::MultiChannelEventPublisher::new(
-                    config.rabbitmq_url.clone(),
-                    config.kafka_brokers.clone(),
-                ))
+                Arc::new(
+                    crate::infrastructure::outbox::MultiChannelEventPublisher::new(
+                        config.rabbitmq_url.clone(),
+                        config.kafka_brokers.clone(),
+                    ),
+                )
             },
             outbox_worker: {
-                let publ = Arc::new(crate::infrastructure::outbox::MultiChannelEventPublisher::new(
-                    config.rabbitmq_url.clone(),
-                    config.kafka_brokers.clone(),
-                ));
+                let publ = Arc::new(
+                    crate::infrastructure::outbox::MultiChannelEventPublisher::new(
+                        config.rabbitmq_url.clone(),
+                        config.kafka_brokers.clone(),
+                    ),
+                );
                 Arc::new(crate::infrastructure::outbox::OutboxWorker::new(
                     session_factory,
                     publ,

@@ -72,9 +72,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // =========================================================================
     // ETAPA 5: EXECUÇÃO DO SERVIDOR COM GRACEFUL SHUTDOWN
     // =========================================================================
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     tracing::info!("API Gateway encerrado com sucesso.");
     Ok(())

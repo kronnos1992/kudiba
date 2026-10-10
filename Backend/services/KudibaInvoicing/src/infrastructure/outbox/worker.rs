@@ -80,8 +80,8 @@ impl OutboxWorker {
             let payload_text: String = row
                 .try_get("payload_text")
                 .map_err(|e| DomainError::Persistence(e.to_string()))?;
-            let payload: serde_json::Value = serde_json::from_str(&payload_text)
-                .unwrap_or_else(|_| serde_json::Value::Null);
+            let payload: serde_json::Value =
+                serde_json::from_str(&payload_text).unwrap_or(serde_json::Value::Null);
             let created_at: chrono::DateTime<chrono::Utc> = row
                 .try_get("created_at")
                 .map_err(|e| DomainError::Persistence(e.to_string()))?;
@@ -184,7 +184,10 @@ mod tests {
             created_at: chrono::Utc::now(),
         };
 
-        publisher.publish(&event).await.expect("publicação com sucesso");
+        publisher
+            .publish(&event)
+            .await
+            .expect("publicação com sucesso");
 
         let received = rx.recv().await.expect("recepção de evento no canal");
         assert_eq!(received.event_id, event.event_id);

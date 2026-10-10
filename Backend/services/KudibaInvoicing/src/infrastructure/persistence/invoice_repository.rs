@@ -125,19 +125,26 @@ impl PgInvoiceRepository {
         let stamp_duty_total: Decimal = row.try_get("stamp_duty_total")?;
         let amount_due = gross_total + stamp_duty_total - withholding_total;
 
-        let vehicle_registration: Option<String> = row.try_get("vehicle_registration").ok().flatten();
+        let vehicle_registration: Option<String> =
+            row.try_get("vehicle_registration").ok().flatten();
         let carrier_name: Option<String> = row.try_get("carrier_name").ok().flatten();
         let carrier_nif: Option<String> = row.try_get("carrier_nif").ok().flatten();
         let load_address: Option<String> = row.try_get("load_address").ok().flatten();
         let load_city: Option<String> = row.try_get("load_city").ok().flatten();
         let load_country: Option<String> = row.try_get("load_country").ok().flatten();
-        let load_date_time: Option<chrono::DateTime<chrono::Utc>> = row.try_get("load_date_time").ok().flatten();
+        let load_date_time: Option<chrono::DateTime<chrono::Utc>> =
+            row.try_get("load_date_time").ok().flatten();
         let unload_address: Option<String> = row.try_get("unload_address").ok().flatten();
         let unload_city: Option<String> = row.try_get("unload_city").ok().flatten();
         let unload_country: Option<String> = row.try_get("unload_country").ok().flatten();
-        let unload_date_time: Option<chrono::DateTime<chrono::Utc>> = row.try_get("unload_date_time").ok().flatten();
+        let unload_date_time: Option<chrono::DateTime<chrono::Utc>> =
+            row.try_get("unload_date_time").ok().flatten();
 
-        let transport = if vehicle_registration.is_some() || load_address.is_some() || unload_address.is_some() || load_date_time.is_some() {
+        let transport = if vehicle_registration.is_some()
+            || load_address.is_some()
+            || unload_address.is_some()
+            || load_date_time.is_some()
+        {
             Some(crate::domain::value_objects::transport::TransportMovement {
                 vehicle_registration,
                 carrier_name,

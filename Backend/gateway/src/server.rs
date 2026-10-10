@@ -3,7 +3,7 @@ use axum::{
     extract::State,
     http::{header::CONTENT_TYPE, StatusCode},
     middleware as axum_mw,
-    response::{Html, Json, Redirect, Response},
+    response::{Html, IntoResponse, Json, Redirect, Response},
     routing::{any, get},
     Router,
 };
@@ -17,12 +17,13 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 
 use crate::config::Config;
+use crate::errors::ProblemDetail;
 use crate::middleware::{
     auth::auth_middleware, contingency::agt_contingency_middleware,
     correlation::correlation_id_middleware, idempotency::idempotency_middleware,
     ratelimit::rate_limit_middleware, tenant::tenant_resolver_middleware,
 };
-use crate::proxy::{forward_to_auth, forward_to_core, forward_to_fiscal};
+use crate::proxy::{forward_to_auth, forward_to_auth_openapi, forward_to_core, forward_to_fiscal};
 
 /// Estado global compartilhado entre os handlers e middlewares do Gateway
 #[derive(Clone)]
@@ -97,29 +98,31 @@ pub fn create_router(
         ));
 
     // =========================================================================
-    // DOCUMENTAÇÃO INTERATIVA DA API (SCALAR API REFERENCE & OPENAPI 3.1)
+    // DOCUMENTAÇÃO INTERATIVA DA API (SWAGGER UI & OPENAPI 3.1)
     // =========================================================================
     let docs_routes = Router::new()
-        .route("/scalar", get(scalar_handler))
-        .route("/scalar/", get(scalar_handler))
-        .route("/scalar/{*path}", get(scalar_handler))
-        .route("/docs", get(scalar_handler))
-        .route("/docs/", get(scalar_handler))
-        .route("/docs/{*path}", get(scalar_handler))
+        .route("/swagger", get(swagger_handler))
+        .route("/docs", get(swagger_handler))
+        .route("/docs/", get(swagger_handler))
+        .route("/docs/{*path}", get(swagger_handler))
+        .route("/swagger-ui", get(swagger_handler))
+        .route("/swagger-ui/", get(swagger_handler))
+        .route("/swagger-ui/{*path}", get(swagger_handler))
+        // Compatibilidade: a antiga Scalar API Reference redirecciona para o Swagger UI
+        .route("/scalar", get(|| async { Redirect::permanent("/swagger") }))
         .route(
-            "/swagger-ui",
-            get(|| async { Redirect::permanent("/scalar") }),
+            "/scalar/",
+            get(|| async { Redirect::permanent("/swagger") }),
         )
         .route(
-            "/swagger-ui/",
-            get(|| async { Redirect::permanent("/scalar") }),
+            "/scalar/{*path}",
+            get(|| async { Redirect::permanent("/swagger") }),
         )
-        .route(
-            "/swagger-ui/{*path}",
-            get(|| async { Redirect::permanent("/scalar") }),
-        )
-        .route("/swagger", get(|| async { Redirect::permanent("/scalar") }))
-        .route("/api-docs/openapi.yaml", get(openapi_yaml_handler));
+        .route("/api-docs/openapi.yaml", get(openapi_yaml_handler))
+        // Spec OpenAPI do KudibaAuth (documento isolado, via proxy)
+        .route("/api-docs/auth-openapi.json", get(forward_to_auth_openapi))
+        // Documento OpenAPI unificado (Gateway + KudibaAuth) consumido pelo Swagger UI
+        .route("/api-docs/openapi.json", get(merged_openapi_handler));
 
     // =========================================================================
     // ROTAS DE AUTENTICAÇÃO E SESSÕES (PÚBLICAS / KUDIBA AUTH)
@@ -172,9 +175,11 @@ pub fn create_router(
             .allow_methods(Any)
             .allow_headers(Any)
     } else {
-        let configured_origins: Vec<String> =
-            serde_json::from_str(&state.config.allowed_origins).unwrap_or_else(|_| {
-                state.config.allowed_origins
+        let configured_origins: Vec<String> = serde_json::from_str(&state.config.allowed_origins)
+            .unwrap_or_else(|_| {
+                state
+                    .config
+                    .allowed_origins
                     .split(',')
                     .map(|origin| origin.trim().to_string())
                     .collect()
@@ -270,44 +275,45 @@ async fn services_health_handler(
 }
 
 // =============================================================================
-// SCALAR API REFERENCE & ESPECIFICAÇÃO OPENAPI 3.1
+// SWAGGER UI & ESPECIFICAÇÃO OPENAPI 3.1
 // =============================================================================
 const OPENAPI_SPEC: &str = include_str!("../docs/API_GATEWAY_OPENAPI.yaml");
 
-const SCALAR_HTML: &str = r#"<!doctype html>
+const SWAGGER_HTML: &str = r##"<!doctype html>
 <html lang="pt">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kudiba ERP — API Reference (Scalar)</title>
-  <link rel="icon" type="image/svg+xml" href="https://scalar.com/favicon.svg" />
+  <title>Kudiba ERP — API Reference (Swagger UI)</title>
+  <link rel="icon" type="image/svg+xml" href="https://swagger.io/favicon.png" />
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
   <style>
     body {
       margin: 0;
       padding: 0;
-      background-color: #0f0f13;
     }
   </style>
 </head>
 <body>
-  <script
-    id="api-reference"
-    type="application/json"
-    data-url="/api-docs/openapi.yaml"
-    data-configuration='{
-      "theme": "purple",
-      "layout": "modern",
-      "showSidebar": true,
-      "darkMode": true,
-      "searchHotKey": "k",
-      "metaData": {
-        "title": "Kudiba ERP — API Reference (Scalar)"
-      }
-    }'>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js" crossorigin></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js" crossorigin></script>
+  <script>
+    window.onload = function () {
+      window.ui = SwaggerUIBundle({
+        url: "/api-docs/openapi.json",
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
+        ],
+        layout: "BaseLayout"
+      });
+    };
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
 </body>
-</html>"#;
+</html>"##;
 
 async fn openapi_yaml_handler() -> Response {
     Response::builder()
@@ -316,6 +322,105 @@ async fn openapi_yaml_handler() -> Response {
         .unwrap()
 }
 
-async fn scalar_handler() -> Html<&'static str> {
-    Html(SCALAR_HTML)
+async fn swagger_handler() -> Html<&'static str> {
+    Html(SWAGGER_HTML)
+}
+
+/// Obtém a especificação OpenAPI do KudibaAuth através do cluster interno.
+async fn fetch_auth_openapi(state: &AppState) -> Option<serde_json::Value> {
+    let url = format!(
+        "{}/api-docs/openapi.json",
+        state.config.auth_service_url.trim_end_matches('/')
+    );
+    match state.http_client.get(&url).send().await {
+        Ok(resp) if resp.status().is_success() => resp.json::<serde_json::Value>().await.ok(),
+        Ok(resp) => {
+            tracing::warn!("OpenAPI do KudibaAuth devolveu o estado {}", resp.status());
+            None
+        }
+        Err(err) => {
+            tracing::warn!("Falha ao obter OpenAPI do KudibaAuth: {err}");
+            None
+        }
+    }
+}
+
+/// Funde a especificação do KudibaAuth (overlay) na especificação base do Gateway.
+fn merge_openapi(base: &mut serde_json::Value, overlay: serde_json::Value) {
+    if let (Some(base_paths), Some(overlay_paths)) = (
+        base.get_mut("paths").and_then(|v| v.as_object_mut()),
+        overlay.get("paths").and_then(|v| v.as_object()),
+    ) {
+        for (path, item) in overlay_paths {
+            match base_paths.get_mut(path).and_then(|v| v.as_object_mut()) {
+                Some(existing) => {
+                    if let Some(methods) = item.as_object() {
+                        for (method, operation) in methods {
+                            existing
+                                .entry(method.clone())
+                                .or_insert_with(|| operation.clone());
+                        }
+                    }
+                }
+                None => {
+                    base_paths.insert(path.clone(), item.clone());
+                }
+            }
+        }
+    }
+
+    if let (Some(base_components), Some(overlay_components)) = (
+        base.get_mut("components").and_then(|v| v.as_object_mut()),
+        overlay.get("components").and_then(|v| v.as_object()),
+    ) {
+        for (section, overlay_section) in overlay_components {
+            match base_components.get_mut(section) {
+                Some(existing) => {
+                    if let (Some(existing_map), Some(overlay_map)) =
+                        (existing.as_object_mut(), overlay_section.as_object())
+                    {
+                        for (key, value) in overlay_map {
+                            existing_map
+                                .entry(key.clone())
+                                .or_insert_with(|| value.clone());
+                        }
+                    }
+                }
+                None => {
+                    base_components.insert(section.clone(), overlay_section.clone());
+                }
+            }
+        }
+    }
+}
+
+/// Documento OpenAPI unificado (Gateway + KudibaAuth) consumido pelo Swagger UI.
+async fn merged_openapi_handler(State(state): State<AppState>) -> Response {
+    let mut document: serde_json::Value = match serde_yaml::from_str(OPENAPI_SPEC) {
+        Ok(value) => value,
+        Err(err) => {
+            tracing::error!("Falha ao interpretar a especificação OpenAPI base: {err}");
+            return ProblemDetail::new(
+                "https://api.kudiba.ao/errors/openapi-unavailable",
+                "Especificação OpenAPI Indisponível",
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Não foi possível interpretar o manifesto OpenAPI base do Gateway.",
+                "/api-docs/openapi.json",
+                "OPENAPI_PARSE_ERROR",
+            )
+            .into_response();
+        }
+    };
+
+    match fetch_auth_openapi(&state).await {
+        Some(auth_spec) => merge_openapi(&mut document, auth_spec),
+        None => tracing::warn!(
+            "Especificação do KudibaAuth indisponível: a documentação é servida apenas com o Gateway."
+        ),
+    }
+
+    Response::builder()
+        .header(CONTENT_TYPE, "application/json; charset=utf-8")
+        .body(Body::from(document.to_string()))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }

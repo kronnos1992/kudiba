@@ -4,11 +4,11 @@
 //! sem bloqueio do cliente gRPC ou REST, com persistência em memória concorrente
 //! e notificação de conclusão.
 
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 
 /// Estado do trabalho de geração do SAF-T
@@ -63,12 +63,7 @@ impl SaftJobRegistry {
     }
 
     /// Cria e enfileira um novo trabalho de exportação
-    pub fn enqueue(
-        &self,
-        tenant_id: Uuid,
-        fiscal_year: i32,
-        fiscal_month: Option<u32>,
-    ) -> String {
+    pub fn enqueue(&self, tenant_id: Uuid, fiscal_year: i32, fiscal_month: Option<u32>) -> String {
         let job_id = Uuid::new_v4().simple().to_string();
         let job = SaftJobInfo {
             job_id: job_id.clone(),
@@ -199,4 +194,3 @@ mod tests {
         assert!(job.completed_at.is_some());
     }
 }
-

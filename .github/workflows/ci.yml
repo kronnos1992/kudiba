@@ -1,4 +1,4 @@
-name: CI - Backend Services & Gateway (Rust)
+name: CI - Backend Services, Gateway & KudibaAuth
 
 on:
   push:
@@ -15,8 +15,8 @@ on:
       - '.github/workflows/ci.yml'
 
 jobs:
-  check-and-build:
-    name: Check, Lint & Build
+  rust-check-and-build:
+    name: Rust - Check, Lint & Build
     runs-on: ubuntu-latest
 
     steps:
@@ -41,7 +41,7 @@ jobs:
 
       - name: Check code formatting
         working-directory: Backend
-        run: cargo fmt --check || true
+        run: cargo fmt --all --check
 
       - name: Run Cargo Check
         working-directory: Backend
@@ -49,8 +49,32 @@ jobs:
 
       - name: Run Clippy Linter
         working-directory: Backend
-        run: cargo clippy -- -D warnings || true
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Run Cargo Tests
         working-directory: Backend
-        run: cargo test --verbose
+        run: cargo test --workspace
+
+  kudiba-auth-tests:
+    name: KudibaAuth (Python) - Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: Backend/services/KudibaAuth
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      - name: Run pytest
+        working-directory: Backend/services/KudibaAuth
+        run: |
+          PYTHONPATH=. python -m pytest tests/ -q

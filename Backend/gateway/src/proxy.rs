@@ -4,43 +4,81 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use std::net::SocketAddr;
 use reqwest::Client;
+use std::net::SocketAddr;
 
 use crate::errors::ProblemDetail;
 use crate::server::AppState;
 
 /// Handler de Reverse Proxy para o Core API Server
-pub async fn forward_to_core(
-    State(state): State<AppState>,
-    req: Request,
-) -> Response {
-    forward_request(&state.http_client, &state.config.core_api_url, req, state.config.max_body_bytes).await
+pub async fn forward_to_core(State(state): State<AppState>, req: Request) -> Response {
+    forward_request(
+        &state.http_client,
+        &state.config.core_api_url,
+        req,
+        state.config.max_body_bytes,
+        None,
+    )
+    .await
 }
 
 /// Handler de Reverse Proxy para o Serviço de Autenticação (KudibaAuth)
-pub async fn forward_to_auth(
-    State(state): State<AppState>,
-    req: Request,
-) -> Response {
-    forward_request(&state.http_client, &state.config.auth_service_url, req, state.config.max_body_bytes).await
+pub async fn forward_to_auth(State(state): State<AppState>, req: Request) -> Response {
+    forward_request(
+        &state.http_client,
+        &state.config.auth_service_url,
+        req,
+        state.config.max_body_bytes,
+        None,
+    )
+    .await
+}
+
+/// Handler dedicado ao OpenAPI do KudibaAuth (`/api-docs/openapi.json`),
+/// exposto no perímetro para o Swagger UI agregar a documentação.
+pub async fn forward_to_auth_openapi(State(state): State<AppState>, req: Request) -> Response {
+    forward_request(
+        &state.http_client,
+        &state.config.auth_service_url,
+        req,
+        state.config.max_body_bytes,
+        Some("/api-docs/openapi.json"),
+    )
+    .await
 }
 
 /// Handler de Reverse Proxy para o Fiscal Engine Service (AGT Criptografia & Séries)
-pub async fn forward_to_fiscal(
-    State(state): State<AppState>,
-    req: Request,
-) -> Response {
-    forward_request(&state.http_client, &state.config.fiscal_engine_url, req, state.config.max_body_bytes).await
+pub async fn forward_to_fiscal(State(state): State<AppState>, req: Request) -> Response {
+    forward_request(
+        &state.http_client,
+        &state.config.fiscal_engine_url,
+        req,
+        state.config.max_body_bytes,
+        None,
+    )
+    .await
 }
 
-async fn forward_request(client: &Client, base_url: &str, req: Request, max_body_bytes: usize) -> Response {
+async fn forward_request(
+    client: &Client,
+    base_url: &str,
+    req: Request,
+    max_body_bytes: usize,
+    path_override: Option<&str>,
+) -> Response {
     let client_ip = req
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ConnectInfo(address)| address.ip().to_string());
     let (parts, body) = req.into_parts();
-    let path_and_query = parts.uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("");
+    let instance_path = parts
+        .uri
+        .path_and_query()
+        .map(|pq| pq.as_str().to_string())
+        .unwrap_or_default();
+    let path_and_query = path_override
+        .map(|p| p.to_string())
+        .unwrap_or_else(|| instance_path.clone());
     let base = base_url.trim_end_matches('/');
     let target_url = format!("{}{}", base, path_and_query);
 
@@ -53,9 +91,10 @@ async fn forward_request(client: &Client, base_url: &str, req: Request, max_body
                 "Payload Inválido ou Excessivo",
                 StatusCode::PAYLOAD_TOO_LARGE,
                 "O tamanho da requisição excedeu o limite máximo perimétrico permitido.",
-                path_and_query,
+                instance_path.as_str(),
                 "REQUEST_BODY_LIMIT_EXCEEDED",
-            ).into_response();
+            )
+            .into_response();
         }
     };
 
@@ -106,9 +145,10 @@ async fn forward_request(client: &Client, base_url: &str, req: Request, max_body
                     "Falha ao Receber Resposta do Upstream",
                     StatusCode::BAD_GATEWAY,
                     "O serviço interno retornou erro ao enviar o fluxo de dados.",
-                    path_and_query,
+                    instance_path.as_str(),
                     "UPSTREAM_STREAM_ERROR",
-                ).into_response(),
+                )
+                .into_response(),
             }
         }
         Err(err) => {
@@ -118,9 +158,10 @@ async fn forward_request(client: &Client, base_url: &str, req: Request, max_body
                 "Serviço Interno Indisponível",
                 StatusCode::BAD_GATEWAY,
                 "Não foi possível estabelecer comunicação com o microsserviço no cluster interno.",
-                path_and_query,
+                instance_path.as_str(),
                 "UPSTREAM_COMMUNICATION_ERROR",
-            ).into_response()
+            )
+            .into_response()
         }
     }
 }

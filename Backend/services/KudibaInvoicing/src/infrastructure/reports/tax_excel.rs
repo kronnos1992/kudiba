@@ -15,7 +15,8 @@ impl TaxExcelReportGenerator {
     pub fn generate_xlsx(report: &FiscalReportResult) -> Result<Vec<u8>, DomainError> {
         let mut workbook = Workbook::new();
         let worksheet = workbook.add_worksheet();
-        worksheet.set_name("Mapa Fiscal IVA")
+        worksheet
+            .set_name("Mapa Fiscal IVA")
             .map_err(|e| DomainError::invalid(format!("Erro ao configurar planilha Excel: {e}")))?;
 
         // Formatações
@@ -36,8 +37,7 @@ impl TaxExcelReportGenerator {
             .set_align(FormatAlign::Center)
             .set_border(FormatBorder::Thin);
 
-        let data_format = Format::new()
-            .set_border(FormatBorder::Thin);
+        let data_format = Format::new().set_border(FormatBorder::Thin);
 
         let number_format = Format::new()
             .set_num_format("#,##0.00")
@@ -63,26 +63,57 @@ impl TaxExcelReportGenerator {
             .set_border(FormatBorder::Thin);
 
         // 1. Cabeçalho Institucional
-        worksheet.write_with_format(0, 0, "KUDIBA ERP — MAPA DE APURAMENTO FISCAL E IVA", &title_format)
+        worksheet
+            .write_with_format(
+                0,
+                0,
+                "KUDIBA ERP — MAPA DE APURAMENTO FISCAL E IVA",
+                &title_format,
+            )
             .map_err(Self::map_err)?;
-        worksheet.write_with_format(1, 0, "Relatório Oficial de Conformidade Contabilística (Decreto Presidencial n.º 71/25)", &subtitle_format)
+        worksheet
+            .write_with_format(
+                1,
+                0,
+                "Relatório Oficial de Conformidade Contabilística (Decreto Presidencial n.º 71/25)",
+                &subtitle_format,
+            )
             .map_err(Self::map_err)?;
 
         let period_label = match report.fiscal_month {
-            Some(m) => format!("Período Fiscal: Mês {:02} / Exercício {}", m, report.fiscal_year),
+            Some(m) => format!(
+                "Período Fiscal: Mês {:02} / Exercício {}",
+                m, report.fiscal_year
+            ),
             None => format!("Período Fiscal: Exercício Anual {}", report.fiscal_year),
         };
-        worksheet.write(3, 0, &period_label).map_err(Self::map_err)?;
-        worksheet.write(3, 3, format!("Tenant ID: {}", report.tenant_id)).map_err(Self::map_err)?;
-        worksheet.write(4, 0, "Moeda Padrão: Kwanzas (AOA)").map_err(Self::map_err)?;
+        worksheet
+            .write(3, 0, &period_label)
+            .map_err(Self::map_err)?;
+        worksheet
+            .write(3, 3, format!("Tenant ID: {}", report.tenant_id))
+            .map_err(Self::map_err)?;
+        worksheet
+            .write(4, 0, "Moeda Padrão: Kwanzas (AOA)")
+            .map_err(Self::map_err)?;
 
         // 2. Tabela de IVA
         let mut row: u32 = 6;
-        worksheet.write_with_format(row, 0, "Taxa de IVA (%)", &header_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 1, "Enquadramento", &header_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 2, "Base Tributável (AOA)", &header_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 3, "IVA Liquidado (AOA)", &header_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 4, "Total Facturado (AOA)", &header_format).map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(row, 0, "Taxa de IVA (%)", &header_format)
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(row, 1, "Enquadramento", &header_format)
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(row, 2, "Base Tributável (AOA)", &header_format)
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(row, 3, "IVA Liquidado (AOA)", &header_format)
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(row, 4, "Total Facturado (AOA)", &header_format)
+            .map_err(Self::map_err)?;
 
         row += 1;
         let mut total_base = rust_decimal::Decimal::ZERO;
@@ -107,36 +138,132 @@ impl TaxExcelReportGenerator {
             total_vat += line.tax_amount;
             total_gross += gross;
 
-            worksheet.write_with_format(row, 0, line.tax_rate.to_string().parse::<f64>().unwrap_or(0.0), &percent_format).map_err(Self::map_err)?;
-            worksheet.write_with_format(row, 1, label, &data_format).map_err(Self::map_err)?;
-            worksheet.write_with_format(row, 2, line.taxable_base.to_string().parse::<f64>().unwrap_or(0.0), &number_format).map_err(Self::map_err)?;
-            worksheet.write_with_format(row, 3, line.tax_amount.to_string().parse::<f64>().unwrap_or(0.0), &number_format).map_err(Self::map_err)?;
-            worksheet.write_with_format(row, 4, gross.to_string().parse::<f64>().unwrap_or(0.0), &number_format).map_err(Self::map_err)?;
+            worksheet
+                .write_with_format(
+                    row,
+                    0,
+                    line.tax_rate.to_string().parse::<f64>().unwrap_or(0.0),
+                    &percent_format,
+                )
+                .map_err(Self::map_err)?;
+            worksheet
+                .write_with_format(row, 1, label, &data_format)
+                .map_err(Self::map_err)?;
+            worksheet
+                .write_with_format(
+                    row,
+                    2,
+                    line.taxable_base.to_string().parse::<f64>().unwrap_or(0.0),
+                    &number_format,
+                )
+                .map_err(Self::map_err)?;
+            worksheet
+                .write_with_format(
+                    row,
+                    3,
+                    line.tax_amount.to_string().parse::<f64>().unwrap_or(0.0),
+                    &number_format,
+                )
+                .map_err(Self::map_err)?;
+            worksheet
+                .write_with_format(
+                    row,
+                    4,
+                    gross.to_string().parse::<f64>().unwrap_or(0.0),
+                    &number_format,
+                )
+                .map_err(Self::map_err)?;
             row += 1;
         }
 
         // Totais de IVA
-        worksheet.write_with_format(row, 0, "TOTAL GERAL IVA", &total_label_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 1, "-", &total_label_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 2, total_base.to_string().parse::<f64>().unwrap_or(0.0), &total_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 3, total_vat.to_string().parse::<f64>().unwrap_or(0.0), &total_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 4, total_gross.to_string().parse::<f64>().unwrap_or(0.0), &total_format).map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(row, 0, "TOTAL GERAL IVA", &total_label_format)
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(row, 1, "-", &total_label_format)
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(
+                row,
+                2,
+                total_base.to_string().parse::<f64>().unwrap_or(0.0),
+                &total_format,
+            )
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(
+                row,
+                3,
+                total_vat.to_string().parse::<f64>().unwrap_or(0.0),
+                &total_format,
+            )
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(
+                row,
+                4,
+                total_gross.to_string().parse::<f64>().unwrap_or(0.0),
+                &total_format,
+            )
+            .map_err(Self::map_err)?;
 
         // 3. Tabela de Retenção na Fonte e Imposto de Selo
         row += 3;
-        worksheet.write_with_format(row, 0, "Imposto / Dedução Complementar", &header_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 1, "Regime Fiscal", &header_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 2, "Total Retido / Apurado (AOA)", &header_format).map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(row, 0, "Imposto / Dedução Complementar", &header_format)
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(row, 1, "Regime Fiscal", &header_format)
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(row, 2, "Total Retido / Apurado (AOA)", &header_format)
+            .map_err(Self::map_err)?;
 
         row += 1;
-        worksheet.write_with_format(row, 0, "Retenção na Fonte (RF)", &data_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 1, "Prestação de Serviços (6,5%) / Cativos", &data_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 2, report.withholding_total.to_string().parse::<f64>().unwrap_or(0.0), &number_format).map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(row, 0, "Retenção na Fonte (RF)", &data_format)
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(
+                row,
+                1,
+                "Prestação de Serviços (6,5%) / Cativos",
+                &data_format,
+            )
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(
+                row,
+                2,
+                report
+                    .withholding_total
+                    .to_string()
+                    .parse::<f64>()
+                    .unwrap_or(0.0),
+                &number_format,
+            )
+            .map_err(Self::map_err)?;
 
         row += 1;
-        worksheet.write_with_format(row, 0, "Imposto de Selo (IS)", &data_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 1, "Recibos de Quitação (0,7%) / TGIS", &data_format).map_err(Self::map_err)?;
-        worksheet.write_with_format(row, 2, report.stamp_duty_total.to_string().parse::<f64>().unwrap_or(0.0), &number_format).map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(row, 0, "Imposto de Selo (IS)", &data_format)
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(row, 1, "Recibos de Quitação (0,7%) / TGIS", &data_format)
+            .map_err(Self::map_err)?;
+        worksheet
+            .write_with_format(
+                row,
+                2,
+                report
+                    .stamp_duty_total
+                    .to_string()
+                    .parse::<f64>()
+                    .unwrap_or(0.0),
+                &number_format,
+            )
+            .map_err(Self::map_err)?;
 
         // Ajustar larguras das colunas
         worksheet.set_column_width(0, 22).map_err(Self::map_err)?;
@@ -156,9 +283,9 @@ impl TaxExcelReportGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::queries::fiscal_reports::VatReportLine;
     use rust_decimal::Decimal;
     use uuid::Uuid;
-    use crate::application::queries::fiscal_reports::VatReportLine;
 
     #[test]
     fn gera_relatorio_excel_valido() {

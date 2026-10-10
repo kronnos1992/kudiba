@@ -65,11 +65,17 @@ impl Config {
                 .and_then(|value| value.parse::<u32>().ok())
                 .unwrap_or(20),
             agt_key_version: env::var("AGT_KEY_VERSION").unwrap_or_else(|_| "1".to_string()),
-            agt_software_cert: env::var("AGT_SOFTWARE_CERT").unwrap_or_else(|_| "999/AGT/2026".to_string()),
-            agt_private_key_path: env::var("AGT_RSA_PRIVATE_KEY_PATH").ok().filter(|s| !s.trim().is_empty()),
-            agt_private_key_pem: env::var("AGT_RSA_PRIVATE_KEY_PEM").ok().filter(|s| !s.trim().is_empty()),
-            agt_platform_url: env::var("AGT_PLATFORM_URL")
-                .unwrap_or_else(|_| "https://webservices.agt.minfin.gov.ao/facturacao-electronica".to_string()),
+            agt_software_cert: env::var("AGT_SOFTWARE_CERT")
+                .unwrap_or_else(|_| "999/AGT/2026".to_string()),
+            agt_private_key_path: env::var("AGT_RSA_PRIVATE_KEY_PATH")
+                .ok()
+                .filter(|s| !s.trim().is_empty()),
+            agt_private_key_pem: env::var("AGT_RSA_PRIVATE_KEY_PEM")
+                .ok()
+                .filter(|s| !s.trim().is_empty()),
+            agt_platform_url: env::var("AGT_PLATFORM_URL").unwrap_or_else(|_| {
+                "https://webservices.agt.minfin.gov.ao/facturacao-electronica".to_string()
+            }),
             outbox_poll_interval_ms: env::var("OUTBOX_POLL_INTERVAL_MS")
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())
@@ -78,8 +84,12 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse::<i64>().ok())
                 .unwrap_or(50),
-            rabbitmq_url: env::var("RABBITMQ_URL").ok().filter(|s| !s.trim().is_empty()),
-            kafka_brokers: env::var("KAFKA_BROKERS").ok().filter(|s| !s.trim().is_empty()),
+            rabbitmq_url: env::var("RABBITMQ_URL")
+                .ok()
+                .filter(|s| !s.trim().is_empty()),
+            kafka_brokers: env::var("KAFKA_BROKERS")
+                .ok()
+                .filter(|s| !s.trim().is_empty()),
             environment,
             service_version: env!("CARGO_PKG_VERSION"),
         }

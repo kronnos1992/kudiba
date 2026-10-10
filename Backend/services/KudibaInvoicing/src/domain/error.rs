@@ -35,4 +35,3 @@ impl From<crate::domain::ports::db_session::RepositoryError> for DomainError {
         DomainError::Persistence(err.to_string())
     }
 }
-

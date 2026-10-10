@@ -52,10 +52,18 @@ pub async fn tenant_resolver_middleware(mut req: Request, next: Next) -> Respons
     }
 
     // Estratégia B: Cabeçalho X-Tenant-ID (usado por POS Desktop e integrações B2B)
-    if let Some(header_tenant) = req.headers().get("X-Tenant-ID").and_then(|h| h.to_str().ok()) {
+    if let Some(header_tenant) = req
+        .headers()
+        .get("X-Tenant-ID")
+        .and_then(|h| h.to_str().ok())
+    {
         let trimmed = header_tenant.trim();
         // Aceita UUID ou identificador alfanumérico seguro
-        if Uuid::parse_str(trimmed).is_ok() || trimmed.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        if Uuid::parse_str(trimmed).is_ok()
+            || trimmed
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
             resolved_tenant = Some(trimmed.to_string());
         }
     }

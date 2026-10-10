@@ -3,6 +3,17 @@
 # Kudiba ERP - Verificar Estado dos Servidores Locais
 # =============================================================================
 
+echo "--- KudibaAuth (HTTP :8082) ---"
+if curl -s -f http://127.0.0.1:8082/health >/dev/null 2>&1; then
+    AUTH_HEALTH=$(curl -s http://127.0.0.1:8082/health)
+    echo "  Status:      ONLINE (http://127.0.0.1:8082)"
+    echo "  Docs:        http://127.0.0.1:8082/docs"
+    echo "  Resposta:    $AUTH_HEALTH"
+else
+    echo "  Status:      OFFLINE"
+fi
+
+echo ""
 echo "--- KudibaInvoicing (REST :9090 | gRPC :9091) ---"
 if curl -s -f http://127.0.0.1:9090/health >/dev/null 2>&1; then
     HEALTH=$(curl -s http://127.0.0.1:9090/health)

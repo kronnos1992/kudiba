@@ -275,8 +275,8 @@ paths:
 
   /api-docs/openapi.yaml:
     get:
-      summary: Especificação OpenAPI 3.1 Bruta
-      description: Retorna o manifesto YAML completo da especificação da API atualmente em vigor.
+      summary: Especificação OpenAPI 3.1 Bruta (YAML)
+      description: Retorna o manifesto YAML da especificação do Gateway atualmente em vigor.
       tags:
         - Observabilidade & Infraestrutura
       responses:
@@ -286,6 +286,23 @@ paths:
             application/yaml:
               schema:
                 type: string
+
+  /api-docs/openapi.json:
+    get:
+      summary: Especificação OpenAPI 3.1 Unificada (Gateway + KudibaAuth)
+      description: >
+        Retorna o documento OpenAPI 3.1 em JSON que agrega as rotas do Gateway,
+        do Motor Fiscal (KudibaInvoicing) e do microsserviço KudibaAuth, sendo
+        a fonte consumida pela Scalar API Reference.
+      tags:
+        - Observabilidade & Infraestrutura
+      responses:
+        '200':
+          description: Documento OpenAPI unificado em JSON
+          content:
+            application/json:
+              schema:
+                type: object
 
 components:
   securitySchemes:

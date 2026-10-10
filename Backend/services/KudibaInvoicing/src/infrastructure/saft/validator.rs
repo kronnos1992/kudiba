@@ -7,8 +7,8 @@
 //! Realiza a validação sintáctica e estrutural em memória contra o ficheiro XSD
 //! oficial fornecido pela AGT/ASSOFT e validações semânticas de integridade contabilística.
 
-use std::sync::OnceLock;
 use crate::domain::error::DomainError;
+use std::sync::OnceLock;
 
 /// Schema oficial SAF-T (AO) v1.01_01 embutido no binário
 pub const SAFT_AO_XSD_SCHEMA: &str = include_str!("../../../schemas/SAFTAO1.01_01.xsd");
@@ -39,8 +39,9 @@ impl SaftValidator {
     /// Valida o documento XML contra o schema oficial XSD da AGT e regras semânticas
     pub fn validate_xml(xml: &str) -> Result<(), DomainError> {
         // 1. Validação de sintaxe e árvore XML
-        let doc = oxml::parse(xml)
-            .map_err(|e| DomainError::invalid(format!("Estrutura XML inválida no SAF-T (AO): {e}")))?;
+        let doc = oxml::parse(xml).map_err(|e| {
+            DomainError::invalid(format!("Estrutura XML inválida no SAF-T (AO): {e}"))
+        })?;
 
         // 2. Validação contra o Schema XSD compilado
         let schema = Self::get_schema()?;
@@ -77,15 +78,21 @@ impl SaftValidator {
 
         // Garante a presença dos blocos essenciais
         if !xml.contains("<Header>") || !xml.contains("</Header>") {
-            return Err(DomainError::invalid("Elemento <Header> ausente no ficheiro SAF-T."));
+            return Err(DomainError::invalid(
+                "Elemento <Header> ausente no ficheiro SAF-T.",
+            ));
         }
 
         if !xml.contains("<MasterFiles>") || !xml.contains("</MasterFiles>") {
-            return Err(DomainError::invalid("Elemento <MasterFiles> ausente no ficheiro SAF-T."));
+            return Err(DomainError::invalid(
+                "Elemento <MasterFiles> ausente no ficheiro SAF-T.",
+            ));
         }
 
         if !xml.contains("<SourceDocuments>") || !xml.contains("</SourceDocuments>") {
-            return Err(DomainError::invalid("Elemento <SourceDocuments> ausente no ficheiro SAF-T."));
+            return Err(DomainError::invalid(
+                "Elemento <SourceDocuments> ausente no ficheiro SAF-T.",
+            ));
         }
 
         Ok(())
@@ -99,7 +106,11 @@ mod tests {
     #[test]
     fn schema_oficial_compila_com_sucesso() {
         let schema = SaftValidator::get_schema();
-        assert!(schema.is_ok(), "O schema oficial XSD da AGT deve compilar sem erro: {:?}", schema.err());
+        assert!(
+            schema.is_ok(),
+            "O schema oficial XSD da AGT deve compilar sem erro: {:?}",
+            schema.err()
+        );
     }
 
     #[test]

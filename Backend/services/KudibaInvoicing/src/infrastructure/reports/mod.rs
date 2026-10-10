@@ -7,4 +7,3 @@ pub use invoice_pdf::InvoicePdfGenerator;
 pub use invoice_thermal::InvoiceThermalGenerator;
 pub use tax_excel::TaxExcelReportGenerator;
 pub use tax_pdf::TaxPdfReportGenerator;
-

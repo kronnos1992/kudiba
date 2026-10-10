@@ -34,14 +34,29 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/fiscal/invoices/{id}", get(get_invoice_handler))
         // REST: anulação / estorno de documento fiscal via Nota de Crédito
         .route("/api/v1/invoices/{id}/cancel", post(cancel_invoice_handler))
-        .route("/api/v1/fiscal/invoices/{id}/cancel", post(cancel_invoice_handler))
+        .route(
+            "/api/v1/fiscal/invoices/{id}/cancel",
+            post(cancel_invoice_handler),
+        )
         // REST: renderização oficial do documento (PDF A4, Talão Térmico 80mm e QR Code AGT)
         .route("/api/v1/invoices/{id}/pdf", get(get_invoice_pdf_handler))
-        .route("/api/v1/fiscal/invoices/{id}/pdf", get(get_invoice_pdf_handler))
-        .route("/api/v1/invoices/{id}/thermal", get(get_invoice_thermal_handler))
-        .route("/api/v1/fiscal/invoices/{id}/thermal", get(get_invoice_thermal_handler))
+        .route(
+            "/api/v1/fiscal/invoices/{id}/pdf",
+            get(get_invoice_pdf_handler),
+        )
+        .route(
+            "/api/v1/invoices/{id}/thermal",
+            get(get_invoice_thermal_handler),
+        )
+        .route(
+            "/api/v1/fiscal/invoices/{id}/thermal",
+            get(get_invoice_thermal_handler),
+        )
         .route("/api/v1/invoices/{id}/qr", get(get_invoice_qr_handler))
-        .route("/api/v1/fiscal/invoices/{id}/qr", get(get_invoice_qr_handler))
+        .route(
+            "/api/v1/fiscal/invoices/{id}/qr",
+            get(get_invoice_qr_handler),
+        )
         // REST: chave pública RSA para verificação independente das assinaturas
         .route("/api/v1/public-key", get(public_key_handler))
         .route("/api/v1/fiscal/public-key", get(public_key_handler))
@@ -77,25 +92,66 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/fiscal/saft/validate", post(validate_saft_handler))
         .route("/api/v1/fiscal/saft/jobs", post(trigger_saft_job_handler))
         .route("/api/v1/fiscal/saft/jobs/{id}", get(get_saft_job_handler))
-        .route("/api/v1/fiscal/saft/jobs/{id}/download", get(download_saft_job_handler))
+        .route(
+            "/api/v1/fiscal/saft/jobs/{id}/download",
+            get(download_saft_job_handler),
+        )
         .route("/api/v1/fiscal/reports/tax", get(fiscal_report_handler))
-        .route("/api/v1/fiscal/reports/tax/excel", get(fiscal_report_excel_handler))
-        .route("/api/v1/fiscal/reports/tax/pdf", get(fiscal_report_pdf_handler))
+        .route(
+            "/api/v1/fiscal/reports/tax/excel",
+            get(fiscal_report_excel_handler),
+        )
+        .route(
+            "/api/v1/fiscal/reports/tax/pdf",
+            get(fiscal_report_pdf_handler),
+        )
         // REST: Relatórios de Caixa e Memória Fiscal POS (Leitura X e Fecho Z)
         .route("/api/v1/fiscal/pos/reports/x", get(pos_leitura_x_handler))
-        .route("/api/v1/fiscal/pos/reports/x/thermal", get(pos_leitura_x_thermal_handler))
+        .route(
+            "/api/v1/fiscal/pos/reports/x/thermal",
+            get(pos_leitura_x_thermal_handler),
+        )
         .route("/api/v1/fiscal/pos/reports/z", post(pos_fecho_z_handler))
-        .route("/api/v1/fiscal/pos/reports/z/thermal", post(pos_fecho_z_thermal_handler))
+        .route(
+            "/api/v1/fiscal/pos/reports/z/thermal",
+            post(pos_fecho_z_thermal_handler),
+        )
         // REST: Conector AGT (Heartbeat/Liveness e sincronização de lotes)
         .route("/api/v1/fiscal/agt/status", get(agt_status_handler))
         .route("/api/v1/fiscal/agt/sync", post(sync_agt_handler))
         // REST: Gestão de chaves criptográficas para certificação AGT
         .route("/api/v1/fiscal/keys/generate", post(generate_keys_handler))
-        .merge(crate::presentation::http::scalar::router::<AppState>())
+        .merge(crate::presentation::http::swagger::router::<AppState>())
         .with_state(state)
 }
 
-fn authorize_role(headers: &HeaderMap, allowed_roles: &[&str]) -> Result<(), Response> {
+#[derive(Debug)]
+struct ApiError {
+    status: StatusCode,
+    message: String,
+}
+
+impl ApiError {
+    fn new(status: StatusCode, message: impl Into<String>) -> Self {
+        Self {
+            status,
+            message: message.into(),
+        }
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn status(&self) -> StatusCode {
+        self.status
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (self.status, Json(json!({ "error": self.message }))).into_response()
+    }
+}
+
+fn authorize_role(headers: &HeaderMap, allowed_roles: &[&str]) -> Result<(), ApiError> {
     authorized_tenant_id(headers, allowed_roles).map(|_| ())
 }
 
@@ -106,7 +162,7 @@ async fn root_handler(State(state): State<AppState>) -> Json<serde_json::Value> 
         "framework": "Rust (Axum + Tokio)",
         "rest": format!("REST on port {}", state.config.http_port),
         "grpc": format!("FiscalEngineService (kudiba.fiscal.v1) on port {}", state.config.grpc_port),
-        "docs": "/scalar",
+        "docs": "/swagger",
         "regulation": "Decreto Presidencial n.º 71/25 (AGT Angola)",
     }))
 }
@@ -139,7 +195,7 @@ async fn issue_invoice_handler(
         ],
     ) {
         Ok(actor) => actor,
-        Err(response) => return response,
+        Err(response) => return response.into_response(),
     };
     command.actor_user_id = Some(actor);
 
@@ -165,7 +221,7 @@ async fn create_series_handler(
             "BILLING_OPERATOR",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     match state.create_series.execute(command).await {
@@ -201,13 +257,13 @@ async fn get_invoice_handler(
         ],
     ) {
         Ok(tenant_id) => tenant_id,
-        Err(response) => return response,
+        Err(response) => return response.into_response(),
     };
     if params
         .tenant_id
         .is_some_and(|requested| requested != tenant_id)
     {
-        return forbidden_tenant();
+        return forbidden_tenant().into_response();
     }
 
     let query = GetInvoiceQuery {
@@ -251,7 +307,7 @@ async fn cancel_invoice_handler(
         ],
     ) {
         Ok(actor) => actor,
-        Err(response) => return response,
+        Err(response) => return response.into_response(),
     };
 
     let command = CancelInvoiceCommand {
@@ -287,13 +343,13 @@ async fn get_invoice_pdf_handler(
         ],
     ) {
         Ok(tenant_id) => tenant_id,
-        Err(response) => return response,
+        Err(response) => return response.into_response(),
     };
     if params
         .tenant_id
         .is_some_and(|requested| requested != tenant_id)
     {
-        return forbidden_tenant();
+        return forbidden_tenant().into_response();
     }
 
     let query = GetInvoiceQuery {
@@ -319,10 +375,7 @@ async fn get_invoice_pdf_handler(
                 axum::http::header::CONTENT_TYPE,
                 HeaderValue::from_static("application/pdf"),
             );
-            let filename = format!(
-                "{}.pdf",
-                invoice.document_number.replace('/', "_").replace(' ', "_")
-            );
+            let filename = format!("{}.pdf", invoice.document_number.replace(['/', ' '], "_"));
             if let Ok(disp) = HeaderValue::from_str(&format!("inline; filename=\"{filename}\"")) {
                 resp_headers.insert(axum::http::header::CONTENT_DISPOSITION, disp);
             }
@@ -358,13 +411,13 @@ async fn get_invoice_thermal_handler(
         ],
     ) {
         Ok(tenant_id) => tenant_id,
-        Err(response) => return response,
+        Err(response) => return response.into_response(),
     };
     if params
         .tenant_id
         .is_some_and(|requested| requested != tenant_id)
     {
-        return forbidden_tenant();
+        return forbidden_tenant().into_response();
     }
 
     let query = GetInvoiceQuery {
@@ -411,9 +464,10 @@ async fn get_invoice_thermal_handler(
                 );
                 let filename = format!(
                     "TALAO_{}.pdf",
-                    invoice.document_number.replace('/', "_").replace(' ', "_")
+                    invoice.document_number.replace(['/', ' '], "_")
                 );
-                if let Ok(disp) = HeaderValue::from_str(&format!("inline; filename=\"{filename}\"")) {
+                if let Ok(disp) = HeaderValue::from_str(&format!("inline; filename=\"{filename}\""))
+                {
                     resp_headers.insert(axum::http::header::CONTENT_DISPOSITION, disp);
                 }
                 (StatusCode::OK, resp_headers, bytes).into_response()
@@ -449,13 +503,13 @@ async fn get_invoice_qr_handler(
         ],
     ) {
         Ok(tenant_id) => tenant_id,
-        Err(response) => return response,
+        Err(response) => return response.into_response(),
     };
     if params
         .tenant_id
         .is_some_and(|requested| requested != tenant_id)
     {
-        return forbidden_tenant();
+        return forbidden_tenant().into_response();
     }
 
     let query = GetInvoiceQuery {
@@ -500,7 +554,8 @@ async fn get_invoice_qr_handler(
             Err(err) => domain_error(err),
         }
     } else {
-        let svg = crate::domain::services::fiscal_qr::AgtQrCodeService::generate_svg(&payload, 4).ok();
+        let svg =
+            crate::domain::services::fiscal_qr::AgtQrCodeService::generate_svg(&payload, 4).ok();
         (
             StatusCode::OK,
             Json(json!({
@@ -539,7 +594,7 @@ async fn sign_direct_handler(
             "BILLING_OPERATOR",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     match state.sign_direct.execute(command).await {
@@ -584,7 +639,7 @@ async fn validate_series_handler(
             "BILLING_OPERATOR",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     match state.validate_series.execute(query).await {
@@ -616,7 +671,7 @@ async fn resolve_tax_regime_handler(
             "ACCOUNTANT",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     match state.resolve_tax_regime.execute(command).await {
@@ -641,7 +696,7 @@ async fn get_tax_regime_handler(
             "ACCOUNTANT",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     match state
@@ -672,7 +727,7 @@ async fn validate_exemption_code_handler(
             "BILLING_OPERATOR",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     match state.validate_exemption_code.execute(&code).await {
@@ -709,7 +764,7 @@ async fn export_saft_handler(
             "ACCOUNTANT",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     let query = ExportSaftQuery {
@@ -756,7 +811,7 @@ async fn validate_saft_handler(
             "ACCOUNTANT",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     match crate::infrastructure::saft::SaftValidator::validate_xml(&payload.xml_content) {
@@ -807,14 +862,13 @@ async fn trigger_saft_job_handler(
             "ACCOUNTANT",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
-    let job_id = state.saft_jobs.enqueue(
-        payload.tenant_id,
-        payload.fiscal_year,
-        payload.fiscal_month,
-    );
+    let job_id =
+        state
+            .saft_jobs
+            .enqueue(payload.tenant_id, payload.fiscal_year, payload.fiscal_month);
 
     let query = ExportSaftQuery {
         tenant_id: payload.tenant_id,
@@ -882,7 +936,7 @@ async fn get_saft_job_handler(
             "ACCOUNTANT",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     Json(job).into_response()
@@ -915,7 +969,7 @@ async fn download_saft_job_handler(
             "ACCOUNTANT",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     if job.status == "PROCESSING" || job.status == "QUEUED" {
@@ -953,13 +1007,16 @@ async fn download_saft_job_handler(
         }
     };
 
-    let filename = job.filename.unwrap_or_else(|| format!("SAFT_AO_{}.xml", job.job_id));
+    let filename = job
+        .filename
+        .unwrap_or_else(|| format!("SAFT_AO_{}.xml", job.job_id));
     let mut resp_headers = HeaderMap::new();
     resp_headers.insert(
         axum::http::header::CONTENT_TYPE,
         HeaderValue::from_static("application/xml; charset=utf-8"),
     );
-    if let Ok(disposition) = HeaderValue::from_str(&format!("attachment; filename=\"{filename}\"")) {
+    if let Ok(disposition) = HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
+    {
         resp_headers.insert(axum::http::header::CONTENT_DISPOSITION, disposition);
     }
 
@@ -991,7 +1048,7 @@ async fn fiscal_report_handler(
             "ACCOUNTANT",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     match state
@@ -1009,7 +1066,10 @@ async fn fiscal_report_handler(
                 .as_deref()
                 .map(|s| s.to_lowercase())
                 .unwrap_or_else(|| {
-                    if let Some(accept) = headers.get(axum::http::header::ACCEPT).and_then(|v| v.to_str().ok()) {
+                    if let Some(accept) = headers
+                        .get(axum::http::header::ACCEPT)
+                        .and_then(|v| v.to_str().ok())
+                    {
                         if accept.contains("application/pdf") {
                             "pdf".to_string()
                         } else if accept.contains("spreadsheet") || accept.contains("excel") {
@@ -1050,7 +1110,7 @@ async fn fiscal_report_excel_handler(
             "ACCOUNTANT",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     match state
@@ -1083,7 +1143,7 @@ async fn fiscal_report_pdf_handler(
             "ACCOUNTANT",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     match state
@@ -1116,7 +1176,8 @@ fn build_excel_report_response(
                 Some(m) => format!("MAPA_FISCAL_IVA_{}_{:02}.xlsx", report.fiscal_year, m),
                 None => format!("MAPA_FISCAL_IVA_{}_ANUAL.xlsx", report.fiscal_year),
             };
-            if let Ok(disp) = HeaderValue::from_str(&format!("attachment; filename=\"{filename}\"")) {
+            if let Ok(disp) = HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
+            {
                 headers.insert(axum::http::header::CONTENT_DISPOSITION, disp);
             }
             (StatusCode::OK, headers, bytes).into_response()
@@ -1139,7 +1200,8 @@ fn build_pdf_report_response(
                 Some(m) => format!("MAPA_FISCAL_IVA_{}_{:02}.pdf", report.fiscal_year, m),
                 None => format!("MAPA_FISCAL_IVA_{}_ANUAL.pdf", report.fiscal_year),
             };
-            if let Ok(disp) = HeaderValue::from_str(&format!("attachment; filename=\"{filename}\"")) {
+            if let Ok(disp) = HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
+            {
                 headers.insert(axum::http::header::CONTENT_DISPOSITION, disp);
             }
             (StatusCode::OK, headers, bytes).into_response()
@@ -1186,13 +1248,18 @@ async fn pos_leitura_x_handler(
         ],
     ) {
         Ok(t) => t,
-        Err(resp) => return resp,
+        Err(resp) => return resp.into_response(),
     };
-    if params.tenant_id.is_some_and(|requested| requested != tenant_id) {
-        return forbidden_tenant();
+    if params
+        .tenant_id
+        .is_some_and(|requested| requested != tenant_id)
+    {
+        return forbidden_tenant().into_response();
     }
 
-    let date = params.date.unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let date = params
+        .date
+        .unwrap_or_else(|| chrono::Utc::now().date_naive());
     let query = crate::application::queries::pos_reports::PosDailyReportQuery {
         tenant_id,
         date,
@@ -1223,13 +1290,18 @@ async fn pos_leitura_x_thermal_handler(
         ],
     ) {
         Ok(t) => t,
-        Err(resp) => return resp,
+        Err(resp) => return resp.into_response(),
     };
-    if params.tenant_id.is_some_and(|requested| requested != tenant_id) {
-        return forbidden_tenant();
+    if params
+        .tenant_id
+        .is_some_and(|requested| requested != tenant_id)
+    {
+        return forbidden_tenant().into_response();
     }
 
-    let date = params.date.unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let date = params
+        .date
+        .unwrap_or_else(|| chrono::Utc::now().date_naive());
     let query = crate::application::queries::pos_reports::PosDailyReportQuery {
         tenant_id,
         date,
@@ -1243,7 +1315,9 @@ async fn pos_leitura_x_thermal_handler(
 
     let requested_format = params.format.as_deref().unwrap_or("pdf").to_lowercase();
     if requested_format == "text" || requested_format == "txt" {
-        let text = crate::application::queries::pos_reports::PosReportsUseCase::render_thermal_text(&report);
+        let text = crate::application::queries::pos_reports::PosReportsUseCase::render_thermal_text(
+            &report,
+        );
         let mut resp_headers = HeaderMap::new();
         resp_headers.insert(
             axum::http::header::CONTENT_TYPE,
@@ -1251,7 +1325,9 @@ async fn pos_leitura_x_thermal_handler(
         );
         (StatusCode::OK, resp_headers, text).into_response()
     } else {
-        match crate::application::queries::pos_reports::PosReportsUseCase::render_thermal_pdf(&report) {
+        match crate::application::queries::pos_reports::PosReportsUseCase::render_thermal_pdf(
+            &report,
+        ) {
             Ok(pdf) => {
                 let mut resp_headers = HeaderMap::new();
                 resp_headers.insert(
@@ -1283,15 +1359,25 @@ async fn pos_fecho_z_handler(
         ],
     ) {
         Ok(t) => t,
-        Err(resp) => return resp,
+        Err(resp) => return resp.into_response(),
     };
-    if payload.tenant_id.is_some_and(|requested| requested != tenant_id) {
-        return forbidden_tenant();
+    if payload
+        .tenant_id
+        .is_some_and(|requested| requested != tenant_id)
+    {
+        return forbidden_tenant().into_response();
     }
 
-    let date = payload.date.unwrap_or_else(|| chrono::Utc::now().date_naive());
-    let fiscal_year = payload.fiscal_year.unwrap_or_else(|| chrono::Datelike::year(&date));
-    let actor_user_id = headers.get("x-user-id").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+    let date = payload
+        .date
+        .unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let fiscal_year = payload
+        .fiscal_year
+        .unwrap_or_else(|| chrono::Datelike::year(&date));
+    let actor_user_id = headers
+        .get("x-user-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
 
     let command = crate::application::queries::pos_reports::CloseZReportCommand {
         actor_user_id,
@@ -1325,15 +1411,25 @@ async fn pos_fecho_z_thermal_handler(
         ],
     ) {
         Ok(t) => t,
-        Err(resp) => return resp,
+        Err(resp) => return resp.into_response(),
     };
-    if payload.tenant_id.is_some_and(|requested| requested != tenant_id) {
-        return forbidden_tenant();
+    if payload
+        .tenant_id
+        .is_some_and(|requested| requested != tenant_id)
+    {
+        return forbidden_tenant().into_response();
     }
 
-    let date = payload.date.unwrap_or_else(|| chrono::Utc::now().date_naive());
-    let fiscal_year = payload.fiscal_year.unwrap_or_else(|| chrono::Datelike::year(&date));
-    let actor_user_id = headers.get("x-user-id").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+    let date = payload
+        .date
+        .unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let fiscal_year = payload
+        .fiscal_year
+        .unwrap_or_else(|| chrono::Datelike::year(&date));
+    let actor_user_id = headers
+        .get("x-user-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
 
     let command = crate::application::queries::pos_reports::CloseZReportCommand {
         actor_user_id,
@@ -1350,7 +1446,9 @@ async fn pos_fecho_z_thermal_handler(
 
     let requested_format = payload.format.as_deref().unwrap_or("pdf").to_lowercase();
     if requested_format == "text" || requested_format == "txt" {
-        let text = crate::application::queries::pos_reports::PosReportsUseCase::render_thermal_text(&report);
+        let text = crate::application::queries::pos_reports::PosReportsUseCase::render_thermal_text(
+            &report,
+        );
         let mut resp_headers = HeaderMap::new();
         resp_headers.insert(
             axum::http::header::CONTENT_TYPE,
@@ -1358,7 +1456,9 @@ async fn pos_fecho_z_thermal_handler(
         );
         (StatusCode::CREATED, resp_headers, text).into_response()
     } else {
-        match crate::application::queries::pos_reports::PosReportsUseCase::render_thermal_pdf(&report) {
+        match crate::application::queries::pos_reports::PosReportsUseCase::render_thermal_pdf(
+            &report,
+        ) {
             Ok(pdf) => {
                 let mut resp_headers = HeaderMap::new();
                 resp_headers.insert(
@@ -1393,7 +1493,7 @@ async fn sync_agt_handler(
             "ACCOUNTANT",
         ],
     ) {
-        return response;
+        return response.into_response();
     }
 
     match state.sync_agt.execute(command).await {
@@ -1402,7 +1502,7 @@ async fn sync_agt_handler(
     }
 }
 
-fn authorized_tenant_id(headers: &HeaderMap, allowed_roles: &[&str]) -> Result<Uuid, Response> {
+fn authorized_tenant_id(headers: &HeaderMap, allowed_roles: &[&str]) -> Result<Uuid, ApiError> {
     let tenant = headers
         .get("X-Resolved-Tenant-ID")
         .and_then(|value| value.to_str().ok())
@@ -1426,11 +1526,10 @@ fn authorized_tenant_id(headers: &HeaderMap, allowed_roles: &[&str]) -> Result<U
             .iter()
             .any(|role| allowed_roles.contains(&role.as_str()))
     {
-        return Err((
+        return Err(ApiError::new(
             StatusCode::FORBIDDEN,
-            Json(json!({ "error": "O utilizador não tem perfil autorizado para esta operação fiscal." })),
-        )
-            .into_response());
+            "O utilizador não tem perfil autorizado para esta operação fiscal.",
+        ));
     }
     Ok(tenant)
 }
@@ -1439,7 +1538,7 @@ fn authorize_tenant(
     headers: &HeaderMap,
     requested_tenant: Uuid,
     allowed_roles: &[&str],
-) -> Result<String, Response> {
+) -> Result<String, ApiError> {
     let tenant_id = authorized_tenant_id(headers, allowed_roles)?;
     if tenant_id != requested_tenant {
         return Err(forbidden_tenant());
@@ -1451,25 +1550,23 @@ fn authorize_tenant(
         .to_string())
 }
 
-fn unauthorized_identity() -> Response {
-    (
+fn unauthorized_identity() -> ApiError {
+    ApiError::new(
         StatusCode::UNAUTHORIZED,
-        Json(json!({ "error": "Contexto de utilizador e empresa autenticado é obrigatório." })),
+        "Contexto de utilizador e empresa autenticado é obrigatório.",
     )
-        .into_response()
 }
 
-fn forbidden_tenant() -> Response {
-    (
+fn forbidden_tenant() -> ApiError {
+    ApiError::new(
         StatusCode::FORBIDDEN,
-        Json(json!({ "error": "A empresa solicitada não corresponde à empresa autenticada." })),
+        "A empresa solicitada não corresponde à empresa autenticada.",
     )
-        .into_response()
 }
 
 async fn generate_keys_handler(headers: HeaderMap) -> Response {
     if let Err(response) = authorize_role(&headers, &["ADMIN", "ADMINISTRADOR"]) {
-        return response;
+        return response.into_response();
     }
 
     match generate_agt_keypair() {

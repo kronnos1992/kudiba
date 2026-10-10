@@ -161,7 +161,7 @@ async def readiness_check():
 
 # Registra o router HTTP do Auth
 auth_router = create_auth_router()
-app.include_router(auth_router, prefix="/auth")
+app.include_router(auth_router, prefix="/auth", include_in_schema=False)
 app.include_router(auth_router, prefix="/api/v1/auth")
 
 

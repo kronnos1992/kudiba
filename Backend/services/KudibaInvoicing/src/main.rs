@@ -74,7 +74,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let read_pool = config.connect_read_pool()?;
     if config.database_read_url.is_some() {
         match sqlx::query("SELECT 1").execute(&read_pool).await {
-            Ok(_) => tracing::info!("Ligação ao PostgreSQL (read-replica) estabelecida com sucesso."),
+            Ok(_) => {
+                tracing::info!("Ligação ao PostgreSQL (read-replica) estabelecida com sucesso.")
+            }
             Err(err) => tracing::warn!(
                 "Aviso: falha inicial na ligação à read-replica ({:?}). Consultas redirecionadas.",
                 err
@@ -136,7 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         http_addr
     );
     tracing::info!(
-        "Documentação interactiva (Scalar) em http://{}:{}/scalar",
+        "Documentação interactiva (Swagger UI) em http://{}:{}/swagger",
         http_addr.ip(),
         config.http_port
     );

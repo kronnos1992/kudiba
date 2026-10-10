@@ -79,8 +79,16 @@ impl SaftXmlGenerator {
             "      <NumberOfEntries>{}</NumberOfEntries>",
             number_of_entries
         );
-        let _ = writeln!(src_head, "      <TotalDebit>{:.2}</TotalDebit>", total_debit);
-        let _ = writeln!(src_head, "      <TotalCredit>{:.2}</TotalCredit>", total_credit);
+        let _ = writeln!(
+            src_head,
+            "      <TotalDebit>{:.2}</TotalDebit>",
+            total_debit
+        );
+        let _ = writeln!(
+            src_head,
+            "      <TotalCredit>{:.2}</TotalCredit>",
+            total_credit
+        );
         writer
             .write_all(src_head.as_bytes())
             .map_err(|e| DomainError::invalid(e.to_string()))?;
@@ -97,7 +105,9 @@ impl SaftXmlGenerator {
         writer
             .write_all(b"    </SalesInvoices>\n  </SourceDocuments>\n</AuditFile>\n")
             .map_err(|e| DomainError::invalid(e.to_string()))?;
-        writer.flush().map_err(|e| DomainError::invalid(e.to_string()))?;
+        writer
+            .flush()
+            .map_err(|e| DomainError::invalid(e.to_string()))?;
 
         Ok(())
     }
@@ -318,7 +328,6 @@ impl SaftXmlGenerator {
         xml.push_str("  </MasterFiles>\n");
         Ok(())
     }
-
 
     fn append_invoice(xml: &mut String, inv: &Invoice) -> Result<(), DomainError> {
         xml.push_str("      <Invoice>\n");
@@ -654,9 +663,7 @@ mod tests {
 
         assert!(xml.contains("xmlns=\"urn:OECD:StandardAuditFile-Tax:AO_1.01_01\""));
         assert!(xml.contains("<CompanyID>5001234567</CompanyID>"));
-        assert!(
-            xml.contains("<SoftwareValidationNumber>42/AGT/2026</SoftwareValidationNumber>")
-        );
+        assert!(xml.contains("<SoftwareValidationNumber>42/AGT/2026</SoftwareValidationNumber>"));
         assert!(xml.contains("<InvoiceNo>FT KUD26/000001</InvoiceNo>"));
         assert!(xml.contains("<TaxExemptionCode>M04</TaxExemptionCode>"));
         assert!(xml.contains("<TaxExemptionReason>Isenção de bens da Cesta Básica (Lei n.º 42/20)</TaxExemptionReason>"));
@@ -664,7 +671,8 @@ mod tests {
         assert!(xml.contains("</AuditFile>"));
 
         // Validação estrita contra o Schema Oficial XSD da AGT
-        crate::infrastructure::saft::validator::SaftValidator::validate_xml(&xml)
-            .expect("XML gerado pelo KudibaInvoicing deve ser estritamente válido segundo o schema da AGT");
+        crate::infrastructure::saft::validator::SaftValidator::validate_xml(&xml).expect(
+            "XML gerado pelo KudibaInvoicing deve ser estritamente válido segundo o schema da AGT",
+        );
     }
 }
