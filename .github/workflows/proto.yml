@@ -2,12 +2,12 @@ name: Protobuf Contracts Lint & Validation
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**' ]
     paths:
       - 'proto/**'
       - '.github/workflows/proto.yml'
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**' ]
     paths:
       - 'proto/**'
       - '.github/workflows/proto.yml'

@@ -2,14 +2,14 @@ name: Docker Build & Compose Check
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**' ]
     paths:
       - 'docker-compose.yml'
       - 'Backend/**'
       - 'proto/**'
       - '.github/workflows/docker.yml'
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**' ]
     paths:
       - 'docker-compose.yml'
       - 'Backend/**'

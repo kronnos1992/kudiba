@@ -2,13 +2,13 @@ name: CI - Backend Services & Gateway (Rust)
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**' ]
     paths:
       - 'Backend/**'
       - 'proto/**'
       - '.github/workflows/ci.yml'
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**' ]
     paths:
       - 'Backend/**'
       - 'proto/**'
