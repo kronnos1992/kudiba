@@ -16,6 +16,7 @@ services:
       - REDIS_HOST=gateway-redis
       - REDIS_PORT=6379
       - CORE_API_URL=http://core-api:8081
+      - AUTH_SERVICE_URL=http://auth-service:8082
       - FISCAL_ENGINE_URL=http://fiscal-engine:9090
       - FISCAL_ENGINE_GRPC_TARGET=http://fiscal-engine:9090
       # Sondas TCP do endpoint /health/services
@@ -43,14 +44,15 @@ services:
       dockerfile: Backend/services/KudibaInvoicing/Dockerfile
     container_name: kudiba-invoicing
     restart: unless-stopped
-    ports:
-      - "9090:9090" # REST (Axum) + Scalar
-      - "9091:9091" # gRPC (kudiba.fiscal.v1.FiscalEngineService)
+    # Sem `ports:` — o motor fiscal é alcançável apenas pela rede interna
+    # (alias `fiscal-engine`), nunca a partir do perímetro. As rotas fiscais
+    # dependem dos headers X-Resolved-* injectados pelo Gateway, que o serviço
+    # não valida por conta própria.
     environment:
       - PORT=9090
       - GRPC_PORT=9091
       - RUST_LOG=info,kudiba_invoicing=debug
-      - DATABASE_URL=postgres://kudiba:kudiba_secret_pass@postgres:5432/kudiba_erp
+      - DATABASE_URL=postgres://kudiba:kudiba_secret_pass@postgres:5432/kudiba_invoicing
       # Chave privada RSA-2048 registada na AGT (em produção exige chave oficial)
       - AGT_RSA_PRIVATE_KEY_PEM=
       - AGT_RSA_PRIVATE_KEY_PATH=
@@ -66,6 +68,34 @@ services:
         aliases:
           - fiscal-engine
           - kudiba-invoicing
+
+  # ============================================================================
+  # 3. MICROSSERVIÇO DE AUTENTICAÇÃO & RBAC (PYTHON / FASTAPI)
+  # ============================================================================
+  auth:
+    build:
+      context: ./Backend/services/KudibaAuth
+      dockerfile: Dockerfile
+    container_name: kudiba-auth
+    restart: unless-stopped
+    environment:
+      - PORT=8082
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql+asyncpg://kudiba:kudiba_secret_pass@postgres:5432/kudiba_auth
+      - REDIS_URL=redis://gateway-redis:6379/0
+      - JWT_SECRET=kudiba_jwt_secret_development_key_change_in_production_2026
+      - JWT_ACCESS_EXPIRATION_MINUTES=15
+      - REFRESH_TOKEN_EXPIRATION_DAYS=7
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gateway-redis:
+        condition: service_healthy
+    networks:
+      kudiba-internal-network:
+        aliases:
+          - auth-service
+          - kudiba-auth
 
   # ============================================================================
   # 3. ESTADO EFÊMERO & CACHE PERIMÉTRICO (REDIS 7+)
@@ -104,7 +134,10 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./Backend/deploy/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./Backend/deploy/00-init-databases.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+      - ./Backend/deploy/01-invoicing-schema.sql:/docker-entrypoint-initdb.d/01-invoicing-schema.sql:ro
+      - ./Backend/deploy/02-auth-schema.sql:/docker-entrypoint-initdb.d/02-auth-schema.sql:ro
+      - ./Backend/deploy/03-retire-demo-admin.sql:/docker-entrypoint-initdb.d/03-retire-demo-admin.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kudiba -d kudiba_erp"]
       interval: 5s

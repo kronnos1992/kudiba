@@ -6,6 +6,7 @@ use crate::domain::entities::fiscal_series::FiscalSeries;
 use crate::domain::error::DomainError;
 use crate::domain::ports::db_session::{DbSessionFactory, RepositoryError};
 use crate::domain::ports::series_repository::FiscalSeriesRepository;
+use crate::domain::value_objects::document_type::DocumentType;
 
 /// Caso de uso de abertura de série fiscal.
 ///
@@ -27,6 +28,7 @@ impl CreateFiscalSeriesUseCase {
     }
 
     pub async fn execute(&self, command: CreateFiscalSeriesCommand) -> Result<Uuid, DomainError> {
+        DocumentType::parse(&command.document_type)?;
         let mut session = self
             .session_factory
             .open()

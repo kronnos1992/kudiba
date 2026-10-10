@@ -67,21 +67,34 @@ impl ExportSaftUseCase {
                 DomainError::invalid(format!("Organização (Tenant) '{}' não encontrada.", query.tenant_id))
             })?;
 
-        // 2. Obter as facturas e linhas do período fiscal solicitado
-        let invoices = self
-            .invoice_repository
-            .find_by_period(
-                &mut *session,
-                query.tenant_id,
-                query.fiscal_year,
-                query.fiscal_month,
-            )
-            .await?;
+        // 2. Obter as facturas e linhas do período fiscal solicitado em lotes paginados (O(1) buffer)
+        let mut invoices = Vec::new();
+        let batch_size = 200i64;
+        let mut offset = 0i64;
+        loop {
+            let chunk = self
+                .invoice_repository
+                .find_by_period_paginated(
+                    &mut *session,
+                    query.tenant_id,
+                    query.fiscal_year,
+                    query.fiscal_month,
+                    offset,
+                    batch_size,
+                )
+                .await?;
+            let count = chunk.len();
+            invoices.extend(chunk);
+            if (count as i64) < batch_size {
+                break;
+            }
+            offset += batch_size;
+        }
 
         let total_gross: Decimal = invoices.iter().map(|inv| inv.gross_total).sum();
         let invoice_count = invoices.len();
 
-        // 3. Montar os metadados e gerar o XML oficial
+        // 3. Montar os metadados e gerar o XML oficial através de stream
         let metadata = SaftExportMetadata {
             tenant: &tenant,
             fiscal_year: query.fiscal_year,
@@ -89,7 +102,11 @@ impl ExportSaftUseCase {
             software_version: self.software_version,
         };
 
-        let xml_content = SaftXmlGenerator::generate_xml(&metadata, &invoices)?;
+        let mut xml_bytes = Vec::with_capacity(16 * 1024 + invoice_count * 1024);
+        SaftXmlGenerator::write_xml_stream(&mut xml_bytes, &metadata, &invoices)?;
+        let xml_content = String::from_utf8(xml_bytes).map_err(|e| DomainError::invalid(e.to_string()))?;
+
+        crate::infrastructure::saft::SaftValidator::validate_xml(&xml_content)?;
 
         let filename = match query.fiscal_month {
             Some(m) => format!("SAFT_AO_{}_{}_{:02}.xml", tenant.nif, query.fiscal_year, m),

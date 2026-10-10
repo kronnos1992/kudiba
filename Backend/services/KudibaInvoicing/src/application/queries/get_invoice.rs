@@ -31,9 +31,13 @@ impl GetInvoiceUseCase {
             .map_err(persistence_error)?;
 
         if let Some(invoice_id) = query.invoice_id {
+            let tenant_id = query.tenant_id.ok_or_else(|| {
+                DomainError::invalid("tenantId é obrigatório para consultar um documento fiscal.")
+            })?;
+
             return self
                 .invoice_repository
-                .find_by_id(session.as_mut(), invoice_id)
+                .find_by_id_for_tenant(session.as_mut(), invoice_id, tenant_id)
                 .await
                 .map_err(persistence_error)?
                 .ok_or(DomainError::InvoiceNotFound);

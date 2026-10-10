@@ -15,6 +15,7 @@ pub struct Config {
 
     pub core_api_url: String,
     pub fiscal_engine_url: String,
+    pub auth_service_url: String,
 
     pub jwt_secret: String,
 
@@ -84,14 +85,53 @@ impl Config {
             fiscal_engine_url = format!("http://{}", fiscal_engine_url);
         }
 
-        let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| {
-            if env_mode == "production" {
-                tracing::error!(
-                    "ALERTA DE SEGURANÇA: JWT_SECRET não configurado em ambiente de produção!"
-                );
+        let mut auth_service_url = env::var("AUTH_SERVICE_URL")
+            .unwrap_or_else(|_| "http://localhost:8082".to_string());
+        if !auth_service_url.starts_with("http://") && !auth_service_url.starts_with("https://") {
+            auth_service_url = format!("http://{}", auth_service_url);
+        }
+
+        const DEVELOPMENT_JWT_SECRET: &str =
+            "kudiba_jwt_secret_development_key_change_in_production_2026";
+        let is_production =
+            env_mode.eq_ignore_ascii_case("production") || env_mode.eq_ignore_ascii_case("prod");
+        let allowed_origins = env::var("CORS_ALLOWED_ORIGINS").unwrap_or_else(|_| {
+            if is_production {
+                panic!("CORS_ALLOWED_ORIGINS must be configured in production.");
             }
-            "kudiba_jwt_secret_development_key_change_in_production_2026".to_string()
+            "*".to_string()
         });
+        if is_production {
+            let origins = if allowed_origins.trim_start().starts_with('[') {
+                serde_json::from_str::<Vec<String>>(&allowed_origins)
+                    .unwrap_or_else(|_| panic!("CORS_ALLOWED_ORIGINS must be a JSON array or comma-separated list."))
+            } else {
+                allowed_origins.split(',').map(|origin| origin.trim().to_string()).collect()
+            };
+            if origins.is_empty()
+                || origins.iter().any(|origin| {
+                    let origin = origin.to_ascii_lowercase();
+                    origin.is_empty()
+                        || origin == "*"
+                        || origin.contains("localhost")
+                        || origin.contains("127.0.0.1")
+                })
+            {
+                panic!("Production CORS_ALLOWED_ORIGINS must contain explicit, non-local origins.");
+            }
+        }
+        let jwt_secret = match env::var("JWT_SECRET") {
+            Ok(secret) => secret,
+            Err(_) if is_production => {
+                panic!("JWT_SECRET must be configured in production.")
+            }
+            Err(_) => DEVELOPMENT_JWT_SECRET.to_string(),
+        };
+        if is_production
+            && (jwt_secret == DEVELOPMENT_JWT_SECRET || jwt_secret.as_bytes().len() < 32)
+        {
+            panic!("Production JWT_SECRET must be a non-default secret of at least 32 bytes.");
+        }
 
         let (postgres_host, postgres_port) = parse_postgres_config();
         let (rabbitmq_host, rabbitmq_port) = parse_rabbitmq_config();
@@ -102,10 +142,11 @@ impl Config {
             read_timeout: Duration::from_secs(read_timeout_secs),
             write_timeout: Duration::from_secs(write_timeout_secs),
             max_body_bytes,
-            allowed_origins: env::var("CORS_ALLOWED_ORIGINS").unwrap_or_else(|_| "*".to_string()),
+            allowed_origins,
             redis_url,
             core_api_url,
             fiscal_engine_url,
+            auth_service_url,
             jwt_secret,
             agt_contingency_max_days: env::var("AGT_CONTINGENCY_MAX_DAYS")
                 .unwrap_or_else(|_| "60".to_string())

@@ -16,8 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or(
             "contrato gRPC não encontrado: esperado proto/fiscal/v1/fiscal_engine.proto \
              (raiz do monorepo ou ./proto dentro do contentor)",
-        )?
-        .canonicalize()?;
+        )?;
 
     let proto_file = proto_root.join("fiscal/v1/fiscal_engine.proto");
 

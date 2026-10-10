@@ -33,6 +33,7 @@ pub struct FiscalGrpcService {
     verify_signature: Arc<VerifySignatureUseCase>,
     validate_series: Arc<ValidateSeriesSequenceUseCase>,
     export_saft: Arc<ExportSaftUseCase>,
+    saft_jobs: Arc<crate::infrastructure::saft::SaftJobRegistry>,
 }
 
 impl FiscalGrpcService {
@@ -41,12 +42,14 @@ impl FiscalGrpcService {
         verify_signature: Arc<VerifySignatureUseCase>,
         validate_series: Arc<ValidateSeriesSequenceUseCase>,
         export_saft: Arc<ExportSaftUseCase>,
+        saft_jobs: Arc<crate::infrastructure::saft::SaftJobRegistry>,
     ) -> Self {
         Self {
             sign_direct,
             verify_signature,
             validate_series,
             export_saft,
+            saft_jobs,
         }
     }
 }
@@ -66,6 +69,8 @@ impl FiscalEngineService for FiscalGrpcService {
         );
 
         let command = SignDirectCommand {
+            tenant_id: Uuid::parse_str(&payload.tenant_id)
+                .map_err(|_| Status::invalid_argument("tenant_id inválido (deve ser UUID)"))?,
             document_number: payload.document_number,
             invoice_date: payload.invoice_date,
             system_entry_date: payload.system_entry_date,
@@ -156,7 +161,7 @@ impl FiscalEngineService for FiscalGrpcService {
         }))
     }
 
-    /// Solicita a extração e validação do ficheiro SAF-T (AO)
+    /// Solicita a extração e validação assíncrona do ficheiro SAF-T (AO)
     async fn trigger_saft_generation(
         &self,
         request: Request<TriggerSaftGenerationRequest>,
@@ -172,32 +177,49 @@ impl FiscalEngineService for FiscalGrpcService {
         let tenant_id = Uuid::parse_str(&payload.tenant_id)
             .map_err(|_| Status::invalid_argument("tenant_id inválido (deve ser UUID)"))?;
 
+        let fiscal_month = if payload.fiscal_month <= 0 {
+            None
+        } else {
+            Some(payload.fiscal_month as u32)
+        };
+
+        let job_id = self
+            .saft_jobs
+            .enqueue(tenant_id, payload.fiscal_year, fiscal_month);
+
         let query = crate::application::queries::export_saft::ExportSaftQuery {
             tenant_id,
             fiscal_year: payload.fiscal_year,
-            fiscal_month: if payload.fiscal_month <= 0 {
-                None
-            } else {
-                Some(payload.fiscal_month as u32)
-            },
+            fiscal_month,
         };
 
-        match self.export_saft.execute(query).await {
-            Ok(_) => Ok(Response::new(TriggerSaftGenerationResponse {
-                job_id: Uuid::new_v4().simple().to_string(),
-                status: "PROCESSED".to_string(),
-                estimated_time: "0s".to_string(),
-            })),
-            Err(DomainError::Persistence(_)) => {
-                // Em caso de ambiente de teste desprovido de base de dados, devolve QUEUED
-                Ok(Response::new(TriggerSaftGenerationResponse {
-                    job_id: Uuid::new_v4().simple().to_string(),
-                    status: "QUEUED".to_string(),
-                    estimated_time: "30s".to_string(),
-                }))
+        let export_saft = self.export_saft.clone();
+        let saft_jobs = self.saft_jobs.clone();
+        let job_id_cloned = job_id.clone();
+
+        tokio::spawn(async move {
+            saft_jobs.mark_processing(&job_id_cloned);
+            match export_saft.execute(query).await {
+                Ok(res) => {
+                    saft_jobs.mark_completed(
+                        &job_id_cloned,
+                        res.filename,
+                        res.invoice_count,
+                        res.total_gross,
+                        res.xml_content,
+                    );
+                }
+                Err(err) => {
+                    saft_jobs.mark_failed(&job_id_cloned, err.to_string());
+                }
             }
-            Err(err) => Err(status_from_domain(err)),
-        }
+        });
+
+        Ok(Response::new(TriggerSaftGenerationResponse {
+            job_id,
+            status: "QUEUED".to_string(),
+            estimated_time: "30s".to_string(),
+        }))
     }
 }
 
@@ -331,7 +353,9 @@ mod tests {
             _session: &mut dyn DbSession,
             _id: Uuid,
         ) -> Result<Option<crate::domain::entities::tenant::Tenant>, RepositoryError> {
-            Err(RepositoryError::Database("sem base de dados no teste".into()))
+            Err(RepositoryError::Database(
+                "sem base de dados no teste".into(),
+            ))
         }
 
         async fn find_by_slug(
@@ -339,7 +363,9 @@ mod tests {
             _session: &mut dyn DbSession,
             _slug: &str,
         ) -> Result<Option<crate::domain::entities::tenant::Tenant>, RepositoryError> {
-            Err(RepositoryError::Database("sem base de dados no teste".into()))
+            Err(RepositoryError::Database(
+                "sem base de dados no teste".into(),
+            ))
         }
     }
 
@@ -352,15 +378,20 @@ mod tests {
             _session: &mut dyn DbSession,
             _invoice: &crate::domain::entities::invoice::Invoice,
         ) -> Result<(), RepositoryError> {
-            Err(RepositoryError::Database("sem base de dados no teste".into()))
+            Err(RepositoryError::Database(
+                "sem base de dados no teste".into(),
+            ))
         }
 
-        async fn find_by_id(
+        async fn find_by_id_for_tenant(
             &self,
             _session: &mut dyn DbSession,
             _id: Uuid,
+            _tenant_id: Uuid,
         ) -> Result<Option<crate::domain::entities::invoice::Invoice>, RepositoryError> {
-            Err(RepositoryError::Database("sem base de dados no teste".into()))
+            Err(RepositoryError::Database(
+                "sem base de dados no teste".into(),
+            ))
         }
 
         async fn find_by_document_number(
@@ -369,7 +400,9 @@ mod tests {
             _tenant_id: Uuid,
             _document_number: &str,
         ) -> Result<Option<crate::domain::entities::invoice::Invoice>, RepositoryError> {
-            Err(RepositoryError::Database("sem base de dados no teste".into()))
+            Err(RepositoryError::Database(
+                "sem base de dados no teste".into(),
+            ))
         }
 
         async fn find_by_period(
@@ -379,7 +412,20 @@ mod tests {
             _fiscal_year: i32,
             _fiscal_month: Option<u32>,
         ) -> Result<Vec<crate::domain::entities::invoice::Invoice>, RepositoryError> {
-            Err(RepositoryError::Database("sem base de dados no teste".into()))
+            Err(RepositoryError::Database(
+                "sem base de dados no teste".into(),
+            ))
+        }
+
+        async fn find_credit_note_for_source(
+            &self,
+            _session: &mut dyn DbSession,
+            _tenant_id: Uuid,
+            _source_document_number: &str,
+        ) -> Result<Option<crate::domain::entities::invoice::Invoice>, RepositoryError> {
+            Err(RepositoryError::Database(
+                "sem base de dados no teste".into(),
+            ))
         }
     }
 
@@ -411,6 +457,7 @@ mod tests {
                 Arc::new(NoDatabaseInvoiceRepository),
                 "1.0.0",
             )),
+            Arc::new(crate::infrastructure::saft::SaftJobRegistry::new()),
         );
 
         let server = Server::builder()

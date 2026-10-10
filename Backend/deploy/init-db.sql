@@ -18,6 +18,9 @@ CREATE TABLE IF NOT EXISTS kudiba_core.tenants (
     slug VARCHAR(64) UNIQUE NOT NULL,
     company_name VARCHAR(255) NOT NULL,
     nif VARCHAR(20) UNIQUE NOT NULL,
+    address_detail TEXT,
+    city VARCHAR(128),
+    country VARCHAR(2),
     commercial_registry VARCHAR(64),
     tax_office_code VARCHAR(32),
     agt_cert_number VARCHAR(64),
@@ -165,12 +168,23 @@ CREATE TABLE IF NOT EXISTS kudiba_core.invoices (
     document_number VARCHAR(64) NOT NULL, -- Ex: "FT KUD26/000001"
     sequence_number BIGINT NOT NULL,
     document_type VARCHAR(10) NOT NULL,
+    issuer_nif VARCHAR(20) NOT NULL,
+    issuer_address TEXT NOT NULL,
+    issuer_city VARCHAR(128) NOT NULL,
+    issuer_country VARCHAR(2) NOT NULL,
     customer_name VARCHAR(255) NOT NULL,
     customer_nif VARCHAR(32) NOT NULL DEFAULT 'Consumidor Final',
+    customer_address TEXT,
+    customer_city VARCHAR(128),
+    customer_country VARCHAR(2),
+    source_document_number VARCHAR(64),
+    payment_methods TEXT[] NOT NULL DEFAULT '{}',
     currency VARCHAR(3) NOT NULL DEFAULT 'AOA',
     net_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
     tax_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
     gross_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    withholding_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    stamp_duty_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
     
     -- Criptografia mandatada pelo Decreto Presidencial n.º 71/25
     hash_sha256 VARCHAR(256) NOT NULL,
@@ -214,6 +228,7 @@ CREATE TABLE IF NOT EXISTS kudiba_core.invoice_lines (
     description VARCHAR(255) NOT NULL,
     quantity NUMERIC(14, 4) NOT NULL,
     unit_price NUMERIC(18, 4) NOT NULL,
+    discount_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
     tax_rate NUMERIC(5, 2) NOT NULL DEFAULT 14.00, -- Validado contra tax_regimes.allowed_rates na emissão
     tax_exemption_code VARCHAR(16),               -- Ex: "M02", "M04" (obrigatório se tax_rate = 0.00)
     line_total NUMERIC(18, 4) NOT NULL,
@@ -225,6 +240,52 @@ CREATE TABLE IF NOT EXISTS kudiba_core.invoice_lines (
         OR (tax_rate > 0.00 AND tax_exemption_code IS NULL)
     )
 );
+
+-- Campos fiscais aditivos para bases criadas antes desta versão do serviço.
+ALTER TABLE kudiba_core.invoices
+    ADD COLUMN IF NOT EXISTS issuer_nif VARCHAR(20),
+    ADD COLUMN IF NOT EXISTS issuer_address TEXT,
+    ADD COLUMN IF NOT EXISTS issuer_city VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS issuer_country VARCHAR(2),
+    ADD COLUMN IF NOT EXISTS customer_address TEXT,
+    ADD COLUMN IF NOT EXISTS customer_city VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS customer_country VARCHAR(2),
+    ADD COLUMN IF NOT EXISTS source_document_number VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS payment_methods TEXT[] NOT NULL DEFAULT '{}',
+    ADD COLUMN IF NOT EXISTS withholding_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS stamp_duty_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS vehicle_registration VARCHAR(32),
+    ADD COLUMN IF NOT EXISTS carrier_name VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS carrier_nif VARCHAR(32),
+    ADD COLUMN IF NOT EXISTS load_address TEXT,
+    ADD COLUMN IF NOT EXISTS load_city VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS load_country VARCHAR(2),
+    ADD COLUMN IF NOT EXISTS load_date_time TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS unload_address TEXT,
+    ADD COLUMN IF NOT EXISTS unload_city VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS unload_country VARCHAR(2),
+    ADD COLUMN IF NOT EXISTS unload_date_time TIMESTAMPTZ;
+ALTER TABLE kudiba_core.invoice_lines
+    ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(18, 4) NOT NULL DEFAULT 0;
+ALTER TABLE kudiba_core.tenants
+    ADD COLUMN IF NOT EXISTS address_detail TEXT,
+    ADD COLUMN IF NOT EXISTS city VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS country VARCHAR(2);
+
+-- Outbox transacional para o sistema de contabilidade consumir sem perder eventos.
+CREATE TABLE IF NOT EXISTS kudiba_core.accounting_outbox (
+    event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES kudiba_core.tenants(id) ON DELETE RESTRICT,
+    invoice_id UUID NOT NULL REFERENCES kudiba_core.invoices(id) ON DELETE RESTRICT,
+    event_type VARCHAR(64) NOT NULL,
+    payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    published_at TIMESTAMPTZ,
+    CONSTRAINT uq_accounting_outbox_invoice_event UNIQUE (invoice_id, event_type)
+);
+CREATE INDEX IF NOT EXISTS ix_accounting_outbox_pending
+    ON kudiba_core.accounting_outbox (created_at)
+    WHERE published_at IS NULL;
 
 DO $$
 BEGIN
@@ -260,11 +321,13 @@ CREATE OR REPLACE FUNCTION kudiba_core.prevent_invoice_mutation()
 RETURNS TRIGGER AS $$
 BEGIN
     INSERT INTO kudiba_audit.fiscal_audit_trail (
-        tenant_id, table_name, action, document_reference, payload, created_at
+        tenant_id, table_name, action, document_reference, payload, actor_user_id, created_at
     ) VALUES (
-        OLD.tenant_id, 'invoices', 'ATTEMPTED_' || TG_OP, OLD.document_number, row_to_json(OLD)::jsonb, NOW()
+        OLD.tenant_id, 'invoices', 'ATTEMPTED_' || TG_OP, OLD.document_number,
+        row_to_json(OLD)::jsonb,
+        COALESCE(NULLIF(current_setting('app.actor_user_id', TRUE), ''), session_user), NOW()
     );
-    RAISE EXCEPTION 'VIOLAÇÃO REGULATÓRIA (AGT n.º 71/25): Documentos fiscais emitidos são estritamente imutáveis. Emita uma Nota de Crédito/Débito para retificações.';
+    RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -273,6 +336,93 @@ CREATE TRIGGER trg_protect_invoices
 BEFORE UPDATE OR DELETE ON kudiba_core.invoices
 FOR EACH ROW
 EXECUTE FUNCTION kudiba_core.prevent_invoice_mutation();
+
+CREATE OR REPLACE FUNCTION kudiba_core.audit_invoice_issue()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO kudiba_audit.fiscal_audit_trail (
+        tenant_id, table_name, action, document_reference, payload, actor_user_id, created_at
+    ) VALUES (
+        NEW.tenant_id, 'invoices', 'INSERT', NEW.document_number,
+        row_to_json(NEW)::jsonb,
+        COALESCE(NULLIF(current_setting('app.actor_user_id', TRUE), ''), session_user), NOW()
+    );
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_audit_invoice_issue ON kudiba_core.invoices;
+CREATE TRIGGER trg_audit_invoice_issue
+AFTER INSERT ON kudiba_core.invoices
+FOR EACH ROW
+EXECUTE FUNCTION kudiba_core.audit_invoice_issue();
+
+CREATE OR REPLACE FUNCTION kudiba_core.prevent_invoice_line_mutation()
+RETURNS TRIGGER AS $$
+DECLARE
+    invoice_row kudiba_core.invoices%ROWTYPE;
+    changed_line JSONB;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        SELECT * INTO invoice_row FROM kudiba_core.invoices WHERE id = OLD.invoice_id;
+        changed_line := row_to_json(OLD)::jsonb;
+    ELSE
+        SELECT * INTO invoice_row FROM kudiba_core.invoices WHERE id = NEW.invoice_id;
+        changed_line := row_to_json(NEW)::jsonb;
+    END IF;
+    INSERT INTO kudiba_audit.fiscal_audit_trail (
+        tenant_id, table_name, action, document_reference, payload, actor_user_id, created_at
+    ) VALUES (
+        invoice_row.tenant_id, 'invoice_lines', 'ATTEMPTED_' || TG_OP,
+        invoice_row.document_number, changed_line,
+        COALESCE(NULLIF(current_setting('app.actor_user_id', TRUE), ''), session_user), NOW()
+    );
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_protect_invoice_lines ON kudiba_core.invoice_lines;
+CREATE TRIGGER trg_protect_invoice_lines
+BEFORE UPDATE OR DELETE ON kudiba_core.invoice_lines
+FOR EACH ROW
+EXECUTE FUNCTION kudiba_core.prevent_invoice_line_mutation();
+
+-- -----------------------------------------------------------------------------
+-- 7. FECHOS FISCAIS DE CAIXA / MEMÓRIA POS (LEITURA X E FECHO Z)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS kudiba_core.pos_z_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES kudiba_core.tenants(id) ON DELETE RESTRICT,
+    fiscal_year INT NOT NULL,
+    sequence_number BIGINT NOT NULL,
+    z_number VARCHAR(64) NOT NULL, -- Ex: "Z 2026/000001"
+    closing_date DATE NOT NULL,
+    pos_terminal_id VARCHAR(64),
+    opened_at TIMESTAMPTZ NOT NULL,
+    closed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    first_document_number VARCHAR(64),
+    last_document_number VARCHAR(64),
+    invoices_count BIGINT NOT NULL DEFAULT 0,
+    credit_notes_count BIGINT NOT NULL DEFAULT 0,
+
+    gross_sales_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    discounts_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    credit_notes_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    net_sales_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    vat_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    withholding_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    stamp_duty_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    final_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
+
+    taxes_summary JSONB NOT NULL DEFAULT '[]',
+    payment_methods_summary JSONB NOT NULL DEFAULT '[]',
+
+    actor_user_id VARCHAR(64),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_tenant_z_report_number UNIQUE (tenant_id, z_number),
+    CONSTRAINT uq_tenant_z_sequence UNIQUE (tenant_id, fiscal_year, sequence_number)
+);
 
 -- -----------------------------------------------------------------------------
 -- TENANT DE DEMONSTRAÇÃO
@@ -286,3 +436,208 @@ VALUES (
     'CERT-AGT-2026/0042',
     'REGIME_GERAL'
 ) ON CONFLICT (slug) DO NOTHING;
+
+-- =============================================================================
+-- 8. ESQUEMA DE AUTENTICAÇÃO E CONTROLE DE ACESSO (RBAC) - KUDIBA AUTH
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- UTILIZADORES
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS kudiba_core.users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    phone_number VARCHAR(32),
+    full_name VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_superadmin BOOLEAN NOT NULL DEFAULT FALSE,
+    failed_login_attempts INT NOT NULL DEFAULT 0,
+    locked_until TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON kudiba_core.users(email);
+CREATE INDEX IF NOT EXISTS idx_users_is_active ON kudiba_core.users(is_active);
+
+-- -----------------------------------------------------------------------------
+-- FILIAIS / ESTABELECIMENTOS COMERCIAIS (BRANCHES)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS kudiba_core.branches (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES kudiba_core.tenants(id) ON DELETE CASCADE,
+    code VARCHAR(32) NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    address_detail TEXT,
+    city VARCHAR(128),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_tenant_branch_code UNIQUE (tenant_id, code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_branches_tenant ON kudiba_core.branches(tenant_id);
+
+-- -----------------------------------------------------------------------------
+-- ASSOCIAÇÃO MULTI-TENANT (UTILIZADOR <-> EMPRESA)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS kudiba_core.user_tenants (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES kudiba_core.users(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES kudiba_core.tenants(id) ON DELETE CASCADE,
+    default_branch_id UUID REFERENCES kudiba_core.branches(id) ON DELETE SET NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE', -- ACTIVE, SUSPENDED, INVITED
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_user_tenant UNIQUE (user_id, tenant_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_tenants_user ON kudiba_core.user_tenants(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_tenants_tenant ON kudiba_core.user_tenants(tenant_id);
+
+-- -----------------------------------------------------------------------------
+-- PAPÉIS E PERMISSÕES (RBAC)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS kudiba_core.roles (
+    id VARCHAR(32) PRIMARY KEY, -- 'ADMIN', 'CONTABILISTA', 'OPERADOR_CAIXA', 'GESTOR_STOCK', 'AUDITOR'
+    name VARCHAR(64) NOT NULL,
+    description TEXT,
+    is_system BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS kudiba_core.permissions (
+    id VARCHAR(64) PRIMARY KEY, -- 'invoices:issue', 'invoices:cancel', 'saft:export', etc.
+    module VARCHAR(32) NOT NULL, -- 'fiscal', 'pos', 'stock', 'auth', 'core'
+    name VARCHAR(64) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS kudiba_core.role_permissions (
+    role_id VARCHAR(32) NOT NULL REFERENCES kudiba_core.roles(id) ON DELETE CASCADE,
+    permission_id VARCHAR(64) NOT NULL REFERENCES kudiba_core.permissions(id) ON DELETE CASCADE,
+    PRIMARY KEY (role_id, permission_id)
+);
+
+CREATE TABLE IF NOT EXISTS kudiba_core.user_roles (
+    user_id UUID NOT NULL,
+    tenant_id UUID NOT NULL,
+    role_id VARCHAR(32) NOT NULL REFERENCES kudiba_core.roles(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, tenant_id, role_id),
+    FOREIGN KEY (user_id, tenant_id) REFERENCES kudiba_core.user_tenants(user_id, tenant_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_roles_lookup ON kudiba_core.user_roles(user_id, tenant_id);
+
+-- -----------------------------------------------------------------------------
+-- SESSÕES & REFRESH TOKENS COM ROTAÇÃO AUTOMÁTICA
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS kudiba_core.refresh_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES kudiba_core.users(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES kudiba_core.tenants(id) ON DELETE CASCADE,
+    token_hash VARCHAR(255) NOT NULL,
+    family_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    is_revoked BOOLEAN NOT NULL DEFAULT FALSE,
+    user_agent TEXT,
+    ip_address INET,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON kudiba_core.refresh_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_family ON kudiba_core.refresh_tokens(user_id, family_id);
+
+-- -----------------------------------------------------------------------------
+-- AUDITORIA DE AUTENTICAÇÃO E ACESSOS
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS kudiba_audit.auth_audit_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID,
+    tenant_id UUID,
+    action VARCHAR(32) NOT NULL,
+    email_attempted VARCHAR(255),
+    ip_address INET,
+    user_agent TEXT,
+    details JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_audit_created ON kudiba_audit.auth_audit_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_audit_user ON kudiba_audit.auth_audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_audit_action ON kudiba_audit.auth_audit_log(action);
+
+-- -----------------------------------------------------------------------------
+-- SEED DATA DE AUTENTICAÇÃO
+-- -----------------------------------------------------------------------------
+INSERT INTO kudiba_core.roles (id, name, description, is_system) VALUES
+    ('ADMIN', 'Administrador Geral', 'Acesso total à administração da empresa, utilizadores e configurações fiscais', TRUE),
+    ('CONTABILISTA', 'Contabilista Certificado', 'Acesso à faturação, fechos de contas, exportação SAF-T e mapas fiscais', TRUE),
+    ('OPERADOR_CAIXA', 'Operador de Caixa (POS)', 'Emissão de faturas no ponto de venda, leitura X e operações diárias', TRUE),
+    ('GESTOR_STOCK', 'Gestor de Stocks', 'Controle de inventário, transferências de armazém e guias de transporte', TRUE),
+    ('AUDITOR', 'Auditor Fiscal / Revisor', 'Acesso de leitura para auditoria e conferência de trilha fiscal', TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    description = EXCLUDED.description;
+
+INSERT INTO kudiba_core.permissions (id, module, name, description) VALUES
+    ('invoices:issue', 'fiscal', 'Emitir Facturas', 'Permissão para emitir facturas, facturas-recibo e outros documentos fiscais'),
+    ('invoices:read', 'fiscal', 'Consultar Facturas', 'Permissão para consultar documentos e imprimir vias'),
+    ('invoices:cancel', 'fiscal', 'Anular Facturas', 'Permissão para emitir Notas de Crédito de rectificação/anulação'),
+    ('fiscal:series:manage', 'fiscal', 'Gerir Séries Fiscais', 'Abertura e configuração de séries de facturação'),
+    ('fiscal:saft:export', 'fiscal', 'Exportar SAF-T (AO)', 'Geração e exportação do ficheiro oficial SAF-T'),
+    ('fiscal:reports:read', 'fiscal', 'Consultar Mapas Fiscais', 'Acesso aos relatórios de IVA, retenções e imposto de selo'),
+    ('pos:sale', 'pos', 'Operar Ponto de Venda', 'Registo de vendas directas no caixa'),
+    ('pos:reading_x', 'pos', 'Efectuar Leitura X', 'Conferência intradiária de valores em caixa'),
+    ('pos:closing_z', 'pos', 'Efectuar Fecho Z', 'Fecho diário oficial e geração de memória fiscal'),
+    ('users:read', 'auth', 'Listar Utilizadores', 'Visualização de utilizadores da organização'),
+    ('users:invite', 'auth', 'Convidar Utilizadores', 'Envio de convites e associação de utilizadores à empresa'),
+    ('users:manage_roles', 'auth', 'Gerir Papéis de Utilizadores', 'Atribuição e revogação de funções de utilizadores'),
+    ('tenant:settings:manage', 'core', 'Gerir Dados da Empresa', 'Actualização de dados fiscais e cadastrais da empresa')
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    description = EXCLUDED.description;
+
+INSERT INTO kudiba_core.role_permissions (role_id, permission_id)
+SELECT 'ADMIN', id FROM kudiba_core.permissions
+ON CONFLICT DO NOTHING;
+
+INSERT INTO kudiba_core.role_permissions (role_id, permission_id) VALUES
+    ('CONTABILISTA', 'invoices:issue'),
+    ('CONTABILISTA', 'invoices:read'),
+    ('CONTABILISTA', 'invoices:cancel'),
+    ('CONTABILISTA', 'fiscal:series:manage'),
+    ('CONTABILISTA', 'fiscal:saft:export'),
+    ('CONTABILISTA', 'fiscal:reports:read'),
+    ('CONTABILISTA', 'pos:reading_x'),
+    ('CONTABILISTA', 'pos:closing_z'),
+    ('CONTABILISTA', 'users:read')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO kudiba_core.role_permissions (role_id, permission_id) VALUES
+    ('OPERADOR_CAIXA', 'invoices:issue'),
+    ('OPERADOR_CAIXA', 'invoices:read'),
+    ('OPERADOR_CAIXA', 'pos:sale'),
+    ('OPERADOR_CAIXA', 'pos:reading_x')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO kudiba_core.role_permissions (role_id, permission_id) VALUES
+    ('AUDITOR', 'invoices:read'),
+    ('AUDITOR', 'fiscal:reports:read'),
+    ('AUDITOR', 'fiscal:saft:export'),
+    ('AUDITOR', 'users:read')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO kudiba_core.branches (id, tenant_id, code, name, city) VALUES (
+    'b0000000-0000-0000-0000-000000000001',
+    'a0000000-0000-0000-0000-000000000001',
+    'SEDE',
+    'Sede Principal - Luanda',
+    'Luanda'
+) ON CONFLICT (tenant_id, code) DO NOTHING;
+
+-- No privileged demo user is created by this schema. Provision the first
+-- administrator through the KudibaAuth bootstrap command.

@@ -127,23 +127,59 @@ pub struct InvoiceLineInput {
     pub quantity: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
     pub unit_price: Decimal,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub discount_amount: Option<Decimal>,
     #[serde(with = "rust_decimal::serde::float")]
     pub tax_rate: Decimal,
     #[serde(default)]
     pub tax_exemption_code: Option<String>,
+    /// Identifica se a linha é uma prestação de serviço (sujeita a retenção na fonte de 6.5%)
+    #[serde(default)]
+    pub is_service: Option<bool>,
 }
 
 /// Comando de emissão de documento fiscal (POST /api/v1/invoices)
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IssueInvoiceCommand {
+    /// Identidade injectada pelo Gateway; nunca aceita valor do JSON público.
+    #[serde(skip)]
+    pub actor_user_id: Option<String>,
     pub tenant_id: Uuid,
     pub document_type: String,
     pub series_code: String,
     pub fiscal_year: i32,
     pub customer_name: String,
     #[serde(default)]
+    pub customer_address: Option<String>,
+    #[serde(default)]
+    pub customer_city: Option<String>,
+    #[serde(default)]
+    pub customer_country: Option<String>,
+    #[serde(default)]
     pub customer_nif: Option<String>,
+    #[serde(default)]
+    pub source_document_number: Option<String>,
+    #[serde(default)]
+    pub payment_methods: Vec<String>,
+    /// Valor explícito de retenção na fonte. Se omitido, pode ser calculado automaticamente via `applyWithholding`.
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub withholding_total: Option<Decimal>,
+    /// Ativa o cálculo automático de retenção na fonte (padrão 6.5% sobre serviços ou base líquida)
+    #[serde(default)]
+    pub apply_withholding: Option<bool>,
+    /// Taxa personalizada de retenção na fonte (ex.: 6.5). Se omitida e `applyWithholding` for true, assume 6.5%.
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub withholding_rate: Option<Decimal>,
+    /// Valor explícito de imposto de selo. Se omitido, pode ser calculado automaticamente via `applyStampDuty`.
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub stamp_duty_total: Option<Decimal>,
+    /// Ativa o cálculo automático do imposto de selo (1.0% geral ou 0.7% em recibos/FR)
+    #[serde(default)]
+    pub apply_stamp_duty: Option<bool>,
+    /// Taxa personalizada de imposto de selo (ex.: 1.0 ou 0.7). Se omitida e `applyStampDuty` for true, assume a taxa padrão.
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub stamp_duty_rate: Option<Decimal>,
     #[serde(default = "default_currency")]
     pub currency: String,
     pub lines: Vec<InvoiceLineInput>,
@@ -151,7 +187,12 @@ pub struct IssueInvoiceCommand {
     pub is_contingency: bool,
     #[serde(default = "default_key_version")]
     pub key_version: String,
+    /// Dados de transporte e movimentação de mercadorias (obrigatórios em GT e GR pelo Decreto 71/25)
+    #[serde(default)]
+    pub transport: Option<TransportMovementInput>,
 }
+
+pub type TransportMovementInput = crate::domain::value_objects::transport::TransportMovement;
 
 /// Comprovativo fiscal devolvido imediatamente ao cliente
 #[derive(Debug, Clone, Serialize)]
@@ -166,13 +207,52 @@ pub struct IssueInvoiceResult {
     pub tax_total: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
     pub gross_total: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub withholding_total: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub stamp_duty_total: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub amount_due: Decimal,
     pub hash_sha256: String,
     pub signature_rsa_base64: String,
     pub validation_chars: String,
     pub issued_at: DateTime<Utc>,
     pub system_entry_date: DateTime<Utc>,
     pub is_contingency: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<TransportMovementInput>,
 }
+
+/// Comando de anulação / estorno de documento fiscal com emissão de Nota de Crédito
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelInvoiceCommand {
+    /// Identidade injectada pelo Gateway; nunca aceita valor do JSON público.
+    #[serde(skip)]
+    pub actor_user_id: Option<String>,
+    pub tenant_id: Uuid,
+    pub invoice_id: Uuid,
+    pub reason: String,
+    /// Código de série a usar para a Nota de Crédito. Se omitido, usa a mesma série do documento original.
+    #[serde(default)]
+    pub series_code: Option<String>,
+}
+
+/// Comprovativo de anulação e de emissão da Nota de Crédito rectificativa
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelInvoiceResult {
+    pub original_invoice_id: Uuid,
+    pub original_document_number: String,
+    pub credit_note_id: Uuid,
+    pub credit_note_document_number: String,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub amount_refunded: Decimal,
+    pub validation_chars: String,
+    pub reason: String,
+    pub issued_at: DateTime<Utc>,
+}
+
 
 /// Comando de abertura/recuperação de uma série fiscal
 #[derive(Debug, Clone, Deserialize)]
@@ -189,6 +269,7 @@ pub struct CreateFiscalSeriesCommand {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignDirectCommand {
+    pub tenant_id: Uuid,
     pub document_number: String,
     pub invoice_date: String,
     pub system_entry_date: String,
@@ -288,12 +369,16 @@ mod tests {
             net_total: Decimal::from(600000),
             tax_total: Decimal::from(84000),
             gross_total: Decimal::from(684000),
+            withholding_total: Decimal::ZERO,
+            stamp_duty_total: Decimal::ZERO,
+            amount_due: Decimal::from(684000),
             hash_sha256: "abc".into(),
             signature_rsa_base64: "sig".into(),
             validation_chars: "Lk5H".into(),
             issued_at: Utc::now(),
             system_entry_date: Utc::now(),
             is_contingency: false,
+            transport: None,
         };
 
         let json = serde_json::to_value(&result).expect("serialização do comprovativo");
@@ -317,6 +402,7 @@ mod tests {
             from_number.unit_price,
             "250000.55".parse::<Decimal>().unwrap()
         );
+        assert_eq!(from_number.discount_amount, None);
 
         let from_string: InvoiceLineInput = serde_json::from_str(
             r#"{"productCode":"P1","description":"D","quantity":"2","unitPrice":"250000.55","taxRate":"14"}"#,
@@ -324,5 +410,25 @@ mod tests {
         .expect("linha com strings numéricas");
 
         assert_eq!(from_string.unit_price, from_number.unit_price);
+    }
+
+    #[test]
+    fn recebe_retencao_e_imposto_de_selo_como_numeros_json() {
+        let command: IssueInvoiceCommand = serde_json::from_str(
+            r#"{
+                "tenantId":"a0000000-0000-0000-0000-000000000001",
+                "documentType":"FT","seriesCode":"S1","fiscalYear":2026,
+                "customerName":"Cliente","customerAddress":"Rua 1",
+                "customerCity":"Luanda","customerCountry":"AO",
+                "paymentMethods":["A crédito"],
+                "withholdingTotal":10.25,"stampDutyTotal":2.5,
+                "lines":[{"productCode":"P1","description":"D","quantity":1,"unitPrice":100,"taxRate":14}]
+            }"#,
+        )
+        .expect("pedido fiscal");
+
+        assert_eq!(command.withholding_total, Some(Decimal::new(1025, 2)));
+        assert_eq!(command.stamp_duty_total, Some(Decimal::new(25, 1)));
+        assert_eq!(command.actor_user_id, None);
     }
 }

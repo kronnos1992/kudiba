@@ -1,9 +1,10 @@
 use axum::{
     body::Body,
-    extract::{Request, State},
+    extract::{ConnectInfo, Request, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use std::net::SocketAddr;
 use reqwest::Client;
 
 use crate::errors::ProblemDetail;
@@ -17,6 +18,14 @@ pub async fn forward_to_core(
     forward_request(&state.http_client, &state.config.core_api_url, req, state.config.max_body_bytes).await
 }
 
+/// Handler de Reverse Proxy para o Serviço de Autenticação (KudibaAuth)
+pub async fn forward_to_auth(
+    State(state): State<AppState>,
+    req: Request,
+) -> Response {
+    forward_request(&state.http_client, &state.config.auth_service_url, req, state.config.max_body_bytes).await
+}
+
 /// Handler de Reverse Proxy para o Fiscal Engine Service (AGT Criptografia & Séries)
 pub async fn forward_to_fiscal(
     State(state): State<AppState>,
@@ -26,6 +35,10 @@ pub async fn forward_to_fiscal(
 }
 
 async fn forward_request(client: &Client, base_url: &str, req: Request, max_body_bytes: usize) -> Response {
+    let client_ip = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(address)| address.ip().to_string());
     let (parts, body) = req.into_parts();
     let path_and_query = parts.uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("");
     let base = base_url.trim_end_matches('/');
@@ -51,9 +64,12 @@ async fn forward_request(client: &Client, base_url: &str, req: Request, max_body
 
     // Copia headers, filtrando host
     for (k, v) in &parts.headers {
-        if k != "host" && k != "content-length" {
+        if k != "host" && k != "content-length" && k != "x-forwarded-for" {
             builder = builder.header(k.as_str(), v.as_bytes());
         }
+    }
+    if let Some(client_ip) = client_ip {
+        builder = builder.header("X-Forwarded-For", client_ip);
     }
 
     if !body_bytes.is_empty() {

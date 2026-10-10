@@ -64,11 +64,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let pool = config.connect_pool()?;
     match sqlx::query("SELECT 1").execute(&pool).await {
-        Ok(_) => tracing::info!("Ligação ao PostgreSQL estabelecida com sucesso."),
+        Ok(_) => tracing::info!("Ligação ao PostgreSQL (escrita) estabelecida com sucesso."),
         Err(err) => tracing::warn!(
             "Aviso: falha inicial na ligação ao PostgreSQL ({:?}). Motor em modo degradado.",
             err
         ),
+    }
+
+    let read_pool = config.connect_read_pool()?;
+    if config.database_read_url.is_some() {
+        match sqlx::query("SELECT 1").execute(&read_pool).await {
+            Ok(_) => tracing::info!("Ligação ao PostgreSQL (read-replica) estabelecida com sucesso."),
+            Err(err) => tracing::warn!(
+                "Aviso: falha inicial na ligação à read-replica ({:?}). Consultas redirecionadas.",
+                err
+            ),
+        }
     }
 
     let signer = std::sync::Arc::new(RsaCryptoSigner::from_config(&config)?);
@@ -77,10 +88,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Chave RSA-2048 do motor fiscal carregada"
     );
 
-    let app_state = AppState::bootstrap(config.clone(), pool, signer)?;
+    let app_state = AppState::bootstrap_with_read_pool(config.clone(), pool, read_pool, signer)?;
 
     // =========================================================================
-    // ETAPA 3: SERVIDOR gRPC (CONTRATO kudiba.fiscal.v1)
+    // ETAPA 3: WORKER ASSÍNCRONO DA TRANSACTIONAL OUTBOX (MENSAGERIA / AUDITORIA)
+    // =========================================================================
+    let (outbox_shutdown_tx, outbox_shutdown_rx) = tokio::sync::watch::channel(false);
+    let worker = app_state.outbox_worker.clone();
+    tokio::spawn(async move {
+        worker.run_loop(outbox_shutdown_rx).await;
+    });
+
+    // =========================================================================
+    // ETAPA 4: SERVIDOR gRPC (CONTRATO kudiba.fiscal.v1)
     // =========================================================================
     let grpc_addr: SocketAddr = ([0, 0, 0, 0], config.grpc_port).into();
     let grpc_service = FiscalGrpcService::new(
@@ -88,6 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         app_state.verify_signature.clone(),
         app_state.validate_series.clone(),
         app_state.export_saft.clone(),
+        app_state.saft_jobs.clone(),
     );
 
     tokio::spawn(async move {
@@ -106,7 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // =========================================================================
-    // ETAPA 4: SERVIDOR REST INTERNO (AXUM) COM ENCERRAMENTO GRACIOSO
+    // ETAPA 5: SERVIDOR REST INTERNO (AXUM) COM ENCERRAMENTO GRACIOSO
     // =========================================================================
     let http_addr: SocketAddr = ([0, 0, 0, 0], config.http_port).into();
     let http_listener = TcpListener::bind(http_addr).await?;
@@ -124,6 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
+    let _ = outbox_shutdown_tx.send(true);
     tracing::info!("KudibaInvoicing encerrado com sucesso.");
     Ok(())
 }

@@ -6,9 +6,10 @@ info:
     Contrato do motor fiscal do ERP Kudiba, escrito em Rust (Axum + Tokio) com Clean Architecture,
     CQRS e Unit of Work sobre PostgreSQL 16 ACID.
 
-    Este servico e interno a cluster: e alcancavel pelo **API Gateway** (que aplica autenticacao JWT,
-    resolucao de tenant, rate limiting e bloqueio de contingencia AGT) ou directamente pelos terminais
-    POS (Kudiba Edge) em modo offline-first.
+    Este servico e interno ao cluster e e alcancavel pelo **API Gateway** (que aplica autenticacao JWT,
+    resolucao de tenant, rate limiting e bloqueio de contingencia AGT). A integracao POS deve passar
+    por um canal interno autorizado. Os ports REST/gRPC do microservico nao devem ser publicados no
+    perimetro; os endpoints REST fiscais exigem identidade e roles injectadas pelo Gateway.
 
     ### Conformidade Regulatoria
     Conforme o **Decreto Presidencial n.o 71/25 de Angola (AGT)**:
@@ -43,6 +44,8 @@ tags:
     description: Comunicacao em tempo real, liveness/heartbeat e despacho de lotes
   - name: Gestao Criptografica
     description: Geracao e validacao de chaves RSA-2048 para credenciacao AGT
+  - name: Regimes Fiscais de IVA & Isenções
+    description: Enquadramento fiscal por volume de faturação (Exclusão, Simplificado, Geral) e validação de isenções M00-M99
   - name: Observabilidade & Documentacao
     description: Health check e documentacao da API
 
@@ -71,7 +74,11 @@ paths:
               seriesCode: "KUD26"
               fiscalYear: 2026
               customerName: "Empresa de Transportes Sonangol EP"
+              customerAddress: "Rua da Missão, 120"
+              customerCity: "Luanda"
+              customerCountry: "AO"
               customerNif: "5412345678"
+              paymentMethods: ["TRANSFERENCIA"]
               currency: "AOA"
               lines:
                 - productCode: "PROD-001"
@@ -203,6 +210,229 @@ paths:
         '404':
           $ref: '#/components/responses/NotFoundError'
 
+  /api/v1/fiscal/invoices/{id}/cancel:
+    post:
+      summary: Anular Documento Fiscal com Emissão de Nota de Crédito (NC)
+      description: >
+        Anula uma fatura ou documento fiscal emitindo automaticamente uma Nota de Crédito (NC)
+        retificativa em estrita conformidade com o Decreto Presidencial n.º 71/25 de Angola.
+        As faturas originais são imutáveis; a Nota de Crédito referencia o documento original,
+        estorna os valores de incidência e IVA, assina digitalmente com RSA-SHA256 e grava
+        de forma atómica.
+      tags:
+        - Facturacao & Motor Fiscal
+      security:
+        - BearerAuth: []
+          TenantHeaderAuth: []
+          RoleHeaderAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tenantId
+                - reason
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                reason:
+                  type: string
+                  description: Motivo legal e justificação da anulação/retificação.
+                  example: "Anulação por desistência do cliente"
+                seriesCode:
+                  type: string
+                  description: Código da série fiscal da NC. Se omitido, utiliza a série do documento original.
+                  example: "NC26"
+      responses:
+        '201':
+          description: Nota de Crédito emitida e fatura anulada com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  originalInvoiceId:
+                    type: string
+                    format: uuid
+                  originalDocumentNumber:
+                    type: string
+                    example: "FT KUD26/000001"
+                  creditNoteId:
+                    type: string
+                    format: uuid
+                  creditNoteDocumentNumber:
+                    type: string
+                    example: "NC KUD26/000001"
+                  amountRefunded:
+                    type: number
+                    example: 114000.00
+                  validationChars:
+                    type: string
+                    example: "a8b2"
+                  reason:
+                    type: string
+                  issuedAt:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /api/v1/fiscal/invoices/{id}/pdf:
+    get:
+      summary: Descarregar Fatura em Formato Oficial PDF A4
+      description: >
+        Gera e descarrega o documento fiscal em formato PDF (A4) oficial nos termos
+        do Decreto Presidencial n.º 71/25 de Angola, contendo o QR Code fiscal da AGT,
+        os 4 caracteres de validação da assinatura digital e a menção legal obrigatória.
+      tags:
+        - Facturacao & Motor Fiscal
+      security:
+        - BearerAuth: []
+          TenantHeaderAuth: []
+          RoleHeaderAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Ficheiro PDF gerado com sucesso
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /api/v1/fiscal/invoices/{id}/thermal:
+    get:
+      summary: Imprimir Talão Térmico de Venda (80mm) para POS
+      description: >
+        Gera a versão compacta do documento fiscal para impressoras térmicas de talões (80mm / 48 colunas),
+        nos formatos PDF ou Texto (ESC/POS).
+      tags:
+        - Facturacao & Motor Fiscal
+      security:
+        - BearerAuth: []
+          TenantHeaderAuth: []
+          RoleHeaderAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: format
+          in: query
+          required: false
+          description: Formato desejado (pdf ou text). Padrão é pdf.
+          schema:
+            type: string
+            enum: [pdf, text]
+            default: pdf
+      responses:
+        '200':
+          description: Talão térmico gerado com sucesso
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            text/plain:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /api/v1/fiscal/invoices/{id}/qr:
+    get:
+      summary: Consultar Payload e Imagem do QR Code Fiscal da AGT
+      description: >
+        Retorna a string canónica do QR Code fiscal (AGT) e a sua representação vetorial em SVG.
+      tags:
+        - Facturacao & Motor Fiscal
+      security:
+        - BearerAuth: []
+          TenantHeaderAuth: []
+          RoleHeaderAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: format
+          in: query
+          required: false
+          description: Formato de retorno (json, svg, ascii). Padrão é json.
+          schema:
+            type: string
+            enum: [json, svg, ascii]
+            default: json
+      responses:
+        '200':
+          description: Dados do QR code fiscal
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documentNumber:
+                    type: string
+                  validationChars:
+                    type: string
+                  softwareCert:
+                    type: string
+                  qrPayload:
+                    type: string
+                  svg:
+                    type: string
+            image/svg+xml:
+              schema:
+                type: string
+            text/plain:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+
   # ===========================================================================
   # CHAVE PUBLICA E OPERACOES CRIPTOGRAFICAS
   # ===========================================================================
@@ -284,6 +514,7 @@ paths:
             schema:
               $ref: '#/components/schemas/SignDirectRequest'
             example:
+              tenantId: "a0000000-0000-0000-0000-000000000001"
               documentNumber: "FT POS01/000042"
               invoiceDate: "2026-10-03"
               systemEntryDate: "2026-10-03T10:11:11"
@@ -353,6 +584,220 @@ paths:
                 $ref: '#/components/schemas/ValidateSeriesSequenceResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+
+  # ===========================================================================
+  # ENQUADRAMENTO FISCAL DE IVA & REGIMES TRIBUTÁRIOS
+  # ===========================================================================
+  /api/v1/fiscal/tax-regimes:
+    get:
+      summary: Listar Regimes de IVA do Catálogo Fiscal Angolano
+      description: >
+        Devolve os 3 regimes de IVA previstos no Código do IVA de Angola:
+        Regime de Exclusão (< 25M AOA), Regime Simplificado (25M - 350M AOA, taxa 7%)
+        e Regime Geral (> 350M AOA, taxa padrão 14% e taxas reduzidas).
+      tags:
+        - Regimes Fiscais de IVA & Isenções
+      responses:
+        '200':
+          description: Catálogo de regimes fiscais de Angola
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  regimes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        regimeCode:
+                          type: string
+                          example: "GERAL"
+                        displayName:
+                          type: string
+                          example: "Regime Geral do IVA"
+                        minTurnover:
+                          type: number
+                          example: 350000000.00
+                        maxTurnover:
+                          type: number
+                          nullable: true
+                          example: null
+                        standardRate:
+                          type: number
+                          example: 14.00
+                        allowedRates:
+                          type: array
+                          items:
+                            type: number
+                          example: [0.0, 5.0, 7.0, 14.0]
+                        requiresCreditNote:
+                          type: boolean
+                          example: true
+                        isVatExempt:
+                          type: boolean
+                          example: false
+                        allowsInputVatCredit:
+                          type: boolean
+                          example: true
+
+  /api/v1/fiscal/tax-regime:
+    post:
+      summary: Resolver ou Atualizar Enquadramento Fiscal do Contribuinte
+      description: >
+        Calcula automaticamente o regime de IVA com base no volume anual de faturação
+        ou fixa um enquadramento declarado expressamente na AGT (`MANUAL`).
+      tags:
+        - Regimes Fiscais de IVA & Isenções
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tenantId
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                  example: "a0000000-0000-0000-0000-000000000001"
+                fiscalYear:
+                  type: integer
+                  example: 2026
+                declaredRegimeCode:
+                  type: string
+                  enum: ["EXCLUSAO", "SIMPLIFICADO", "GERAL"]
+                  example: "GERAL"
+                persist:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Regime fiscal resolvido com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenantId:
+                    type: string
+                    format: uuid
+                  fiscalYear:
+                    type: integer
+                  regimeCode:
+                    type: string
+                  displayName:
+                    type: string
+                  source:
+                    type: string
+                    example: "AUTOMATIC"
+                  annualTurnover:
+                    type: number
+                  standardRate:
+                    type: number
+                  previousRegimeCode:
+                    type: string
+                  regimeChanged:
+                    type: boolean
+                  allowedRates:
+                    type: array
+                    items:
+                      type: number
+                  isVatExempt:
+                    type: boolean
+                  allowsInputVatCredit:
+                    type: boolean
+                  resolvedAt:
+                    type: string
+                    format: date-time
+
+  /api/v1/fiscal/tax-regime/{tenantId}:
+    get:
+      summary: Consultar Enquadramento Fiscal Ativo do Tenant
+      tags:
+        - Regimes Fiscais de IVA & Isenções
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Regime e limites de faturação do contribuinte
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenantId:
+                    type: string
+                    format: uuid
+                  regimeCode:
+                    type: string
+                  displayName:
+                    type: string
+                  source:
+                    type: string
+                  basisTurnover:
+                    type: number
+                  standardRate:
+                    type: number
+                  allowedRates:
+                    type: array
+                    items:
+                      type: number
+                  isVatExempt:
+                    type: boolean
+                  allowsInputVatCredit:
+                    type: boolean
+                  resolvedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  resolvedYear:
+                    type: integer
+                    nullable: true
+
+  /api/v1/fiscal/tax-regime/{tenantId}/exemption-codes/{code}:
+    get:
+      summary: Validar Código de Isenção de IVA (M00-M99)
+      description: >
+        Verifica se o código de motivo de isenção de IVA (M00 a M99, ex.: M02, M04)
+        é legalmente admissível no regime tributário em vigor para o sujeito passivo.
+      tags:
+        - Regimes Fiscais de IVA & Isenções
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "M04"
+      responses:
+        '200':
+          description: Resultado da validação do código de isenção
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  isValid:
+                    type: boolean
+                  description:
+                    type: string
+                  legalBasis:
+                    type: string
 
   # ===========================================================================
   # OBSERVABILIDADE & DOCUMENTACAO
@@ -450,6 +895,486 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '500':
           $ref: '#/components/responses/InternalError'
+
+  /api/v1/fiscal/saft/validate:
+    post:
+      summary: Validar ficheiro SAF-T (AO) contra o Schema Oficial XSD da AGT
+      description: >
+        Valida a estrutura sintática e semântica de um XML SAF-T (AO) contra
+        o schema oficial XSD da AGT (Decreto Executivo n.º 385/20 e Decreto Presidencial n.º 71/25).
+      tags:
+        - SAF-T (AO) & Auditoria
+      security:
+        - BearerAuth: []
+          TenantHeaderAuth: []
+          RoleHeaderAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - xml_content
+              properties:
+                xml_content:
+                  type: string
+                  description: Conteúdo XML do ficheiro SAF-T (AO) a validar.
+      responses:
+        '200':
+          description: Ficheiro SAF-T válido contra o Schema Oficial da AGT
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                    example: true
+                  schema:
+                    type: string
+                    example: AO_1.01_01
+                  message:
+                    type: string
+        '422':
+          description: Violações detectadas contra o Schema Oficial XSD da AGT
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                    example: false
+                  schema:
+                    type: string
+                    example: AO_1.01_01
+                  error:
+                    type: string
+
+  /api/v1/fiscal/saft/jobs:
+    post:
+      summary: Enfileirar Geração Assíncrona de SAF-T (AO)
+      description: >
+        Enfileira a exportação do ficheiro SAF-T (AO) para processamento em background,
+        evitando timeouts em volumes elevados de faturas.
+      tags:
+        - SAF-T (AO) & Auditoria
+      security:
+        - BearerAuth: []
+          TenantHeaderAuth: []
+          RoleHeaderAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tenantId
+                - fiscalYear
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                fiscalYear:
+                  type: integer
+                  example: 2026
+                fiscalMonth:
+                  type: integer
+                  nullable: true
+                  example: 10
+      responses:
+        '202':
+          description: Tarefa enfileirada com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                  status:
+                    type: string
+                    example: QUEUED
+                  estimatedTime:
+                    type: string
+                    example: 30s
+
+  /api/v1/fiscal/saft/jobs/{id}:
+    get:
+      summary: Consultar Estado do Trabalho de SAF-T (AO)
+      description: >
+        Retorna o estado corrente de um trabalho assíncrono de geração de SAF-T (QUEUED, PROCESSING, COMPLETED, FAILED).
+      tags:
+        - SAF-T (AO) & Auditoria
+      security:
+        - BearerAuth: []
+          TenantHeaderAuth: []
+          RoleHeaderAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Estado do trabalho obtido com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  fiscal_year:
+                    type: integer
+                  fiscal_month:
+                    type: integer
+                    nullable: true
+                  status:
+                    type: string
+                    example: COMPLETED
+                  filename:
+                    type: string
+                    nullable: true
+                  invoice_count:
+                    type: integer
+                    nullable: true
+                  total_gross:
+                    type: string
+                    nullable: true
+                  error:
+                    type: string
+                    nullable: true
+                  created_at:
+                    type: string
+                    format: date-time
+                  completed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+        '404':
+          description: Trabalho não encontrado
+
+  /api/v1/fiscal/saft/jobs/{id}/download:
+    get:
+      summary: Descarregar Ficheiro XML de Trabalho SAF-T (AO) Concluído
+      description: >
+        Descarrega o ficheiro XML SAF-T (AO) gerado pelo trabalho assíncrono.
+      tags:
+        - SAF-T (AO) & Auditoria
+      security:
+        - BearerAuth: []
+          TenantHeaderAuth: []
+          RoleHeaderAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ficheiro XML SAF-T (AO)
+          content:
+            application/xml:
+              schema:
+                type: string
+        '202':
+          description: O ficheiro ainda se encontra em processamento
+        '404':
+          description: Trabalho não encontrado
+        '422':
+          description: O trabalho terminou com falha
+
+  /api/v1/fiscal/reports/tax:
+    get:
+      summary: Consultar mapa de IVA, retenções e imposto de selo
+      description: >
+        Agrega bases e IVA por taxa e apresenta valores de retenção/imposto de selo informados
+        na emissão. NC é deduzida dos totais. Não calcula retenções ou imposto de selo.
+      tags:
+        - SAF-T (AO) & Auditoria
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+        - name: format
+          in: query
+          required: false
+          description: Formato de exportação do relatório (json, xlsx, pdf). Padrão é json.
+          schema:
+            type: string
+            enum: [json, xlsx, excel, pdf]
+            default: json
+      responses:
+        '200':
+          description: Mapa fiscal por período no formato solicitado (JSON, Excel XLSX ou PDF A4)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FiscalReportResponse'
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '403':
+          description: Perfil não autorizado ou empresa diferente da identidade autenticada
+
+  /api/v1/fiscal/reports/tax/excel:
+    get:
+      summary: Descarregar Mapa de IVA e Apuramento Fiscal em Excel (.xlsx)
+      description: Exporta diretamente a folha de cálculo formatada para contabilistas e auditores.
+      tags:
+        - SAF-T (AO) & Auditoria
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Ficheiro XLSX gerado com sucesso
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /api/v1/fiscal/reports/tax/pdf:
+    get:
+      summary: Descarregar Mapa de IVA e Apuramento Fiscal em PDF Oficial (A4)
+      description: Exporta diretamente o documento PDF formatado em A4 para arquivo e impressão fiscal.
+      tags:
+        - SAF-T (AO) & Auditoria
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Ficheiro PDF gerado com sucesso
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  /api/v1/fiscal/pos/reports/x:
+    get:
+      summary: Leitura X de Caixa / POS (X-Report)
+      description: >
+        Emite a Leitura de Controlo X intradiária para conferência de caixa e auditoria de vendas.
+        Apresenta faturado acumulado, desdobramento de taxas de IVA, notas de crédito emitidas e
+        meios de pagamento. Não fecha a caixa nem incrementa a numeração sequencial Z.
+      tags:
+        - Pontos de Venda (POS) & Memória Fiscal
+      security:
+        - BearerAuth: []
+          TenantHeaderAuth: []
+          RoleHeaderAuth: []
+      parameters:
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: date
+          in: query
+          required: false
+          description: Data do fecho fiscal (AAAA-MM-DD). Padrão é a data atual.
+          schema:
+            type: string
+            format: date
+        - name: posTerminalId
+          in: query
+          required: false
+          description: Identificador do terminal/caixa POS
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Leitura X gerada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PosDailyReport'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '403':
+          description: Perfil não autorizado
+
+  /api/v1/fiscal/pos/reports/x/thermal:
+    get:
+      summary: Descarregar Talão Térmico da Leitura X (80mm / ESC/POS)
+      description: Exporta a Leitura X em PDF para bobina de 80mm ou texto ESC/POS a 48 colunas.
+      tags:
+        - Pontos de Venda (POS) & Memória Fiscal
+      security:
+        - BearerAuth: []
+          TenantHeaderAuth: []
+          RoleHeaderAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: format
+          in: query
+          required: false
+          description: Formato de saída ('pdf' para talão 80mm ou 'text' para ESC/POS)
+          schema:
+            type: string
+            enum: [pdf, text]
+            default: pdf
+      responses:
+        '200':
+          description: Talão térmico da Leitura X gerado
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/fiscal/pos/reports/z:
+    post:
+      summary: Emitir Fecho Z Oficial de Caixa / POS (Z-Report)
+      description: >
+        Encerra oficialmente o dia fiscal ou turno do terminal POS em conformidade com o
+        Decreto Presidencial n.º 71/25. Atribui uma numeração sequencial anual de Fecho Z (ex.: Z 2026/000001),
+        congela os acumuladores fiscais diários de IVA, vendas, retenções e meios de pagamento,
+        e grava o registo de forma imutável. Operação idempotente para a mesma data/terminal.
+      tags:
+        - Pontos de Venda (POS) & Memória Fiscal
+      security:
+        - BearerAuth: []
+          TenantHeaderAuth: []
+          RoleHeaderAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                fiscalYear:
+                  type: integer
+                  example: 2026
+                date:
+                  type: string
+                  format: date
+                  example: "2026-10-07"
+                posTerminalId:
+                  type: string
+                  example: "POS-01"
+      responses:
+        '201':
+          description: Fecho Z emitido e gravado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PosDailyReport'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
+  /api/v1/fiscal/pos/reports/z/thermal:
+    post:
+      summary: Descarregar Talão Térmico Oficial do Fecho Z (80mm / ESC/POS)
+      description: Emite o Fecho Z e retorna diretamente o talão fiscal térmico para impressão na impressora de balcão.
+      tags:
+        - Pontos de Venda (POS) & Memória Fiscal
+      security:
+        - BearerAuth: []
+          TenantHeaderAuth: []
+          RoleHeaderAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                date:
+                  type: string
+                  format: date
+                format:
+                  type: string
+                  enum: [pdf, text]
+                  default: pdf
+      responses:
+        '201':
+          description: Talão térmico oficial do Fecho Z
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            text/plain:
+              schema:
+                type: string
 
   /api/v1/fiscal/agt/status:
     get:
@@ -570,6 +1495,10 @@ components:
         - seriesCode
         - fiscalYear
         - customerName
+        - customerAddress
+        - customerCity
+        - customerCountry
+        - paymentMethods
         - lines
       properties:
         tenantId:
@@ -593,11 +1522,55 @@ components:
           type: string
           description: Nome ou razao social do adquirente
           example: "Empresa de Transportes Sonangol EP"
+        customerAddress:
+          type: string
+          description: Morada fiscal do adquirente
+        customerCity:
+          type: string
+          description: Município do adquirente
+        customerCountry:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: Código de país ISO 3166-1 alpha-2
         customerNif:
           type: string
           description: NIF do adquirente ou 'Consumidor Final'
           default: "Consumidor Final"
           example: "5412345678"
+        sourceDocumentNumber:
+          type: string
+          description: Obrigatório para NC e ND; identifica o documento original desta empresa
+        paymentMethods:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          example: ["TRANSFERENCIA"]
+        withholdingTotal:
+          type: number
+          minimum: 0
+          description: Montante explícito de retenção na fonte. Se omitido, pode ser calculado automaticamente via `applyWithholding`.
+        applyWithholding:
+          type: boolean
+          default: false
+          description: Ativa o cálculo automático da Retenção na Fonte (6.5% padrão sobre serviços ou base líquida).
+        withholdingRate:
+          type: number
+          description: Taxa personalizada de Retenção na Fonte (padrão 6.5%).
+          example: 6.5
+        stampDutyTotal:
+          type: number
+          minimum: 0
+          description: Montante explícito de Imposto de Selo. Se omitido, pode ser calculado automaticamente via `applyStampDuty`.
+        applyStampDuty:
+          type: boolean
+          default: false
+          description: Ativa o cálculo automático do Imposto de Selo (1.0% geral ou 0.7% em recibos/FR).
+        stampDutyRate:
+          type: number
+          description: Taxa personalizada de Imposto de Selo (ex.: 1.0 ou 0.7).
+          example: 1.0
         currency:
           type: string
           default: "AOA"
@@ -637,6 +1610,11 @@ components:
           type: number
           format: double
           example: 500000.00
+        discountAmount:
+          type: number
+          minimum: 0
+          default: 0
+          description: Desconto total aplicado à linha antes do cálculo do IVA
         taxRate:
           type: number
           format: double
@@ -647,6 +1625,11 @@ components:
           nullable: true
           description: Motivo legal de isencao AGT (M00 a M99) obrigatorio se a taxa de IVA for 0%
           example: null
+        isService:
+          type: boolean
+          default: false
+          description: Identifica se o item é prestação de serviço para incidência de retenção na fonte (6.5%)
+          example: false
 
     IssueInvoiceResponse:
       type: object
@@ -672,6 +1655,13 @@ components:
           type: number
           format: double
           example: 855000.00
+        withholdingTotal:
+          type: number
+        stampDutyTotal:
+          type: number
+        amountDue:
+          type: number
+          description: Total bruto mais imposto de selo menos retenção informada
         hashSha256:
           type: string
           description: Hash SHA-256 gerado pelo encadeamento criptografico do Decreto n.º 71/25
@@ -709,10 +1699,38 @@ components:
           type: integer
         documentType:
           type: string
+        issuerNif:
+          type: string
+          nullable: true
+        issuerAddress:
+          type: string
+          nullable: true
+        issuerCity:
+          type: string
+          nullable: true
+        issuerCountry:
+          type: string
+          nullable: true
         customerName:
           type: string
         customerNif:
           type: string
+        customerAddress:
+          type: string
+          nullable: true
+        customerCity:
+          type: string
+          nullable: true
+        customerCountry:
+          type: string
+          nullable: true
+        sourceDocumentNumber:
+          type: string
+          nullable: true
+        paymentMethods:
+          type: array
+          items:
+            type: string
         currency:
           type: string
         netTotal:
@@ -721,6 +1739,14 @@ components:
           type: number
         grossTotal:
           type: number
+        withholdingTotal:
+          type: number
+        stampDutyTotal:
+          type: number
+        amountDue:
+          type: number
+        taxRegimeCode:
+          type: string
         hashSha256:
           type: string
         signatureRsaBase64:
@@ -764,12 +1790,41 @@ components:
           type: number
         unitPrice:
           type: number
+        discountAmount:
+          type: number
         taxRate:
           type: number
         taxExemptionCode:
           type: string
           nullable: true
         lineTotal:
+          type: number
+
+    FiscalReportResponse:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        fiscalYear:
+          type: integer
+        fiscalMonth:
+          type: integer
+          nullable: true
+        vat:
+          type: array
+          items:
+            type: object
+            properties:
+              taxRate:
+                type: number
+              taxableBase:
+                type: number
+              taxAmount:
+                type: number
+        withholdingTotal:
+          type: number
+        stampDutyTotal:
           type: number
 
     CreateFiscalSeriesRequest:
@@ -805,11 +1860,16 @@ components:
     SignDirectRequest:
       type: object
       required:
+        - tenantId
         - documentNumber
         - invoiceDate
         - systemEntryDate
         - grossTotal
       properties:
+        tenantId:
+          type: string
+          format: uuid
+          description: Empresa autenticada que solicita a assinatura
         documentNumber:
           type: string
           example: "FT POS01/000042"
@@ -985,6 +2045,109 @@ components:
         timestamp:
           type: string
           format: date-time
+
+    PosDailyReport:
+      type: object
+      properties:
+        reportType:
+          type: string
+          enum: [LEITURA_X, FECHO_Z]
+          example: "FECHO_Z"
+        tenantId:
+          type: string
+          format: uuid
+        companyName:
+          type: string
+          example: "Kudiba Comercial & Servicos Lda"
+        companyNif:
+          type: string
+          example: "5001234567"
+        agtCertNumber:
+          type: string
+          example: "CERT-AGT-2026/0042"
+        date:
+          type: string
+          format: date
+          example: "2026-10-07"
+        generatedAt:
+          type: string
+          format: date-time
+        zReportSequence:
+          type: integer
+          example: 1
+        zReportNumber:
+          type: string
+          example: "Z 2026/000001"
+        posTerminalId:
+          type: string
+          example: "POS-01"
+        firstDocumentNumber:
+          type: string
+          example: "FT KUD26/000001"
+        lastDocumentNumber:
+          type: string
+          example: "FT KUD26/000042"
+        invoicesCount:
+          type: integer
+          example: 42
+        creditNotesCount:
+          type: integer
+          example: 2
+        grossSalesTotal:
+          type: number
+          example: 1500000.00
+        discountsTotal:
+          type: number
+          example: 50000.00
+        creditNotesTotal:
+          type: number
+          example: 100000.00
+        netSalesTotal:
+          type: number
+          example: 1350000.00
+        vatTotal:
+          type: number
+          example: 189000.00
+        withholdingTotal:
+          type: number
+          example: 0.00
+        stampDutyTotal:
+          type: number
+          example: 5000.00
+        finalTotal:
+          type: number
+          example: 1544000.00
+        taxes:
+          type: array
+          items:
+            type: object
+            properties:
+              taxRate:
+                type: number
+                example: 14.0
+              taxableBase:
+                type: number
+                example: 1000000.00
+              taxAmount:
+                type: number
+                example: 140000.00
+        payments:
+          type: array
+          items:
+            type: object
+            properties:
+              paymentMethod:
+                type: string
+                example: "NU"
+              paymentMethodName:
+                type: string
+                example: "Numerário (Cash)"
+              totalAmount:
+                type: number
+                example: 544000.00
+              transactionCount:
+                type: integer
+                example: 25
 
     ErrorResponse:
       type: object

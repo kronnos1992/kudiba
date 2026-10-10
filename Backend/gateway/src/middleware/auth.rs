@@ -20,6 +20,8 @@ pub struct KudibaClaims {
     pub branch_id: Option<String>,
     pub roles: Vec<String>,
     pub exp: usize,
+    #[serde(default)]
+    pub iat: Option<usize>,
     pub jti: Option<String>,
 }
 
@@ -70,21 +72,95 @@ pub async fn auth_middleware(
 
     // 2. Verificar se o JTI está na Blacklist do Redis (ex: logout recente)
     if let Some(jti) = &claims.jti {
-        if let Some(mut redis_conn) = state.get_redis_conn().await {
-            let is_revoked: bool = redis_conn
-                .exists(format!("jwt:blacklist:{}", jti))
+        let is_revoked = match state.get_redis_conn().await {
+            Some(mut redis_conn) => match redis_conn
+                .exists::<_, bool>(format!("jwt:blacklist:{}", jti))
                 .await
-                .unwrap_or(false);
+            {
+                Ok(is_revoked) => is_revoked,
+                Err(_) => {
+                    return ProblemDetail::new(
+                        "https://api.kudiba.ao/errors/auth-state-unavailable",
+                        "Serviço de Autenticação Indisponível",
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "Não foi possível verificar o estado de revogação da sessão.",
+                        path,
+                        "AUTH_STATE_UNAVAILABLE",
+                    )
+                    .into_response();
+                }
+            },
+            None => {
+                return ProblemDetail::new(
+                    "https://api.kudiba.ao/errors/auth-state-unavailable",
+                    "Serviço de Autenticação Indisponível",
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Não foi possível verificar o estado de revogação da sessão.",
+                    path,
+                    "AUTH_STATE_UNAVAILABLE",
+                )
+                .into_response();
+            }
+        };
 
-            if is_revoked {
+        if is_revoked {
+            return ProblemDetail::new(
+                "https://api.kudiba.ao/errors/token-revoked",
+                "Sessão Encerrada",
+                StatusCode::UNAUTHORIZED,
+                "Este token foi revogado via logout anterior e não pode ser reutilizado.",
+                path,
+                "AUTH_TOKEN_REVOKED",
+            )
+            .into_response();
+        }
+    }
+
+    // 2b. Verificar se a sessão foi revogada por alteração de papéis:
+    // qualquer token emitido antes do instante de revogação do utilizador/tenant é rejeitado.
+    if let Some(iat) = claims.iat {
+        let revoked_before = match state.get_redis_conn().await {
+            Some(mut redis_conn) => {
+                let key = format!("jwt:revoked-before:{}:{}", claims.sub, claims.tenant_id);
+                match redis_conn.get::<_, Option<String>>(key).await {
+                    Ok(value) => value.and_then(|raw| raw.parse::<u64>().ok()),
+                    Err(_) => {
+                        return ProblemDetail::new(
+                            "https://api.kudiba.ao/errors/auth-state-unavailable",
+                            "Serviço de Autenticação Indisponível",
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "Não foi possível verificar o estado de revogação da sessão.",
+                            path,
+                            "AUTH_STATE_UNAVAILABLE",
+                        )
+                        .into_response();
+                    }
+                }
+            }
+            None => {
+                return ProblemDetail::new(
+                    "https://api.kudiba.ao/errors/auth-state-unavailable",
+                    "Serviço de Autenticação Indisponível",
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Não foi possível verificar o estado de revogação da sessão.",
+                    path,
+                    "AUTH_STATE_UNAVAILABLE",
+                )
+                .into_response();
+            }
+        };
+
+        if let Some(revoked_before) = revoked_before {
+            if (iat as u64) < revoked_before {
                 return ProblemDetail::new(
                     "https://api.kudiba.ao/errors/token-revoked",
                     "Sessão Encerrada",
                     StatusCode::UNAUTHORIZED,
-                    "Este token foi revogado via logout anterior e não pode ser reutilizado.",
+                    "As permissões desta sessão foram alteradas e o token foi revogado por segurança.",
                     path,
                     "AUTH_TOKEN_REVOKED",
-                ).into_response();
+                )
+                .into_response();
             }
         }
     }
@@ -138,4 +214,23 @@ pub async fn auth_middleware(
     }
 
     next.run(req).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::KudibaClaims;
+
+    #[test]
+    fn claims_sem_iat_continuam_desserializaveis() {
+        let json = r#"{"sub":"u1","tenant_id":"t1","roles":["ADMIN"],"exp":999,"jti":"j1"}"#;
+        let claims: KudibaClaims = serde_json::from_str(json).expect("deve desserializar claims legadas");
+        assert_eq!(claims.iat, None);
+    }
+
+    #[test]
+    fn claims_com_iat_sao_lidas_para_verificacao_de_revogacao() {
+        let json = r#"{"sub":"u1","tenant_id":"t1","roles":["ADMIN"],"exp":999,"iat":123,"jti":"j1"}"#;
+        let claims: KudibaClaims = serde_json::from_str(json).expect("deve desserializar claims com iat");
+        assert_eq!(claims.iat, Some(123));
+    }
 }

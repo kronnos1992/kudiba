@@ -22,7 +22,7 @@ use crate::middleware::{
     correlation::correlation_id_middleware, idempotency::idempotency_middleware,
     ratelimit::rate_limit_middleware, tenant::tenant_resolver_middleware,
 };
-use crate::proxy::{forward_to_core, forward_to_fiscal};
+use crate::proxy::{forward_to_auth, forward_to_core, forward_to_fiscal};
 
 /// Estado global compartilhado entre os handlers e middlewares do Gateway
 #[derive(Clone)]
@@ -122,11 +122,13 @@ pub fn create_router(
         .route("/api-docs/openapi.yaml", get(openapi_yaml_handler));
 
     // =========================================================================
-    // ROTAS DE AUTENTICAÇÃO E SESSÕES (PÚBLICAS / CORE API)
+    // ROTAS DE AUTENTICAÇÃO E SESSÕES (PÚBLICAS / KUDIBA AUTH)
     // =========================================================================
     let auth_routes = Router::new()
-        .route("/auth/{*path}", any(forward_to_core))
-        .route("/auth", any(forward_to_core))
+        .route("/auth/{*path}", any(forward_to_auth))
+        .route("/auth", any(forward_to_auth))
+        .route("/api/v1/auth/{*path}", any(forward_to_auth))
+        .route("/api/v1/auth", any(forward_to_auth))
         .layer(axum_mw::from_fn_with_state(
             state.clone(),
             rate_limit_middleware,
@@ -170,11 +172,16 @@ pub fn create_router(
             .allow_methods(Any)
             .allow_headers(Any)
     } else {
-        let origins: Vec<_> = state
-            .config
-            .allowed_origins
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
+        let configured_origins: Vec<String> =
+            serde_json::from_str(&state.config.allowed_origins).unwrap_or_else(|_| {
+                state.config.allowed_origins
+                    .split(',')
+                    .map(|origin| origin.trim().to_string())
+                    .collect()
+            });
+        let origins: Vec<_> = configured_origins
+            .iter()
+            .filter_map(|origin| origin.parse().ok())
             .collect();
         CorsLayer::new()
             .allow_origin(origins)

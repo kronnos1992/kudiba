@@ -4,5 +4,7 @@
 //! PostgreSQL (SQLx) e criptografia RSA (conformidade AGT).
 pub mod agt;
 pub mod crypto;
+pub mod outbox;
 pub mod persistence;
+pub mod reports;
 pub mod saft;

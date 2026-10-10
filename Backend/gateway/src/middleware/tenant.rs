@@ -7,7 +7,7 @@ use axum::{
 use uuid::Uuid;
 
 use crate::errors::ProblemDetail;
-use crate::middleware::is_public_path;
+use crate::middleware::{is_auth_service_path, is_public_path};
 
 /// Middleware de higienização contra Header Spoofing e resolução Multi-Tenant
 pub async fn tenant_resolver_middleware(mut req: Request, next: Next) -> Response {
@@ -22,6 +22,12 @@ pub async fn tenant_resolver_middleware(mut req: Request, next: Next) -> Respons
 
     // 2. Rotas públicas não exigem identificação prévia de tenant
     if is_public_path(&path) {
+        return next.run(req).await;
+    }
+
+    // The Auth service derives tenant context from the verified access token.
+    // Requiring a separate tenant header here would block authenticated auth routes.
+    if is_auth_service_path(&path) {
         return next.run(req).await;
     }
 

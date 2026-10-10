@@ -29,6 +29,7 @@ RUN mkdir -p src && echo "fn main() {}" > src/main.rs \
 COPY Backend/services/KudibaInvoicing/build.rs ./build.rs
 COPY Backend/services/KudibaInvoicing/src ./src
 COPY Backend/services/KudibaInvoicing/docs ./docs
+COPY Backend/services/KudibaInvoicing/schemas ./schemas
 
 RUN cargo build --release
 

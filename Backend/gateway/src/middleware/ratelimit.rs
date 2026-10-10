@@ -1,14 +1,14 @@
 use axum::{
-    extract::{Request, State},
+    extract::{ConnectInfo, Request, State},
     http::{HeaderValue, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use chrono::Utc;
+use std::net::SocketAddr;
 use uuid::Uuid;
 
 use crate::errors::ProblemDetail;
-use crate::middleware::is_public_path;
 use crate::server::AppState;
 
 const SLIDING_WINDOW_LUA: &str = r#"
@@ -48,15 +48,12 @@ pub async fn rate_limit_middleware(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("anonymous");
 
-    // Higieniza e valida o endereço IP contra spoofing e múltiplos proxies
+    // Use the TCP peer address; caller-controlled forwarding headers are not trusted.
     let client_ip = req
-        .headers()
-        .get("X-Forwarded-For")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .map(|s| s.trim())
-        .filter(|s| s.parse::<std::net::IpAddr>().is_ok())
-        .unwrap_or("127.0.0.1");
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(address)| address.ip().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
 
     let (limit, window_sec) = get_rate_limit_policy(&path);
     let key = format!("ratelimit:{}:{}:{}", tenant_id, client_ip, sanitize_path(&path));
@@ -67,6 +64,9 @@ pub async fn rate_limit_middleware(
     let mut redis_conn = match state.get_redis_conn().await {
         Some(conn) => conn,
         None => {
+            if is_auth_path(&path) {
+                return rate_limit_unavailable(path);
+            }
             // Fail-open resiliente: se o Redis falhar, permite a passagem para não derrubar as vendas
             return next.run(req).await;
         }
@@ -104,6 +104,7 @@ pub async fn rate_limit_middleware(
                 problem_resp
             }
         }
+        Err(_) if is_auth_path(&path) => rate_limit_unavailable(path),
         Err(_) => next.run(req).await,
     }
 }
@@ -132,6 +133,47 @@ fn sanitize_path(path: &str) -> &'static str {
     }
 }
 
+fn is_auth_path(path: &str) -> bool {
+    path.contains("/auth")
+}
+
+fn rate_limit_unavailable(path: String) -> Response {
+    ProblemDetail::new(
+        "https://api.kudiba.ao/errors/rate-limit-unavailable",
+        "Protecção de Autenticação Indisponível",
+        StatusCode::SERVICE_UNAVAILABLE,
+        "O serviço de limite de tentativas está indisponível; a operação de autenticação foi bloqueada.",
+        path,
+        "RATE_LIMIT_UNAVAILABLE",
+    )
+    .into_response()
+}
+
 fn is_probe(path: &str) -> bool {
-    is_public_path(path)
+    matches!(path.trim_end_matches('/'), "/health" | "/ready" | "/metrics")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_auth_path, is_probe};
+
+    #[test]
+    fn auth_routes_are_not_exempt_from_rate_limiting() {
+        assert!(!is_probe("/auth/login"));
+        assert!(!is_probe("/api/v1/auth/refresh"));
+    }
+
+    #[test]
+    fn health_probes_remain_exempt_from_rate_limiting() {
+        assert!(is_probe("/health"));
+        assert!(is_probe("/ready/"));
+        assert!(is_probe("/metrics"));
+    }
+
+    #[test]
+    fn auth_paths_use_fail_closed_rate_limit_policy() {
+        assert!(is_auth_path("/auth/login"));
+        assert!(is_auth_path("/api/v1/auth/refresh"));
+        assert!(!is_auth_path("/api/v1/invoices"));
+    }
 }

@@ -54,6 +54,16 @@ dotenvy = "0.15"
 # Cliente HTTP para integração com a plataforma AGT (Facturação Electrónica)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
+# Validador de Schema XSD em memória para conformidade SAF-T (AO)
+oxml = "0.0.9"
+xmlschema = "0.0.9"
+
+# Motor de exportação de mapas fiscais em Excel (XLSX) e relatórios em PDF
+rust_xlsxwriter = { version = "0.99", features = ["rust_decimal", "chrono"] }
+printpdf = { version = "0.12", default-features = false }
+lopdf = "0.44"
+qrcode = { version = "0.14", default-features = false }
+
 [dev-dependencies]
 # Stream de ligações TCP para o teste de integração gRPC (porta efémera)
 tokio-stream = { version = "0.1", features = ["net"] }

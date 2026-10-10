@@ -8,13 +8,13 @@ use crate::domain::ports::db_session::{DbSession, RepositoryError};
 use crate::domain::ports::tenant_repository::TenantRepository;
 
 const SELECT_TENANT_BY_ID: &str =
-    "SELECT id, slug, company_name, nif, commercial_registry, tax_office_code, \
+    "SELECT id, slug, company_name, nif, address_detail, city, country, commercial_registry, tax_office_code, \
      agt_cert_number, status, tax_regime_code, contingency_started_at \
      FROM kudiba_core.tenants WHERE id = $1";
 
 #[allow(dead_code)]
 const SELECT_TENANT_BY_SLUG: &str =
-    "SELECT id, slug, company_name, nif, commercial_registry, tax_office_code, \
+    "SELECT id, slug, company_name, nif, address_detail, city, country, commercial_registry, tax_office_code, \
      agt_cert_number, status, tax_regime_code, contingency_started_at \
      FROM kudiba_core.tenants WHERE slug = $1";
 
@@ -33,6 +33,9 @@ impl PgTenantRepository {
             slug: row.try_get("slug")?,
             company_name: row.try_get("company_name")?,
             nif: row.try_get("nif")?,
+            address_detail: row.try_get("address_detail")?,
+            city: row.try_get("city")?,
+            country: row.try_get("country")?,
             commercial_registry: row.try_get("commercial_registry")?,
             tax_office_code: row.try_get("tax_office_code")?,
             agt_cert_number: row.try_get("agt_cert_number")?,

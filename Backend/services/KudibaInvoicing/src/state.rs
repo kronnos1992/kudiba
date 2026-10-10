@@ -9,6 +9,7 @@ use crate::application::commands::resolve_tax_regime::ResolveTaxRegimeUseCase;
 use crate::application::commands::sign_direct::SignDirectUseCase;
 use crate::application::commands::sync_agt::SyncAgtUseCase;
 use crate::application::queries::export_saft::ExportSaftUseCase;
+use crate::application::queries::fiscal_reports::FiscalReportsUseCase;
 use crate::application::queries::get_invoice::GetInvoiceUseCase;
 use crate::application::queries::tax_regime::{
     GetTaxRegimeUseCase, ListTaxRegimesUseCase, ValidateExemptionCodeUseCase,
@@ -39,6 +40,7 @@ pub struct AppState {
     pub signer: Arc<RsaCryptoSigner>,
     pub agt_client: Arc<AgtClient>,
     pub issue_invoice: Arc<IssueInvoiceUseCase>,
+    pub cancel_invoice: Arc<crate::application::commands::cancel_invoice::CancelInvoiceWithCreditNoteUseCase>,
     pub create_series: Arc<CreateFiscalSeriesUseCase>,
     pub get_invoice: Arc<GetInvoiceUseCase>,
     pub sign_direct: Arc<SignDirectUseCase>,
@@ -49,52 +51,81 @@ pub struct AppState {
     pub list_tax_regimes: Arc<ListTaxRegimesUseCase>,
     pub validate_exemption_code: Arc<ValidateExemptionCodeUseCase>,
     pub export_saft: Arc<ExportSaftUseCase>,
+    pub fiscal_reports: Arc<FiscalReportsUseCase>,
+    pub pos_reports: Arc<crate::application::queries::pos_reports::PosReportsUseCase>,
     pub sync_agt: Arc<SyncAgtUseCase>,
+    #[allow(dead_code)]
+    pub event_publisher: Arc<crate::infrastructure::outbox::MultiChannelEventPublisher>,
+    pub outbox_worker: Arc<crate::infrastructure::outbox::OutboxWorker>,
+    pub saft_jobs: Arc<crate::infrastructure::saft::SaftJobRegistry>,
 }
 
 impl AppState {
-    /// Monta o grafo de dependências da Clean Architecture
+    /// Monta o grafo de dependências da Clean Architecture (mesmo pool para escrita e leitura)
+    #[allow(dead_code)]
     pub fn bootstrap(
         config: Config,
         pool: PgPool,
         signer: Arc<RsaCryptoSigner>,
     ) -> Result<Self, DomainError> {
+        let read_pool = pool.clone();
+        Self::bootstrap_with_read_pool(config, pool, read_pool, signer)
+    }
+
+    /// Monta o grafo de dependências separando explicitamente pool de escrita e pool de réplicas de leitura
+    pub fn bootstrap_with_read_pool(
+        config: Config,
+        pool: PgPool,
+        read_pool: PgPool,
+        signer: Arc<RsaCryptoSigner>,
+    ) -> Result<Self, DomainError> {
         let session_factory: Arc<dyn DbSessionFactory> =
             Arc::new(PgSessionFactory::new(pool.clone()));
+        let read_session_factory: Arc<dyn DbSessionFactory> =
+            Arc::new(PgSessionFactory::new(read_pool));
         let uow_factory: Arc<dyn UnitOfWorkFactory> = Arc::new(PgUnitOfWorkFactory::new(pool));
         let series_repository: Arc<dyn FiscalSeriesRepository> =
             Arc::new(PgFiscalSeriesRepository::new());
         let invoice_repository: Arc<dyn InvoiceRepository> = Arc::new(PgInvoiceRepository::new());
         let tax_regime_repository: Arc<dyn TaxRegimeRepository> =
             Arc::new(PgTaxRegimeRepository::new());
-        let tenant_repository: Arc<dyn TenantRepository> =
-            Arc::new(PgTenantRepository::new());
+        let tenant_repository: Arc<dyn TenantRepository> = Arc::new(PgTenantRepository::new());
         let crypto_signer: Arc<dyn CryptoSigner> = signer.clone();
 
         let agt_client = Arc::new(AgtClient::from_config(&config).map_err(|err| {
             DomainError::invalid(format!("Falha ao inicializar conector AGT: {err}"))
         })?);
 
-        Ok(Self {
-            issue_invoice: Arc::new(IssueInvoiceUseCase::new(
-                uow_factory.clone(),
-                series_repository.clone(),
+        let issue_invoice = Arc::new(IssueInvoiceUseCase::new(
+            uow_factory.clone(),
+            series_repository.clone(),
+            invoice_repository.clone(),
+            tax_regime_repository.clone(),
+            crypto_signer.clone(),
+        ));
+        let cancel_invoice = Arc::new(
+            crate::application::commands::cancel_invoice::CancelInvoiceWithCreditNoteUseCase::new(
+                session_factory.clone(),
                 invoice_repository.clone(),
-                tax_regime_repository.clone(),
-                crypto_signer.clone(),
-            )),
+                issue_invoice.clone(),
+            ),
+        );
+
+        Ok(Self {
+            issue_invoice,
+            cancel_invoice,
             create_series: Arc::new(CreateFiscalSeriesUseCase::new(
                 session_factory.clone(),
                 series_repository.clone(),
             )),
             get_invoice: Arc::new(GetInvoiceUseCase::new(
-                session_factory.clone(),
+                read_session_factory.clone(),
                 invoice_repository.clone(),
             )),
             sign_direct: Arc::new(SignDirectUseCase::new(crypto_signer.clone())),
             verify_signature: Arc::new(VerifySignatureUseCase::new(crypto_signer.clone())),
             validate_series: Arc::new(ValidateSeriesSequenceUseCase::new(
-                session_factory.clone(),
+                read_session_factory.clone(),
                 series_repository,
             )),
             resolve_tax_regime: Arc::new(ResolveTaxRegimeUseCase::new(
@@ -102,29 +133,52 @@ impl AppState {
                 tax_regime_repository.clone(),
             )),
             get_tax_regime: Arc::new(GetTaxRegimeUseCase::new(
-                session_factory.clone(),
+                read_session_factory.clone(),
                 tax_regime_repository.clone(),
             )),
             list_tax_regimes: Arc::new(ListTaxRegimesUseCase::new(
-                session_factory.clone(),
+                read_session_factory.clone(),
                 tax_regime_repository.clone(),
             )),
             validate_exemption_code: Arc::new(ValidateExemptionCodeUseCase::new(
-                session_factory.clone(),
+                read_session_factory.clone(),
                 tax_regime_repository,
             )),
             export_saft: Arc::new(ExportSaftUseCase::new(
-                session_factory.clone(),
+                read_session_factory.clone(),
                 tenant_repository.clone(),
                 invoice_repository.clone(),
                 config.service_version,
             )),
+            fiscal_reports: Arc::new(FiscalReportsUseCase::new(read_session_factory.clone())),
+            pos_reports: Arc::new(crate::application::queries::pos_reports::PosReportsUseCase::new(
+                read_session_factory.clone(),
+            )),
             sync_agt: Arc::new(SyncAgtUseCase::new(
-                session_factory,
+                read_session_factory.clone(),
                 tenant_repository,
                 invoice_repository,
                 agt_client.clone(),
             )),
+            event_publisher: {
+                Arc::new(crate::infrastructure::outbox::MultiChannelEventPublisher::new(
+                    config.rabbitmq_url.clone(),
+                    config.kafka_brokers.clone(),
+                ))
+            },
+            outbox_worker: {
+                let publ = Arc::new(crate::infrastructure::outbox::MultiChannelEventPublisher::new(
+                    config.rabbitmq_url.clone(),
+                    config.kafka_brokers.clone(),
+                ));
+                Arc::new(crate::infrastructure::outbox::OutboxWorker::new(
+                    session_factory,
+                    publ,
+                    std::time::Duration::from_millis(config.outbox_poll_interval_ms),
+                    config.outbox_batch_size,
+                ))
+            },
+            saft_jobs: Arc::new(crate::infrastructure::saft::SaftJobRegistry::new()),
             agt_client,
             signer,
             config,

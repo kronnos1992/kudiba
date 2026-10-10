@@ -5,6 +5,14 @@ pub mod idempotency;
 pub mod ratelimit;
 pub mod tenant;
 
+pub fn is_auth_service_path(path: &str) -> bool {
+    let clean = path.trim_end_matches('/');
+    clean == "/auth"
+        || clean.starts_with("/auth/")
+        || clean == "/api/v1/auth"
+        || clean.starts_with("/api/v1/auth/")
+}
+
 /// Centraliza a definição de rotas públicas isentas de autenticação e tenant
 pub fn is_public_path(path: &str) -> bool {
     let clean = path.trim_end_matches('/');
@@ -48,7 +56,20 @@ pub fn is_public_path(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::is_public_path;
+    use super::{is_auth_service_path, is_public_path};
+
+    #[test]
+    fn auth_service_paths_are_routed_without_tenant_resolution() {
+        for path in [
+            "/auth/me",
+            "/auth/logout",
+            "/api/v1/auth/users",
+            "/api/v1/auth/switch-tenant",
+        ] {
+            assert!(is_auth_service_path(path), "{path} deve ser encaminhada ao Auth");
+        }
+        assert!(!is_auth_service_path("/api/v1/invoices"));
+    }
 
     #[test]
     fn sondas_de_liveness_continuam_publicas() {

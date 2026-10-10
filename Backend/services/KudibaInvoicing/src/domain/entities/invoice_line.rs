@@ -18,6 +18,8 @@ pub struct InvoiceLine {
     #[serde(with = "rust_decimal::serde::float")]
     pub unit_price: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    pub discount_amount: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub tax_rate: Decimal,
     pub tax_exemption_code: Option<String>,
     #[serde(with = "rust_decimal::serde::float")]
@@ -34,6 +36,7 @@ impl InvoiceLine {
         description: String,
         quantity: Decimal,
         unit_price: Decimal,
+        discount_amount: Decimal,
         tax_rate: Decimal,
         tax_exemption_code: Option<String>,
         line_total: Decimal,
@@ -46,6 +49,7 @@ impl InvoiceLine {
             description,
             quantity,
             unit_price,
+            discount_amount,
             tax_rate,
             tax_exemption_code,
             line_total,
@@ -62,6 +66,7 @@ impl InvoiceLine {
         description: String,
         quantity: Decimal,
         unit_price: Decimal,
+        discount_amount: Decimal,
         tax_rate: Decimal,
         tax_exemption_code: Option<String>,
         line_total: Decimal,
@@ -74,15 +79,18 @@ impl InvoiceLine {
             description,
             quantity,
             unit_price,
+            discount_amount,
             tax_rate,
             tax_exemption_code,
             line_total,
         }
     }
 
-    /// Base tributável da linha: `quantidade × preço unitário` (2 casas, away from zero)
+    /// Base tributável da linha após desconto (2 casas, away from zero).
     pub fn line_base(&self) -> Decimal {
-        MoneyCalculator::line_base(self.quantity, self.unit_price)
+        MoneyCalculator::round_currency(
+            MoneyCalculator::line_base(self.quantity, self.unit_price) - self.discount_amount,
+        )
     }
 
     /// Imposto da linha: `base × (taxa / 100)` (2 casas, away from zero)
