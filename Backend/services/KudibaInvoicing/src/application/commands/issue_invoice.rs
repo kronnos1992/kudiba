@@ -65,64 +65,11 @@ impl IssueInvoiceUseCase {
         &self,
         mut command: IssueInvoiceCommand,
     ) -> Result<IssueInvoiceResult, DomainError> {
-        if command.lines.is_empty() {
-            return Err(DomainError::invalid(
-                "Invoice must have at least one line item.",
-            ));
-        }
         command.document_type = command.document_type.trim().to_uppercase();
-        let document_type = DocumentType::parse(&command.document_type)?;
-        if matches!(
-            document_type,
-            DocumentType::CreditNote | DocumentType::DebitNote
-        ) && command
-            .source_document_number
-            .as_deref()
-            .is_none_or(|reference| reference.trim().is_empty())
-        {
-            return Err(DomainError::invalid(
-                "Notas de crédito e de débito exigem referência ao documento original.",
-            ));
-        }
         if let Some(reference) = command.source_document_number.as_mut() {
             *reference = reference.trim().to_string();
         }
-        if command.customer_name.trim().is_empty() {
-            return Err(DomainError::invalid(
-                "Nome/razão social do cliente é obrigatório.",
-            ));
-        }
-        if command
-            .customer_address
-            .as_deref()
-            .is_none_or(|value| value.trim().is_empty())
-            || command
-                .customer_city
-                .as_deref()
-                .is_none_or(|value| value.trim().is_empty())
-            || command
-                .customer_country
-                .as_deref()
-                .is_none_or(|value| value.trim().is_empty())
-        {
-            return Err(DomainError::invalid(
-                "Morada, município e país do cliente são obrigatórios.",
-            ));
-        }
-        if command.payment_methods.is_empty() {
-            return Err(DomainError::invalid(
-                "Indique pelo menos um meio de pagamento ou 'A crédito'.",
-            ));
-        }
-        if command
-            .payment_methods
-            .iter()
-            .any(|method| method.trim().is_empty())
-        {
-            return Err(DomainError::invalid(
-                "Os meios de pagamento não podem estar vazios.",
-            ));
-        }
+        validate_issue_command(&command)?;
 
         let mut uow = self.uow_factory.begin().await.map_err(persistence_error)?;
 
@@ -345,17 +292,6 @@ impl IssueInvoiceUseCase {
             .sign_canonical_buffer(&canonical_buffer)
             .await?;
 
-        // Validação de dados logísticos de transporte para Guias (GT e GR)
-        let doc_kind = command.document_type.trim().to_ascii_uppercase();
-        if (doc_kind == "GT" || doc_kind == "GR") && command.transport.is_none() {
-            return Err(DomainError::invalid(format!(
-                "Documentos de movimentação de mercadorias ('{doc_kind}') exigem os metadados de transporte (local de carga, descarga e data de início) pelo Decreto Presidencial 71/25."
-            )));
-        }
-        if let Some(ref transport) = command.transport {
-            transport.validate_for_document_type(&command.document_type)?;
-        }
-
         // 6. Constrói o agregado imutável do documento fiscal
         let invoice = Invoice::new(
             invoice_id,
@@ -436,6 +372,86 @@ impl IssueInvoiceUseCase {
             transport: invoice.transport.clone(),
         })
     }
+}
+
+pub(crate) fn validate_issue_command(command: &IssueInvoiceCommand) -> Result<(), DomainError> {
+    if command.lines.is_empty() {
+        return Err(DomainError::invalid(
+            "Invoice must have at least one line item.",
+        ));
+    }
+    let document_type = DocumentType::parse(&command.document_type)?;
+    if matches!(
+        document_type,
+        DocumentType::CreditNote | DocumentType::DebitNote
+    ) && command
+        .source_document_number
+        .as_deref()
+        .is_none_or(|reference| reference.trim().is_empty())
+    {
+        return Err(DomainError::invalid(
+            "Notas de crédito e de débito exigem referência ao documento original.",
+        ));
+    }
+    if command.customer_name.trim().is_empty() {
+        return Err(DomainError::invalid(
+            "Nome/razão social do cliente é obrigatório.",
+        ));
+    }
+    if command
+        .customer_address
+        .as_deref()
+        .is_none_or(|value| value.trim().is_empty())
+        || command
+            .customer_city
+            .as_deref()
+            .is_none_or(|value| value.trim().is_empty())
+        || command
+            .customer_country
+            .as_deref()
+            .is_none_or(|value| value.trim().is_empty())
+    {
+        return Err(DomainError::invalid(
+            "Morada, município e país do cliente são obrigatórios.",
+        ));
+    }
+    if command.payment_methods.is_empty() {
+        return Err(DomainError::invalid(
+            "Indique pelo menos um meio de pagamento ou 'A crédito'.",
+        ));
+    }
+    if command
+        .payment_methods
+        .iter()
+        .any(|method| method.trim().is_empty())
+    {
+        return Err(DomainError::invalid(
+            "Os meios de pagamento não podem estar vazios.",
+        ));
+    }
+
+    let doc_kind = command.document_type.trim().to_ascii_uppercase();
+    if doc_kind == "GT" || doc_kind == "GR" {
+        if command.transport.is_none() {
+            return Err(DomainError::invalid(format!(
+                "Documentos de movimentação de mercadorias ('{doc_kind}') exigem os metadados de transporte (local de carga, descarga e data de início) pelo Decreto Presidencial 71/25."
+            )));
+        }
+        if command
+            .lines
+            .iter()
+            .any(|line| line.is_service == Some(true))
+        {
+            return Err(DomainError::invalid(format!(
+                "Não é permitida a inclusão de prestações de serviços ou bens intangíveis em documentos de transporte e movimentação de mercadorias ('{doc_kind}') pelo Decreto Presidencial n.º 71/25."
+            )));
+        }
+    }
+    if let Some(ref transport) = command.transport {
+        transport.validate_for_document_type(&command.document_type)?;
+    }
+
+    Ok(())
 }
 
 fn required_tenant_field(row: &sqlx::postgres::PgRow, field: &str) -> Result<String, DomainError> {
@@ -681,5 +697,76 @@ mod tests {
         assert!(transport_sem_carga
             .validate_for_document_type("GT")
             .is_err());
+    }
+
+    #[test]
+    fn rejeita_guia_de_transporte_com_linhas_de_servico() {
+        let transport = crate::domain::value_objects::transport::TransportMovement {
+            vehicle_registration: Some("LD-22-33-BB".into()),
+            carrier_name: Some("Kudiba Logística".into()),
+            carrier_nif: Some("5001234567".into()),
+            load_address: Some("Armazém 1".into()),
+            load_city: Some("Luanda".into()),
+            load_country: Some("AO".into()),
+            load_date_time: Some(chrono::Utc::now()),
+            unload_address: Some("Supermercado Central".into()),
+            unload_city: Some("Lobito".into()),
+            unload_country: Some("AO".into()),
+            unload_date_time: Some(chrono::Utc::now()),
+        };
+
+        let cmd = IssueInvoiceCommand {
+            actor_user_id: None,
+            tenant_id: Uuid::new_v4(),
+            document_type: "GT".into(),
+            series_code: "2026".into(),
+            fiscal_year: 2026,
+            customer_name: "Cliente Exemplo".into(),
+            customer_address: Some("Rua 1".into()),
+            customer_city: Some("Luanda".into()),
+            customer_country: Some("AO".into()),
+            customer_nif: None,
+            source_document_number: None,
+            payment_methods: vec!["Numerário".into()],
+            withholding_total: None,
+            apply_withholding: None,
+            withholding_rate: None,
+            stamp_duty_total: None,
+            apply_stamp_duty: None,
+            stamp_duty_rate: None,
+            currency: "AOA".into(),
+            is_contingency: false,
+            key_version: "1".into(),
+            transport: Some(transport),
+            lines: vec![InvoiceLineInput {
+                product_code: "SERV01".into(),
+                description: "Consultoria de Transporte".into(),
+                quantity: Decimal::ONE,
+                unit_price: Decimal::from(100),
+                discount_amount: None,
+                tax_rate: Decimal::from(14),
+                tax_exemption_code: None,
+                is_service: Some(true),
+            }],
+        };
+
+        let result = validate_issue_command(&cmd);
+        assert!(result.is_err());
+
+        let cmd_bem = IssueInvoiceCommand {
+            lines: vec![InvoiceLineInput {
+                product_code: "PROD01".into(),
+                description: "Cimento 50kg".into(),
+                quantity: Decimal::ONE,
+                unit_price: Decimal::from(100),
+                discount_amount: None,
+                tax_rate: Decimal::from(14),
+                tax_exemption_code: None,
+                is_service: Some(false),
+            }],
+            ..cmd
+        };
+
+        assert!(validate_issue_command(&cmd_bem).is_ok());
     }
 }

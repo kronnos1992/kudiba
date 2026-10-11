@@ -16,6 +16,7 @@ pub struct Config {
     pub core_api_url: String,
     pub fiscal_engine_url: String,
     pub auth_service_url: String,
+    pub inventory_service_url: String,
 
     pub jwt_secret: String,
 
@@ -91,6 +92,14 @@ impl Config {
             auth_service_url = format!("http://{}", auth_service_url);
         }
 
+        let mut inventory_service_url = env::var("INVENTORY_SERVICE_URL")
+            .unwrap_or_else(|_| "http://localhost:8083".to_string());
+        if !inventory_service_url.starts_with("http://")
+            && !inventory_service_url.starts_with("https://")
+        {
+            inventory_service_url = format!("http://{}", inventory_service_url);
+        }
+
         const DEVELOPMENT_JWT_SECRET: &str =
             "kudiba_jwt_secret_development_key_change_in_production_2026";
         let is_production =
@@ -149,6 +158,7 @@ impl Config {
             core_api_url,
             fiscal_engine_url,
             auth_service_url,
+            inventory_service_url,
             jwt_secret,
             agt_contingency_max_days: env::var("AGT_CONTINGENCY_MAX_DAYS")
                 .unwrap_or_else(|_| "60".to_string())

@@ -2,13 +2,13 @@ name: CI - Backend Services, Gateway & KudibaAuth
 
 on:
   push:
-    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**' ]
+    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**', 'inventory/**' ]
     paths:
       - 'Backend/**'
       - 'proto/**'
       - '.github/workflows/ci.yml'
   pull_request:
-    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**' ]
+    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**', 'inventory/**' ]
     paths:
       - 'Backend/**'
       - 'proto/**'

@@ -23,7 +23,10 @@ use crate::middleware::{
     correlation::correlation_id_middleware, idempotency::idempotency_middleware,
     ratelimit::rate_limit_middleware, tenant::tenant_resolver_middleware,
 };
-use crate::proxy::{forward_to_auth, forward_to_auth_openapi, forward_to_core, forward_to_fiscal};
+use crate::proxy::{
+    forward_to_auth, forward_to_auth_openapi, forward_to_core, forward_to_fiscal,
+    forward_to_inventory,
+};
 
 /// Estado global compartilhado entre os handlers e middlewares do Gateway
 #[derive(Clone)]
@@ -147,6 +150,9 @@ pub fn create_router(
         .route("/api/v1/fiscal", any(forward_to_fiscal))
         .route("/api/v1/invoices/{*path}", any(forward_to_fiscal))
         .route("/api/v1/invoices", any(forward_to_fiscal))
+        // Rotas de Inventário e Gestão de Stock (KudibaInventory)
+        .route("/api/v1/inventory/{*path}", any(forward_to_inventory))
+        .route("/api/v1/inventory", any(forward_to_inventory))
         // Rotas de Sincronização POS (Edge Tauri) e Módulos Comerciais
         .route("/api/v1/{*path}", any(forward_to_core))
         .route("/api/v1", any(forward_to_core))

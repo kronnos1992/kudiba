@@ -1,0 +1,46 @@
+[package]
+name = "kudiba-inventory"
+version = "1.0.0"
+edition = "2021"
+authors = ["Equipa de Arquitetura Kudiba <engenharia@kudiba.ao>"]
+description = "Microserviço de Inventário, Armazéns e Catálogo de Artigos do ERP Kudiba em Rust (Clean Architecture + CQRS)"
+publish = false
+
+[[bin]]
+name = "kudiba-inventory"
+path = "src/main.rs"
+
+[lib]
+name = "kudiba_inventory"
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { version = "1.40", features = ["full"] }
+axum = { version = "0.8", features = ["macros"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "timeout"] }
+
+sqlx = { version = "0.9", default-features = false, features = [
+    "runtime-tokio",
+    "postgres",
+    "chrono",
+    "uuid",
+    "rust_decimal",
+    "macros",
+] }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.10", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1", features = ["serde", "maths", "serde-with-float"] }
+regex = "1.10"
+
+thiserror = "2"
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+dotenvy = "0.15"
+
+[dev-dependencies]
+tokio = { version = "1.40", features = ["full", "test-util"] }
+rust_decimal_macros = "1"

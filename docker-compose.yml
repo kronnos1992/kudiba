@@ -19,6 +19,7 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:8082
       - FISCAL_ENGINE_URL=http://fiscal-engine:9090
       - FISCAL_ENGINE_GRPC_TARGET=http://fiscal-engine:9090
+      - INVENTORY_SERVICE_URL=http://inventory-service:8083
       # Sondas TCP do endpoint /health/services
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -98,6 +99,30 @@ services:
           - kudiba-auth
 
   # ============================================================================
+  # 4. MICROSSERVIÇO DE INVENTÁRIO, ARMAZÉNS & CATÁLOGO (RUST / AXUM)
+  # ============================================================================
+  inventory:
+    build:
+      context: ./Backend/services/KudibaInventory
+      dockerfile: Dockerfile
+    container_name: kudiba-inventory
+    restart: unless-stopped
+    environment:
+      - PORT=8083
+      - RUST_LOG=info,kudiba_inventory=debug
+      - DATABASE_URL=postgres://kudiba:kudiba_secret_pass@postgres:5432/kudiba_inventory
+      - ENVIRONMENT=development
+      - DB_MAX_CONNECTIONS=20
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      kudiba-internal-network:
+        aliases:
+          - inventory-service
+          - kudiba-inventory
+
+  # ============================================================================
   # 3. ESTADO EFÊMERO & CACHE PERIMÉTRICO (REDIS 7+)
   # ============================================================================
   gateway-redis:
@@ -138,6 +163,7 @@ services:
       - ./Backend/deploy/01-invoicing-schema.sql:/docker-entrypoint-initdb.d/01-invoicing-schema.sql:ro
       - ./Backend/deploy/02-auth-schema.sql:/docker-entrypoint-initdb.d/02-auth-schema.sql:ro
       - ./Backend/deploy/03-retire-demo-admin.sql:/docker-entrypoint-initdb.d/03-retire-demo-admin.sql:ro
+      - ./Backend/deploy/04-inventory-schema.sql:/docker-entrypoint-initdb.d/04-inventory-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kudiba -d kudiba_erp"]
       interval: 5s

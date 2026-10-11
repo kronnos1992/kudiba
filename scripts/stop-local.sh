@@ -44,4 +44,15 @@ if [ -f "$LOGS_DIR/invoicing.pid" ]; then
 fi
 pkill -f "kudiba-invoicing" 2>/dev/null || true
 
+# Parar Inventory por PID se existir
+if [ -f "$LOGS_DIR/inventory.pid" ]; then
+    PID=$(cat "$LOGS_DIR/inventory.pid")
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "[+] Encerrando KudibaInventory (PID $PID)..."
+        kill "$PID" 2>/dev/null || true
+    fi
+    rm -f "$LOGS_DIR/inventory.pid"
+fi
+pkill -f "kudiba-inventory" 2>/dev/null || true
+
 echo "[✓] Todos os servidores Kudiba foram encerrados com sucesso."

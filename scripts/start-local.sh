@@ -27,7 +27,7 @@ wait_for_health() {
 echo "=== Kudiba ERP: Inicializando servidores locais ==="
 
 # Verifica se os binários existem, ou compila
-if [ ! -f "$ROOT_DIR/Backend/target/debug/kudiba-invoicing" ] || [ ! -f "$ROOT_DIR/Backend/target/debug/kudiba-gateway" ]; then
+if [ ! -f "$ROOT_DIR/Backend/target/debug/kudiba-invoicing" ] || [ ! -f "$ROOT_DIR/Backend/target/debug/kudiba-gateway" ] || [ ! -f "$ROOT_DIR/Backend/target/debug/kudiba-inventory" ]; then
     echo "Compilando binários do workspace..."
     cargo build --workspace --manifest-path "$ROOT_DIR/Backend/Cargo.toml"
 fi
@@ -68,7 +68,23 @@ fi
 # Aguarda readiness do Invoicing (polling; inclui geração da chave RSA-2048)
 wait_for_health "http://127.0.0.1:9090/health" "KudibaInvoicing" 90 || true
 
-# 3. Iniciar Kudiba Gateway
+# 3. Iniciar KudibaInventory
+if lsof -i :8083 >/dev/null 2>&1 || nc -z 127.0.0.1 8083 2>/dev/null; then
+    echo "[-] KudibaInventory já está em execução (porta 8083 ocupada)."
+else
+    echo "[+] Iniciando KudibaInventory (HTTP :8083)..."
+    PORT=8083 \
+    RUST_LOG=info,kudiba_inventory=debug \
+    nohup "$ROOT_DIR/Backend/target/debug/kudiba-inventory" > "$LOGS_DIR/kudiba-inventory.log" 2>&1 &
+    INVENTORY_PID=$!
+    echo $INVENTORY_PID > "$LOGS_DIR/inventory.pid"
+    echo "    KudibaInventory iniciado com PID $INVENTORY_PID (logs em $LOGS_DIR/kudiba-inventory.log)"
+fi
+
+# Aguarda readiness do Inventory (polling)
+wait_for_health "http://127.0.0.1:8083/health" "KudibaInventory" 60 || true
+
+# 4. Iniciar Kudiba Gateway
 if lsof -i :8080 >/dev/null 2>&1 || nc -z 127.0.0.1 8080 2>/dev/null; then
     echo "[-] Kudiba Gateway já está em execução (porta 8080 ocupada)."
 else
@@ -76,6 +92,7 @@ else
     GATEWAY_PORT=8080 \
     GATEWAY_ENV=development \
     FISCAL_ENGINE_URL=http://localhost:9090 \
+    INVENTORY_SERVICE_URL=http://localhost:8083 \
     RUST_LOG=info,kudiba_gateway=debug \
     nohup "$ROOT_DIR/Backend/target/debug/kudiba-gateway" > "$LOGS_DIR/kudiba-gateway.log" 2>&1 &
     GATEWAY_PID=$!
