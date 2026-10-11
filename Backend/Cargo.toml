@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "gateway",
     "services/KudibaInvoicing",
+    "services/KudibaInventory",
 ]
 
 [profile.release]

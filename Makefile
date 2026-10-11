@@ -10,6 +10,7 @@ SHELL := /bin/bash
 CARGO_MANIFEST     := Backend/Cargo.toml
 GATEWAY_MANIFEST   := Backend/gateway/Cargo.toml
 INVOICING_MANIFEST := Backend/services/KudibaInvoicing/Cargo.toml
+INVENTORY_MANIFEST := Backend/services/KudibaInventory/Cargo.toml
 AUTH_DIR           := Backend/services/KudibaAuth
 LOGS_DIR           := .run_logs
 COMPOSE            := docker compose
@@ -58,10 +59,10 @@ check: lint test ## Lint + todos os testes
 # -----------------------------------------------------------------------------
 # Testes
 # -----------------------------------------------------------------------------
-.PHONY: test test-rust test-gateway test-invoicing test-auth
+.PHONY: test test-rust test-gateway test-invoicing test-inventory test-auth
 test: test-rust test-auth ## Corre todos os testes (Rust + Python)
 
-test-rust: ## Testes do workspace Rust (Gateway + Invoicing)
+test-rust: ## Testes do workspace Rust (Gateway + Invoicing + Inventory)
 	cargo test --workspace --manifest-path $(CARGO_MANIFEST)
 
 test-gateway: ## Testes do Gateway
@@ -69,6 +70,9 @@ test-gateway: ## Testes do Gateway
 
 test-invoicing: ## Testes do KudibaInvoicing
 	cargo test --manifest-path $(INVOICING_MANIFEST)
+
+test-inventory: ## Testes do KudibaInventory
+	cargo test --manifest-path $(INVENTORY_MANIFEST)
 
 test-auth: ## Testes do KudibaAuth (pytest)
 	cd $(AUTH_DIR) && PYTHONPATH=. python3 -m pytest tests/ -q
@@ -88,7 +92,7 @@ auth-run: ## Corre o KudibaAuth isolado (uvicorn :8082)
 # Servidores locais (fora do Docker)
 # -----------------------------------------------------------------------------
 .PHONY: up-local down-local restart-local status-local logs-local
-up-local: ## Arranca Auth + Invoicing + Gateway nativos
+up-local: ## Arranca Auth + Invoicing + Inventory + Gateway nativos
 	bash scripts/start-local.sh
 
 down-local: ## Para os servidores locais nativos
@@ -100,7 +104,7 @@ status-local: ## Mostra o estado dos servidores locais
 	bash scripts/status-local.sh
 
 logs-local: ## Segue os logs locais (.run_logs/*.log)
-	tail -n 50 -f $(LOGS_DIR)/kudiba-auth.log $(LOGS_DIR)/kudiba-invoicing.log $(LOGS_DIR)/kudiba-gateway.log
+	tail -n 50 -f $(LOGS_DIR)/kudiba-auth.log $(LOGS_DIR)/kudiba-invoicing.log $(LOGS_DIR)/kudiba-inventory.log $(LOGS_DIR)/kudiba-gateway.log
 
 # -----------------------------------------------------------------------------
 # Docker

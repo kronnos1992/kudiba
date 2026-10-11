@@ -31,6 +31,16 @@ else
 fi
 
 echo ""
+echo "--- KudibaInventory (HTTP :8083) ---"
+if curl -s -f http://127.0.0.1:8083/health >/dev/null 2>&1; then
+    INVENTORY_HEALTH=$(curl -s http://127.0.0.1:8083/health)
+    echo "  Status:      ONLINE (http://127.0.0.1:8083)"
+    echo "  Resposta:    $INVENTORY_HEALTH"
+else
+    echo "  Status:      OFFLINE"
+fi
+
+echo ""
 echo "--- Kudiba Gateway (HTTP :8080) ---"
 if curl -s -f http://127.0.0.1:8080/health >/dev/null 2>&1; then
     GATEWAY_HEALTH=$(curl -s http://127.0.0.1:8080/health)
