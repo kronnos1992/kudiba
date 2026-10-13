@@ -34,6 +34,11 @@ pub trait ProductRepository: Send + Sync {
         session: &mut dyn DbSession,
         product: &Product,
     ) -> Result<(), RepositoryError>;
+    async fn update(
+        &self,
+        session: &mut dyn DbSession,
+        product: &Product,
+    ) -> Result<(), RepositoryError>;
     async fn update_prices_and_cmp(
         &self,
         session: &mut dyn DbSession,
@@ -67,6 +72,11 @@ pub trait EntityRepository: Send + Sync {
         session: &mut dyn DbSession,
         entity: &CommercialEntity,
     ) -> Result<(), RepositoryError>;
+    async fn update(
+        &self,
+        session: &mut dyn DbSession,
+        entity: &CommercialEntity,
+    ) -> Result<(), RepositoryError>;
     async fn list(
         &self,
         session: &mut dyn DbSession,
@@ -91,6 +101,11 @@ pub trait WarehouseRepository: Send + Sync {
         code: &str,
     ) -> Result<Option<Warehouse>, RepositoryError>;
     async fn save(
+        &self,
+        session: &mut dyn DbSession,
+        warehouse: &Warehouse,
+    ) -> Result<(), RepositoryError>;
+    async fn update(
         &self,
         session: &mut dyn DbSession,
         warehouse: &Warehouse,

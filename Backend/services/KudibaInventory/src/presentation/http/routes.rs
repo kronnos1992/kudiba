@@ -11,7 +11,8 @@ use uuid::Uuid;
 use crate::application::dto::{
     AdjustStockRequest, CreateBatchRequest, CreateProductRequest, CreateWarehouseRequest,
     DispatchSaleRequest, InvoiceIssuedPayload, ReceivePurchaseRequest, RegisterEntityRequest,
-    TransferStockRequest, UpdateProductPriceRequest,
+    TransferStockRequest, UpdateEntityRequest, UpdateProductPriceRequest, UpdateProductRequest,
+    UpdateWarehouseRequest,
 };
 use crate::domain::error::InventoryError;
 use crate::state::AppState;
@@ -344,6 +345,22 @@ async fn update_product_price_handler(
     Ok(Json(product))
 }
 
+async fn update_product_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateProductRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let product = state
+        .update_product_cmd
+        .execute(tenant_id, id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok(Json(product))
+}
+
 // ----------------------------------------------------------------------------
 // Entity Handlers (Customers & Suppliers)
 // ----------------------------------------------------------------------------
@@ -397,6 +414,38 @@ async fn get_entity_by_tax_id_handler(
     Ok(Json(entity))
 }
 
+async fn get_entity_by_id_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let entity = state
+        .get_entity_query
+        .get_by_id(tenant_id, id)
+        .await
+        .map_err(map_domain_error)?
+        .ok_or_else(|| map_domain_error(InventoryError::EntityNotFound(id)))?;
+
+    Ok(Json(entity))
+}
+
+async fn update_entity_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateEntityRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let entity = state
+        .update_entity_cmd
+        .execute(tenant_id, id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok(Json(entity))
+}
+
 // ----------------------------------------------------------------------------
 // Warehouse Handlers
 // ----------------------------------------------------------------------------
@@ -428,6 +477,38 @@ async fn list_warehouses_handler(
         .map_err(map_domain_error)?;
 
     Ok(Json(warehouses))
+}
+
+async fn get_warehouse_by_id_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let warehouse = state
+        .get_warehouse_query
+        .get_by_id(tenant_id, id)
+        .await
+        .map_err(map_domain_error)?
+        .ok_or_else(|| map_domain_error(InventoryError::WarehouseNotFound(id)))?;
+
+    Ok(Json(warehouse))
+}
+
+async fn update_warehouse_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateWarehouseRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let warehouse = state
+        .update_warehouse_cmd
+        .execute(tenant_id, id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok(Json(warehouse))
 }
 
 // ----------------------------------------------------------------------------
@@ -631,7 +712,7 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/inventory/products/{id}",
-            get(get_product_by_id_handler),
+            get(get_product_by_id_handler).put(update_product_handler),
         )
         .route(
             "/api/v1/inventory/products/{id}/price",
@@ -647,6 +728,10 @@ pub fn create_router(state: AppState) -> Router {
             post(register_entity_handler).get(list_entities_handler),
         )
         .route(
+            "/api/v1/inventory/entities/{id}",
+            get(get_entity_by_id_handler).put(update_entity_handler),
+        )
+        .route(
             "/api/v1/inventory/entities/by-tax-id/{tax_id}",
             get(get_entity_by_tax_id_handler),
         )
@@ -654,6 +739,10 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/v1/inventory/warehouses",
             post(create_warehouse_handler).get(list_warehouses_handler),
+        )
+        .route(
+            "/api/v1/inventory/warehouses/{id}",
+            get(get_warehouse_by_id_handler).put(update_warehouse_handler),
         )
         // Lotes e Validades
         .route("/api/v1/inventory/batches", post(create_batch_handler))

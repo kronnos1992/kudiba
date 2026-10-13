@@ -22,6 +22,19 @@ impl GetWarehouseQuery {
         }
     }
 
+    pub async fn get_by_id(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+    ) -> Result<Option<WarehouseResponse>, InventoryError> {
+        let mut session = self.session_factory.open().await?;
+        let opt = self
+            .warehouse_repo
+            .find_by_id(session.as_mut(), tenant_id, id)
+            .await?;
+        Ok(opt.map(WarehouseResponse::from))
+    }
+
     pub async fn list_by_branch(
         &self,
         tenant_id: Uuid,

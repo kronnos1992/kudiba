@@ -4,7 +4,8 @@ use std::sync::Arc;
 use crate::application::commands::{
     AdjustStockCommand, CreateBatchCommand, CreateProductCommand, CreateWarehouseCommand,
     DispatchSaleCommand, ProcessInvoiceIssuedCommand, ReceivePurchaseCommand,
-    RegisterEntityCommand, TransferStockCommand, UpdateProductPriceCommand,
+    RegisterEntityCommand, TransferStockCommand, UpdateEntityCommand, UpdateProductCommand,
+    UpdateProductPriceCommand, UpdateWarehouseCommand,
 };
 use crate::application::queries::{
     GetBatchQuery, GetEntityQuery, GetProductQuery, GetStockQuery, GetWarehouseQuery,
@@ -23,8 +24,11 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub db_pool: PgPool,
     pub create_product_cmd: Arc<CreateProductCommand>,
+    pub update_product_cmd: Arc<UpdateProductCommand>,
     pub register_entity_cmd: Arc<RegisterEntityCommand>,
+    pub update_entity_cmd: Arc<UpdateEntityCommand>,
     pub create_warehouse_cmd: Arc<CreateWarehouseCommand>,
+    pub update_warehouse_cmd: Arc<UpdateWarehouseCommand>,
     pub receive_purchase_cmd: Arc<ReceivePurchaseCommand>,
     pub transfer_stock_cmd: Arc<TransferStockCommand>,
     pub dispatch_sale_cmd: Arc<DispatchSaleCommand>,
@@ -107,6 +111,21 @@ impl AppState {
             product_repo.clone(),
         ));
 
+        let update_product_cmd = Arc::new(UpdateProductCommand::new(
+            uow_factory.clone(),
+            product_repo.clone(),
+        ));
+
+        let update_entity_cmd = Arc::new(UpdateEntityCommand::new(
+            uow_factory.clone(),
+            entity_repo.clone(),
+        ));
+
+        let update_warehouse_cmd = Arc::new(UpdateWarehouseCommand::new(
+            uow_factory.clone(),
+            warehouse_repo.clone(),
+        ));
+
         let process_invoice_issued_cmd = Arc::new(ProcessInvoiceIssuedCommand::new(
             uow_factory,
             product_repo.clone(),
@@ -134,8 +153,11 @@ impl AppState {
             config: Arc::new(config),
             db_pool: pool,
             create_product_cmd,
+            update_product_cmd,
             register_entity_cmd,
+            update_entity_cmd,
             create_warehouse_cmd,
+            update_warehouse_cmd,
             receive_purchase_cmd,
             transfer_stock_cmd,
             dispatch_sale_cmd,

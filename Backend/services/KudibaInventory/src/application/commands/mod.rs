@@ -7,7 +7,10 @@ pub mod process_invoice_issued;
 pub mod receive_purchase;
 pub mod register_entity;
 pub mod transfer_stock;
+pub mod update_entity;
+pub mod update_product;
 pub mod update_product_price;
+pub mod update_warehouse;
 
 pub use adjust_stock::AdjustStockCommand;
 pub use create_batch::CreateBatchCommand;
@@ -18,4 +21,7 @@ pub use process_invoice_issued::ProcessInvoiceIssuedCommand;
 pub use receive_purchase::ReceivePurchaseCommand;
 pub use register_entity::RegisterEntityCommand;
 pub use transfer_stock::TransferStockCommand;
+pub use update_entity::UpdateEntityCommand;
+pub use update_product::UpdateProductCommand;
 pub use update_product_price::UpdateProductPriceCommand;
+pub use update_warehouse::UpdateWarehouseCommand;
