@@ -155,6 +155,55 @@ impl ProductRepository for PostgresProductRepository {
         Ok(())
     }
 
+    async fn update(
+        &self,
+        session: &mut dyn DbSession,
+        p: &Product,
+    ) -> Result<(), RepositoryError> {
+        sqlx::query(
+            r#"
+            UPDATE kudiba_inventory.products SET
+                barcode = $1,
+                name = $2,
+                description = $3,
+                unit_of_measure = $4,
+                sale_price = $5,
+                cost_price = $6,
+                current_cmp = $7,
+                tax_type = $8,
+                tax_code = $9,
+                tax_percentage = $10,
+                exemption_reason_code = $11,
+                exemption_reason_text = $12,
+                has_withholding_tax = $13,
+                is_active = $14,
+                updated_at = $15
+            WHERE tenant_id = $16 AND id = $17
+            "#,
+        )
+        .bind(&p.barcode)
+        .bind(&p.name)
+        .bind(&p.description)
+        .bind(&p.unit_of_measure)
+        .bind(p.sale_price)
+        .bind(p.cost_price)
+        .bind(p.current_cmp)
+        .bind(&p.tax_type)
+        .bind(&p.tax_code)
+        .bind(p.tax_percentage)
+        .bind(&p.exemption_reason_code)
+        .bind(&p.exemption_reason_text)
+        .bind(p.has_withholding_tax)
+        .bind(p.is_active)
+        .bind(p.updated_at)
+        .bind(p.tenant_id)
+        .bind(p.id)
+        .execute(&mut *session.connection())
+        .await?;
+
+        Ok(())
+    }
+
     async fn update_prices_and_cmp(
         &self,
         session: &mut dyn DbSession,
