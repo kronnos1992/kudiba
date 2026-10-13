@@ -97,6 +97,35 @@ impl WarehouseRepository for PostgresWarehouseRepository {
         Ok(())
     }
 
+    async fn update(
+        &self,
+        session: &mut dyn DbSession,
+        w: &Warehouse,
+    ) -> Result<(), RepositoryError> {
+        sqlx::query(
+            r#"
+            UPDATE kudiba_inventory.warehouses SET
+                name = $1,
+                is_default = $2,
+                address_detail = $3,
+                is_active = $4,
+                updated_at = $5
+            WHERE tenant_id = $6 AND id = $7
+            "#,
+        )
+        .bind(&w.name)
+        .bind(w.is_default)
+        .bind(&w.address_detail)
+        .bind(w.is_active)
+        .bind(w.updated_at)
+        .bind(w.tenant_id)
+        .bind(w.id)
+        .execute(&mut *session.connection())
+        .await?;
+
+        Ok(())
+    }
+
     async fn list_by_branch(
         &self,
         session: &mut dyn DbSession,

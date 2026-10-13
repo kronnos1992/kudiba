@@ -36,6 +36,21 @@ pub struct UpdateProductPriceRequest {
     pub cost_price: Option<Decimal>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateProductRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub barcode: Option<String>,
+    pub unit_of_measure: Option<String>,
+    pub sale_price: Option<Decimal>,
+    pub cost_price: Option<Decimal>,
+    pub tax_percentage: Option<Decimal>,
+    pub exemption_reason_code: Option<String>,
+    pub exemption_reason_text: Option<String>,
+    pub has_withholding_tax: Option<bool>,
+    pub is_active: Option<bool>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ProductResponse {
     pub id: Uuid,
@@ -112,6 +127,21 @@ pub struct RegisterEntityRequest {
     pub iban: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateEntityRequest {
+    pub name: Option<String>,
+    pub trade_name: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub is_withholding_agent: Option<bool>,
+    pub country_code: Option<String>,
+    pub province: Option<String>,
+    pub city: Option<String>,
+    pub address_detail: Option<String>,
+    pub iban: Option<String>,
+    pub is_active: Option<bool>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct EntityResponse {
     pub id: Uuid,
@@ -182,6 +212,14 @@ pub struct CreateWarehouseRequest {
     pub name: String,
     pub is_default: Option<bool>,
     pub address_detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateWarehouseRequest {
+    pub name: Option<String>,
+    pub is_default: Option<bool>,
+    pub address_detail: Option<String>,
+    pub is_active: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]

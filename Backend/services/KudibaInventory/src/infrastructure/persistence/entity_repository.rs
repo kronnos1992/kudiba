@@ -141,6 +141,57 @@ impl EntityRepository for PostgresEntityRepository {
         Ok(())
     }
 
+    async fn update(
+        &self,
+        session: &mut dyn DbSession,
+        e: &CommercialEntity,
+    ) -> Result<(), RepositoryError> {
+        let entity_type_str = match e.entity_type {
+            EntityKind::Customer => "CUSTOMER",
+            EntityKind::Supplier => "SUPPLIER",
+            EntityKind::Both => "BOTH",
+        };
+
+        sqlx::query(
+            r#"
+            UPDATE kudiba_inventory.entities SET
+                entity_type = $1::kudiba_inventory.entity_kind,
+                name = $2,
+                trade_name = $3,
+                email = $4,
+                phone = $5,
+                is_withholding_agent = $6,
+                country_code = $7,
+                province = $8,
+                city = $9,
+                address_detail = $10,
+                iban = $11,
+                is_active = $12,
+                updated_at = $13
+            WHERE tenant_id = $14 AND id = $15
+            "#,
+        )
+        .bind(entity_type_str)
+        .bind(&e.name)
+        .bind(&e.trade_name)
+        .bind(&e.email)
+        .bind(&e.phone)
+        .bind(e.is_withholding_agent)
+        .bind(&e.country_code)
+        .bind(&e.province)
+        .bind(&e.city)
+        .bind(&e.address_detail)
+        .bind(&e.iban)
+        .bind(e.is_active)
+        .bind(e.updated_at)
+        .bind(e.tenant_id)
+        .bind(e.id)
+        .execute(&mut *session.connection())
+        .await?;
+
+        Ok(())
+    }
+
     async fn list(
         &self,
         session: &mut dyn DbSession,

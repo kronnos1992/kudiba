@@ -53,4 +53,33 @@ impl Warehouse {
             updated_at: now,
         })
     }
+
+    pub fn update(
+        &mut self,
+        name: Option<String>,
+        is_default: Option<bool>,
+        address_detail: Option<String>,
+        is_active: Option<bool>,
+    ) -> Result<(), InventoryError> {
+        if let Some(n) = name {
+            let trimmed = n.trim();
+            if trimmed.is_empty() {
+                return Err(InventoryError::ValidationError(
+                    "Nome do armazém não pode ser vazio".to_string(),
+                ));
+            }
+            self.name = trimmed.to_string();
+        }
+        if let Some(d) = is_default {
+            self.is_default = d;
+        }
+        if let Some(a) = address_detail {
+            self.address_detail = Some(a.trim().to_string());
+        }
+        if let Some(act) = is_active {
+            self.is_active = act;
+        }
+        self.updated_at = Utc::now();
+        Ok(())
+    }
 }

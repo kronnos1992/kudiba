@@ -79,4 +79,62 @@ impl CommercialEntity {
             updated_at: now,
         })
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update(
+        &mut self,
+        name: Option<String>,
+        trade_name: Option<String>,
+        email: Option<String>,
+        phone: Option<String>,
+        is_withholding_agent: Option<bool>,
+        country_code: Option<String>,
+        province: Option<String>,
+        city: Option<String>,
+        address_detail: Option<String>,
+        iban: Option<String>,
+        is_active: Option<bool>,
+    ) -> Result<(), InventoryError> {
+        if let Some(n) = name {
+            let trimmed = n.trim();
+            if trimmed.is_empty() {
+                return Err(InventoryError::ValidationError(
+                    "Nome da entidade comercial não pode ser vazio".to_string(),
+                ));
+            }
+            self.name = trimmed.to_string();
+        }
+        if let Some(t) = trade_name {
+            self.trade_name = Some(t.trim().to_string());
+        }
+        if let Some(e) = email {
+            self.email = Some(e.trim().to_lowercase());
+        }
+        if let Some(p) = phone {
+            self.phone = Some(p.trim().to_string());
+        }
+        if let Some(w) = is_withholding_agent {
+            self.is_withholding_agent = w;
+        }
+        if let Some(c) = country_code {
+            self.country_code = c.trim().to_uppercase();
+        }
+        if let Some(pr) = province {
+            self.province = Some(pr.trim().to_string());
+        }
+        if let Some(ci) = city {
+            self.city = Some(ci.trim().to_string());
+        }
+        if let Some(ad) = address_detail {
+            self.address_detail = Some(ad.trim().to_string());
+        }
+        if let Some(i) = iban {
+            self.iban = Some(i.trim().to_uppercase());
+        }
+        if let Some(act) = is_active {
+            self.is_active = act;
+        }
+        self.updated_at = Utc::now();
+        Ok(())
+    }
 }

@@ -437,6 +437,9 @@ async fn test_processamento_evento_fatura_com_produtos_fisicos_e_servicos() {
         async fn save(&self, _: &mut dyn DbSession, _: &Product) -> Result<(), RepositoryError> {
             unreachable!()
         }
+        async fn update(&self, _: &mut dyn DbSession, _: &Product) -> Result<(), RepositoryError> {
+            unreachable!()
+        }
         async fn update_prices_and_cmp(
             &self,
             _: &mut dyn DbSession,
@@ -477,6 +480,13 @@ async fn test_processamento_evento_fatura_com_produtos_fisicos_e_servicos() {
             unreachable!()
         }
         async fn save(&self, _: &mut dyn DbSession, _: &Warehouse) -> Result<(), RepositoryError> {
+            unreachable!()
+        }
+        async fn update(
+            &self,
+            _: &mut dyn DbSession,
+            _: &Warehouse,
+        ) -> Result<(), RepositoryError> {
             unreachable!()
         }
         async fn list_by_branch(
@@ -692,4 +702,124 @@ async fn test_processamento_evento_fatura_com_produtos_fisicos_e_servicos() {
     assert_eq!(movs[0].quantity, dec!(3));
     assert_eq!(movs[0].movement_type, StockMovementType::OutSale);
     assert_eq!(movs[0].document_ref, Some("FT 2026/100".into()));
+}
+
+#[tokio::test]
+async fn test_atualizacao_de_detalhes_de_produto_entidade_e_armazem() {
+    use kudiba_inventory::domain::entities::{CommercialEntity, EntityKind, Warehouse};
+
+    let tenant_id = Uuid::new_v4();
+    let branch_id = Uuid::new_v4();
+
+    // 1. Atualização de Produto
+    let mut prod = Product::new(
+        tenant_id,
+        "PROD-01".into(),
+        None,
+        "Produto Teste".into(),
+        None,
+        ProductType::Goods,
+        Some(true),
+        false,
+        "UN".into(),
+        dec!(100),
+        dec!(50),
+        dec!(14),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    prod.update_details(
+        Some("Produto Teste Atualizado".into()),
+        Some("Nova descrição".into()),
+        Some("5601234567890".into()),
+        Some("KG".into()),
+        Some(dec!(120)),
+        Some(dec!(60)),
+        Some(dec!(0)),
+        Some("M10".into()),
+        Some("Isento nos termos da lei".into()),
+        Some(false),
+        Some(true),
+    )
+    .unwrap();
+
+    assert_eq!(prod.name, "Produto Teste Atualizado");
+    assert_eq!(prod.sale_price, dec!(120));
+    assert_eq!(prod.cost_price, dec!(60));
+    assert_eq!(prod.tax_percentage, dec!(0));
+    assert_eq!(prod.tax_code, "ISE");
+    assert_eq!(prod.exemption_reason_code.as_deref(), Some("M10"));
+    assert_eq!(prod.barcode.as_deref(), Some("5601234567890"));
+    assert_eq!(prod.unit_of_measure, "KG");
+
+    // 2. Atualização de Entidade
+    let mut entity = CommercialEntity::new(
+        tenant_id,
+        EntityKind::Customer,
+        kudiba_inventory::domain::value_objects::TaxId::new(
+            "5412345678",
+            kudiba_inventory::domain::value_objects::TaxIdKind::LegalEntity,
+        )
+        .unwrap(),
+        "Empresa Alpha Lda".into(),
+        None,
+        Some("contacto@alpha.ao".into()),
+        Some("+244923111222".into()),
+        false,
+        Some("AO".into()),
+        Some("Luanda".into()),
+        Some("Luanda".into()),
+        Some("Rua Principal 10".into()),
+        None,
+    )
+    .unwrap();
+
+    entity
+        .update(
+            Some("Empresa Alpha Actualizada Lda".into()),
+            Some("Alpha Group".into()),
+            Some("financeiro@alpha.ao".into()),
+            Some("+244923999888".into()),
+            Some(true),
+            Some("AO".into()),
+            Some("Benguela".into()),
+            Some("Lobito".into()),
+            Some("Avenida Marginal 45".into()),
+            Some("AO06004000001234567890123".into()),
+            Some(true),
+        )
+        .unwrap();
+
+    assert_eq!(entity.name, "Empresa Alpha Actualizada Lda");
+    assert_eq!(entity.trade_name.as_deref(), Some("Alpha Group"));
+    assert_eq!(entity.email.as_deref(), Some("financeiro@alpha.ao"));
+    assert!(entity.is_withholding_agent);
+    assert_eq!(entity.iban.as_deref(), Some("AO06004000001234567890123"));
+
+    // 3. Atualização de Armazém
+    let mut warehouse = Warehouse::new(
+        tenant_id,
+        branch_id,
+        "ARM-01".into(),
+        "Armazém Central".into(),
+        false,
+        None,
+    )
+    .unwrap();
+
+    warehouse
+        .update(
+            Some("Armazém Geral Luanda Sul".into()),
+            Some(true),
+            Some("Viana, Km 14".into()),
+            Some(true),
+        )
+        .unwrap();
+
+    assert_eq!(warehouse.name, "Armazém Geral Luanda Sul");
+    assert!(warehouse.is_default);
+    assert_eq!(warehouse.address_detail.as_deref(), Some("Viana, Km 14"));
 }

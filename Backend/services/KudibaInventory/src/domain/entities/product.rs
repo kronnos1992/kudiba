@@ -154,4 +154,77 @@ impl Product {
             self.updated_at = Utc::now();
         }
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_details(
+        &mut self,
+        name: Option<String>,
+        description: Option<String>,
+        barcode: Option<String>,
+        unit_of_measure: Option<String>,
+        sale_price: Option<Decimal>,
+        cost_price: Option<Decimal>,
+        tax_percentage: Option<Decimal>,
+        exemption_reason_code: Option<String>,
+        exemption_reason_text: Option<String>,
+        has_withholding_tax: Option<bool>,
+        is_active: Option<bool>,
+    ) -> Result<(), InventoryError> {
+        if let Some(n) = name {
+            let trimmed = n.trim();
+            if trimmed.is_empty() {
+                return Err(InventoryError::ValidationError(
+                    "Nome do artigo não pode ser vazio".to_string(),
+                ));
+            }
+            self.name = trimmed.to_string();
+        }
+        if let Some(d) = description {
+            self.description = Some(d.trim().to_string());
+        }
+        if let Some(b) = barcode {
+            self.barcode = Some(b.trim().to_string());
+        }
+        if let Some(u) = unit_of_measure {
+            self.unit_of_measure = u.trim().to_uppercase();
+        }
+        if let Some(sp) = sale_price {
+            if sp < Decimal::ZERO {
+                return Err(InventoryError::InvalidPrice(
+                    "Preço de venda não pode ser negativo".to_string(),
+                ));
+            }
+            self.sale_price = sp;
+        }
+        if let Some(cp) = cost_price {
+            if cp < Decimal::ZERO {
+                return Err(InventoryError::InvalidPrice(
+                    "Preço de custo não pode ser negativo".to_string(),
+                ));
+            }
+            self.cost_price = cp;
+        }
+        if let Some(tp) = tax_percentage {
+            self.tax_percentage = tp;
+            if tp == Decimal::ZERO {
+                self.tax_code = "ISE".to_string();
+            } else {
+                self.tax_code = "NOR".to_string();
+            }
+        }
+        if let Some(erc) = exemption_reason_code {
+            self.exemption_reason_code = Some(erc);
+        }
+        if let Some(ert) = exemption_reason_text {
+            self.exemption_reason_text = Some(ert);
+        }
+        if let Some(hwt) = has_withholding_tax {
+            self.has_withholding_tax = hwt;
+        }
+        if let Some(act) = is_active {
+            self.is_active = act;
+        }
+        self.updated_at = Utc::now();
+        Ok(())
+    }
 }
