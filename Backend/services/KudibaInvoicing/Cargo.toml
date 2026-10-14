@@ -63,6 +63,7 @@ rust_xlsxwriter = { version = "0.99", features = ["rust_decimal", "chrono"] }
 printpdf = { version = "0.12", default-features = false }
 lopdf = "0.44"
 qrcode = { version = "0.14", default-features = false }
+lapin = { version = "4.12", default-features = false, features = ["tokio"] }
 
 [dev-dependencies]
 # Stream de ligações TCP para o teste de integração gRPC (porta efémera)

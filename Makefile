@@ -77,6 +77,9 @@ test-inventory: ## Testes do KudibaInventory
 test-auth: ## Testes do KudibaAuth (pytest)
 	cd $(AUTH_DIR) && PYTHONPATH=. python3 -m pytest tests/ -q
 
+test-e2e: ## Corre o teste de integracao ponta-a-ponta (E2E smoke test via Gateway)
+	bash scripts/test-e2e-flow.sh
+
 # -----------------------------------------------------------------------------
 # KudibaAuth (Python)
 # -----------------------------------------------------------------------------

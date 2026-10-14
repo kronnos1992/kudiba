@@ -164,3 +164,41 @@ Foi concebido e estruturado o portal documental em `docs/`:
 - **`docs/CATALOGO_DE_APIS.md`**: Referência exaustiva de rotas REST, contratos Protobuf gRPC e formato de erro RFC 7807.
 - **`docs/MANUAL_DE_DESENVOLVIMENTO_E_DEPLOY.md`**: Guia passo a passo de inicialização, perfis Docker Compose e suítes de testes.
 - **`Backend/services/KudibaAuth/README.md`** e **`Backend/services/KudibaInvoicing/README.md`**: Documentações específicas de engenharia de cada serviço.
+
+---
+
+## 8. Implementação do Microsserviço de Inventário (KudibaInventory) & Integração Orientada a Eventos via RabbitMQ
+
+Para completar o núcleo operacional do ERP Kudiba e viabilizar a gestão de múltiplos armazéns, cálculo fiduciário de Custo Médio Ponderado (CMP) e baixa automática de stock por emissão de faturas, foi desenvolvido o microsserviço **KudibaInventory** em **Rust (Axum + SQLx)**, perfeitamente integrado ao ecossistema via **RabbitMQ** e documentado no **Swagger UI unificado** do API Gateway.
+
+### 8.1 Capacidades Principais do KudibaInventory
+1. **Padrão Database-per-Service**: Base de dados isolada `kudiba_inventory` provisionada pelo script `Backend/deploy/04-inventory-schema.sql` via `00-init-databases.sh`.
+2. **Catálogo de Artigos & Políticas de Stock**:
+   - Classificação estrita entre bens físicos (`PRODUCT`, `RAW_MATERIAL`, `PACKAGING`) e intangíveis (`SERVICE`, `INTANGIBLE_EXPENSE`).
+   - Bloqueio determinístico de movimentações físicas para itens intangíveis.
+3. **Múltiplos Armazéns e Rastreabilidade por Lotes**:
+   - Criação e atualização de armazéns centrais e filiais de stock.
+   - Controlo de lotes com datas de fabrico e validade com suporte a estratégias de despacho **FIFO** (*First-In, First-Out*) e **FEFO** (*First-Expired, First-Out*).
+4. **Cálculo Exato de Custo Médio Ponderado (CMP)**:
+   - Aritmética decimal de 128 bits com `rust_decimal`, impedindo distorções de arredondamento em compras fracionadas.
+   - Atualização atómica na tabela `products` a cada movimento de entrada.
+5. **Atualizações Cadastrais Completas**:
+   - Endpoints `PUT` e comandos de aplicação para Produto, Entidade Comercial e Armazém, além de consultas pontuais `GET /{id}`.
+6. **Integração OpenAPI 3.1 Unificada**:
+   - Todas as 20 rotas e 19 esquemas do inventário integrados em `API_GATEWAY_OPENAPI.yaml`, consultáveis interativamente em `/swagger-ui`.
+
+### 8.2 Topologia de Mensageria RabbitMQ e Baixa Automática de Stock
+Para garantir desacoplamento fiduciário entre a emissão fiscal e o controle logístico de stocks:
+1. **Transactional Outbox & Publicador RabbitMQ**: O serviço `KudibaInvoicing` grava atómicamente o evento `fiscal.document.issued` na tabela `kudiba_core.accounting_outbox`. O `OutboxWorker` invoca o `MultiChannelEventPublisher`, que publica via AMQP puro (`lapin`) na exchange topic `fiscal.events` com routing key `fiscal.event.fiscal.document.issued`.
+2. **Consumidor Resiliente no KudibaInventory**: O `InvoiceEventConsumer` subscreve a fila durável `inventory.invoice_issued`, processa o envelope JSON, identifica artigos físicos e executa o caso de uso `ProcessInvoiceIssuedCommand`, baixando o stock e gravando o movimento auditável `SALE_DISPATCH`.
+3. **Fallback Graceful**: Em ambientes de desenvolvimento sem RabbitMQ activo, o sistema opera de forma resiliente através de canais assíncronos em memória (`tokio::sync::mpsc`).
+
+### 8.3 Teste de Integração Ponta-a-Ponta (E2E Smoke Test)
+Foi criado o script automatizado `scripts/test-e2e-flow.sh` (e `scripts/test-e2e-flow.py`) e o alvo `make test-e2e`, validando:
+- Healthcheck do API Gateway (`:8080`).
+- Geração de token JWT assinado com claims Kudiba.
+- Criação de armazém e artigo via rotas protegidas do Gateway.
+- Entrada de stock por compra (+100 unidades a 1500 AOA).
+- Emissão de fatura fiscal FT (10 unidades) no `KudibaInvoicing`.
+- Baixa de stock automática propagada para 90 unidades no `KudibaInventory`.
+
