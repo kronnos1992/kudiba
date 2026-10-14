@@ -1856,6 +1856,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "kudiba-treasury"
+version = "1.0.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "dotenvy",
+ "futures-util",
+ "lapin",
+ "regex",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tower-http 0.7.1",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "lapin"
 version = "4.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

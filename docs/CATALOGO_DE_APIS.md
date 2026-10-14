@@ -258,3 +258,37 @@ Os microsserviços do Kudiba ERP comunicam de forma desacoplada via AMQP 0-9-1:
 }
 ```
 
+---
+
+## 7. Microsserviço de Tesouraria, Caixa & Pagamentos: KudibaTreasury (`:8084`)
+
+Roteado pelo API Gateway em `/api/v1/treasury/*`. Implementado em Rust (Axum + SQLx + Clean Architecture) com base de dados isolada `kudiba_treasury`.
+
+### 7.1 Resumo de Endpoints
+
+| Método | Caminho | Descrição |
+| :--- | :--- | :--- |
+| `POST` | `/api/v1/treasury/registers` | Cadastro de novo caixa (físico ou virtual / PDV). |
+| `GET` | `/api/v1/treasury/registers` | Listagem de caixas do tenant. |
+| `GET` | `/api/v1/treasury/registers/{id}` | Consulta de detalhes do caixa por UUID. |
+| `POST` | `/api/v1/treasury/sessions/open` | Abertura de sessão de caixa com fundo de maneio inicial em numerário. |
+| `POST` | `/api/v1/treasury/sessions/{id}/close` | Fecho cego de sessão com contagem física, cálculo do saldo esperado e apuramento de quebra/sobra. |
+| `GET` | `/api/v1/treasury/sessions/current?register_id={id}` | Consulta da sessão atualmente aberta no caixa. |
+| `GET` | `/api/v1/treasury/sessions/{id}` | Consulta de sessão de caixa por UUID. |
+| `GET` | `/api/v1/treasury/sessions/{id}/report` | Relatório consolidado de fecho/auditoria da sessão com reconciliação e histórico de movimentos. |
+| `POST` | `/api/v1/treasury/movements` | Registo de movimento de caixa (suprimento, sangria ou despesa). Valida saldo em saídas. |
+| `GET` | `/api/v1/treasury/sessions/{id}/movements` | Listagem de movimentos registados na sessão de caixa. |
+| `POST` | `/api/v1/treasury/bank-accounts` | Registo de conta bancária da empresa (AOA, USD, EUR com validação de IBAN angolano). |
+| `GET` | `/api/v1/treasury/bank-accounts` | Listagem das contas bancárias ativas da empresa. |
+| `GET` | `/api/v1/treasury/bank-accounts/{id}` | Consulta detalhada de conta bancária e saldo atual. |
+| `POST` | `/api/v1/treasury/receipts` | Emissão de Recibo de Quitação (RC) para liquidação de faturas a prazo com linhas discriminadas e crédito em caixa/banco. |
+| `GET` | `/api/v1/treasury/receipts` | Listagem de recibos emitidos (com filtro opcional por cliente e paginação). |
+| `GET` | `/api/v1/treasury/receipts/{id}` | Consulta detalhada do recibo com as respetivas linhas de fatura liquidada. |
+
+### 7.2 Formas de Pagamento Suportadas no Domínio Angolano
+
+* `NUMERARIO`: Dinheiro físico. Se associado a uma sessão de caixa aberta, gera automaticamente movimento de entrada `SALE_RECEIPT`.
+* `MULTICAIXA`: Terminal de Pagamento Automático (TPA) / Rede Multicaixa EMIS.
+* `TRANSFERENCIA`: Transferência bancária / Depósito direto. Atualiza o saldo da conta bancária de destino (`bank_account_id`).
+* `GPO_REFERENCE`: Pagamento por Referência Multicaixa / Gateway de Pagamentos Online EMIS.
+

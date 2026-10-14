@@ -5,14 +5,16 @@ Guia para agentes de código que trabalham neste repositório.
 ## Estrutura
 
 - `Backend/gateway/` — API Gateway perimétrico em Rust (Axum), faz auth JWT, rate-limit e reverse proxy.
-- `Backend/services/KudibaInvoicing/` — microserviço de faturação em Rust. Faz parte do workspace Cargo em `Backend/Cargo.toml`.
+- `Backend/services/KudibaInvoicing/` — microserviço de faturação em Rust (workspace Cargo).
+- `Backend/services/KudibaInventory/` — microserviço de inventário, armazéns e catálogo em Rust (workspace Cargo).
+- `Backend/services/KudibaTreasury/` — microserviço de tesouraria, caixa e pagamentos em Rust (workspace Cargo).
 - `Backend/services/KudibaAuth/` — microserviço de Autenticação & RBAC em **Python/FastAPI** (Clean Architecture). NÃO faz parte do workspace Rust.
 - `Backend/deploy/` — scripts SQL de inicialização das bases de dados.
 - `Frontend/`, `proto/`, `docs/`, `scripts/` — ver README raiz.
 
 ## Comandos
 
-### Rust (Gateway + Invoicing)
+### Rust (Gateway + Invoicing + Inventory + Treasury)
 
 ```bash
 # Build do workspace completo
@@ -24,9 +26,15 @@ cargo test --manifest-path Backend/gateway/Cargo.toml
 # Testes do Invoicing
 cargo test --manifest-path Backend/services/KudibaInvoicing/Cargo.toml
 
+# Testes do Inventory
+cargo test --manifest-path Backend/services/KudibaInventory/Cargo.toml
+
+# Testes do Treasury
+cargo test --manifest-path Backend/services/KudibaTreasury/Cargo.toml
+
 # Lint / formato (padrão do CI)
-cargo fmt --manifest-path Backend/Cargo.toml -- --check
-cargo clippy --manifest-path Backend/Cargo.toml -- -D warnings
+cargo fmt --manifest-path Backend/Cargo.toml --all -- --check
+cargo clippy --workspace --manifest-path Backend/Cargo.toml -- -D warnings
 ```
 
 `protoc` é necessário para compilar os serviços que usam gRPC.

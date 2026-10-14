@@ -70,6 +70,17 @@ pub async fn forward_to_inventory(State(state): State<AppState>, req: Request) -
     .await
 }
 
+pub async fn forward_to_treasury(State(state): State<AppState>, req: Request) -> Response {
+    forward_request(
+        &state.http_client,
+        &state.config.treasury_service_url,
+        req,
+        state.config.max_body_bytes,
+        None,
+    )
+    .await
+}
+
 async fn forward_request(
     client: &Client,
     base_url: &str,
