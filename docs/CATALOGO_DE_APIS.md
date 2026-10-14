@@ -187,3 +187,74 @@ service FiscalEngineService {
   rpc TriggerSaftGeneration (TriggerSaftRequest) returns (TriggerSaftResponse);
 }
 ```
+
+---
+
+## 5. Microsserviço de Inventário e Armazéns: KudibaInventory (`:8083`)
+
+Roteado pelo API Gateway em `/api/v1/inventory/*`.
+
+### 5.1 Resumo de Endpoints
+
+| Método | Caminho | Descrição | Permissão Exigida |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/inventory/products` | Cadastro de novo artigo físico ou serviço. | `inventory:products:create` |
+| `GET` | `/api/v1/inventory/products/{id}` | Consulta detalhada de produto por UUID. | `inventory:products:read` |
+| `PUT` | `/api/v1/inventory/products/{id}` | Atualização cadastral completa de artigo. | `inventory:products:update` |
+| `PATCH`| `/api/v1/inventory/products/{id}/price` | Atualização atómica do preço de venda do artigo. | `inventory:products:update` |
+| `POST` | `/api/v1/inventory/warehouses` | Cadastro de novo armazém ou filial de stock. | `inventory:warehouses:create` |
+| `GET` | `/api/v1/inventory/warehouses/{id}` | Consulta detalhada de armazém por UUID. | `inventory:warehouses:read` |
+| `PUT` | `/api/v1/inventory/warehouses/{id}` | Atualização cadastral de armazém. | `inventory:warehouses:update` |
+| `POST` | `/api/v1/inventory/entities` | Cadastro de cliente ou fornecedor com validação de NIF angolano. | `inventory:entities:create` |
+| `GET` | `/api/v1/inventory/entities/{id}` | Consulta de entidade comercial por UUID. | `inventory:entities:read` |
+| `PUT` | `/api/v1/inventory/entities/{id}` | Atualização cadastral de entidade comercial. | `inventory:entities:update` |
+| `POST` | `/api/v1/inventory/batches` | Criação de lote de produto com controlo de validade (FIFO/FEFO). | `inventory:batches:create` |
+| `GET` | `/api/v1/inventory/batches/{id}` | Consulta de lote e rastreabilidade por UUID. | `inventory:batches:read` |
+| `POST` | `/api/v1/inventory/stock/purchases` | Entrada de stock por compra com recálculo exato de CMP. | `inventory:stock:inbound` |
+| `POST` | `/api/v1/inventory/stock/sales` | Saída de stock por expedição manual/venda. | `inventory:stock:outbound` |
+| `POST` | `/api/v1/inventory/stock/transfers` | Transferência física de stock entre armazéns da mesma empresa. | `inventory:stock:transfer` |
+| `POST` | `/api/v1/inventory/stock/adjustments` | Ajuste manual positivo ou negativo de inventário. | `inventory:stock:adjust` |
+| `GET` | `/api/v1/inventory/stock/{product_id}/warehouses/{warehouse_id}` | Consulta de saldo atual e disponível em armazém. | `inventory:stock:read` |
+| `GET` | `/api/v1/inventory/movements` | Histórico de movimentos de stock com filtros (produto, armazém). | `inventory:stock:read` |
+| `POST` | `/api/v1/inventory/events/invoice-issued` | Endpoint síncrono para processar baixa por evento fiscal. | `invoicing:events:dispatch` |
+
+---
+
+## 6. Mensageria Orientada a Eventos: RabbitMQ (`fiscal.events`)
+
+Os microsserviços do Kudiba ERP comunicam de forma desacoplada via AMQP 0-9-1:
+
+### 6.1 Topologia e Exchanges
+
+* **Exchange:** `fiscal.events` (Tipo: `topic`, `durable: true`)
+* **Produtor:** `KudibaInvoicing` via Transactional Outbox Worker (`kudiba_core.accounting_outbox`).
+* **Consumidor:** `KudibaInventory` na fila `inventory.invoice_issued`.
+* **Binding:** `inventory.invoice_issued` $\rightarrow$ `fiscal.events` com routing key `fiscal.event.*`.
+
+### 6.2 Payload do Evento de Faturação (`fiscal.document.issued`)
+
+```json
+{
+  "event_id": "99999999-9999-9999-9999-999999999999",
+  "tenant_id": "a0000000-0000-0000-0000-000000000001",
+  "invoice_id": "33333333-3333-3333-3333-333333333333",
+  "event_type": "fiscal.document.issued",
+  "payload": {
+    "invoiceId": "33333333-3333-3333-3333-333333333333",
+    "tenantId": "a0000000-0000-0000-0000-000000000001",
+    "documentNumber": "FT 2026A/1",
+    "documentType": "FT",
+    "lines": [
+      {
+        "lineNumber": 1,
+        "productCode": "ART-001",
+        "description": "Artigo Físico",
+        "quantity": "5",
+        "unitPrice": "1500.00"
+      }
+    ]
+  },
+  "created_at": "2026-10-14T10:00:00Z"
+}
+```
+

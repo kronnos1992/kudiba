@@ -40,6 +40,8 @@ async-trait = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 dotenvy = "0.15"
+lapin = { version = "4.12", default-features = false, features = ["tokio"] }
+futures-util = "0.3"
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["full", "test-util"] }
