@@ -988,6 +988,385 @@ paths:
             application/json:
               schema:
                 type: object
+  /api/v1/treasury/registers:
+    get:
+      summary: Listar Caixas
+      description: Lista os caixas físicos ou virtuais registados para o tenant.
+      tags:
+      - Tesouraria & Caixas
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Lista de caixas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CashRegisterResponse'
+    post:
+      summary: Criar Caixa
+      description: Cadastra um novo caixa (PDV ou balcão).
+      tags:
+      - Tesouraria & Caixas
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCashRegisterRequest'
+      responses:
+        '201':
+          description: Caixa criado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashRegisterResponse'
+  /api/v1/treasury/registers/{id}:
+    get:
+      summary: Consultar Caixa por ID
+      tags:
+      - Tesouraria & Caixas
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Detalhes do caixa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashRegisterResponse'
+  /api/v1/treasury/sessions/open:
+    post:
+      summary: Abrir Sessão de Caixa
+      description: Abre um novo turno/sessão de caixa com fundo de maneio inicial.
+      tags:
+      - Tesouraria & Caixas
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenCashSessionRequest'
+      responses:
+        '201':
+          description: Sessão aberta com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashSessionResponse'
+  /api/v1/treasury/sessions/{id}/close:
+    post:
+      summary: Fechar Sessão de Caixa (Fecho Cego)
+      description: Encerra a sessão com contagem física cega, calculando desvios de caixa (quebra/sobra).
+      tags:
+      - Tesouraria & Caixas
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloseCashSessionRequest'
+      responses:
+        '200':
+          description: Sessão fechada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashSessionResponse'
+  /api/v1/treasury/sessions/current:
+    get:
+      summary: Obter Sessão Ativa do Caixa
+      tags:
+      - Tesouraria & Caixas
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: register_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Sessão ativa (ou nula se fechado)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashSessionResponse'
+  /api/v1/treasury/sessions/{id}:
+    get:
+      summary: Consultar Sessão por ID
+      tags:
+      - Tesouraria & Caixas
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Detalhes da sessão
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashSessionResponse'
+  /api/v1/treasury/sessions/{id}/report:
+    get:
+      summary: Relatório de Fecho e Reconciliação de Caixa
+      tags:
+      - Tesouraria & Caixas
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Relatório completo de auditoria da sessão
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionReportResponse'
+  /api/v1/treasury/movements:
+    post:
+      summary: Registar Movimento de Caixa
+      description: Regista sangria (saída), suprimento (entrada) ou despesa miúda em sessão aberta.
+      tags:
+      - Tesouraria & Caixas
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordCashMovementRequest'
+      responses:
+        '201':
+          description: Movimento registado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashMovementResponse'
+  /api/v1/treasury/sessions/{id}/movements:
+    get:
+      summary: Listar Movimentos da Sessão
+      tags:
+      - Tesouraria & Caixas
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Lista de movimentos da sessão
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CashMovementResponse'
+  /api/v1/treasury/bank-accounts:
+    get:
+      summary: Listar Contas Bancárias
+      tags:
+      - Tesouraria & Pagamentos
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Lista de contas bancárias da empresa
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BankAccountResponse'
+    post:
+      summary: Criar Conta Bancária
+      description: Cadastra conta bancária com validação de IBAN angolano (AOA, USD, EUR).
+      tags:
+      - Tesouraria & Pagamentos
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBankAccountRequest'
+      responses:
+        '201':
+          description: Conta criada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankAccountResponse'
+  /api/v1/treasury/bank-accounts/{id}:
+    get:
+      summary: Consultar Conta Bancária por ID
+      tags:
+      - Tesouraria & Pagamentos
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Detalhes da conta bancária
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankAccountResponse'
+  /api/v1/treasury/receipts:
+    get:
+      summary: Listar Recibos de Quitação
+      tags:
+      - Tesouraria & Pagamentos
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: customer_id
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 50
+      responses:
+        '200':
+          description: Lista de recibos emitidos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TreasuryReceiptResponse'
+    post:
+      summary: Emitir Recibo de Quitação (RC)
+      description: Emite recibo de liquidação de faturas a prazo com linhas discriminadas e crédito em caixa ou banco.
+      tags:
+      - Tesouraria & Pagamentos
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueTreasuryReceiptRequest'
+      responses:
+        '201':
+          description: Recibo emitido com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TreasuryReceiptResponse'
+  /api/v1/treasury/receipts/{id}:
+    get:
+      summary: Consultar Recibo por ID
+      tags:
+      - Tesouraria & Pagamentos
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Detalhes do recibo com as faturas liquidadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TreasuryReceiptResponse'
 components:
   securitySchemes:
     BearerAuth:
@@ -1950,6 +2329,358 @@ components:
                 format: uuid
               batchNumber:
                 type: string
+    CashRegisterResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        branch_id:
+          type: string
+          format: uuid
+          nullable: true
+        code:
+          type: string
+        name:
+          type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateCashRegisterRequest:
+      type: object
+      required:
+      - code
+      - name
+      properties:
+        branch_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+    CashSessionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        register_id:
+          type: string
+          format: uuid
+        operator_user_id:
+          type: string
+        opened_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+        opening_balance:
+          type: string
+        closing_balance_counted:
+          type: string
+          nullable: true
+        closing_balance_system:
+          type: string
+          nullable: true
+        discrepancy:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [OPEN, CLOSED]
+        notes:
+          type: string
+          nullable: true
+    OpenCashSessionRequest:
+      type: object
+      required:
+      - register_id
+      - operator_user_id
+      - opening_balance
+      properties:
+        register_id:
+          type: string
+          format: uuid
+        operator_user_id:
+          type: string
+        opening_balance:
+          type: string
+    CloseCashSessionRequest:
+      type: object
+      required:
+      - closing_balance_counted
+      properties:
+        closing_balance_counted:
+          type: string
+        notes:
+          type: string
+    CashMovementResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        register_id:
+          type: string
+          format: uuid
+        movement_type:
+          type: string
+          enum: [SUPPLY, BLEED, SALE_RECEIPT, EXPENSE]
+        amount:
+          type: string
+        reason:
+          type: string
+        operator_user_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    RecordCashMovementRequest:
+      type: object
+      required:
+      - session_id
+      - movement_type
+      - amount
+      - reason
+      - operator_user_id
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        movement_type:
+          type: string
+          enum: [SUPPLY, BLEED, SALE_RECEIPT, EXPENSE]
+        amount:
+          type: string
+        reason:
+          type: string
+        operator_user_id:
+          type: string
+    SessionReportResponse:
+      type: object
+      properties:
+        session:
+          $ref: '#/components/schemas/CashSessionResponse'
+        register_code:
+          type: string
+        register_name:
+          type: string
+        reconciliation:
+          type: object
+          properties:
+            opening_balance:
+              type: string
+            total_supply:
+              type: string
+            total_sale_receipt:
+              type: string
+            total_bleed:
+              type: string
+            total_expense:
+              type: string
+            total_in:
+              type: string
+            total_out:
+              type: string
+            expected_balance:
+              type: string
+            counted_balance:
+              type: string
+              nullable: true
+            discrepancy:
+              type: string
+              nullable: true
+            discrepancy_type:
+              type: string
+              enum: [Exact, Surplus, Shortage]
+              nullable: true
+        movements:
+          type: array
+          items:
+            $ref: '#/components/schemas/CashMovementResponse'
+    BankAccountResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        bank_name:
+          type: string
+        account_number:
+          type: string
+        iban:
+          type: string
+        currency:
+          type: string
+          enum: [AOA, USD, EUR]
+        current_balance:
+          type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    CreateBankAccountRequest:
+      type: object
+      required:
+      - bank_name
+      - account_number
+      - iban
+      - currency
+      properties:
+        bank_name:
+          type: string
+        account_number:
+          type: string
+        iban:
+          type: string
+        currency:
+          type: string
+          enum: [AOA, USD, EUR]
+        initial_balance:
+          type: string
+    ReceiptLineRequest:
+      type: object
+      required:
+      - invoice_id
+      - invoice_number
+      - amount_settled
+      properties:
+        invoice_id:
+          type: string
+        invoice_number:
+          type: string
+        amount_settled:
+          type: string
+        notes:
+          type: string
+    IssueTreasuryReceiptRequest:
+      type: object
+      required:
+      - customer_id
+      - customer_name
+      - payment_method
+      - total_amount
+      - currency
+      - lines
+      properties:
+        customer_id:
+          type: string
+        customer_name:
+          type: string
+        customer_nif:
+          type: string
+        session_id:
+          type: string
+          format: uuid
+        bank_account_id:
+          type: string
+          format: uuid
+        payment_method:
+          type: string
+          enum: [NUMERARIO, MULTICAIXA, TRANSFERENCIA, GPO_REFERENCE]
+        total_amount:
+          type: string
+        currency:
+          type: string
+          enum: [AOA, USD, EUR]
+        notes:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceiptLineRequest'
+    TreasuryReceiptLineResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        receipt_id:
+          type: string
+          format: uuid
+        invoice_id:
+          type: string
+        invoice_number:
+          type: string
+        amount_settled:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    TreasuryReceiptResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        receipt_number:
+          type: string
+        customer_id:
+          type: string
+        customer_name:
+          type: string
+        customer_nif:
+          type: string
+          nullable: true
+        session_id:
+          type: string
+          format: uuid
+          nullable: true
+        bank_account_id:
+          type: string
+          format: uuid
+          nullable: true
+        payment_method:
+          type: string
+          enum: [NUMERARIO, MULTICAIXA, TRANSFERENCIA, GPO_REFERENCE]
+        total_amount:
+          type: string
+        currency:
+          type: string
+          enum: [AOA, USD, EUR]
+        notes:
+          type: string
+          nullable: true
+        issued_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/TreasuryReceiptLineResponse'
   parameters:
     CorrelationIdHeader:
       name: X-Correlation-ID
