@@ -48,8 +48,16 @@
               │                 - Consumo de eventos fiscais RabbitMQ para baixa automática de stock
               │                 - Base de Dados Isolada: kudiba_inventory
               │
+              ├───────────────► KudibaTreasury Cash & Payments Service (:8084)
+              │                 - Rust (Clean Arch + CQRS + Axum + SQLx)
+              │                 - Caixas físicos e PDV, Sessões com fecho cego e cálculo de quebra/sobra
+              │                 - Movimentos de caixa (Sangrias, Suprimentos e Despesas miúdas)
+              │                 - Contas bancárias empresariais (AOA, USD, EUR) e validação de IBAN angolano
+              │                 - Recibos de Quitação (RC) para liquidação de faturas a prazo com linhas
+              │                 - Base de Dados Isolada: kudiba_treasury
+              │
               ├───────────────► PostgreSQL 16 (:5432)
-              │                 - Database-per-Service: kudiba_auth, kudiba_invoicing e kudiba_inventory
+              │                 - Database-per-Service: kudiba_auth, kudiba_invoicing, kudiba_inventory e kudiba_treasury
               │                 - Triggers de imutabilidade de faturas (trg_protect_invoices)
               │
               ├───────────────► Redis 7.4 Alpine (:6379)
@@ -57,7 +65,7 @@
               │                 - Sliding window rate limiting e sessões efêmeras
               │
               └───────────────► RabbitMQ 3.13 Alpine (:5672 / :15672)
-                                - Exchange 'fiscal.events' (Topic) interligando Faturação e Inventário
+                                - Exchange 'fiscal.events' (Topic) interligando Faturação, Inventário e Tesouraria
                                 - Filas assíncronas de tarefas pesadas (SAF-T Jobs) e Transactional Outbox
 ```
 
@@ -71,7 +79,7 @@
 ### 2. Inicialização dos Serviços
 
 #### Modo Recomendado Completo (`--profile full`): Todos os Microsserviços e Infraestrutura
-Inicia Gateway, KudibaAuth, KudibaInvoicing, KudibaInventory, PostgreSQL (com as bases `kudiba_auth`, `kudiba_invoicing` e `kudiba_inventory`), Redis e RabbitMQ:
+Inicia Gateway, KudibaAuth, KudibaInvoicing, KudibaInventory, KudibaTreasury, PostgreSQL (com as bases `kudiba_auth`, `kudiba_invoicing`, `kudiba_inventory` e `kudiba_treasury`), Redis e RabbitMQ:
 ```bash
 docker compose --profile full up -d
 ```
@@ -135,6 +143,10 @@ O projeto conta com baterias rigorosas de testes automatizados com 100% de aprov
 - **KudibaInventory (Rust / `cargo test`)**: **24 testes aprovados** cobrindo cálculo exato de CMP, lotes FIFO/FEFO, políticas de bens/serviços, atualizações cadastrais e consumidor RabbitMQ.
   ```bash
   cargo test --manifest-path Backend/services/KudibaInventory/Cargo.toml
+  ```
+- **KudibaTreasury (Rust / `cargo test`)**: **5 testes aprovados** cobrindo ciclo de vida de caixas, fecho cego de sessão, cálculo de divergências (sobra/quebra), contas bancárias (IBAN angolano), recibos de quitação com linhas e fluxo completo de aplicação.
+  ```bash
+  cargo test --manifest-path Backend/services/KudibaTreasury/Cargo.toml
   ```
 - **Teste de Integração Ponta-a-Ponta (E2E Smoke Test)**:
   Valida o ciclo completo via Gateway (`:8080`): login JWT, criação de armazém/artigo, compra, emissão de fatura fiscal FT e baixa de stock orientada a eventos.

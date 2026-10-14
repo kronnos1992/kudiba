@@ -202,3 +202,43 @@ Foi criado o script automatizado `scripts/test-e2e-flow.sh` (e `scripts/test-e2e
 - Emissão de fatura fiscal FT (10 unidades) no `KudibaInvoicing`.
 - Baixa de stock automática propagada para 90 unidades no `KudibaInventory`.
 
+---
+
+## 9. Implementação do Microsserviço de Tesouraria, Caixa & Pagamentos (KudibaTreasury)
+
+Completando o fluxo financeiro do ERP Kudiba para gestão de fluxos de caixa, contas bancárias e cobrança de faturas a prazo emitidas no módulo fiscal, foi desenvolvido o microsserviço **KudibaTreasury** em **Rust (Axum + SQLx)**, seguindo os mesmos padrões de excelência técnica (Clean Architecture / Ports & Adapters, database-per-service isolado `kudiba_treasury` e documentação unificada no API Gateway).
+
+### 9.1 Capacidades Centrais do KudibaTreasury
+1. **Padrão Database-per-Service**: Base de dados isolada `kudiba_treasury` provisionada via `Backend/deploy/05-treasury-schema.sql` e registada no script `00-init-databases.sh` e `docker-compose.yml`.
+2. **Caixas Físicos e Virtuais (PDV / Balcão)**:
+   - Registo de caixas (`cash_registers`) com código único por empresa (`code`, ex.: `CX-01`, `CX-BALCAO`).
+   - Ativação e desativação com rastreabilidade por filial (`branch_id`).
+3. **Ciclo de Vida de Sessões de Caixa e Fecho Cego**:
+   - Abertura de sessão (`cash_sessions`) com validação de unicidade (impede mais de uma sessão aberta em simultâneo no mesmo caixa) e fundo de maneio inicial em numerário (`opening_balance`).
+   - Fecho cego de sessão com contagem física do operador (`closing_balance_counted`).
+   - Cálculo automático do saldo esperado pelo sistema:
+     $$\text{Saldo Esperado} = \text{Saldo Inicial} + \sum \text{Entradas} - \sum \text{Saídas}$$
+   - Auditoria e apuramento imediato de divergências (`discrepancy`):
+     - **Exact**: Saldo conferido sem divergência.
+     - **Surplus**: Sobra de caixa (excedente em numerário).
+     - **Shortage**: Quebra / faltante de caixa.
+4. **Movimentos de Caixa com Validação de Saldo**:
+   - Registo de Suprimentos / Reforços (`SUPPLY` - Cash In).
+   - Registo de Sangrias / Recolhas para cofre (`BLEED` - Cash Out).
+   - Registo de Despesas Miúdas diretas de caixa (`EXPENSE` - Cash Out).
+   - Bloqueio determinístico em caso de saldo em numerário insuficiente para saídas.
+5. **Contas Bancárias da Empresa e Validação de IBAN Angolano**:
+   - Registo de contas bancárias empresariais (`bank_accounts`) com moedas AOA, USD e EUR.
+   - Validação do formato de IBAN nacional (`AO06...` com 25 caracteres) e unicidade por tenant.
+   - Operações atómicas de crédito e débito com salvaguarda contra saldos negativos não autorizados.
+6. **Recibos de Quitação / Liquidação de Faturas a Prazo (RC)**:
+   - Emissão de recibos de quitação (`treasury_receipts`) com numeração sequencial auditável (ex.: `RC 2026/0001`).
+   - Discriminação por linhas de faturas liquidadas (`treasury_receipt_lines`), validando que o somatório das linhas coincide rigorosamente com o total do recibo.
+   - Integração com caixas e bancos:
+     - Quando recebido em **Numerário** com sessão de caixa indicada, cria automaticamente um movimento `SALE_RECEIPT` no caixa da sessão.
+     - Quando recebido por **Transferência Bancária**, credita atómicamente a conta bancária de destino.
+7. **Formas de Pagamento Locais**:
+   - Suporte nativo a `NUMERARIO`, `MULTICAIXA` (TPA EMIS), `TRANSFERENCIA` e `GPO_REFERENCE` (Referência Multicaixa).
+8. **Testes Unitários e de Integração**:
+   - Testes cobrindo ciclo de vida de caixas, fecho cego, reconciliação, contas bancárias, emissão de recibos e fluxo completo com repositórios em memória na suite `tests/test_domain_and_use_cases.rs`.
+
