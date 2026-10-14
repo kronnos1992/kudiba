@@ -41,8 +41,15 @@
               │                 - Memória Fiscal POS (Leitura X e Fecho Z com fecho anual)
               │                 - Base de Dados Isolada: kudiba_invoicing
               │
+              ├───────────────► KudibaInventory Stock & Catalog Service (:8083)
+              │                 - Rust (Clean Arch + CQRS + Unit of Work + Axum)
+              │                 - Catálogo de artigos, Armazéns, Lotes com validade (FIFO/FEFO)
+              │                 - Custo Médio Ponderado (CMP), Ajustes e Transferências
+              │                 - Consumo de eventos fiscais RabbitMQ para baixa automática de stock
+              │                 - Base de Dados Isolada: kudiba_inventory
+              │
               ├───────────────► PostgreSQL 16 (:5432)
-              │                 - Database-per-Service: kudiba_auth e kudiba_invoicing
+              │                 - Database-per-Service: kudiba_auth, kudiba_invoicing e kudiba_inventory
               │                 - Triggers de imutabilidade de faturas (trg_protect_invoices)
               │
               ├───────────────► Redis 7.4 Alpine (:6379)
@@ -50,8 +57,8 @@
               │                 - Sliding window rate limiting e sessões efêmeras
               │
               └───────────────► RabbitMQ 3.13 Alpine (:5672 / :15672)
-                                - Filas de tarefas assíncronas pesadas (SAF-T Jobs)
-                                - Eventos transacionais via Transactional Outbox
+                                - Exchange 'fiscal.events' (Topic) interligando Faturação e Inventário
+                                - Filas assíncronas de tarefas pesadas (SAF-T Jobs) e Transactional Outbox
 ```
 
 ---
@@ -64,7 +71,7 @@
 ### 2. Inicialização dos Serviços
 
 #### Modo Recomendado Completo (`--profile full`): Todos os Microsserviços e Infraestrutura
-Inicia Gateway, KudibaAuth, KudibaInvoicing, PostgreSQL (com as bases `kudiba_auth` e `kudiba_invoicing`), Redis e RabbitMQ:
+Inicia Gateway, KudibaAuth, KudibaInvoicing, KudibaInventory, PostgreSQL (com as bases `kudiba_auth`, `kudiba_invoicing` e `kudiba_inventory`), Redis e RabbitMQ:
 ```bash
 docker compose --profile full up -d
 ```
@@ -114,16 +121,25 @@ Consulte a pasta [`docs/`](docs/) para especificações completas:
 ---
 
 ## 🧪 Testes Automatizados
-
+ 
 O projeto conta com baterias rigorosas de testes automatizados com 100% de aprovação:
 
-- **KudibaAuth (Python / `pytest`)**: **15 testes aprovados** cobrindo autenticação Argon2id, rotação de refresh tokens, detecção de reúso, configuração segura e endpoints HTTP.
+- **KudibaAuth (Python / `pytest`)**: **20 testes aprovados** cobrindo autenticação Argon2id, rotação de refresh tokens, detecção de reúso, configuração segura e endpoints HTTP.
   ```bash
-  cd Backend/services/KudibaAuth && PYTHONPATH=. pytest tests/
+  cd Backend/services/KudibaAuth && PYTHONPATH=. pytest tests/ -q
   ```
-- **KudibaInvoicing (Rust / `cargo test`)**: **84 testes aprovados** cobrindo conformidade do Decreto Presidencial 71/25, criptografia RSA-2048, SAF-T streaming e relatórios fiscais.
+- **KudibaInvoicing (Rust / `cargo test`)**: **85 testes aprovados** cobrindo conformidade do Decreto Presidencial 71/25, criptografia RSA-2048, SAF-T streaming, outbox RabbitMQ e relatórios fiscais.
   ```bash
-  cargo test --bin kudiba-invoicing
+  cargo test --manifest-path Backend/services/KudibaInvoicing/Cargo.toml
+  ```
+- **KudibaInventory (Rust / `cargo test`)**: **24 testes aprovados** cobrindo cálculo exato de CMP, lotes FIFO/FEFO, políticas de bens/serviços, atualizações cadastrais e consumidor RabbitMQ.
+  ```bash
+  cargo test --manifest-path Backend/services/KudibaInventory/Cargo.toml
+  ```
+- **Teste de Integração Ponta-a-Ponta (E2E Smoke Test)**:
+  Valida o ciclo completo via Gateway (`:8080`): login JWT, criação de armazém/artigo, compra, emissão de fatura fiscal FT e baixa de stock orientada a eventos.
+  ```bash
+  make test-e2e
   ```
 
 ---

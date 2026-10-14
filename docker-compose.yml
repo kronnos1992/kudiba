@@ -61,6 +61,7 @@ services:
       - ENVIRONMENT=development
       - AGT_KEY_VERSION=1
       - DB_MAX_CONNECTIONS=20
+      - RABBITMQ_URL=amqp://kudiba:kudiba_rabbit_pass@rabbitmq:5672/%2f
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,6 +114,7 @@ services:
       - DATABASE_URL=postgres://kudiba:kudiba_secret_pass@postgres:5432/kudiba_inventory
       - ENVIRONMENT=development
       - DB_MAX_CONNECTIONS=20
+      - RABBITMQ_URL=amqp://kudiba:kudiba_rabbit_pass@rabbitmq:5672/%2f
     depends_on:
       postgres:
         condition: service_healthy

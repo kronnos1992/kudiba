@@ -823,3 +823,47 @@ async fn test_atualizacao_de_detalhes_de_produto_entidade_e_armazem() {
     assert!(warehouse.is_default);
     assert_eq!(warehouse.address_detail.as_deref(), Some("Viana, Km 14"));
 }
+
+#[test]
+fn test_invoicing_outbox_event_payload_compat() {
+    let tenant_id = Uuid::new_v4();
+    let invoice_id = Uuid::new_v4();
+
+    let invoicing_outbox_json = serde_json::json!({
+        "event_id": Uuid::new_v4(),
+        "tenant_id": tenant_id,
+        "invoice_id": invoice_id,
+        "event_type": "fiscal.document.issued",
+        "payload": {
+            "invoiceId": invoice_id,
+            "tenantId": tenant_id,
+            "documentNumber": "FT 2026A/1",
+            "documentType": "FT",
+            "lines": [
+                {
+                    "lineNumber": 1,
+                    "productCode": "ART-001",
+                    "description": "Artigo Teste",
+                    "quantity": "5",
+                    "unitPrice": "1500.00",
+                    "discountAmount": "0.00",
+                    "taxRate": "14.00",
+                    "lineTotal": "7500.00"
+                }
+            ]
+        },
+        "created_at": chrono::Utc::now()
+    });
+
+    let bytes = serde_json::to_vec(&invoicing_outbox_json).unwrap();
+    let parsed =
+        kudiba_inventory::infrastructure::events::InvoiceEventConsumer::parse_invoice_event(&bytes)
+            .unwrap();
+
+    assert_eq!(parsed.invoice_id, invoice_id);
+    assert_eq!(parsed.tenant_id, tenant_id);
+    assert_eq!(parsed.document_number, "FT 2026A/1");
+    assert_eq!(parsed.lines.len(), 1);
+    assert_eq!(parsed.lines[0].product_code, "ART-001");
+    assert_eq!(parsed.lines[0].quantity, rust_decimal::Decimal::from(5));
+}
