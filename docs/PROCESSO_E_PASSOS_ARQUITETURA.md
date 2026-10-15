@@ -242,3 +242,39 @@ Completando o fluxo financeiro do ERP Kudiba para gestão de fluxos de caixa, co
 8. **Testes Unitários e de Integração**:
    - Testes cobrindo ciclo de vida de caixas, fecho cego, reconciliação, contas bancárias, emissão de recibos e fluxo completo com repositórios em memória na suite `tests/test_domain_and_use_cases.rs`.
 
+---
+
+## 10. Implementação do Microsserviço de Contabilidade Geral & PGC (KudibaAccounting)
+
+Em conformidade legal estrita com o **Plano Geral de Contabilidade de Angola (Decreto n.º 82/01 de 16 de Novembro)** e as normas de prestação de contas fiscais via **SAF-T (AO) Contabilidade (Decreto Executivo n.º 385/20)**, foi concebido e implementado o microsserviço **KudibaAccounting** em **Rust (Axum 0.8 + SQLx 0.9)** sob o padrão Clean Architecture / Ports & Adapters.
+
+### 10.1 Pilares Arquiteturais do KudibaAccounting
+1. **Base de Dados Dedicada (`kudiba_accounting`)**:
+   - Isolamento transacional provisionado via `Backend/deploy/06-accounting-schema.sql` e gerido por `00-init-databases.sh`.
+   - Tabelas estruturadas: `fiscal_years`, `chart_of_accounts`, `cost_centers`, `journals`, `accounting_sequences`, `journal_entries`, `journal_lines` e `processed_events`.
+2. **Estrutura Completa do PGC Angolano (Classes 1 a 8)**:
+   - Suporte nativo às contas fundamentais de Angola (Meios Financeiros Líquidos `1`, Existências `2`, Terceiros `3`, Meios Fixos `4`, Capital e Reservas `5`, Custos por Natureza `6`, Proveitos por Natureza `7` e Resultados `8`).
+   - Handler automático `SeedStandardPgcHandler` que provisiona mais de 40 contas essenciais com naturezas devedoras/credoras e marcações de contas analíticas vs. de síntese.
+3. **Mecanismo Rigoroso de Partidas Dobradas**:
+   - Validação matemática de equilíbrio em cada lançamento contábil:
+     $$\sum \text{Débitos} = \sum \text{Créditos}$$
+   - Lançamentos desequilibrados são liminarmente rejeitados pelo domínio com erro RFC 7807 (`UnbalancedEntry`).
+4. **Gerador Atómico de Sequências por Exercício e Diário**:
+   - Tabela `accounting_sequences` com chave composta `(tenant_id, fiscal_year_id, journal_id)` operada via `SELECT ... FOR UPDATE`, eliminando condições de corrida ou lacunas de numeração sob concorrência intensa.
+5. **Automação de Lançamentos por Regras Contabilísticas Angolanas**:
+   - `AccountingRulesService` converte eventos de negócio em lançamentos contábeis perfeitamente balanceados:
+     - **Faturas a Prazo (FT)**: Débito em Clientes Nacionais (`31.1.1`), Débito de Retenção na Fonte de Imposto Industrial 6,5% (`34.2.1`), Crédito de Vendas (`71.1`) e Crédito de IVA Liquidado 14% (`34.5.3.1`).
+     - **Faturas-Recibo (FR)**: Débito em Caixa Balcão (`11.2`), Crédito de Vendas (`71.1`) e Crédito de IVA Liquidado (`34.5.3.1`).
+     - **Notas de Crédito (NC)**: Estorno proporcional com Débito em Vendas/Regularizações e Crédito em Clientes.
+     - **Expedições de Stock a CMP**: Débito em Custo das Mercadorias Vendidas (`61.1`) e Crédito em Mercadorias (`22.1`).
+     - **Recibos de Tesouraria (RC)**: Débito em Bancos (`12.1`) ou Caixa (`11.1`) e Crédito em Clientes (`31.1.1`).
+6. **Balancete de Verificação a 4 e 6 Colunas**:
+   - `TrialBalanceCalculator` apura automaticamente Saldos Iniciais, Movimentos a Débito/Crédito do período e Saldos Finais Devedor/Credor, garantindo a igualdade de fecho balancete.
+7. **Exportação Fiscal SAF-T (AO) Contabilidade**:
+   - `SaftAccountingGenerator` exporta o documento oficial em XML contendo os blocos `MasterFiles -> GeneralLedgerAccounts` (Tabela 3) e `GeneralLedgerEntries` (Tabela 4) em conformidade com o Decreto Executivo n.º 385/20.
+8. **Consumo de Mensageria RabbitMQ Idempotente**:
+   - Consumidor AMQP na exchange `fiscal.events` registando cada `event_id` na tabela `processed_events` para garantir tolerância a falhas e deduplicação estrita (*exactly-once processing*).
+9. **Integração Perimétrica no API Gateway**:
+   - Rotas expostas em `/api/v1/accounting/*` com autenticação JWT, resolução de tenant, rate-limiting e observabilidade.
+
+

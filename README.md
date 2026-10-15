@@ -124,6 +124,7 @@ Consulte a pasta [`docs/`](docs/) para especificações completas:
 | [**Manual de Desenvolvimento e Deploy**](docs/MANUAL_DE_DESENVOLVIMENTO_E_DEPLOY.md) | Guia prático de setup local, variáveis `.env`, Docker profiles e comandos de testes. |
 | [**Registo Técnico de Evolução**](docs/PROCESSO_E_PASSOS_ARQUITETURA.md) | Diário de bordo das decisões arquiteturais e diagnósticos técnicos superados. |
 | [**Especificação Técnica Mestre do ERP**](docs/ESPECIFICACAO_TECNICA_ERP.md) | Visão de produto, proposta de valor e roadmap inicial. |
+| [**Plano de Contabilidade & PGC**](docs/PLANO_CONTABILIDADE_PGC.md) | Especificação técnica e arquitetural do microsserviço KudibaAccounting, plano de contas angolano e partidas dobradas via RabbitMQ. |
 | [**Decreto Presidencial n.º 71/25 da AGT**](docs/03%20Decreto%20Presidencial%20n.%C2%BA%207125.pdf) | Regulamento oficial sobre emissão e certificação de software fiscal em Angola. |
 
 ---

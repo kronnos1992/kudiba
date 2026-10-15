@@ -292,3 +292,44 @@ Roteado pelo API Gateway em `/api/v1/treasury/*`. Implementado em Rust (Axum + S
 * `TRANSFERENCIA`: Transferência bancária / Depósito direto. Atualiza o saldo da conta bancária de destino (`bank_account_id`).
 * `GPO_REFERENCE`: Pagamento por Referência Multicaixa / Gateway de Pagamentos Online EMIS.
 
+---
+
+## 8. Microsserviço de Contabilidade Geral & PGC: KudibaAccounting (`:8085`)
+
+Roteado pelo API Gateway em `/api/v1/accounting/*`. Implementado em Rust (Axum + SQLx + Clean Architecture) em conformidade estrita com o **Plano Geral de Contabilidade de Angola (Decreto n.º 82/01 de 16 de Novembro)** e com o **SAF-T (AO) Contabilidade (Decreto Executivo n.º 385/20)** com base de dados isolada `kudiba_accounting`.
+
+### 8.1 Resumo de Endpoints
+
+| Método | Caminho | Descrição |
+| :--- | :--- | :--- |
+| `POST` | `/api/v1/accounting/accounts` | Cadastro de nova conta no Plano de Contas da empresa. |
+| `POST` | `/api/v1/accounting/accounts/seed-pgc` | Inicialização automática da estrutura padrão do PGC angolano (>40 contas fundamentais Classes 1 a 8). |
+| `GET` | `/api/v1/accounting/accounts` | Listagem completa do Plano Geral de Contabilidade do tenant. |
+| `GET` | `/api/v1/accounting/accounts/{code}` | Consulta de conta específica por código PGC (ex.: `31.1.1`, `71.1`). |
+| `POST` | `/api/v1/accounting/fiscal-years` | Abertura de novo exercício fiscal (ex.: 2026). Garante unicidade de exercício aberto. |
+| `GET` | `/api/v1/accounting/fiscal-years` | Listagem dos exercícios fiscais registados. |
+| `POST` | `/api/v1/accounting/fiscal-years/{id}/close` | Encerramento formal do exercício fiscal com apuramento de resultados. |
+| `POST` | `/api/v1/accounting/journals` | Registo de diário contabilístico (ex.: `VENDAS`, `COMPRAS`, `CAIXA`, `BANCOS`, `OPERACOES_DIVERSAS`). |
+| `GET` | `/api/v1/accounting/journals` | Listagem de diários contabilísticos disponíveis. |
+| `POST` | `/api/v1/accounting/entries` | Registo de lançamento manual com verificação estrita de partidas dobradas ($\sum D = \sum C$). |
+| `GET` | `/api/v1/accounting/entries` | Listagem de lançamentos com filtros opcionais por exercício fiscal e diário. |
+| `GET` | `/api/v1/accounting/entries/{id}` | Consulta detalhada do cabeçalho do lançamento e das suas linhas discriminadas. |
+| `POST` | `/api/v1/accounting/entries/{id}/reverse` | Estorno atómico de lançamento emitindo lançamento de retificação com partidas inversas. |
+| `GET` | `/api/v1/accounting/reports/trial-balance` | Balancete de Verificação analítico a 4 e 6 colunas (movimentos e saldos finais). |
+| `GET` | `/api/v1/accounting/saft/export` | Exportação de ficheiro de auditoria fiscal SAF-T (AO) Contabilidade em XML (Tabelas 3 e 4). |
+| `POST` | `/api/v1/accounting/events/invoice-issued` | Endpoint síncrono para contabilização de faturas emitidas (FT, FR, NC). |
+| `POST` | `/api/v1/accounting/events/stock-dispatch` | Endpoint síncrono para contabilização do Custo das Mercadorias Vendidas (CMVMC) a CMP. |
+| `POST` | `/api/v1/accounting/events/treasury-receipt` | Endpoint síncrono para contabilização de liquidação de clientes via recibos de tesouraria (RC). |
+
+### 8.2 Classes do PGC Angolano Suportadas
+
+* **Classe 1 — Meios Financeiros Líquidos:** Caixa (`11`), Bancos D.O. (`12`), Aplicações de Tesouraria (`14`).
+* **Classe 2 — Existências:** Mercadorias (`22`), Matérias-Primas (`23`), Produtos Acabados (`25`), Regularização de Existências (`28`).
+* **Classe 3 — Terceiros:** Clientes (`31`), Fornecedores (`32`), Estado e Outros Entes Públicos (`34`), Pessoal (`36`).
+* **Classe 4 — Meios Fixos e Investimentos:** Imobilizações Corpóreas (`42`), Imobilizações Incorpóreas (`43`), Amortizações Acumuladas (`48`).
+* **Classe 5 — Capital e Reservas:** Capital Social (`51`), Reservas Legais (`55`), Resultados Transitados (`58`).
+* **Classe 6 — Custos por Natureza:** Custo das Mercadorias Vendidas e Matérias Consumidas / CMVMC (`61`), Custos com Pessoal (`62`), Fornecimentos e Serviços de Terceiros / FST (`63`), Amortizações do Exercício (`68`).
+* **Classe 7 — Proveitos por Natureza:** Vendas (`71`), Prestações de Serviços (`72`), Proveitos Financeiros (`76`).
+* **Classe 8 — Resultados:** Resultados Operacionais (`81`), Resultados Financeiros (`82`), Resultados Líquidos do Exercício (`88`).
+
+

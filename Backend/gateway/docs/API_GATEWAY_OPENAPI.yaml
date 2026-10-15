@@ -1367,6 +1367,245 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TreasuryReceiptResponse'
+  /api/v1/accounting/accounts:
+    get:
+      summary: Listar Plano de Contas PGC
+      tags:
+      - Contabilidade & PGC
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Lista de contas contábeis cadastradas
+    post:
+      summary: Cadastrar Conta Contábil no PGC
+      tags:
+      - Contabilidade & PGC
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account_code, account_name]
+              properties:
+                account_code: { type: string, example: "31.1.2" }
+                parent_account_code: { type: string, example: "31.1" }
+                account_name: { type: string, example: "Clientes Estrangeiros" }
+                account_nature: { type: string, enum: [DEBIT, CREDIT] }
+                is_analytical: { type: boolean, default: true }
+                saft_grouping_code: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Conta criada com sucesso
+  /api/v1/accounting/accounts/seed-pgc:
+    post:
+      summary: Inicializar Plano Geral de Contabilidade Padrão (Angola - Classes 1 a 8)
+      tags:
+      - Contabilidade & PGC
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Quantidade de contas provisionadas
+  /api/v1/accounting/fiscal-years:
+    get:
+      summary: Listar Exercícios Fiscais
+      tags:
+      - Contabilidade & PGC
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Lista de exercícios econômicos
+    post:
+      summary: Abertura de Novo Exercício Fiscal
+      tags:
+      - Contabilidade & PGC
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [year_code]
+              properties:
+                year_code: { type: integer, example: 2026 }
+      responses:
+        '201':
+          description: Exercício fiscal criado com sucesso
+  /api/v1/accounting/journals:
+    get:
+      summary: Listar Diários Contabilísticos
+      tags:
+      - Contabilidade & PGC
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Lista de diários cadastrados
+    post:
+      summary: Cadastrar Novo Diário Contabilístico
+      tags:
+      - Contabilidade & PGC
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name, journal_type]
+              properties:
+                code: { type: string, example: "CX-01" }
+                name: { type: string, example: "Diário de Caixa Principal" }
+                journal_type: { type: string, enum: [SALES, PURCHASES, CASH, BANK, OPERATIONS, CLOSING] }
+      responses:
+        '201':
+          description: Diário criado com sucesso
+  /api/v1/accounting/entries:
+    get:
+      summary: Listar Lançamentos Contábeis
+      tags:
+      - Contabilidade & PGC
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: fiscal_year_id
+        in: query
+        schema: { type: string, format: uuid }
+      - name: journal_id
+        in: query
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Lista de lançamentos contábeis
+    post:
+      summary: Registrar Lançamento Manual (Partidas Dobradas)
+      tags:
+      - Contabilidade & PGC
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fiscal_year_id, journal_id, entry_date, description, lines]
+              properties:
+                fiscal_year_id: { type: string, format: uuid }
+                journal_id: { type: string, format: uuid }
+                entry_date: { type: string, format: date, example: "2026-03-15" }
+                description: { type: string, example: "Pagamento de Renda das Instalações" }
+                document_reference: { type: string, nullable: true }
+                lines:
+                  type: array
+                  items:
+                    type: object
+                    required: [account_code, debit_amount, credit_amount]
+                    properties:
+                      account_code: { type: string, example: "63.2.1" }
+                      debit_amount: { type: string, example: "500000.00" }
+                      credit_amount: { type: string, example: "0.00" }
+                      description: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Lançamento registrado com sucesso
+  /api/v1/accounting/entries/{id}/reverse:
+    post:
+      summary: Estorno Atómico de Lançamento Contábil
+      tags:
+      - Contabilidade & PGC
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reversal_date, reason]
+              properties:
+                reversal_date: { type: string, format: date }
+                reason: { type: string, example: "Erro de imputação na conta de fornecedor" }
+      responses:
+        '201':
+          description: Lançamento de estorno criado com sucesso
+  /api/v1/accounting/reports/trial-balance:
+    get:
+      summary: Gerar Balancete de Verificação a 4 e 6 Colunas
+      tags:
+      - Contabilidade & PGC
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: fiscal_year_id
+        in: query
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Balancete analítico com movimentos e saldos fechados
+  /api/v1/accounting/saft/export:
+    get:
+      summary: Exportar Ficheiro SAF-T (AO) Contabilidade (XML)
+      tags:
+      - Contabilidade & PGC
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: fiscal_year_id
+        in: query
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Ficheiro XML oficial SAF-T Contabilidade conforme Decreto Executivo n.º 385/20
+          content:
+            application/xml:
+              schema:
+                type: string
 components:
   securitySchemes:
     BearerAuth:
