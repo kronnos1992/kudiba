@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::domain::entities::TreasuryReceipt;
+use crate::domain::entities::{CashMovement, TreasuryReceipt};
 use crate::domain::error::DomainError;
 
 #[async_trait]
@@ -24,4 +24,10 @@ pub trait TreasuryReceiptRepository: Send + Sync {
     ) -> Result<Vec<TreasuryReceipt>, DomainError>;
     async fn next_receipt_number(&self, tenant_id: Uuid, year: i32) -> Result<String, DomainError>;
     async fn save(&self, receipt: &TreasuryReceipt) -> Result<(), DomainError>;
+    async fn save_with_settlement(
+        &self,
+        receipt: &TreasuryReceipt,
+        cash_movement: Option<&CashMovement>,
+        bank_adjustment: Option<(Uuid, rust_decimal::Decimal)>,
+    ) -> Result<(), DomainError>;
 }

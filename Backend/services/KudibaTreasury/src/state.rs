@@ -52,7 +52,6 @@ impl AppState {
         let issue_receipt_cmd = Arc::new(IssueTreasuryReceiptHandler::new(
             receipt_repo.clone(),
             session_repo.clone(),
-            movement_repo.clone(),
             bank_repo.clone(),
         ));
 

@@ -133,6 +133,26 @@ impl TreasuryReceipt {
             )));
         }
 
+        match payment_method {
+            PaymentMethod::Numerario if session_id.is_none() => {
+                return Err(DomainError::ValidationError(
+                    "Pagamentos em Numerário requerem a identificação de uma sessão de caixa aberta".to_string(),
+                ));
+            }
+            PaymentMethod::Transferencia if bank_account_id.is_none() => {
+                return Err(DomainError::ValidationError(
+                    "Pagamentos por Transferência requerem a identificação de uma conta bancária"
+                        .to_string(),
+                ));
+            }
+            PaymentMethod::Multicaixa if session_id.is_none() && bank_account_id.is_none() => {
+                return Err(DomainError::ValidationError(
+                    "Pagamentos por Multicaixa requerem a identificação de uma sessão de caixa ou conta bancária".to_string(),
+                ));
+            }
+            _ => {}
+        }
+
         let now = Utc::now();
         Ok(Self {
             id: Uuid::new_v4(),

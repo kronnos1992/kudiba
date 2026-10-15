@@ -228,7 +228,9 @@ fn test_treasury_receipt_validation() {
         .unwrap(),
     ];
 
-    // Total confere com as linhas (50000)
+    let bank_id = Uuid::new_v4();
+
+    // Total confere com as linhas (50000) e meio de pagamento válido com conta bancária
     let receipt = TreasuryReceipt::new(
         tenant_id,
         "RC 2026/0001".to_string(),
@@ -236,7 +238,7 @@ fn test_treasury_receipt_validation() {
         "Empresa ABC Lda".to_string(),
         Some("5000000000".to_string()),
         None,
-        None,
+        Some(bank_id),
         PaymentMethod::Transferencia,
         dec!(50000),
         Currency::AOA,
@@ -253,14 +255,34 @@ fn test_treasury_receipt_validation() {
         "Empresa ABC Lda".to_string(),
         None,
         None,
-        None,
+        Some(bank_id),
         PaymentMethod::Transferencia,
         dec!(40000), // Diferente de 50000!
         Currency::AOA,
         None,
-        lines,
+        lines.clone(),
     );
     assert!(matches!(mismatch, Err(DomainError::ValidationError(_))));
+
+    // Pagamento em numerário sem sessão deve falhar
+    let cash_no_session = TreasuryReceipt::new(
+        tenant_id,
+        "RC 2026/0003".to_string(),
+        "cust-001".to_string(),
+        "Empresa ABC Lda".to_string(),
+        None,
+        None,
+        None,
+        PaymentMethod::Numerario,
+        dec!(50000),
+        Currency::AOA,
+        None,
+        lines,
+    );
+    assert!(matches!(
+        cash_no_session,
+        Err(DomainError::ValidationError(_))
+    ));
 }
 
 // =============================================================================
@@ -466,11 +488,50 @@ impl BankAccountRepository for MockBankAccountRepository {
         lock.insert(account.id, account.clone());
         Ok(())
     }
+
+    async fn adjust_balance(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        delta: rust_decimal::Decimal,
+    ) -> Result<rust_decimal::Decimal, DomainError> {
+        let mut lock = self.items.lock().unwrap();
+        let account = lock
+            .values_mut()
+            .find(|b| b.tenant_id == tenant_id && b.id == id)
+            .ok_or_else(|| {
+                DomainError::NotFound(format!("Conta bancária '{}' não encontrada", id))
+            })?;
+
+        if delta < rust_decimal::Decimal::ZERO && account.current_balance < -delta {
+            return Err(DomainError::InsufficientFunds(
+                "Saldo bancário insuficiente".to_string(),
+            ));
+        }
+
+        account.current_balance += delta;
+        Ok(account.current_balance)
+    }
 }
 
 #[derive(Default)]
 struct MockTreasuryReceiptRepository {
     items: Mutex<HashMap<Uuid, TreasuryReceipt>>,
+    mov_repo: Mutex<Option<Arc<MockCashMovementRepository>>>,
+    bank_repo: Mutex<Option<Arc<MockBankAccountRepository>>>,
+}
+
+impl MockTreasuryReceiptRepository {
+    fn with_repos(
+        mov_repo: Arc<MockCashMovementRepository>,
+        bank_repo: Arc<MockBankAccountRepository>,
+    ) -> Self {
+        Self {
+            items: Mutex::new(HashMap::new()),
+            mov_repo: Mutex::new(Some(mov_repo)),
+            bank_repo: Mutex::new(Some(bank_repo)),
+        }
+    }
 }
 
 #[async_trait]
@@ -528,8 +589,40 @@ impl TreasuryReceiptRepository for MockTreasuryReceiptRepository {
     }
 
     async fn save(&self, receipt: &TreasuryReceipt) -> Result<(), DomainError> {
-        let mut lock = self.items.lock().unwrap();
-        lock.insert(receipt.id, receipt.clone());
+        <Self as TreasuryReceiptRepository>::save_with_settlement(self, receipt, None, None).await
+    }
+
+    async fn save_with_settlement(
+        &self,
+        receipt: &TreasuryReceipt,
+        cash_movement: Option<&CashMovement>,
+        bank_adjustment: Option<(Uuid, rust_decimal::Decimal)>,
+    ) -> Result<(), DomainError> {
+        {
+            let mut lock = self.items.lock().unwrap();
+            lock.insert(receipt.id, receipt.clone());
+        }
+
+        if let Some(mov) = cash_movement {
+            let mov_repo_opt = self.mov_repo.lock().unwrap().clone();
+            if let Some(mov_repo) = mov_repo_opt {
+                mov_repo.save(mov).await?;
+            }
+        }
+
+        if let Some((bank_id, amount)) = bank_adjustment {
+            let bank_repo_opt = self.bank_repo.lock().unwrap().clone();
+            if let Some(bank_repo) = bank_repo_opt {
+                BankAccountRepository::adjust_balance(
+                    &*bank_repo,
+                    receipt.tenant_id,
+                    bank_id,
+                    amount,
+                )
+                .await?;
+            }
+        }
+
         Ok(())
     }
 }
@@ -542,19 +635,18 @@ async fn test_full_application_use_case_flow() {
     let sess_repo = Arc::new(MockCashSessionRepository::default());
     let mov_repo = Arc::new(MockCashMovementRepository::default());
     let bank_repo = Arc::new(MockBankAccountRepository::default());
-    let rec_repo = Arc::new(MockTreasuryReceiptRepository::default());
+    let rec_repo = Arc::new(MockTreasuryReceiptRepository::with_repos(
+        mov_repo.clone(),
+        bank_repo.clone(),
+    ));
 
     let create_reg = CreateCashRegisterHandler::new(reg_repo.clone());
     let open_sess = OpenCashSessionHandler::new(reg_repo.clone(), sess_repo.clone());
     let close_sess = CloseCashSessionHandler::new(sess_repo.clone(), mov_repo.clone());
     let record_mov = RecordCashMovementHandler::new(sess_repo.clone(), mov_repo.clone());
     let create_bank = CreateBankAccountHandler::new(bank_repo.clone());
-    let issue_receipt = IssueTreasuryReceiptHandler::new(
-        rec_repo.clone(),
-        sess_repo.clone(),
-        mov_repo.clone(),
-        bank_repo.clone(),
-    );
+    let issue_receipt =
+        IssueTreasuryReceiptHandler::new(rec_repo.clone(), sess_repo.clone(), bank_repo.clone());
     let queries = TreasuryQueries::new(
         reg_repo.clone(),
         sess_repo.clone(),
@@ -801,4 +893,89 @@ async fn test_full_application_use_case_flow() {
         Some(DiscrepancyType::Exact)
     );
     assert_eq!(report_after.movements.len(), 3); // Suprimento, Sangria, Recibo
+}
+
+#[tokio::test]
+async fn test_currency_mismatch_in_receipt_issuance() {
+    let tenant_id = Uuid::new_v4();
+
+    let bank_repo = Arc::new(MockBankAccountRepository::default());
+    let rec_repo = Arc::new(MockTreasuryReceiptRepository::default());
+    let sess_repo = Arc::new(MockCashSessionRepository::default());
+
+    let create_bank = CreateBankAccountHandler::new(bank_repo.clone());
+    let issue_receipt = IssueTreasuryReceiptHandler::new(rec_repo, sess_repo, bank_repo);
+
+    let eur_bank = create_bank
+        .execute(
+            tenant_id,
+            CreateBankAccountRequest {
+                bank_name: "Banco Millennium Atlantico".to_string(),
+                account_number: "0055.9999.1111".to_string(),
+                iban: "AO06005500009999111122233".to_string(),
+                currency: Currency::EUR,
+                initial_balance: Some(dec!(1000)),
+            },
+        )
+        .await
+        .unwrap();
+
+    let res = issue_receipt
+        .execute(
+            tenant_id,
+            IssueTreasuryReceiptRequest {
+                customer_id: "cust-999".to_string(),
+                customer_name: "Cliente Luanda".to_string(),
+                customer_nif: None,
+                session_id: None,
+                bank_account_id: Some(eur_bank.id),
+                payment_method: PaymentMethod::Transferencia,
+                total_amount: dec!(50000),
+                currency: Currency::AOA,
+                notes: None,
+                lines: vec![ReceiptLineRequest {
+                    invoice_id: "inv-1".to_string(),
+                    invoice_number: "FT 2026/1".to_string(),
+                    amount_settled: dec!(50000),
+                    notes: None,
+                }],
+            },
+        )
+        .await;
+
+    assert!(matches!(res, Err(DomainError::ValidationError(_))));
+}
+
+#[tokio::test]
+async fn test_bank_account_atomic_adjust_balance() {
+    let tenant_id = Uuid::new_v4();
+    let repo = MockBankAccountRepository::default();
+
+    let account = BankAccount::new(
+        tenant_id,
+        "Banco BFA".to_string(),
+        "0006.1234.5678".to_string(),
+        "AO06000600001234567890123".to_string(),
+        Currency::AOA,
+        dec!(20000),
+    )
+    .unwrap();
+    repo.save(&account).await.unwrap();
+
+    let bal1 = repo
+        .adjust_balance(tenant_id, account.id, dec!(10000))
+        .await
+        .unwrap();
+    assert_eq!(bal1, dec!(30000));
+
+    let bal2 = repo
+        .adjust_balance(tenant_id, account.id, dec!(-15000))
+        .await
+        .unwrap();
+    assert_eq!(bal2, dec!(15000));
+
+    let overdraft = repo
+        .adjust_balance(tenant_id, account.id, dec!(-20000))
+        .await;
+    assert!(matches!(overdraft, Err(DomainError::InsufficientFunds(_))));
 }

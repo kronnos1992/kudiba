@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS kudiba_treasury.cash_sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_tenant ON kudiba_treasury.cash_sessions(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_register ON kudiba_treasury.cash_sessions(register_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON kudiba_treasury.cash_sessions(register_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_open_session_per_register ON kudiba_treasury.cash_sessions (tenant_id, register_id) WHERE status = 'OPEN';
 
 -- 4. MOVIMENTOS DE CAIXA (SANGRIA, SUPRIMENTO, ENTRADA DE VENDA, DESPESA)
 CREATE TABLE IF NOT EXISTS kudiba_treasury.cash_movements (
@@ -136,3 +137,13 @@ CREATE TABLE IF NOT EXISTS kudiba_treasury.treasury_receipt_lines (
 
 CREATE INDEX IF NOT EXISTS idx_receipt_lines_receipt ON kudiba_treasury.treasury_receipt_lines(receipt_id);
 CREATE INDEX IF NOT EXISTS idx_receipt_lines_invoice ON kudiba_treasury.treasury_receipt_lines(invoice_id);
+
+-- 8. SEQUÊNCIAS ATÓMICAS DE TESOURARIA
+CREATE TABLE IF NOT EXISTS kudiba_treasury.treasury_sequences (
+    tenant_id UUID NOT NULL,
+    sequence_type VARCHAR(30) NOT NULL,
+    fiscal_year INT NOT NULL,
+    current_number BIGINT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (tenant_id, sequence_type, fiscal_year)
+);

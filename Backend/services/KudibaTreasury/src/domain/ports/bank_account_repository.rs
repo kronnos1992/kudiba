@@ -19,4 +19,10 @@ pub trait BankAccountRepository: Send + Sync {
     async fn list(&self, tenant_id: Uuid) -> Result<Vec<BankAccount>, DomainError>;
     async fn save(&self, account: &BankAccount) -> Result<(), DomainError>;
     async fn update(&self, account: &BankAccount) -> Result<(), DomainError>;
+    async fn adjust_balance(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        delta: rust_decimal::Decimal,
+    ) -> Result<rust_decimal::Decimal, DomainError>;
 }

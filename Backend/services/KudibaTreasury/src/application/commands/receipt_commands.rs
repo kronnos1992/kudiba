@@ -6,14 +6,13 @@ use crate::application::dto::{IssueTreasuryReceiptRequest, TreasuryReceiptRespon
 use crate::domain::entities::{CashMovement, TreasuryReceipt, TreasuryReceiptLine};
 use crate::domain::error::DomainError;
 use crate::domain::ports::{
-    BankAccountRepository, CashMovementRepository, CashSessionRepository, TreasuryReceiptRepository,
+    BankAccountRepository, CashSessionRepository, TreasuryReceiptRepository,
 };
 use crate::domain::value_objects::{MovementType, PaymentMethod, SessionStatus};
 
 pub struct IssueTreasuryReceiptHandler {
     receipt_repo: Arc<dyn TreasuryReceiptRepository>,
     session_repo: Arc<dyn CashSessionRepository>,
-    movement_repo: Arc<dyn CashMovementRepository>,
     bank_repo: Arc<dyn BankAccountRepository>,
 }
 
@@ -21,13 +20,11 @@ impl IssueTreasuryReceiptHandler {
     pub fn new(
         receipt_repo: Arc<dyn TreasuryReceiptRepository>,
         session_repo: Arc<dyn CashSessionRepository>,
-        movement_repo: Arc<dyn CashMovementRepository>,
         bank_repo: Arc<dyn BankAccountRepository>,
     ) -> Self {
         Self {
             receipt_repo,
             session_repo,
-            movement_repo,
             bank_repo,
         }
     }
@@ -43,6 +40,7 @@ impl IssueTreasuryReceiptHandler {
             .next_receipt_number(tenant_id, year)
             .await?;
 
+        let mut cash_movement: Option<CashMovement> = None;
         if let Some(session_id) = req.session_id {
             let session = self
                 .session_repo
@@ -61,7 +59,10 @@ impl IssueTreasuryReceiptHandler {
                 ));
             }
 
-            if req.payment_method == PaymentMethod::Numerario {
+            if req.payment_method == PaymentMethod::Numerario
+                || (req.payment_method == PaymentMethod::Multicaixa
+                    && req.bank_account_id.is_none())
+            {
                 let reason = format!(
                     "Recebimento de Recibo {} - Cliente: {}",
                     receipt_number, req.customer_name
@@ -75,12 +76,13 @@ impl IssueTreasuryReceiptHandler {
                     reason,
                     session.operator_user_id.clone(),
                 )?;
-                self.movement_repo.save(&movement).await?;
+                cash_movement = Some(movement);
             }
         }
 
+        let mut bank_adjustment: Option<(Uuid, rust_decimal::Decimal)> = None;
         if let Some(bank_account_id) = req.bank_account_id {
-            let mut bank_account = self
+            let bank_account = self
                 .bank_repo
                 .find_by_id(tenant_id, bank_account_id)
                 .await?
@@ -97,8 +99,14 @@ impl IssueTreasuryReceiptHandler {
                 ));
             }
 
-            bank_account.credit(req.total_amount)?;
-            self.bank_repo.update(&bank_account).await?;
+            if bank_account.currency != req.currency {
+                return Err(DomainError::ValidationError(format!(
+                    "A moeda da conta bancária ({}) não coincide com a moeda do recibo ({})",
+                    bank_account.currency, req.currency
+                )));
+            }
+
+            bank_adjustment = Some((bank_account_id, req.total_amount));
         }
 
         let receipt_id = Uuid::new_v4();
@@ -130,7 +138,9 @@ impl IssueTreasuryReceiptHandler {
         )?;
         receipt.id = receipt_id;
 
-        self.receipt_repo.save(&receipt).await?;
+        self.receipt_repo
+            .save_with_settlement(&receipt, cash_movement.as_ref(), bank_adjustment)
+            .await?;
 
         Ok(receipt.into())
     }

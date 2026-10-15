@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::domain::entities::TreasuryReceipt;
+use crate::domain::entities::{CashMovement, TreasuryReceipt};
 use crate::domain::error::DomainError;
 use crate::domain::ports::TreasuryReceiptRepository;
 use crate::infrastructure::persistence::models::{TreasuryReceiptLineRow, TreasuryReceiptRow};
@@ -217,24 +217,53 @@ impl TreasuryReceiptRepository for PostgresTreasuryReceiptRepository {
 
     async fn next_receipt_number(&self, tenant_id: Uuid, year: i32) -> Result<String, DomainError> {
         let prefix = format!("RC {}/", year);
-        let count_row: (i64,) = sqlx::query_as(
+
+        let seq_res: Result<(i64,), sqlx::Error> = sqlx::query_as(
             r#"
-            SELECT COUNT(*)
-            FROM kudiba_treasury.treasury_receipts
-            WHERE tenant_id = $1 AND receipt_number LIKE $2
+            INSERT INTO kudiba_treasury.treasury_sequences (tenant_id, sequence_type, fiscal_year, current_number, updated_at)
+            VALUES ($1, 'RECEIPT', $2, 1, NOW())
+            ON CONFLICT (tenant_id, sequence_type, fiscal_year)
+            DO UPDATE SET current_number = kudiba_treasury.treasury_sequences.current_number + 1, updated_at = NOW()
+            RETURNING current_number
             "#,
         )
         .bind(tenant_id)
-        .bind(format!("{}%", prefix))
+        .bind(year)
         .fetch_one(&self.pool)
-        .await
-        .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        .await;
 
-        let seq = count_row.0 + 1;
+        let seq = match seq_res {
+            Ok((seq,)) => seq,
+            Err(_) => {
+                let count_row: (i64,) = sqlx::query_as(
+                    r#"
+                    SELECT COUNT(*)
+                    FROM kudiba_treasury.treasury_receipts
+                    WHERE tenant_id = $1 AND receipt_number LIKE $2
+                    "#,
+                )
+                .bind(tenant_id)
+                .bind(format!("{}%", prefix))
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+                count_row.0 + 1
+            }
+        };
+
         Ok(format!("{}{:04}", prefix, seq))
     }
 
     async fn save(&self, receipt: &TreasuryReceipt) -> Result<(), DomainError> {
+        self.save_with_settlement(receipt, None, None).await
+    }
+
+    async fn save_with_settlement(
+        &self,
+        receipt: &TreasuryReceipt,
+        cash_movement: Option<&CashMovement>,
+        bank_adjustment: Option<(Uuid, rust_decimal::Decimal)>,
+    ) -> Result<(), DomainError> {
         let mut tx = self
             .pool
             .begin()
@@ -285,6 +314,50 @@ impl TreasuryReceiptRepository for PostgresTreasuryReceiptRepository {
             .execute(&mut *tx)
             .await
             .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        }
+
+        if let Some(movement) = cash_movement {
+            sqlx::query(
+                r#"
+                INSERT INTO kudiba_treasury.cash_movements
+                    (id, tenant_id, session_id, register_id, movement_type, amount, reason, operator_user_id, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                "#,
+            )
+            .bind(movement.id)
+            .bind(movement.tenant_id)
+            .bind(movement.session_id)
+            .bind(movement.register_id)
+            .bind(movement.movement_type)
+            .bind(movement.amount)
+            .bind(&movement.reason)
+            .bind(&movement.operator_user_id)
+            .bind(movement.created_at)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        }
+
+        if let Some((bank_account_id, amount)) = bank_adjustment {
+            let res = sqlx::query(
+                r#"
+                UPDATE kudiba_treasury.bank_accounts
+                SET current_balance = current_balance + $1, updated_at = NOW()
+                WHERE tenant_id = $2 AND id = $3 AND is_active = TRUE
+                "#,
+            )
+            .bind(amount)
+            .bind(receipt.tenant_id)
+            .bind(bank_account_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+            if res.rows_affected() == 0 {
+                return Err(DomainError::ValidationError(
+                    "Conta bancária não encontrada ou inativa para crédito".to_string(),
+                ));
+            }
         }
 
         tx.commit()

@@ -130,4 +130,43 @@ impl BankAccountRepository for PostgresBankAccountRepository {
 
         Ok(())
     }
+
+    async fn adjust_balance(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        delta: rust_decimal::Decimal,
+    ) -> Result<rust_decimal::Decimal, DomainError> {
+        let row: Option<(rust_decimal::Decimal,)> = sqlx::query_as(
+            r#"
+            UPDATE kudiba_treasury.bank_accounts
+            SET current_balance = current_balance + $1, updated_at = NOW()
+            WHERE tenant_id = $2 AND id = $3 AND (current_balance + $1 >= 0 OR $1 >= 0)
+            RETURNING current_balance
+            "#,
+        )
+        .bind(delta)
+        .bind(tenant_id)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+        match row {
+            Some((new_balance,)) => Ok(new_balance),
+            None => {
+                let exists = self.find_by_id(tenant_id, id).await?;
+                if exists.is_none() {
+                    Err(DomainError::NotFound(format!(
+                        "Conta bancária '{}' não encontrada",
+                        id
+                    )))
+                } else {
+                    Err(DomainError::InsufficientFunds(
+                        "Saldo bancário insuficiente para esta operação".to_string(),
+                    ))
+                }
+            }
+        }
+    }
 }
