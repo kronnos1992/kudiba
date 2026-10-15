@@ -5,6 +5,7 @@ members = [
     "services/KudibaInvoicing",
     "services/KudibaInventory",
     "services/KudibaTreasury",
+    "services/KudibaAccounting",
 ]
 
 [profile.release]

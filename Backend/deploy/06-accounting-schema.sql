@@ -1,0 +1,177 @@
+-- =============================================================================
+-- Kudiba ERP — Microsserviço de Contabilidade Geral & PGC Angolano (KudibaAccounting)
+-- Schema DDL: kudiba_accounting
+-- Regulamentação: Decreto n.º 82/01 (PGC Angola) e SAF-T (AO) Decreto Executivo 385/20
+-- =============================================================================
+
+CREATE SCHEMA IF NOT EXISTS kudiba_accounting;
+
+-- 1. TIPOS ENUMERADOS
+DO $$ BEGIN
+    CREATE TYPE kudiba_accounting.fiscal_year_status AS ENUM ('OPEN', 'CLOSING_IN_PROGRESS', 'CLOSED');
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE kudiba_accounting.account_class AS ENUM (
+        'CLASS_1_MEIOS_FINANCEIROS',
+        'CLASS_2_EXISTENCIAS',
+        'CLASS_3_TERCEIROS',
+        'CLASS_4_IMOBILIZACOES',
+        'CLASS_5_CAPITAL_PROPRIO',
+        'CLASS_6_CUSTOS',
+        'CLASS_7_PROVEITOS',
+        'CLASS_8_RESULTADOS'
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE kudiba_accounting.account_nature AS ENUM ('DEBIT', 'CREDIT');
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE kudiba_accounting.journal_type AS ENUM (
+        'SALES',
+        'PURCHASES',
+        'CASH',
+        'BANK',
+        'OPERATIONS',
+        'CLOSING'
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE kudiba_accounting.entry_status AS ENUM ('DRAFT', 'POSTED', 'REVERSED');
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+-- 2. EXERCÍCIOS FISCAIS / ANOS ECONÓMICOS
+CREATE TABLE IF NOT EXISTS kudiba_accounting.fiscal_years (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    year_code INT NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    status kudiba_accounting.fiscal_year_status NOT NULL DEFAULT 'OPEN',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_tenant_fiscal_year UNIQUE (tenant_id, year_code)
+);
+CREATE INDEX IF NOT EXISTS idx_fiscal_years_tenant ON kudiba_accounting.fiscal_years(tenant_id);
+
+-- 3. PLANO GERAL DE CONTAS (PGC ANGOLA)
+CREATE TABLE IF NOT EXISTS kudiba_accounting.chart_of_accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    account_code VARCHAR(30) NOT NULL,
+    parent_account_code VARCHAR(30),
+    account_name VARCHAR(255) NOT NULL,
+    account_class kudiba_accounting.account_class NOT NULL,
+    account_nature kudiba_accounting.account_nature NOT NULL,
+    is_analytical BOOLEAN NOT NULL DEFAULT TRUE,
+    is_system_reserved BOOLEAN NOT NULL DEFAULT FALSE,
+    saft_grouping_code VARCHAR(30),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_tenant_account_code UNIQUE (tenant_id, account_code)
+);
+CREATE INDEX IF NOT EXISTS idx_accounts_tenant ON kudiba_accounting.chart_of_accounts(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_code ON kudiba_accounting.chart_of_accounts(tenant_id, account_code);
+
+-- 4. CENTROS DE CUSTO (CONTABILIDADE ANALÍTICA)
+CREATE TABLE IF NOT EXISTS kudiba_accounting.cost_centers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    code VARCHAR(30) NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_tenant_cost_center UNIQUE (tenant_id, code)
+);
+CREATE INDEX IF NOT EXISTS idx_cost_centers_tenant ON kudiba_accounting.cost_centers(tenant_id);
+
+-- 5. DIÁRIOS CONTABILÍSTICOS
+CREATE TABLE IF NOT EXISTS kudiba_accounting.journals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    code VARCHAR(10) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    journal_type kudiba_accounting.journal_type NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_tenant_journal_code UNIQUE (tenant_id, code)
+);
+CREATE INDEX IF NOT EXISTS idx_journals_tenant ON kudiba_accounting.journals(tenant_id);
+
+-- 6. SEQUENCIADOR ATÓMICO DE LANÇAMENTOS POR DIÁRIO E ANO (ZERO GAP)
+CREATE TABLE IF NOT EXISTS kudiba_accounting.accounting_sequences (
+    tenant_id UUID NOT NULL,
+    journal_code VARCHAR(10) NOT NULL,
+    fiscal_year INT NOT NULL,
+    current_number BIGINT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (tenant_id, journal_code, fiscal_year)
+);
+
+-- 7. CABEÇALHO DO LANÇAMENTO CONTABILÍSTICO (PARTIDAS DOBRADAS)
+CREATE TABLE IF NOT EXISTS kudiba_accounting.journal_entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    fiscal_year_id UUID NOT NULL REFERENCES kudiba_accounting.fiscal_years(id),
+    journal_id UUID NOT NULL REFERENCES kudiba_accounting.journals(id),
+    entry_number BIGINT NOT NULL,
+    transaction_date DATE NOT NULL,
+    system_entry_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    period INT NOT NULL,
+    description TEXT NOT NULL,
+    source_service VARCHAR(50),
+    source_document_type VARCHAR(20),
+    source_document_id UUID,
+    source_document_ref VARCHAR(100),
+    total_debit NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    total_credit NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    status kudiba_accounting.entry_status NOT NULL DEFAULT 'POSTED',
+    reversal_of_entry_id UUID REFERENCES kudiba_accounting.journal_entries(id),
+    created_by UUID,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_tenant_journal_entry UNIQUE (tenant_id, journal_id, fiscal_year_id, entry_number),
+    CONSTRAINT chk_balanced_entry CHECK (total_debit = total_credit)
+);
+CREATE INDEX IF NOT EXISTS idx_entries_tenant_date ON kudiba_accounting.journal_entries(tenant_id, transaction_date);
+CREATE INDEX IF NOT EXISTS idx_entries_source_ref ON kudiba_accounting.journal_entries(tenant_id, source_document_ref);
+
+-- 8. LINHAS DO LANÇAMENTO CONTABILÍSTICO
+CREATE TABLE IF NOT EXISTS kudiba_accounting.journal_lines (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    entry_id UUID NOT NULL REFERENCES kudiba_accounting.journal_entries(id) ON DELETE CASCADE,
+    line_number INT NOT NULL,
+    account_code VARCHAR(30) NOT NULL,
+    description TEXT,
+    debit_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    credit_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    entity_id UUID,
+    cost_center_id UUID REFERENCES kudiba_accounting.cost_centers(id),
+    currency VARCHAR(3) NOT NULL DEFAULT 'AOA',
+    exchange_rate NUMERIC(12, 6) NOT NULL DEFAULT 1.0,
+    foreign_amount NUMERIC(18, 4),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_entry_line UNIQUE (entry_id, line_number),
+    CONSTRAINT chk_positive_line CHECK (debit_amount >= 0 AND credit_amount >= 0),
+    CONSTRAINT chk_single_sided CHECK ((debit_amount > 0 AND credit_amount = 0) OR (credit_amount > 0 AND debit_amount = 0))
+);
+CREATE INDEX IF NOT EXISTS idx_lines_entry ON kudiba_accounting.journal_lines(entry_id);
+CREATE INDEX IF NOT EXISTS idx_lines_account ON kudiba_accounting.journal_lines(tenant_id, account_code);
+
+-- 9. DEDUP / IDEMPOTÊNCIA ACID DE EVENTOS CONSUMIDOS
+CREATE TABLE IF NOT EXISTS kudiba_accounting.processed_events (
+    event_id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL,
+    event_type VARCHAR(100) NOT NULL,
+    source_ref VARCHAR(100) NOT NULL,
+    processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_processed_events_tenant ON kudiba_accounting.processed_events(tenant_id);

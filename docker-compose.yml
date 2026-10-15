@@ -21,6 +21,7 @@ services:
       - FISCAL_ENGINE_GRPC_TARGET=http://fiscal-engine:9090
       - INVENTORY_SERVICE_URL=http://inventory-service:8083
       - TREASURY_SERVICE_URL=http://treasury-service:8084
+      - ACCOUNTING_SERVICE_URL=http://accounting-service:8085
       # Sondas TCP do endpoint /health/services
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -149,6 +150,31 @@ services:
         aliases:
           - treasury-service
           - kudiba-treasury
+
+  # ============================================================================
+  # 6. MICROSSERVIÇO DE CONTABILIDADE GERAL & PGC (RUST / AXUM)
+  # ============================================================================
+  accounting:
+    build:
+      context: ./Backend/services/KudibaAccounting
+      dockerfile: Dockerfile
+    container_name: kudiba-accounting
+    restart: unless-stopped
+    environment:
+      - PORT=8085
+      - RUST_LOG=info,kudiba_accounting=debug
+      - DATABASE_URL=postgres://kudiba:kudiba_secret_pass@postgres:5432/kudiba_accounting
+      - ENVIRONMENT=development
+      - DB_MAX_CONNECTIONS=20
+      - RABBITMQ_URL=amqp://kudiba:kudiba_rabbit_pass@rabbitmq:5672/%2f
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      kudiba-internal-network:
+        aliases:
+          - accounting-service
+          - kudiba-accounting
 
   # ============================================================================
   # 3. ESTADO EFÊMERO & CACHE PERIMÉTRICO (REDIS 7+)

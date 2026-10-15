@@ -1770,6 +1770,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "kudiba-accounting"
+version = "1.0.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "dotenvy",
+ "futures-util",
+ "lapin",
+ "regex",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tower-http 0.7.1",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "kudiba-gateway"
 version = "1.0.0"
 dependencies = [
