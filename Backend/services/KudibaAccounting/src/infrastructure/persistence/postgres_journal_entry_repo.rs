@@ -175,11 +175,42 @@ impl JournalEntryRepository for PostgresJournalEntryRepository {
     }
 
     async fn save(&self, entry: &JournalEntry) -> Result<(), DomainError> {
+        self.save_with_event(entry, None, None, None).await
+    }
+
+    async fn save_with_event(
+        &self,
+        entry: &JournalEntry,
+        event_id: Option<Uuid>,
+        event_type: Option<&str>,
+        source_ref: Option<&str>,
+    ) -> Result<(), DomainError> {
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+        if let Some(orig_id) = entry.reversal_of_entry_id {
+            let res = sqlx::query(
+                r#"
+                UPDATE kudiba_accounting.journal_entries
+                SET status = 'REVERSED'::kudiba_accounting.entry_status
+                WHERE tenant_id = $1 AND id = $2 AND status = 'POSTED'::kudiba_accounting.entry_status
+                "#,
+            )
+            .bind(entry.tenant_id)
+            .bind(orig_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+            if res.rows_affected() == 0 {
+                return Err(DomainError::Conflict(
+                    "O lançamento de origem já foi estornado ou não se encontra em estado confirmado".to_string(),
+                ));
+            }
+        }
 
         sqlx::query(
             r#"
@@ -244,6 +275,23 @@ impl JournalEntryRepository for PostgresJournalEntryRepository {
             .bind(line.exchange_rate)
             .bind(line.foreign_amount)
             .bind(line.created_at)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        }
+
+        if let (Some(ev_id), Some(ev_type), Some(s_ref)) = (event_id, event_type, source_ref) {
+            sqlx::query(
+                r#"
+                INSERT INTO kudiba_accounting.processed_events (event_id, tenant_id, event_type, source_ref, processed_at)
+                VALUES ($1, $2, $3, $4, NOW())
+                ON CONFLICT (event_id) DO NOTHING
+                "#,
+            )
+            .bind(ev_id)
+            .bind(entry.tenant_id)
+            .bind(ev_type)
+            .bind(s_ref)
             .execute(&mut *tx)
             .await
             .map_err(|e| DomainError::DatabaseError(e.to_string()))?;

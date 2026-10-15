@@ -7,7 +7,8 @@ use crate::application::commands::{
 };
 use crate::application::queries::TreasuryQueries;
 use crate::config::Config;
-use crate::infrastructure::events::TreasuryEventConsumer;
+use crate::domain::ports::TreasuryEventPublisher;
+use crate::infrastructure::events::{MultiChannelTreasuryEventPublisher, TreasuryEventConsumer};
 use crate::infrastructure::persistence::{
     PostgresBankAccountRepository, PostgresCashMovementRepository, PostgresCashRegisterRepository,
     PostgresCashSessionRepository, PostgresTreasuryReceiptRepository,
@@ -25,6 +26,7 @@ pub struct AppState {
     pub issue_receipt_cmd: Arc<IssueTreasuryReceiptHandler>,
     pub queries: Arc<TreasuryQueries>,
     pub event_consumer: Arc<TreasuryEventConsumer>,
+    pub event_publisher: Arc<dyn TreasuryEventPublisher>,
 }
 
 impl AppState {
@@ -34,6 +36,10 @@ impl AppState {
         let movement_repo = Arc::new(PostgresCashMovementRepository::new(pool.clone()));
         let bank_repo = Arc::new(PostgresBankAccountRepository::new(pool.clone()));
         let receipt_repo = Arc::new(PostgresTreasuryReceiptRepository::new(pool.clone()));
+
+        let event_publisher: Arc<dyn TreasuryEventPublisher> = Arc::new(
+            MultiChannelTreasuryEventPublisher::new(Some(config.rabbitmq_url.clone())),
+        );
 
         let create_register_cmd = Arc::new(CreateCashRegisterHandler::new(register_repo.clone()));
         let open_session_cmd = Arc::new(OpenCashSessionHandler::new(
@@ -53,6 +59,7 @@ impl AppState {
             receipt_repo.clone(),
             session_repo.clone(),
             bank_repo.clone(),
+            event_publisher.clone(),
         ));
 
         let queries = Arc::new(TreasuryQueries::new(
@@ -78,6 +85,7 @@ impl AppState {
             issue_receipt_cmd,
             queries,
             event_consumer,
+            event_publisher,
         }
     }
 }

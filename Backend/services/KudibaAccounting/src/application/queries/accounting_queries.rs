@@ -64,12 +64,30 @@ impl AccountingQueries {
         to_date: Option<NaiveDate>,
     ) -> Result<TrialBalanceReport, DomainError> {
         let accounts = self.account_repo.list_all(tenant_id).await?;
-        let entries = self
-            .entry_repo
-            .list_entries(tenant_id, None, from_date, to_date, 100_000, 0)
-            .await?;
+        let (opening_entries, period_entries) = if let Some(fd) = from_date {
+            let prior_to_date = fd.pred_opt();
+            let opening = self
+                .entry_repo
+                .list_entries(tenant_id, None, None, prior_to_date, 100_000, 0)
+                .await?;
+            let period = self
+                .entry_repo
+                .list_entries(tenant_id, None, Some(fd), to_date, 100_000, 0)
+                .await?;
+            (opening, period)
+        } else {
+            let period = self
+                .entry_repo
+                .list_entries(tenant_id, None, None, to_date, 100_000, 0)
+                .await?;
+            (Vec::new(), period)
+        };
 
-        Ok(TrialBalanceCalculator::calculate(&accounts, &entries))
+        Ok(TrialBalanceCalculator::calculate_with_opening(
+            &accounts,
+            &opening_entries,
+            &period_entries,
+        ))
     }
 
     pub async fn list_journals(&self, tenant_id: Uuid) -> Result<Vec<Journal>, DomainError> {

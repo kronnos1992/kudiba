@@ -12,8 +12,9 @@ use crate::application::queries::{
 };
 use crate::config::Config;
 use crate::domain::ports::db_session::DbSessionFactory;
+use crate::domain::ports::event_publisher::InventoryEventPublisher;
 use crate::domain::ports::unit_of_work::UnitOfWorkFactory;
-use crate::infrastructure::events::InvoiceEventConsumer;
+use crate::infrastructure::events::{InvoiceEventConsumer, MultiChannelInventoryEventPublisher};
 use crate::infrastructure::persistence::{
     PgSessionFactory, PgUnitOfWorkFactory, PostgresBatchRepository, PostgresEntityRepository,
     PostgresProductRepository, PostgresStockRepository, PostgresWarehouseRepository,
@@ -36,6 +37,7 @@ pub struct AppState {
     pub create_batch_cmd: Arc<CreateBatchCommand>,
     pub update_product_price_cmd: Arc<UpdateProductPriceCommand>,
     pub process_invoice_issued_cmd: Arc<ProcessInvoiceIssuedCommand>,
+    pub event_publisher: Arc<dyn InventoryEventPublisher>,
     pub event_consumer: Arc<InvoiceEventConsumer>,
     pub get_product_query: Arc<GetProductQuery>,
     pub get_entity_query: Arc<GetEntityQuery>,
@@ -126,12 +128,17 @@ impl AppState {
             warehouse_repo.clone(),
         ));
 
+        let event_publisher: Arc<dyn InventoryEventPublisher> = Arc::new(
+            MultiChannelInventoryEventPublisher::new(config.rabbitmq_url.clone()),
+        );
+
         let process_invoice_issued_cmd = Arc::new(ProcessInvoiceIssuedCommand::new(
             uow_factory,
             product_repo.clone(),
             warehouse_repo.clone(),
             stock_repo.clone(),
             batch_repo.clone(),
+            event_publisher.clone(),
         ));
 
         let event_consumer = Arc::new(InvoiceEventConsumer::new(
@@ -165,6 +172,7 @@ impl AppState {
             create_batch_cmd,
             update_product_price_cmd,
             process_invoice_issued_cmd,
+            event_publisher,
             event_consumer,
             get_product_query,
             get_entity_query,

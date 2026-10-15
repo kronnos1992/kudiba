@@ -110,6 +110,17 @@ impl JournalEntry {
         period: i32,
         reason: &str,
     ) -> Result<Self, DomainError> {
+        if self.status == EntryStatus::Reversed {
+            return Err(DomainError::ValidationError(
+                "Lançamento já se encontra estornado".to_string(),
+            ));
+        }
+        if self.status != EntryStatus::Posted {
+            return Err(DomainError::ValidationError(
+                "Apenas lançamentos confirmados podem ser estornados".to_string(),
+            ));
+        }
+
         let entry_id = Uuid::new_v4();
         let mut reversed_lines = Vec::with_capacity(self.lines.len());
 

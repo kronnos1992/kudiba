@@ -50,9 +50,30 @@ impl SaftAccountingGenerator {
         xml.push_str("  </Header>\n");
 
         // MasterFiles - GeneralLedgerAccounts
+        let trial_balance =
+            crate::domain::services::TrialBalanceCalculator::calculate(accounts, entries);
+        let balance_map: std::collections::HashMap<
+            String,
+            &crate::domain::services::TrialBalanceRow,
+        > = trial_balance
+            .rows
+            .iter()
+            .map(|r| (r.account_code.clone(), r))
+            .collect();
+
         xml.push_str("  <MasterFiles>\n");
         xml.push_str("    <GeneralLedgerAccounts>\n");
         for acc in accounts {
+            let (op_deb, op_cred, cl_deb, cl_cred) = match balance_map.get(&acc.account_code) {
+                Some(row) => (
+                    row.opening_debit,
+                    row.opening_credit,
+                    row.closing_debit,
+                    row.closing_credit,
+                ),
+                None => (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO),
+            };
+
             xml.push_str("      <Account>\n");
             xml.push_str(&format!(
                 "        <AccountID>{}</AccountID>\n",
@@ -62,10 +83,22 @@ impl SaftAccountingGenerator {
                 "        <AccountDescription>{}</AccountDescription>\n",
                 acc.account_name
             ));
-            xml.push_str("        <OpeningDebitBalance>0.00</OpeningDebitBalance>\n");
-            xml.push_str("        <OpeningCreditBalance>0.00</OpeningCreditBalance>\n");
-            xml.push_str("        <ClosingDebitBalance>0.00</ClosingDebitBalance>\n");
-            xml.push_str("        <ClosingCreditBalance>0.00</ClosingCreditBalance>\n");
+            xml.push_str(&format!(
+                "        <OpeningDebitBalance>{:.2}</OpeningDebitBalance>\n",
+                op_deb
+            ));
+            xml.push_str(&format!(
+                "        <OpeningCreditBalance>{:.2}</OpeningCreditBalance>\n",
+                op_cred
+            ));
+            xml.push_str(&format!(
+                "        <ClosingDebitBalance>{:.2}</ClosingDebitBalance>\n",
+                cl_deb
+            ));
+            xml.push_str(&format!(
+                "        <ClosingCreditBalance>{:.2}</ClosingCreditBalance>\n",
+                cl_cred
+            ));
             xml.push_str(&format!(
                 "        <GroupingCategory>{}</GroupingCategory>\n",
                 if acc.is_analytical { "AR" } else { "GR" }

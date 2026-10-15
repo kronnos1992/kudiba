@@ -3,8 +3,33 @@ use uuid::Uuid;
 
 use kudiba_inventory::domain::entities::{Product, StockBalance};
 use kudiba_inventory::domain::error::InventoryError;
+use kudiba_inventory::domain::ports::InventoryEventPublisher;
 use kudiba_inventory::domain::services::{CmpCalculator, StockPolicy};
 use kudiba_inventory::domain::value_objects::{ProductType, TaxId, TaxIdKind};
+
+#[derive(Default)]
+struct MockInventoryEventPublisher {
+    published: std::sync::Mutex<Vec<(Uuid, String, chrono::NaiveDate, rust_decimal::Decimal)>>,
+}
+
+#[async_trait::async_trait]
+impl InventoryEventPublisher for MockInventoryEventPublisher {
+    async fn publish_stock_dispatch(
+        &self,
+        tenant_id: Uuid,
+        document_number: &str,
+        movement_date: chrono::NaiveDate,
+        total_cmp_cost: rust_decimal::Decimal,
+    ) -> Result<(), InventoryError> {
+        self.published.lock().unwrap().push((
+            tenant_id,
+            document_number.to_string(),
+            movement_date,
+            total_cmp_cost,
+        ));
+        Ok(())
+    }
+}
 
 #[test]
 fn test_validacao_nif_pessoa_coletiva_angolana() {
@@ -284,6 +309,7 @@ async fn test_processamento_evento_ignora_guias_e_notas_de_credito() {
         Arc::new(PostgresWarehouseRepository::new()),
         Arc::new(PostgresStockRepository::new()),
         Arc::new(PostgresBatchRepository::new()),
+        Arc::new(MockInventoryEventPublisher::default()),
     );
 
     let payload_gt = InvoiceIssuedPayload {
@@ -646,6 +672,7 @@ async fn test_processamento_evento_fatura_com_produtos_fisicos_e_servicos() {
         movements: Mutex::new(vec![]),
     });
 
+    let event_pub = Arc::new(MockInventoryEventPublisher::default());
     let cmd = ProcessInvoiceIssuedCommand::new(
         Arc::new(MockUowFactory),
         Arc::new(MockProductRepo {
@@ -657,6 +684,7 @@ async fn test_processamento_evento_fatura_com_produtos_fisicos_e_servicos() {
         }),
         stock_repo.clone(),
         Arc::new(MockBatchRepo),
+        event_pub.clone(),
     );
 
     let event = InvoiceIssuedPayload {
@@ -690,6 +718,13 @@ async fn test_processamento_evento_fatura_com_produtos_fisicos_e_servicos() {
     assert!(outcome.processed);
     assert_eq!(outcome.movements_recorded, 1);
     assert_eq!(outcome.items_skipped_intangible, 1);
+
+    // Verifica que o evento de saída ao CMP (3 * 3000 = 9.000 Kz) foi publicado para a contabilidade
+    let published_events = event_pub.published.lock().unwrap().clone();
+    assert_eq!(published_events.len(), 1);
+    assert_eq!(published_events[0].0, tenant_id);
+    assert_eq!(published_events[0].1, "FT 2026/100");
+    assert_eq!(published_events[0].3, dec!(9000));
 
     // Verifica que o saldo foi reduzido de 10 para 7 (10 - 3)
     let saved = stock_repo.saved_balance.lock().unwrap().clone().unwrap();

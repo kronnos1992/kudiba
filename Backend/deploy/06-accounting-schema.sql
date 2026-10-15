@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS kudiba_accounting.journal_entries (
     entry_number BIGINT NOT NULL,
     transaction_date DATE NOT NULL,
     system_entry_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    period INT NOT NULL,
+    period INT NOT NULL CHECK (period BETWEEN 1 AND 14),
     description TEXT NOT NULL,
     source_service VARCHAR(50),
     source_document_type VARCHAR(20),
@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS kudiba_accounting.journal_entries (
     total_credit NUMERIC(18, 4) NOT NULL DEFAULT 0,
     status kudiba_accounting.entry_status NOT NULL DEFAULT 'POSTED',
     reversal_of_entry_id UUID REFERENCES kudiba_accounting.journal_entries(id),
+    hash VARCHAR(64),
     created_by UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_tenant_journal_entry UNIQUE (tenant_id, journal_id, fiscal_year_id, entry_number),
@@ -142,12 +143,14 @@ CREATE TABLE IF NOT EXISTS kudiba_accounting.journal_entries (
 );
 CREATE INDEX IF NOT EXISTS idx_entries_tenant_date ON kudiba_accounting.journal_entries(tenant_id, transaction_date);
 CREATE INDEX IF NOT EXISTS idx_entries_source_ref ON kudiba_accounting.journal_entries(tenant_id, source_document_ref);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tenant_source_entry ON kudiba_accounting.journal_entries(tenant_id, source_service, source_document_ref)
+WHERE source_document_ref IS NOT NULL AND status = 'POSTED' AND reversal_of_entry_id IS NULL;
 
 -- 8. LINHAS DO LANÇAMENTO CONTABILÍSTICO
 CREATE TABLE IF NOT EXISTS kudiba_accounting.journal_lines (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
-    entry_id UUID NOT NULL REFERENCES kudiba_accounting.journal_entries(id) ON DELETE CASCADE,
+    entry_id UUID NOT NULL REFERENCES kudiba_accounting.journal_entries(id) ON DELETE RESTRICT,
     line_number INT NOT NULL,
     account_code VARCHAR(30) NOT NULL,
     description TEXT,
@@ -155,8 +158,9 @@ CREATE TABLE IF NOT EXISTS kudiba_accounting.journal_lines (
     credit_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
     entity_id UUID,
     cost_center_id UUID REFERENCES kudiba_accounting.cost_centers(id),
+    project_id UUID,
     currency VARCHAR(3) NOT NULL DEFAULT 'AOA',
-    exchange_rate NUMERIC(12, 6) NOT NULL DEFAULT 1.0,
+    exchange_rate NUMERIC(15, 6) NOT NULL DEFAULT 1.000000,
     foreign_amount NUMERIC(18, 4),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_entry_line UNIQUE (entry_id, line_number),

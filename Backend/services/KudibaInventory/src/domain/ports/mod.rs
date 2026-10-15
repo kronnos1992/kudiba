@@ -1,5 +1,8 @@
 pub mod db_session;
+pub mod event_publisher;
 pub mod unit_of_work;
+
+pub use event_publisher::InventoryEventPublisher;
 
 use async_trait::async_trait;
 use uuid::Uuid;

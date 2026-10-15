@@ -219,6 +219,7 @@ services:
       - ./Backend/deploy/03-retire-demo-admin.sql:/docker-entrypoint-initdb.d/03-retire-demo-admin.sql:ro
       - ./Backend/deploy/04-inventory-schema.sql:/docker-entrypoint-initdb.d/04-inventory-schema.sql:ro
       - ./Backend/deploy/05-treasury-schema.sql:/docker-entrypoint-initdb.d/05-treasury-schema.sql:ro
+      - ./Backend/deploy/06-accounting-schema.sql:/docker-entrypoint-initdb.d/06-accounting-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kudiba -d kudiba_erp"]
       interval: 5s

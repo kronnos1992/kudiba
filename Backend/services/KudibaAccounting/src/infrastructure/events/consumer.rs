@@ -79,6 +79,169 @@ impl AccountingEventConsumer {
         }
     }
 
+    pub fn parse_incoming_event(data: &[u8]) -> Option<AccountingEvent> {
+        if let Ok(event) = serde_json::from_slice::<AccountingEvent>(data) {
+            return Some(event);
+        }
+
+        let v: serde_json::Value = serde_json::from_slice(data).ok()?;
+        let event_type = v.get("event_type").and_then(|s| s.as_str())?;
+        let event_id = v
+            .get("event_id")
+            .and_then(|id| id.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .unwrap_or_else(Uuid::new_v4);
+        let tenant_id = v
+            .get("tenant_id")
+            .and_then(|id| id.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok())?;
+
+        let payload = v.get("payload").unwrap_or(&serde_json::Value::Null);
+
+        match event_type {
+            "fiscal.document.issued" | "invoice.issued" => {
+                let doc_type = payload
+                    .get("documentType")
+                    .or_else(|| payload.get("document_type"))
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("FT")
+                    .to_string();
+
+                let doc_number = payload
+                    .get("documentNumber")
+                    .or_else(|| payload.get("document_number"))
+                    .and_then(|s| s.as_str())?
+                    .to_string();
+
+                let customer_name = payload
+                    .get("customerName")
+                    .or_else(|| payload.get("customer_name"))
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("Consumidor Final")
+                    .to_string();
+
+                let issue_date = payload
+                    .get("issuedAt")
+                    .or_else(|| payload.get("issued_at"))
+                    .and_then(|s| s.as_str())
+                    .map(parse_date_str)
+                    .unwrap_or_else(|| chrono::Utc::now().date_naive());
+
+                let net_total = payload
+                    .get("netTotal")
+                    .or_else(|| payload.get("net_total"))
+                    .map(parse_dec_val)
+                    .unwrap_or(Decimal::ZERO);
+
+                let tax_total = payload
+                    .get("taxTotal")
+                    .or_else(|| payload.get("tax_total"))
+                    .map(parse_dec_val)
+                    .unwrap_or(Decimal::ZERO);
+
+                let retention_total = payload
+                    .get("withholdingTotal")
+                    .or_else(|| payload.get("withholding_total"))
+                    .or_else(|| payload.get("retention_total"))
+                    .map(parse_dec_val)
+                    .unwrap_or(Decimal::ZERO);
+
+                let gross_total = payload
+                    .get("grossTotal")
+                    .or_else(|| payload.get("gross_total"))
+                    .map(parse_dec_val)
+                    .unwrap_or(Decimal::ZERO);
+
+                Some(AccountingEvent::InvoiceIssued {
+                    event_id,
+                    tenant_id,
+                    doc_type,
+                    doc_number,
+                    customer_name,
+                    issue_date,
+                    net_total,
+                    tax_total,
+                    retention_total,
+                    gross_total,
+                })
+            }
+            "inventory.stock_movement.dispatched"
+            | "stock.movement.dispatched"
+            | "inventory.stock_dispatch" => {
+                let doc_ref = payload
+                    .get("documentRef")
+                    .or_else(|| payload.get("doc_ref"))
+                    .and_then(|s| s.as_str())?
+                    .to_string();
+
+                let movement_date = payload
+                    .get("movementDate")
+                    .or_else(|| payload.get("movement_date"))
+                    .and_then(|s| s.as_str())
+                    .map(parse_date_str)
+                    .unwrap_or_else(|| chrono::Utc::now().date_naive());
+
+                let cmp_total_cost = payload
+                    .get("cmpTotalCost")
+                    .or_else(|| payload.get("cmp_total_cost"))
+                    .map(parse_dec_val)
+                    .unwrap_or(Decimal::ZERO);
+
+                Some(AccountingEvent::StockDispatch {
+                    event_id,
+                    tenant_id,
+                    doc_ref,
+                    movement_date,
+                    cmp_total_cost,
+                })
+            }
+            "treasury.receipt.issued" | "receipt.issued" => {
+                let receipt_number = payload
+                    .get("receiptNumber")
+                    .or_else(|| payload.get("receipt_number"))
+                    .and_then(|s| s.as_str())?
+                    .to_string();
+
+                let customer_name = payload
+                    .get("customerName")
+                    .or_else(|| payload.get("customer_name"))
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("Cliente")
+                    .to_string();
+
+                let receipt_date = payload
+                    .get("receiptDate")
+                    .or_else(|| payload.get("receipt_date"))
+                    .and_then(|s| s.as_str())
+                    .map(parse_date_str)
+                    .unwrap_or_else(|| chrono::Utc::now().date_naive());
+
+                let amount = payload
+                    .get("amount")
+                    .or_else(|| payload.get("grossTotal"))
+                    .map(parse_dec_val)
+                    .unwrap_or(Decimal::ZERO);
+
+                let is_bank = payload
+                    .get("isBank")
+                    .or_else(|| payload.get("is_bank"))
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(false);
+
+                Some(AccountingEvent::TreasuryReceipt {
+                    event_id,
+                    tenant_id,
+                    receipt_number,
+                    customer_name,
+                    receipt_date,
+                    amount,
+                    is_bank,
+                })
+            }
+            _ => None,
+        }
+    }
+
     pub fn sender(&self) -> mpsc::Sender<AccountingEvent> {
         self.sender.clone()
     }
@@ -344,8 +507,18 @@ impl AccountingEventConsumer {
                                             delivery = consumer.next() => {
                                                 match delivery {
                                                     Some(Ok(delivery)) => {
-                                                        if let Ok(event) = serde_json::from_slice::<AccountingEvent>(&delivery.data) {
-                                                            let _ = sender.send(event).await;
+                                                        match Self::parse_incoming_event(&delivery.data) {
+                                                            Some(event) => {
+                                                                if let Err(e) = sender.send(event).await {
+                                                                    tracing::error!(error = %e, "Erro ao enfileirar evento de contabilidade");
+                                                                }
+                                                            }
+                                                            None => {
+                                                                tracing::warn!(
+                                                                    raw = %String::from_utf8_lossy(&delivery.data),
+                                                                    "Mensagem AMQP ignorada por formato não reconhecido"
+                                                                );
+                                                            }
                                                         }
                                                         let _ = delivery.ack(BasicAckOptions::default()).await;
                                                     }
@@ -385,4 +558,26 @@ impl AccountingEventConsumer {
             }
         }
     }
+}
+
+fn parse_dec_val(v: &serde_json::Value) -> Decimal {
+    if let Some(s) = v.as_str() {
+        s.parse::<Decimal>().unwrap_or(Decimal::ZERO)
+    } else if let Some(n) = v.as_f64() {
+        Decimal::try_from(n).unwrap_or(Decimal::ZERO)
+    } else if let Some(n) = v.as_i64() {
+        Decimal::from(n)
+    } else {
+        Decimal::ZERO
+    }
+}
+
+fn parse_date_str(s: &str) -> NaiveDate {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return dt.date_naive();
+    }
+    if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        return d;
+    }
+    chrono::Utc::now().date_naive()
 }

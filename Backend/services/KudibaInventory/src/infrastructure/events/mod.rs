@@ -15,6 +15,9 @@ use crate::application::commands::ProcessInvoiceIssuedCommand;
 use crate::application::dto::{InvoiceIssuedPayload, ProcessInvoiceIssuedResult};
 use crate::domain::error::InventoryError;
 
+pub mod publisher;
+pub use publisher::MultiChannelInventoryEventPublisher;
+
 pub struct InvoiceEventConsumer {
     command: Arc<ProcessInvoiceIssuedCommand>,
     rabbitmq_url: Option<String>,

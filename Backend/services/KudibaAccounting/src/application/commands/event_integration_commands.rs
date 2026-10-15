@@ -106,9 +106,13 @@ impl ProcessInvoiceIssuedCommand {
             gross_total,
         )?;
 
-        self.entry_repo.save(&entry).await?;
         self.entry_repo
-            .mark_event_processed(tenant_id, event_id, "fiscal.document.issued", doc_number)
+            .save_with_event(
+                &entry,
+                Some(event_id),
+                Some("fiscal.document.issued"),
+                Some(doc_number),
+            )
             .await?;
 
         Ok(Some(entry))
@@ -199,9 +203,13 @@ impl ProcessStockDispatchCommand {
             cmp_total_cost,
         )?;
 
-        self.entry_repo.save(&entry).await?;
         self.entry_repo
-            .mark_event_processed(tenant_id, event_id, "inventory.stock_dispatch", doc_ref)
+            .save_with_event(
+                &entry,
+                Some(event_id),
+                Some("inventory.stock_dispatch"),
+                Some(doc_ref),
+            )
             .await?;
 
         Ok(Some(entry))
@@ -312,13 +320,12 @@ impl ProcessTreasuryReceiptCommand {
             is_bank,
         )?;
 
-        self.entry_repo.save(&entry).await?;
         self.entry_repo
-            .mark_event_processed(
-                tenant_id,
-                event_id,
-                "treasury.receipt.issued",
-                receipt_number,
+            .save_with_event(
+                &entry,
+                Some(event_id),
+                Some("treasury.receipt.issued"),
+                Some(receipt_number),
             )
             .await?;
 

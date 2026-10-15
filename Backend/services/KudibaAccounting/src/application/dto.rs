@@ -95,3 +95,28 @@ pub struct JournalLineResponse {
     pub credit_amount: Decimal,
     pub entity_id: Option<Uuid>,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CurrencyRevaluationRequest {
+    pub fiscal_year: i32,
+    pub period: i32,
+    pub revaluation_date: NaiveDate,
+    pub target_account_code: String,
+    pub currency: Currency,
+    pub foreign_balance: Decimal,
+    pub new_exchange_rate: Decimal,
+    pub previous_book_value_kz: Decimal,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CurrencyRevaluationResponse {
+    pub entry_id: Uuid,
+    pub entry_number: i64,
+    pub target_account_code: String,
+    pub currency: String,
+    pub exchange_difference: Decimal,
+    pub is_gain: bool,
+    pub offset_account_code: String,
+    pub new_book_value_kz: Decimal,
+}

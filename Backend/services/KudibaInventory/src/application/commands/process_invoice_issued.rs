@@ -7,7 +7,8 @@ use crate::domain::error::InventoryError;
 use crate::domain::ports::db_session::DbSession;
 use crate::domain::ports::unit_of_work::UnitOfWorkFactory;
 use crate::domain::ports::{
-    BatchRepository, ProductRepository, StockRepository, WarehouseRepository,
+    BatchRepository, InventoryEventPublisher, ProductRepository, StockRepository,
+    WarehouseRepository,
 };
 use crate::domain::services::StockPolicy;
 
@@ -17,6 +18,7 @@ pub struct ProcessInvoiceIssuedCommand {
     warehouse_repo: Arc<dyn WarehouseRepository>,
     stock_repo: Arc<dyn StockRepository>,
     batch_repo: Arc<dyn BatchRepository>,
+    event_publisher: Arc<dyn InventoryEventPublisher>,
 }
 
 impl ProcessInvoiceIssuedCommand {
@@ -26,6 +28,7 @@ impl ProcessInvoiceIssuedCommand {
         warehouse_repo: Arc<dyn WarehouseRepository>,
         stock_repo: Arc<dyn StockRepository>,
         batch_repo: Arc<dyn BatchRepository>,
+        event_publisher: Arc<dyn InventoryEventPublisher>,
     ) -> Self {
         Self {
             uow_factory,
@@ -33,6 +36,7 @@ impl ProcessInvoiceIssuedCommand {
             warehouse_repo,
             stock_repo,
             batch_repo,
+            event_publisher,
         }
     }
 
@@ -60,8 +64,29 @@ impl ProcessInvoiceIssuedCommand {
             .process(uow.as_mut(), tenant_id, user_id, &payload)
             .await
         {
-            Ok(result) => {
+            Ok((result, total_cmp_cost)) => {
                 uow.commit().await?;
+
+                if result.movements_recorded > 0 && total_cmp_cost > rust_decimal::Decimal::ZERO {
+                    let today = chrono::Utc::now().date_naive();
+                    if let Err(e) = self
+                        .event_publisher
+                        .publish_stock_dispatch(
+                            tenant_id,
+                            &payload.document_number,
+                            today,
+                            total_cmp_cost,
+                        )
+                        .await
+                    {
+                        tracing::warn!(
+                            error = %e,
+                            doc = %payload.document_number,
+                            "Falha ao publicar evento de saída de stock ao CMP para contabilidade"
+                        );
+                    }
+                }
+
                 Ok(result)
             }
             Err(err) => {
@@ -82,9 +107,10 @@ impl ProcessInvoiceIssuedCommand {
         tenant_id: Uuid,
         user_id: Uuid,
         payload: &InvoiceIssuedPayload,
-    ) -> Result<ProcessInvoiceIssuedResult, InventoryError> {
+    ) -> Result<(ProcessInvoiceIssuedResult, rust_decimal::Decimal), InventoryError> {
         let mut movements_recorded = 0;
         let mut items_skipped_intangible = 0;
+        let mut total_cmp_cost = rust_decimal::Decimal::ZERO;
 
         let has_stockable_lines = payload
             .lines
@@ -198,15 +224,19 @@ impl ProcessInvoiceIssuedCommand {
 
             self.stock_repo.record_movement(session, &movement).await?;
             movements_recorded += 1;
+            total_cmp_cost += line.quantity * product.current_cmp;
         }
 
-        Ok(ProcessInvoiceIssuedResult {
-            invoice_id: payload.invoice_id,
-            document_number: payload.document_number.clone(),
-            document_type: payload.document_type.clone(),
-            processed: true,
-            movements_recorded,
-            items_skipped_intangible,
-        })
+        Ok((
+            ProcessInvoiceIssuedResult {
+                invoice_id: payload.invoice_id,
+                document_number: payload.document_number.clone(),
+                document_type: payload.document_type.clone(),
+                processed: true,
+                movements_recorded,
+                items_skipped_intangible,
+            },
+            total_cmp_cost,
+        ))
     }
 }

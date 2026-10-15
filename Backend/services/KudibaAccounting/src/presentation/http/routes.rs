@@ -5,13 +5,13 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::application::dto::{
-    AccountResponse, CreateAccountRequest, CreateFiscalYearRequest, JournalEntryResponse,
-    JournalLineResponse, PostManualEntryRequest, ReverseEntryRequest,
+    AccountResponse, CreateAccountRequest, CreateFiscalYearRequest, CurrencyRevaluationRequest,
+    JournalEntryResponse, JournalLineResponse, PostManualEntryRequest, ReverseEntryRequest,
 };
 use crate::domain::error::DomainError;
 use crate::infrastructure::saft::SaftAccountingGenerator;
@@ -508,6 +508,16 @@ pub struct TrialBalanceQuery {
     pub to_date: Option<NaiveDate>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SaftExportQuery {
+    pub from_date: Option<NaiveDate>,
+    pub to_date: Option<NaiveDate>,
+    pub year: Option<i32>,
+    pub fiscal_year: Option<i32>,
+    pub company_name: Option<String>,
+    pub tax_registration_number: Option<String>,
+}
+
 pub async fn get_trial_balance_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -526,7 +536,7 @@ pub async fn get_trial_balance_handler(
 pub async fn export_saft_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(q): Query<TrialBalanceQuery>,
+    Query(q): Query<SaftExportQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
     let tenant_id = extract_tenant_id(&headers)?;
     let accounts = state
@@ -545,7 +555,11 @@ pub async fn export_saft_handler(
         .await
         .map_err(map_domain_error)?;
 
-    let fiscal_year = 2026;
+    let fiscal_year = q
+        .fiscal_year
+        .or(q.year)
+        .or_else(|| q.to_date.map(|d| d.year()))
+        .unwrap_or(2026);
     let start_date = q
         .from_date
         .unwrap_or_else(|| NaiveDate::from_ymd_opt(fiscal_year, 1, 1).unwrap());
@@ -553,10 +567,27 @@ pub async fn export_saft_handler(
         .to_date
         .unwrap_or_else(|| NaiveDate::from_ymd_opt(fiscal_year, 12, 31).unwrap());
 
+    let company_name = q
+        .company_name
+        .as_deref()
+        .or_else(|| headers.get("X-Company-Name").and_then(|h| h.to_str().ok()))
+        .unwrap_or("Kudiba Enterprise Lda");
+
+    let tax_id = q
+        .tax_registration_number
+        .as_deref()
+        .or_else(|| {
+            headers
+                .get("X-Company-Tax-ID")
+                .or_else(|| headers.get("X-Tenant-NIF"))
+                .and_then(|h| h.to_str().ok())
+        })
+        .unwrap_or("5412345678");
+
     let xml = SaftAccountingGenerator::generate_xml(
         tenant_id,
-        "Kudiba Enterprise Lda",
-        "5412345678",
+        company_name,
+        tax_id,
         fiscal_year,
         start_date,
         end_date,
@@ -576,6 +607,21 @@ pub async fn export_saft_handler(
         ],
         xml,
     ))
+}
+
+pub async fn revalue_currency_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CurrencyRevaluationRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let resp = state
+        .revalue_currency
+        .execute(tenant_id, payload, None)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok((StatusCode::CREATED, Json(resp)))
 }
 
 pub fn create_router(state: AppState) -> Router {
@@ -613,5 +659,9 @@ pub fn create_router(state: AppState) -> Router {
             get(get_trial_balance_handler),
         )
         .route("/api/v1/accounting/saft", get(export_saft_handler))
+        .route(
+            "/api/v1/accounting/currency-revaluation",
+            post(revalue_currency_handler),
+        )
         .with_state(state)
 }

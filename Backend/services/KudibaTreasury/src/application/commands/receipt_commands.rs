@@ -6,7 +6,7 @@ use crate::application::dto::{IssueTreasuryReceiptRequest, TreasuryReceiptRespon
 use crate::domain::entities::{CashMovement, TreasuryReceipt, TreasuryReceiptLine};
 use crate::domain::error::DomainError;
 use crate::domain::ports::{
-    BankAccountRepository, CashSessionRepository, TreasuryReceiptRepository,
+    BankAccountRepository, CashSessionRepository, TreasuryEventPublisher, TreasuryReceiptRepository,
 };
 use crate::domain::value_objects::{MovementType, PaymentMethod, SessionStatus};
 
@@ -14,6 +14,7 @@ pub struct IssueTreasuryReceiptHandler {
     receipt_repo: Arc<dyn TreasuryReceiptRepository>,
     session_repo: Arc<dyn CashSessionRepository>,
     bank_repo: Arc<dyn BankAccountRepository>,
+    event_publisher: Arc<dyn TreasuryEventPublisher>,
 }
 
 impl IssueTreasuryReceiptHandler {
@@ -21,11 +22,13 @@ impl IssueTreasuryReceiptHandler {
         receipt_repo: Arc<dyn TreasuryReceiptRepository>,
         session_repo: Arc<dyn CashSessionRepository>,
         bank_repo: Arc<dyn BankAccountRepository>,
+        event_publisher: Arc<dyn TreasuryEventPublisher>,
     ) -> Self {
         Self {
             receipt_repo,
             session_repo,
             bank_repo,
+            event_publisher,
         }
     }
 
@@ -141,6 +144,10 @@ impl IssueTreasuryReceiptHandler {
         self.receipt_repo
             .save_with_settlement(&receipt, cash_movement.as_ref(), bank_adjustment)
             .await?;
+
+        if let Err(e) = self.event_publisher.publish_receipt_issued(&receipt).await {
+            tracing::warn!(error = %e, receipt = %receipt.receipt_number, "Falha ao publicar evento de recibo de tesouraria emitido");
+        }
 
         Ok(receipt.into())
     }

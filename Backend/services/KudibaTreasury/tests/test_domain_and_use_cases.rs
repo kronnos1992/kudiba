@@ -20,12 +20,37 @@ use kudiba_treasury::domain::entities::{
 use kudiba_treasury::domain::error::DomainError;
 use kudiba_treasury::domain::ports::{
     BankAccountRepository, CashMovementRepository, CashRegisterRepository, CashSessionRepository,
-    TreasuryReceiptRepository,
+    TreasuryEventPublisher, TreasuryReceiptRepository,
 };
 use kudiba_treasury::domain::services::{DiscrepancyType, ReconciliationService};
 use kudiba_treasury::domain::value_objects::{
     Currency, MovementType, PaymentMethod, SessionStatus,
 };
+use kudiba_treasury::infrastructure::events::TreasuryEventConsumer;
+
+#[derive(Default)]
+struct MockTreasuryEventPublisher {
+    published: Mutex<Vec<TreasuryReceipt>>,
+}
+
+#[async_trait]
+impl TreasuryEventPublisher for MockTreasuryEventPublisher {
+    async fn publish_receipt_issued(&self, receipt: &TreasuryReceipt) -> Result<(), DomainError> {
+        self.published.lock().unwrap().push(receipt.clone());
+        Ok(())
+    }
+}
+
+struct FailingTreasuryEventPublisher;
+
+#[async_trait]
+impl TreasuryEventPublisher for FailingTreasuryEventPublisher {
+    async fn publish_receipt_issued(&self, _receipt: &TreasuryReceipt) -> Result<(), DomainError> {
+        Err(DomainError::DatabaseError(
+            "AMQP connection refused".to_string(),
+        ))
+    }
+}
 
 #[test]
 fn test_cash_register_lifecycle() {
@@ -645,8 +670,13 @@ async fn test_full_application_use_case_flow() {
     let close_sess = CloseCashSessionHandler::new(sess_repo.clone(), mov_repo.clone());
     let record_mov = RecordCashMovementHandler::new(sess_repo.clone(), mov_repo.clone());
     let create_bank = CreateBankAccountHandler::new(bank_repo.clone());
-    let issue_receipt =
-        IssueTreasuryReceiptHandler::new(rec_repo.clone(), sess_repo.clone(), bank_repo.clone());
+    let event_pub = Arc::new(MockTreasuryEventPublisher::default());
+    let issue_receipt = IssueTreasuryReceiptHandler::new(
+        rec_repo.clone(),
+        sess_repo.clone(),
+        bank_repo.clone(),
+        event_pub.clone(),
+    );
     let queries = TreasuryQueries::new(
         reg_repo.clone(),
         sess_repo.clone(),
@@ -844,6 +874,7 @@ async fn test_full_application_use_case_flow() {
 
     assert_eq!(receipt_bank.total_amount, dec!(50000));
     assert_eq!(receipt_bank.lines.len(), 2);
+    assert_eq!(event_pub.published.lock().unwrap().len(), 2);
 
     // Saldo bancário após crédito: 100000 + 50000 = 150000
     let updated_bank = queries
@@ -904,7 +935,8 @@ async fn test_currency_mismatch_in_receipt_issuance() {
     let sess_repo = Arc::new(MockCashSessionRepository::default());
 
     let create_bank = CreateBankAccountHandler::new(bank_repo.clone());
-    let issue_receipt = IssueTreasuryReceiptHandler::new(rec_repo, sess_repo, bank_repo);
+    let event_pub = Arc::new(MockTreasuryEventPublisher::default());
+    let issue_receipt = IssueTreasuryReceiptHandler::new(rec_repo, sess_repo, bank_repo, event_pub);
 
     let eur_bank = create_bank
         .execute(
@@ -978,4 +1010,100 @@ async fn test_bank_account_atomic_adjust_balance() {
         .adjust_balance(tenant_id, account.id, dec!(-20000))
         .await;
     assert!(matches!(overdraft, Err(DomainError::InsufficientFunds(_))));
+}
+
+#[tokio::test]
+async fn test_receipt_issuance_graceful_on_event_failure() {
+    let tenant_id = Uuid::new_v4();
+    let bank_repo = Arc::new(MockBankAccountRepository::default());
+    let rec_repo = Arc::new(MockTreasuryReceiptRepository::default());
+    let sess_repo = Arc::new(MockCashSessionRepository::default());
+    let event_pub = Arc::new(FailingTreasuryEventPublisher);
+
+    let create_bank = CreateBankAccountHandler::new(bank_repo.clone());
+    let bank_acc = create_bank
+        .execute(
+            tenant_id,
+            CreateBankAccountRequest {
+                bank_name: "BFA".to_string(),
+                account_number: "0001.0002.0003".to_string(),
+                iban: "AO06000600000001000200034".to_string(),
+                currency: Currency::AOA,
+                initial_balance: Some(dec!(100000)),
+            },
+        )
+        .await
+        .unwrap();
+
+    let issue_receipt =
+        IssueTreasuryReceiptHandler::new(rec_repo.clone(), sess_repo, bank_repo, event_pub);
+
+    let res = issue_receipt
+        .execute(
+            tenant_id,
+            IssueTreasuryReceiptRequest {
+                customer_id: "cust-01".to_string(),
+                customer_name: "Empresa Teste Lda".to_string(),
+                customer_nif: None,
+                session_id: None,
+                bank_account_id: Some(bank_acc.id),
+                payment_method: PaymentMethod::Transferencia,
+                total_amount: dec!(15000),
+                currency: Currency::AOA,
+                notes: None,
+                lines: vec![ReceiptLineRequest {
+                    invoice_id: "inv-10".to_string(),
+                    invoice_number: "FT 2026/10".to_string(),
+                    amount_settled: dec!(15000),
+                    notes: None,
+                }],
+            },
+        )
+        .await;
+
+    assert!(res.is_ok());
+    let receipt = res.unwrap();
+    assert_eq!(receipt.total_amount, dec!(15000));
+    assert_eq!(rec_repo.items.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn test_parse_incoming_invoice_direct_and_outbox_envelope() {
+    let tenant_id = Uuid::new_v4();
+    let invoice_id = Uuid::new_v4();
+
+    let direct_json = serde_json::json!({
+        "invoice_id": invoice_id,
+        "tenant_id": tenant_id,
+        "document_number": "FT 2026/0001",
+        "document_type": "FT",
+        "payment_mechanism": "NU",
+        "gross_total": 45000.50
+    });
+    let direct_bytes = serde_json::to_vec(&direct_json).unwrap();
+    let parsed_direct = TreasuryEventConsumer::parse_incoming_invoice(&direct_bytes)
+        .expect("Falha ao analisar payload direto");
+    assert_eq!(parsed_direct.document_number, "FT 2026/0001");
+    assert_eq!(parsed_direct.gross_total, dec!(45000.50));
+
+    let outbox_json = serde_json::json!({
+        "event_id": Uuid::new_v4(),
+        "tenant_id": tenant_id,
+        "invoice_id": invoice_id,
+        "event_type": "fiscal.document.issued",
+        "payload": {
+            "tenantId": tenant_id,
+            "documentNumber": "FT 2026/0002",
+            "documentType": "FT",
+            "grossTotal": "125000.00",
+            "paymentMethods": ["Transferência bancária"]
+        }
+    });
+    let outbox_bytes = serde_json::to_vec(&outbox_json).unwrap();
+    let parsed_outbox = TreasuryEventConsumer::parse_incoming_invoice(&outbox_bytes)
+        .expect("Falha ao analisar envelope de outbox");
+    assert_eq!(parsed_outbox.document_number, "FT 2026/0002");
+    assert_eq!(parsed_outbox.gross_total, dec!(125000.00));
+    assert_eq!(parsed_outbox.tenant_id, tenant_id);
+    assert_eq!(parsed_outbox.invoice_id, invoice_id);
 }

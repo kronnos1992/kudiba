@@ -240,8 +240,41 @@ impl JournalEntryRepository for MockJournalEntryRepository {
     }
 
     async fn save(&self, entry: &JournalEntry) -> Result<(), DomainError> {
+        self.save_with_event(entry, None, None, None).await
+    }
+
+    async fn save_with_event(
+        &self,
+        entry: &JournalEntry,
+        event_id: Option<Uuid>,
+        _event_type: Option<&str>,
+        source_ref: Option<&str>,
+    ) -> Result<(), DomainError> {
         let mut lock = self.entries.lock().unwrap();
+
+        if let Some(orig_id) = entry.reversal_of_entry_id {
+            if let Some(orig) = lock.get_mut(&orig_id) {
+                if orig.status == EntryStatus::Reversed {
+                    return Err(DomainError::Conflict(
+                        "O lançamento de origem já foi estornado".to_string(),
+                    ));
+                }
+                orig.status = EntryStatus::Reversed;
+            } else {
+                return Err(DomainError::NotFound(
+                    "Lançamento de origem não encontrado".to_string(),
+                ));
+            }
+        }
+
         lock.insert(entry.id, entry.clone());
+        drop(lock);
+
+        if let (Some(ev_id), Some(s_ref)) = (event_id, source_ref) {
+            let mut ev_lock = self.processed_events.lock().unwrap();
+            ev_lock.insert((entry.tenant_id, ev_id), s_ref.to_string());
+        }
+
         Ok(())
     }
 
@@ -820,4 +853,643 @@ async fn test_full_application_use_case_flow() {
     assert!(balance.is_balanced);
     assert_eq!(balance.total_period_debit, dec!(5000000));
     assert_eq!(balance.total_period_credit, dec!(5000000));
+}
+
+#[test]
+fn test_amqp_outbox_event_parsing_and_compatibility() {
+    use kudiba_accounting::infrastructure::events::{AccountingEvent, AccountingEventConsumer};
+
+    let raw_invoicing_outbox_json = r#"{
+        "event_id": "a0000000-0000-0000-0000-000000000001",
+        "tenant_id": "b0000000-0000-0000-0000-000000000002",
+        "invoice_id": "c0000000-0000-0000-0000-000000000003",
+        "event_type": "fiscal.document.issued",
+        "payload": {
+            "documentNumber": "FT 2026/001",
+            "documentType": "FT",
+            "customerName": "Kudiba Import & Export Lda",
+            "netTotal": "100000.00",
+            "taxTotal": "14000.00",
+            "withholdingTotal": "6500.00",
+            "grossTotal": "114000.00",
+            "issuedAt": "2026-04-10T14:30:00Z"
+        },
+        "created_at": "2026-04-10T14:30:01Z"
+    }"#;
+
+    let parsed =
+        AccountingEventConsumer::parse_incoming_event(raw_invoicing_outbox_json.as_bytes());
+    assert!(parsed.is_some());
+
+    if let Some(AccountingEvent::InvoiceIssued {
+        doc_type,
+        doc_number,
+        customer_name,
+        net_total,
+        tax_total,
+        retention_total,
+        gross_total,
+        issue_date,
+        ..
+    }) = parsed
+    {
+        assert_eq!(doc_type, "FT");
+        assert_eq!(doc_number, "FT 2026/001");
+        assert_eq!(customer_name, "Kudiba Import & Export Lda");
+        assert_eq!(net_total, dec!(100000.00));
+        assert_eq!(tax_total, dec!(14000.00));
+        assert_eq!(retention_total, dec!(6500.00));
+        assert_eq!(gross_total, dec!(114000.00));
+        assert_eq!(issue_date, NaiveDate::from_ymd_opt(2026, 4, 10).unwrap());
+    } else {
+        panic!("Esperado AccountingEvent::InvoiceIssued a partir do OutboxEvent");
+    }
+}
+
+#[tokio::test]
+async fn test_reversal_status_update_and_conflict_prevention() {
+    use kudiba_accounting::application::commands::ReverseEntryHandler;
+    use kudiba_accounting::application::dto::ReverseEntryRequest;
+
+    let tenant_id = Uuid::new_v4();
+    let account_repo = Arc::new(MockAccountRepository::default());
+    let year_repo = Arc::new(MockFiscalYearRepository::default());
+    let jrn_repo = Arc::new(MockJournalRepository::default());
+    let entry_repo = Arc::new(MockJournalEntryRepository::default());
+
+    let seed_pgc = SeedStandardPgcHandler::new(account_repo.clone());
+    let open_year = OpenFiscalYearHandler::new(year_repo.clone());
+    let post_entry = PostManualEntryHandler::new(
+        entry_repo.clone(),
+        jrn_repo.clone(),
+        year_repo.clone(),
+        account_repo.clone(),
+    );
+    let reverse_handler =
+        ReverseEntryHandler::new(entry_repo.clone(), jrn_repo.clone(), year_repo.clone());
+
+    seed_pgc.execute(tenant_id).await.unwrap();
+    open_year
+        .execute(tenant_id, CreateFiscalYearRequest { year_code: 2026 })
+        .await
+        .unwrap();
+
+    let jrn = Journal::new(
+        tenant_id,
+        "OD".to_string(),
+        "Operações Diversas".to_string(),
+        JournalType::Operations,
+    )
+    .unwrap();
+    jrn_repo.save(&jrn).await.unwrap();
+
+    let entry = post_entry
+        .execute(
+            tenant_id,
+            PostManualEntryRequest {
+                fiscal_year: 2026,
+                journal_code: "OD".to_string(),
+                transaction_date: NaiveDate::from_ymd_opt(2026, 5, 20).unwrap(),
+                period: 5,
+                description: "Lançamento para teste de estorno".to_string(),
+                lines: vec![
+                    ManualLineRequest {
+                        account_code: "11.1".to_string(),
+                        description: Some("Caixa Geral".to_string()),
+                        debit_amount: Some(dec!(25000)),
+                        credit_amount: None,
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                    ManualLineRequest {
+                        account_code: "71.1".to_string(),
+                        description: Some("Venda".to_string()),
+                        debit_amount: None,
+                        credit_amount: Some(dec!(25000)),
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                ],
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(entry.status, EntryStatus::Posted);
+
+    // 1. Estornar pela primeira vez
+    let reversed_entry = reverse_handler
+        .execute(
+            tenant_id,
+            ReverseEntryRequest {
+                entry_id: entry.id,
+                reversal_date: NaiveDate::from_ymd_opt(2026, 5, 21).unwrap(),
+                period: 5,
+                reason: "Erro de digitação de valor".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reversed_entry.status, EntryStatus::Reversed);
+    assert_eq!(reversed_entry.reversal_of_entry_id, Some(entry.id));
+
+    // 2. Verificar que o lançamento original foi atualizado para REVERSED
+    let orig_reloaded = entry_repo
+        .find_by_id(tenant_id, entry.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(orig_reloaded.status, EntryStatus::Reversed);
+
+    // 3. Tentar estornar novamente deve ser rejeitado com conflito
+    let second_reversal = reverse_handler
+        .execute(
+            tenant_id,
+            ReverseEntryRequest {
+                entry_id: entry.id,
+                reversal_date: NaiveDate::from_ymd_opt(2026, 5, 22).unwrap(),
+                period: 5,
+                reason: "Tentativa de estorno duplo".to_string(),
+            },
+        )
+        .await;
+
+    assert!(second_reversal.is_err());
+}
+
+#[test]
+fn test_trial_balance_with_opening_balances_6_columns() {
+    let tenant_id = Uuid::new_v4();
+    let fiscal_year_id = Uuid::new_v4();
+    let journal_id = Uuid::new_v4();
+
+    let acc_caixa = Account::new(
+        tenant_id,
+        "11.1".to_string(),
+        Some("11".to_string()),
+        "Caixa Geral".to_string(),
+        Some(AccountNature::Debit),
+        true,
+        false,
+        None,
+    )
+    .unwrap();
+
+    let acc_capital = Account::new(
+        tenant_id,
+        "51".to_string(),
+        None,
+        "Capital Social".to_string(),
+        Some(AccountNature::Credit),
+        true,
+        false,
+        None,
+    )
+    .unwrap();
+
+    let acc_vendas = Account::new(
+        tenant_id,
+        "71.1".to_string(),
+        Some("71".to_string()),
+        "Vendas de Mercadorias".to_string(),
+        Some(AccountNature::Credit),
+        true,
+        false,
+        None,
+    )
+    .unwrap();
+
+    let accounts = vec![acc_caixa, acc_capital, acc_vendas];
+
+    // Lançamento de Abertura (Janeiro): Entrada de Capital 100.000 em Caixa
+    let opening_entry = JournalEntry::new(
+        tenant_id,
+        fiscal_year_id,
+        journal_id,
+        1,
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        1,
+        "Abertura de Exercício".to_string(),
+        None,
+        None,
+        None,
+        None,
+        vec![
+            JournalLine::new_debit(
+                tenant_id,
+                Uuid::new_v4(),
+                1,
+                "11.1".to_string(),
+                dec!(100000),
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+            JournalLine::new_credit(
+                tenant_id,
+                Uuid::new_v4(),
+                2,
+                "51".to_string(),
+                dec!(100000),
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+        ],
+        None,
+    )
+    .unwrap();
+
+    // Movimento do Período (Fevereiro): Venda em dinheiro de 50.000
+    let period_entry = JournalEntry::new(
+        tenant_id,
+        fiscal_year_id,
+        journal_id,
+        2,
+        NaiveDate::from_ymd_opt(2026, 2, 15).unwrap(),
+        2,
+        "Venda a Pronto Pagamento".to_string(),
+        None,
+        None,
+        None,
+        None,
+        vec![
+            JournalLine::new_debit(
+                tenant_id,
+                Uuid::new_v4(),
+                1,
+                "11.1".to_string(),
+                dec!(50000),
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+            JournalLine::new_credit(
+                tenant_id,
+                Uuid::new_v4(),
+                2,
+                "71.1".to_string(),
+                dec!(50000),
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+        ],
+        None,
+    )
+    .unwrap();
+
+    let report = TrialBalanceCalculator::calculate_with_opening(
+        &accounts,
+        &[opening_entry],
+        &[period_entry],
+    );
+
+    assert!(report.is_balanced);
+    assert_eq!(report.total_opening_debit, dec!(100000));
+    assert_eq!(report.total_opening_credit, dec!(100000));
+    assert_eq!(report.total_period_debit, dec!(50000));
+    assert_eq!(report.total_period_credit, dec!(50000));
+    assert_eq!(report.total_closing_debit, dec!(150000));
+    assert_eq!(report.total_closing_credit, dec!(150000));
+
+    let row_caixa = report
+        .rows
+        .iter()
+        .find(|r| r.account_code == "11.1")
+        .unwrap();
+    assert_eq!(row_caixa.opening_debit, dec!(100000));
+    assert_eq!(row_caixa.period_debit, dec!(50000));
+    assert_eq!(row_caixa.closing_debit, dec!(150000));
+}
+
+#[test]
+fn test_saft_ao_generates_real_balances() {
+    let tenant_id = Uuid::new_v4();
+    let fiscal_year_id = Uuid::new_v4();
+    let _journal_id = Uuid::new_v4();
+
+    let acc_caixa = Account::new(
+        tenant_id,
+        "11.1".to_string(),
+        Some("11".to_string()),
+        "Caixa Geral".to_string(),
+        Some(AccountNature::Debit),
+        true,
+        false,
+        Some("111".to_string()),
+    )
+    .unwrap();
+
+    let acc_vendas = Account::new(
+        tenant_id,
+        "71.1".to_string(),
+        Some("71".to_string()),
+        "Vendas".to_string(),
+        Some(AccountNature::Credit),
+        true,
+        false,
+        Some("711".to_string()),
+    )
+    .unwrap();
+
+    let accounts = vec![acc_caixa, acc_vendas];
+    let jrn = Journal::new(
+        tenant_id,
+        "CX".to_string(),
+        "Caixa".to_string(),
+        JournalType::Cash,
+    )
+    .unwrap();
+
+    let entry = JournalEntry::new(
+        tenant_id,
+        fiscal_year_id,
+        jrn.id,
+        1,
+        NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+        6,
+        "Venda em Numerário".to_string(),
+        None,
+        None,
+        None,
+        None,
+        vec![
+            JournalLine::new_debit(
+                tenant_id,
+                Uuid::new_v4(),
+                1,
+                "11.1".to_string(),
+                dec!(45000),
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+            JournalLine::new_credit(
+                tenant_id,
+                Uuid::new_v4(),
+                2,
+                "71.1".to_string(),
+                dec!(45000),
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+        ],
+        None,
+    )
+    .unwrap();
+
+    let xml = SaftAccountingGenerator::generate_xml(
+        tenant_id,
+        "Kudiba Test Corp",
+        "5400000000",
+        2026,
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+        &accounts,
+        &[jrn],
+        &[entry],
+    );
+
+    assert!(xml.contains("<ClosingDebitBalance>45000.00</ClosingDebitBalance>"));
+    assert!(xml.contains("<ClosingCreditBalance>45000.00</ClosingCreditBalance>"));
+}
+
+#[tokio::test]
+async fn test_year_end_closing_classe_8_apuramento() {
+    use kudiba_accounting::application::commands::CloseFiscalYearHandler;
+
+    let tenant_id = Uuid::new_v4();
+    let account_repo = Arc::new(MockAccountRepository::default());
+    let year_repo = Arc::new(MockFiscalYearRepository::default());
+    let jrn_repo = Arc::new(MockJournalRepository::default());
+    let entry_repo = Arc::new(MockJournalEntryRepository::default());
+
+    let seed_pgc = SeedStandardPgcHandler::new(account_repo.clone());
+    let open_year = OpenFiscalYearHandler::new(year_repo.clone());
+    let post_entry = PostManualEntryHandler::new(
+        entry_repo.clone(),
+        jrn_repo.clone(),
+        year_repo.clone(),
+        account_repo.clone(),
+    );
+    let close_year =
+        CloseFiscalYearHandler::new(year_repo.clone(), entry_repo.clone(), jrn_repo.clone());
+
+    seed_pgc.execute(tenant_id).await.unwrap();
+    open_year
+        .execute(tenant_id, CreateFiscalYearRequest { year_code: 2026 })
+        .await
+        .unwrap();
+
+    let jrn = Journal::new(
+        tenant_id,
+        "OD".to_string(),
+        "Operações Diversas".to_string(),
+        JournalType::Operations,
+    )
+    .unwrap();
+    jrn_repo.save(&jrn).await.unwrap();
+
+    // 1. Registo de Proveitos (Vendas: 100.000 em 71.1)
+    post_entry
+        .execute(
+            tenant_id,
+            PostManualEntryRequest {
+                fiscal_year: 2026,
+                journal_code: "OD".to_string(),
+                transaction_date: NaiveDate::from_ymd_opt(2026, 7, 10).unwrap(),
+                period: 7,
+                description: "Vendas de Mercadorias".to_string(),
+                lines: vec![
+                    ManualLineRequest {
+                        account_code: "11.1".to_string(),
+                        description: Some("Caixa".to_string()),
+                        debit_amount: Some(dec!(100000)),
+                        credit_amount: None,
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                    ManualLineRequest {
+                        account_code: "71.1".to_string(),
+                        description: Some("Vendas".to_string()),
+                        debit_amount: None,
+                        credit_amount: Some(dec!(100000)),
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                ],
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+    // 2. Registo de Custos (FSE: 40.000 em 62.1)
+    post_entry
+        .execute(
+            tenant_id,
+            PostManualEntryRequest {
+                fiscal_year: 2026,
+                journal_code: "OD".to_string(),
+                transaction_date: NaiveDate::from_ymd_opt(2026, 8, 10).unwrap(),
+                period: 8,
+                description: "Consumo de Eletricidade".to_string(),
+                lines: vec![
+                    ManualLineRequest {
+                        account_code: "62.1".to_string(),
+                        description: Some("Eletricidade".to_string()),
+                        debit_amount: Some(dec!(40000)),
+                        credit_amount: None,
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                    ManualLineRequest {
+                        account_code: "11.1".to_string(),
+                        description: Some("Caixa".to_string()),
+                        debit_amount: None,
+                        credit_amount: Some(dec!(40000)),
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                ],
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+    // 3. Executar o Fecho do Exercício
+    let closed_year = close_year.execute(tenant_id, 2026).await.unwrap();
+    assert_eq!(closed_year.status, FiscalYearStatus::Closed);
+
+    // 4. Verificar se o lançamento de fecho foi gerado no período 14
+    let entries = entry_repo
+        .list_entries(tenant_id, None, None, None, 100, 0)
+        .await
+        .unwrap();
+    let closing_entry = entries.iter().find(|e| e.period == 14);
+    assert!(closing_entry.is_some());
+
+    let fecho = closing_entry.unwrap();
+    assert_eq!(fecho.total_debit, fecho.total_credit);
+    assert!(fecho
+        .description
+        .contains("Apuramento e Encerramento de Resultados"));
+}
+
+#[tokio::test]
+async fn test_currency_revaluation_favorable_and_unfavorable() {
+    use kudiba_accounting::application::commands::RevalueCurrencyBalancesHandler;
+    use kudiba_accounting::application::dto::CurrencyRevaluationRequest;
+    use kudiba_accounting::domain::value_objects::Currency;
+
+    let tenant_id = Uuid::new_v4();
+    let account_repo = Arc::new(MockAccountRepository::default());
+    let year_repo = Arc::new(MockFiscalYearRepository::default());
+    let journal_repo = Arc::new(MockJournalRepository::default());
+    let entry_repo = Arc::new(MockJournalEntryRepository::default());
+
+    let seed_pgc = SeedStandardPgcHandler::new(account_repo.clone());
+    let open_year = OpenFiscalYearHandler::new(year_repo.clone());
+    let revaluation_handler = RevalueCurrencyBalancesHandler::new(
+        account_repo.clone(),
+        entry_repo.clone(),
+        journal_repo.clone(),
+        year_repo.clone(),
+    );
+
+    seed_pgc.execute(tenant_id).await.unwrap();
+    open_year
+        .execute(tenant_id, CreateFiscalYearRequest { year_code: 2026 })
+        .await
+        .unwrap();
+
+    // Criar conta bancária analítica em USD (43.1.2)
+    account_repo
+        .save(
+            &Account::new(
+                tenant_id,
+                "43.1.2".to_string(),
+                Some("43.1".to_string()),
+                "Banco BAI Moeda Estrangeira USD".to_string(),
+                Some(AccountNature::Debit),
+                true,
+                false,
+                Some("4312".to_string()),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // 1. Revalorização com Ganho Cambial (+50.000 Kz)
+    let gain_req = CurrencyRevaluationRequest {
+        fiscal_year: 2026,
+        period: 12,
+        revaluation_date: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+        target_account_code: "43.1.2".to_string(),
+        currency: Currency::Usd,
+        foreign_balance: dec!(1000),
+        new_exchange_rate: dec!(950),
+        previous_book_value_kz: dec!(900000),
+        notes: Some("Ajustamento cambial de fecho".to_string()),
+    };
+
+    let gain_res = revaluation_handler
+        .execute(tenant_id, gain_req, None)
+        .await
+        .unwrap();
+    assert!(gain_res.is_gain);
+    assert_eq!(gain_res.exchange_difference, dec!(50000));
+    assert_eq!(gain_res.offset_account_code, "75.3");
+    assert_eq!(gain_res.new_book_value_kz, dec!(950000));
+
+    // 2. Revalorização com Perda Cambial (-100.000 Kz)
+    let loss_req = CurrencyRevaluationRequest {
+        fiscal_year: 2026,
+        period: 12,
+        revaluation_date: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+        target_account_code: "43.1.2".to_string(),
+        currency: Currency::Usd,
+        foreign_balance: dec!(1000),
+        new_exchange_rate: dec!(850),
+        previous_book_value_kz: dec!(950000),
+        notes: Some("Ajustamento cambial desfavorável".to_string()),
+    };
+
+    let loss_res = revaluation_handler
+        .execute(tenant_id, loss_req, None)
+        .await
+        .unwrap();
+    assert!(!loss_res.is_gain);
+    assert_eq!(loss_res.exchange_difference, dec!(-100000));
+    assert_eq!(loss_res.offset_account_code, "66.3");
+    assert_eq!(loss_res.new_book_value_kz, dec!(850000));
+
+    // Verificar se os lançamentos foram gerados em partidas dobradas perfeitamente equilibradas
+    let entries = entry_repo
+        .list_entries(tenant_id, None, None, None, 100, 0)
+        .await
+        .unwrap();
+    assert_eq!(entries.len(), 2);
+    for e in entries {
+        assert_eq!(e.total_debit, e.total_credit);
+        assert_eq!(e.status, EntryStatus::Posted);
+    }
 }
