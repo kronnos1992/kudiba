@@ -263,7 +263,7 @@ impl JournalEntryRepository for PostgresJournalEntryRepository {
             )
             .bind(line.id)
             .bind(line.tenant_id)
-            .bind(line.entry_id)
+            .bind(entry.id)
             .bind(line.line_number)
             .bind(&line.account_code)
             .bind(&line.description)

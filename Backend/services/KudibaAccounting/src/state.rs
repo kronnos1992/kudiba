@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use crate::application::commands::{
     CloseFiscalYearHandler, CreateAccountHandler, OpenFiscalYearHandler, PostManualEntryHandler,
-    ProcessInvoiceIssuedCommand, ProcessStockDispatchCommand, ProcessTreasuryReceiptCommand,
-    RevalueCurrencyBalancesHandler, ReverseEntryHandler, SeedStandardPgcHandler,
+    ProcessInvoiceIssuedCommand, ProcessPayrollPeriodClosedCommand, ProcessStockDispatchCommand,
+    ProcessTreasuryReceiptCommand, RevalueCurrencyBalancesHandler, ReverseEntryHandler,
+    SeedStandardPgcHandler,
 };
 use crate::application::queries::AccountingQueries;
 use crate::config::Config;
@@ -85,6 +86,11 @@ impl AppState {
             journal_repo.clone(),
             year_repo.clone(),
         ));
+        let payroll_cmd = Arc::new(ProcessPayrollPeriodClosedCommand::new(
+            entry_repo.clone(),
+            journal_repo.clone(),
+            year_repo.clone(),
+        ));
 
         let rabbitmq_url = if config.rabbitmq_url.is_empty() {
             None
@@ -97,6 +103,7 @@ impl AppState {
             Some(invoice_cmd),
             Some(stock_cmd),
             Some(receipt_cmd),
+            Some(payroll_cmd),
         ));
 
         Self {

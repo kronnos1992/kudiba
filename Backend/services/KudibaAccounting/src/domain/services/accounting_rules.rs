@@ -308,4 +308,111 @@ impl AccountingRulesService {
             None,
         )
     }
+
+    /// Gera lançamento de Processamento de Salários / Folha Salarial (KudibaPayroll)
+    pub fn create_payroll_entry(
+        tenant_id: Uuid,
+        fiscal_year_id: Uuid,
+        journal_id: Uuid,
+        entry_number: i64,
+        entry_date: NaiveDate,
+        period: i32,
+        period_title: &str,
+        total_gross: Decimal,
+        total_net: Decimal,
+        total_inss_employee: Decimal,
+        total_inss_employer: Decimal,
+        total_irt: Decimal,
+    ) -> Result<JournalEntry, DomainError> {
+        let entry_id = Uuid::new_v4();
+        let mut lines = Vec::new();
+        let mut line_seq = 1;
+
+        // 1. DÉBITO: 63.1.1 - Custos com o Pessoal - Remunerações dos Órgãos Sociais / Pessoal (Salário Ilíquido)
+        lines.push(JournalLine::new_debit(
+            tenant_id,
+            entry_id,
+            line_seq,
+            "63.1.1".to_string(),
+            total_gross,
+            Some(format!("Vencimentos Ilíquidos: {}", period_title)),
+            None,
+            None,
+        )?);
+        line_seq += 1;
+
+        // 2. DÉBITO: 63.2.1 - Encargos Sociais Patronais (INSS 8%)
+        if total_inss_employer > Decimal::ZERO {
+            lines.push(JournalLine::new_debit(
+                tenant_id,
+                entry_id,
+                line_seq,
+                "63.2.1".to_string(),
+                total_inss_employer,
+                Some(format!("INSS 8% Patronal: {}", period_title)),
+                None,
+                None,
+            )?);
+            line_seq += 1;
+        }
+
+        // 3. CRÉDITO: 36.1.1 - Pessoal - Remunerações a Pagar (Salário Líquido)
+        lines.push(JournalLine::new_credit(
+            tenant_id,
+            entry_id,
+            line_seq,
+            "36.1.1".to_string(),
+            total_net,
+            Some(format!("Salário Líquido a Pagar: {}", period_title)),
+            None,
+            None,
+        )?);
+        line_seq += 1;
+
+        // 4. CRÉDITO: 34.1.1 - Estado e Outros Entes Públicos - IRT a Entregar
+        if total_irt > Decimal::ZERO {
+            lines.push(JournalLine::new_credit(
+                tenant_id,
+                entry_id,
+                line_seq,
+                "34.1.1".to_string(),
+                total_irt,
+                Some(format!("Retenção na Fonte de IRT: {}", period_title)),
+                None,
+                None,
+            )?);
+            line_seq += 1;
+        }
+
+        // 5. CRÉDITO: 34.3.1 - Segurança Social / INSS a Entregar (11% = 3% + 8%)
+        let inss_total = total_inss_employee + total_inss_employer;
+        if inss_total > Decimal::ZERO {
+            lines.push(JournalLine::new_credit(
+                tenant_id,
+                entry_id,
+                line_seq,
+                "34.3.1".to_string(),
+                inss_total,
+                Some(format!("Encargos e Retenções INSS 11%: {}", period_title)),
+                None,
+                None,
+            )?);
+        }
+
+        JournalEntry::new(
+            tenant_id,
+            fiscal_year_id,
+            journal_id,
+            entry_number,
+            entry_date,
+            period,
+            format!("Processamento de Salários - {}", period_title),
+            Some("kudiba-payroll".to_string()),
+            Some("FOLHA_SALARIAL".to_string()),
+            None,
+            Some(period_title.to_string()),
+            lines,
+            None,
+        )
+    }
 }

@@ -79,8 +79,14 @@ impl JournalEntry {
             ));
         }
 
+        let entry_id = Uuid::new_v4();
+        let mut fixed_lines = lines;
+        for line in &mut fixed_lines {
+            line.entry_id = entry_id;
+        }
+
         Ok(Self {
-            id: Uuid::new_v4(),
+            id: entry_id,
             tenant_id,
             fiscal_year_id,
             journal_id,
@@ -99,7 +105,7 @@ impl JournalEntry {
             reversal_of_entry_id: None,
             created_by,
             created_at: Utc::now(),
-            lines,
+            lines: fixed_lines,
         })
     }
 

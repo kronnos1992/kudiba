@@ -15,7 +15,8 @@ use tokio::sync::{mpsc, watch, Mutex};
 use uuid::Uuid;
 
 use crate::application::commands::{
-    ProcessInvoiceIssuedCommand, ProcessStockDispatchCommand, ProcessTreasuryReceiptCommand,
+    ProcessInvoiceIssuedCommand, ProcessPayrollPeriodClosedCommand, ProcessStockDispatchCommand,
+    ProcessTreasuryReceiptCommand,
 };
 use crate::domain::error::DomainError;
 
@@ -50,6 +51,19 @@ pub enum AccountingEvent {
         amount: Decimal,
         is_bank: bool,
     },
+    PayrollPeriodClosed {
+        event_id: Uuid,
+        tenant_id: Uuid,
+        period_title: String,
+        year: i32,
+        month: u32,
+        total_gross: Decimal,
+        total_net: Decimal,
+        total_inss_employee: Decimal,
+        total_inss_employer: Decimal,
+        total_irt: Decimal,
+        employee_count: usize,
+    },
 }
 
 pub struct AccountingEventConsumer {
@@ -59,6 +73,7 @@ pub struct AccountingEventConsumer {
     invoice_cmd: Option<Arc<ProcessInvoiceIssuedCommand>>,
     stock_cmd: Option<Arc<ProcessStockDispatchCommand>>,
     receipt_cmd: Option<Arc<ProcessTreasuryReceiptCommand>>,
+    payroll_cmd: Option<Arc<ProcessPayrollPeriodClosedCommand>>,
 }
 
 impl AccountingEventConsumer {
@@ -67,6 +82,7 @@ impl AccountingEventConsumer {
         invoice_cmd: Option<Arc<ProcessInvoiceIssuedCommand>>,
         stock_cmd: Option<Arc<ProcessStockDispatchCommand>>,
         receipt_cmd: Option<Arc<ProcessTreasuryReceiptCommand>>,
+        payroll_cmd: Option<Arc<ProcessPayrollPeriodClosedCommand>>,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(1024);
         Self {
@@ -76,6 +92,7 @@ impl AccountingEventConsumer {
             invoice_cmd,
             stock_cmd,
             receipt_cmd,
+            payroll_cmd,
         }
     }
 
@@ -236,6 +253,68 @@ impl AccountingEventConsumer {
                     receipt_date,
                     amount,
                     is_bank,
+                })
+            }
+            "payroll.period.closed" => {
+                let period_title = payload
+                    .get("periodTitle")
+                    .or_else(|| payload.get("period_title"))
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("Processamento Salarial")
+                    .to_string();
+
+                let year = payload.get("year").and_then(|v| v.as_i64()).unwrap_or(2026) as i32;
+
+                let month = payload.get("month").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+
+                let total_gross = payload
+                    .get("totalGross")
+                    .or_else(|| payload.get("total_gross"))
+                    .map(parse_dec_val)
+                    .unwrap_or(Decimal::ZERO);
+
+                let total_net = payload
+                    .get("totalNet")
+                    .or_else(|| payload.get("total_net"))
+                    .map(parse_dec_val)
+                    .unwrap_or(Decimal::ZERO);
+
+                let total_inss_employee = payload
+                    .get("totalInssEmployee")
+                    .or_else(|| payload.get("total_inss_employee"))
+                    .map(parse_dec_val)
+                    .unwrap_or(Decimal::ZERO);
+
+                let total_inss_employer = payload
+                    .get("totalInssEmployer")
+                    .or_else(|| payload.get("total_inss_employer"))
+                    .map(parse_dec_val)
+                    .unwrap_or(Decimal::ZERO);
+
+                let total_irt = payload
+                    .get("totalIrt")
+                    .or_else(|| payload.get("total_irt"))
+                    .map(parse_dec_val)
+                    .unwrap_or(Decimal::ZERO);
+
+                let employee_count = payload
+                    .get("employeeCount")
+                    .or_else(|| payload.get("employee_count"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize;
+
+                Some(AccountingEvent::PayrollPeriodClosed {
+                    event_id,
+                    tenant_id,
+                    period_title,
+                    year,
+                    month,
+                    total_gross,
+                    total_net,
+                    total_inss_employee,
+                    total_inss_employer,
+                    total_irt,
+                    employee_count,
                 })
             }
             _ => None,
@@ -405,6 +484,52 @@ impl AccountingEventConsumer {
                         }
                         Err(e) => {
                             tracing::error!(error = %e, receipt_number = %receipt_number, "Falha ao gerar lançamento de recibo");
+                        }
+                    }
+                }
+            }
+            AccountingEvent::PayrollPeriodClosed {
+                event_id,
+                tenant_id,
+                period_title,
+                year,
+                month,
+                total_gross,
+                total_net,
+                total_inss_employee,
+                total_inss_employer,
+                total_irt,
+                employee_count,
+            } => {
+                if let Some(ref cmd) = self.payroll_cmd {
+                    match cmd
+                        .execute(
+                            event_id,
+                            tenant_id,
+                            &period_title,
+                            year,
+                            month,
+                            total_gross,
+                            total_net,
+                            total_inss_employee,
+                            total_inss_employer,
+                            total_irt,
+                        )
+                        .await
+                    {
+                        Ok(Some(entry)) => {
+                            tracing::info!(
+                                entry_number = entry.entry_number,
+                                period = %period_title,
+                                employee_count,
+                                "Lançamento contabilístico de folha salarial gerado com sucesso"
+                            );
+                        }
+                        Ok(None) => {
+                            tracing::debug!(event_id = %event_id, "Evento de folha salarial já processado anteriormente");
+                        }
+                        Err(e) => {
+                            tracing::error!(error = %e, period = %period_title, "Falha ao gerar lançamento de folha salarial");
                         }
                     }
                 }

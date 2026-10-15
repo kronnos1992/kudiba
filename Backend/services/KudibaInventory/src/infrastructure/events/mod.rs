@@ -199,7 +199,7 @@ impl InvoiceEventConsumer {
                 .queue_bind(
                     queue.name().clone(),
                     ShortString::from("fiscal.events"),
-                    ShortString::from("fiscal.event.*"),
+                    ShortString::from("fiscal.event.#"),
                     QueueBindOptions::default(),
                     FieldTable::default(),
                 )
@@ -283,10 +283,34 @@ impl InvoiceEventConsumer {
             }
         }
 
-        if let Ok(val) = serde_json::from_slice::<serde_json::Value>(data) {
-            if let Some(inner) = val.get("payload") {
+        if let Ok(mut val) = serde_json::from_slice::<serde_json::Value>(data) {
+            let outer_tenant = val
+                .get("tenant_id")
+                .or_else(|| val.get("tenantId"))
+                .cloned();
+            let outer_invoice = val
+                .get("invoice_id")
+                .or_else(|| val.get("invoiceId"))
+                .cloned();
+
+            if let Some(inner) = val.get_mut("payload") {
+                if let Some(inner_obj) = inner.as_object_mut() {
+                    if !inner_obj.contains_key("tenantId") && !inner_obj.contains_key("tenant_id") {
+                        if let Some(t) = outer_tenant {
+                            inner_obj.insert("tenantId".to_string(), t);
+                        }
+                    }
+                    if !inner_obj.contains_key("invoiceId") && !inner_obj.contains_key("invoice_id")
+                    {
+                        if let Some(i) = outer_invoice {
+                            inner_obj.insert("invoiceId".to_string(), i);
+                        }
+                    }
+                }
                 if let Ok(payload) = serde_json::from_value::<InvoiceIssuedPayload>(inner.clone()) {
-                    return Ok(payload);
+                    if !payload.document_number.is_empty() {
+                        return Ok(payload);
+                    }
                 }
             }
         }

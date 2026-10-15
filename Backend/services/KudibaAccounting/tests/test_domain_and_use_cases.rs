@@ -1493,3 +1493,121 @@ async fn test_currency_revaluation_favorable_and_unfavorable() {
         assert_eq!(e.status, EntryStatus::Posted);
     }
 }
+
+#[tokio::test]
+async fn test_payroll_period_closed_accounting_entry() {
+    let tenant_id = Uuid::new_v4();
+    let fiscal_year_id = Uuid::new_v4();
+    let journal_id = Uuid::new_v4();
+
+    // Valores do fechamento salarial:
+    // Salário Ilíquido (63.1): 2.510.000,00 Kz
+    // INSS 8% Patronal (63.2):    186.400,00 Kz
+    // Salário Líquido (36.1):  2.053.645,50 Kz
+    // IRT a Entregar (34.1):     386.454,50 Kz
+    // INSS Total 11% (34.3):     256.300,00 Kz (69.900 trabalhador + 186.400 patronal)
+    let total_gross = dec!(2510000.00);
+    let total_net = dec!(2053645.50);
+    let total_inss_employee = dec!(69900.00);
+    let total_inss_employer = dec!(186400.00);
+    let total_irt = dec!(386454.50);
+
+    let entry = AccountingRulesService::create_payroll_entry(
+        tenant_id,
+        fiscal_year_id,
+        journal_id,
+        1,
+        NaiveDate::from_ymd_opt(2026, 3, 31).unwrap(),
+        3,
+        "Folha Salarial - Março 2026",
+        total_gross,
+        total_net,
+        total_inss_employee,
+        total_inss_employer,
+        total_irt,
+    )
+    .expect("Falha ao gerar lançamento contabilístico de folha salarial");
+
+    // Partidas dobradas equilibradas
+    assert_eq!(entry.total_debit, entry.total_credit);
+    assert_eq!(entry.total_debit, dec!(2696400.00));
+    assert_eq!(entry.lines.len(), 5);
+
+    // D: 63.1.1 (2.510.000,00)
+    assert_eq!(entry.lines[0].account_code, "63.1.1");
+    assert_eq!(entry.lines[0].debit_amount, total_gross);
+
+    // D: 63.2.1 (186.400,00)
+    assert_eq!(entry.lines[1].account_code, "63.2.1");
+    assert_eq!(entry.lines[1].debit_amount, total_inss_employer);
+
+    // C: 36.1.1 (2.053.645,50)
+    assert_eq!(entry.lines[2].account_code, "36.1.1");
+    assert_eq!(entry.lines[2].credit_amount, total_net);
+
+    // C: 34.1.1 (386.454,50)
+    assert_eq!(entry.lines[3].account_code, "34.1.1");
+    assert_eq!(entry.lines[3].credit_amount, total_irt);
+
+    // C: 34.3.1 (256.300,00 = 69.900 + 186.400)
+    assert_eq!(entry.lines[4].account_code, "34.3.1");
+    assert_eq!(
+        entry.lines[4].credit_amount,
+        total_inss_employee + total_inss_employer
+    );
+}
+
+#[tokio::test]
+async fn test_payroll_period_amqp_event_parsing() {
+    use kudiba_accounting::infrastructure::events::{AccountingEvent, AccountingEventConsumer};
+
+    let tenant_id = Uuid::new_v4();
+    let json_payload = serde_json::json!({
+        "event_id": Uuid::new_v4().to_string(),
+        "tenant_id": tenant_id.to_string(),
+        "event_type": "payroll.period.closed",
+        "payload": {
+            "periodTitle": "Folha Salarial - Março 2026",
+            "year": 2026,
+            "month": 3,
+            "totalGross": "2510000.00",
+            "totalNet": "2053645.50",
+            "totalInssEmployee": "69900.00",
+            "totalInssEmployer": "186400.00",
+            "totalIrt": "386454.50",
+            "employeeCount": 3
+        }
+    });
+
+    let raw_bytes = serde_json::to_vec(&json_payload).unwrap();
+    let event = AccountingEventConsumer::parse_incoming_event(&raw_bytes)
+        .expect("Deveria desserializar com sucesso o evento payroll.period.closed");
+
+    match event {
+        AccountingEvent::PayrollPeriodClosed {
+            tenant_id: t_id,
+            period_title,
+            year,
+            month,
+            total_gross,
+            total_net,
+            total_inss_employee,
+            total_inss_employer,
+            total_irt,
+            employee_count,
+            ..
+        } => {
+            assert_eq!(t_id, tenant_id);
+            assert_eq!(period_title, "Folha Salarial - Março 2026");
+            assert_eq!(year, 2026);
+            assert_eq!(month, 3);
+            assert_eq!(total_gross, dec!(2510000.00));
+            assert_eq!(total_net, dec!(2053645.50));
+            assert_eq!(total_inss_employee, dec!(69900.00));
+            assert_eq!(total_inss_employer, dec!(186400.00));
+            assert_eq!(total_irt, dec!(386454.50));
+            assert_eq!(employee_count, 3);
+        }
+        _ => panic!("Esperado AccountingEvent::PayrollPeriodClosed"),
+    }
+}

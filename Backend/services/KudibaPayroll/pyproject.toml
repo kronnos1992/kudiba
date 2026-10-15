@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kudiba-payroll"
+version = "0.1.0"
+description = "Microsserviço de Recursos Humanos e Processamento Salarial do Kudiba ERP (Angola LGT 12/23, IRT 28/20, INSS 227/18)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "sqlalchemy>=2.0.36",
+    "greenlet>=3.1.1",
+    "asyncpg>=0.30.0",
+    "aio-pika>=9.4.0",
+    "pyjwt[crypto]>=2.9.0",
+    "python-dotenv>=1.0.1",
+]
+
+[project.optional-dependencies]
+test = [
+    "httpx>=0.27.2",
+    "pytest>=8.3.3",
+    "pytest-asyncio>=0.24.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py"

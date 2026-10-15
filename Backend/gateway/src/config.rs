@@ -19,6 +19,7 @@ pub struct Config {
     pub inventory_service_url: String,
     pub treasury_service_url: String,
     pub accounting_service_url: String,
+    pub payroll_service_url: String,
 
     pub jwt_secret: String,
 
@@ -118,6 +119,14 @@ impl Config {
             accounting_service_url = format!("http://{}", accounting_service_url);
         }
 
+        let mut payroll_service_url =
+            env::var("PAYROLL_SERVICE_URL").unwrap_or_else(|_| "http://localhost:8086".to_string());
+        if !payroll_service_url.starts_with("http://")
+            && !payroll_service_url.starts_with("https://")
+        {
+            payroll_service_url = format!("http://{}", payroll_service_url);
+        }
+
         const DEVELOPMENT_JWT_SECRET: &str =
             "kudiba_jwt_secret_development_key_change_in_production_2026";
         let is_production =
@@ -179,6 +188,7 @@ impl Config {
             inventory_service_url,
             treasury_service_url,
             accounting_service_url,
+            payroll_service_url,
             jwt_secret,
             agt_contingency_max_days: env::var("AGT_CONTINGENCY_MAX_DAYS")
                 .unwrap_or_else(|_| "60".to_string())

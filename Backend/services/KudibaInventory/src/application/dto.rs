@@ -460,6 +460,7 @@ where
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InvoiceIssuedLine {
+    #[serde(default)]
     pub line_number: i32,
     pub product_code: String,
     pub description: String,

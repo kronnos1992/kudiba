@@ -22,6 +22,7 @@ services:
       - INVENTORY_SERVICE_URL=http://inventory-service:8083
       - TREASURY_SERVICE_URL=http://treasury-service:8084
       - ACCOUNTING_SERVICE_URL=http://accounting-service:8085
+      - PAYROLL_SERVICE_URL=http://payroll-service:8086
       # Sondas TCP do endpoint /health/services
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -175,6 +176,30 @@ services:
         aliases:
           - accounting-service
           - kudiba-accounting
+
+  # ============================================================================
+  # 7. MICROSSERVIÇO DE RECURSOS HUMANOS & PROCESSAMENTO SALARIAL (PYTHON / FASTAPI)
+  # ============================================================================
+  payroll:
+    build:
+      context: ./Backend/services/KudibaPayroll
+      dockerfile: Dockerfile
+    container_name: kudiba-payroll
+    restart: unless-stopped
+    environment:
+      - PORT=8086
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql+asyncpg://kudiba:kudiba_secret_pass@postgres:5432/kudiba_payroll
+      - RABBITMQ_URL=amqp://kudiba:kudiba_rabbit_pass@rabbitmq:5672/%2f
+      - JWT_SECRET=kudiba_jwt_secret_development_key_change_in_production_2026
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      kudiba-internal-network:
+        aliases:
+          - payroll-service
+          - kudiba-payroll
 
   # ============================================================================
   # 3. ESTADO EFÊMERO & CACHE PERIMÉTRICO (REDIS 7+)

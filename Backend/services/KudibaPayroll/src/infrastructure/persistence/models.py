@@ -1,0 +1,245 @@
+import uuid
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from typing import List, Optional
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
+
+Base = declarative_base()
+
+
+class DepartmentModel(Base):
+    __tablename__ = "departments"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_dept_tenant_code"),
+        {"schema": "kudiba_payroll"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class JobPositionModel(Base):
+    __tablename__ = "job_positions"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_job_tenant_code"),
+        {"schema": "kudiba_payroll"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    department_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.departments.id"), nullable=True
+    )
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    base_salary_min: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"), nullable=False)
+    base_salary_max: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class EmployeeModel(Base):
+    __tablename__ = "employees"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_emp_tenant_code"),
+        UniqueConstraint("tenant_id", "nif", name="uq_emp_tenant_nif"),
+        UniqueConstraint("tenant_id", "identity_card_number", name="uq_emp_tenant_bi"),
+        {"schema": "kudiba_payroll"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    nif: Mapped[str] = mapped_column(String(20), nullable=False)
+    inss_number: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    identity_card_number: Mapped[str] = mapped_column(String(30), nullable=False)
+    birth_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    gender: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    marital_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    dependents_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    iban: Mapped[str] = mapped_column(String(34), nullable=False)
+    bank_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE", nullable=False)
+    hire_date: Mapped[date] = mapped_column(Date, nullable=False)
+    termination_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class ContractModel(Base):
+    __tablename__ = "contracts"
+    __table_args__ = {"schema": "kudiba_payroll"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.employees.id"), nullable=False, index=True
+    )
+    job_position_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.job_positions.id"), nullable=True
+    )
+    contract_type: Mapped[str] = mapped_column(String(30), default="PERMANENT", nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    base_salary: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    components: Mapped[List["SalaryComponentModel"]] = relationship(
+        "SalaryComponentModel", back_populates="contract", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class SalaryComponentModel(Base):
+    __tablename__ = "salary_components"
+    __table_args__ = {"schema": "kudiba_payroll"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.contracts.id"), nullable=False, index=True
+    )
+    component_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    is_taxable_irt: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_taxable_inss: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    contract: Mapped["ContractModel"] = relationship("ContractModel", back_populates="components")
+
+
+class PayrollPeriodModel(Base):
+    __tablename__ = "payroll_periods"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "year", "month", name="uq_period_tenant_year_month"),
+        {"schema": "kudiba_payroll"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(150), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="DRAFT", nullable=False)
+    total_gross: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"), nullable=False)
+    total_net: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"), nullable=False)
+    total_irt: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"), nullable=False)
+    total_inss_employee: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"), nullable=False)
+    total_inss_employer: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"), nullable=False)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class PayslipModel(Base):
+    __tablename__ = "payslips"
+    __table_args__ = (
+        UniqueConstraint("period_id", "employee_id", name="uq_payslip_period_employee"),
+        {"schema": "kudiba_payroll"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    period_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.payroll_periods.id"), nullable=False, index=True
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.employees.id"), nullable=False, index=True
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.contracts.id"), nullable=False
+    )
+    days_worked: Mapped[int] = mapped_column(Integer, default=22, nullable=False)
+    base_salary: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    total_gross: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    total_allowances: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"), nullable=False)
+    total_overtime: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"), nullable=False)
+    base_inss: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    inss_employee: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    inss_employer: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    materia_coletavel_irt: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    irt: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    total_deductions: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    net_salary: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="DRAFT", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    lines: Mapped[List["PayslipLineModel"]] = relationship(
+        "PayslipLineModel", back_populates="payslip", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class PayslipLineModel(Base):
+    __tablename__ = "payslip_lines"
+    __table_args__ = {"schema": "kudiba_payroll"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    payslip_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.payslips.id"), nullable=False, index=True
+    )
+    line_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    reference_value: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("1.00"), nullable=False)
+    rate: Mapped[Decimal] = mapped_column(Numeric(7, 4), default=Decimal("0.0000"), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    payslip: Mapped["PayslipModel"] = relationship("PayslipModel", back_populates="lines")

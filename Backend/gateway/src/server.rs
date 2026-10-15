@@ -25,7 +25,7 @@ use crate::middleware::{
 };
 use crate::proxy::{
     forward_to_accounting, forward_to_auth, forward_to_auth_openapi, forward_to_core,
-    forward_to_fiscal, forward_to_inventory, forward_to_treasury,
+    forward_to_fiscal, forward_to_inventory, forward_to_payroll, forward_to_treasury,
 };
 
 /// Estado global compartilhado entre os handlers e middlewares do Gateway
@@ -159,6 +159,9 @@ pub fn create_router(
         // Rotas de Contabilidade Geral, PGC e SAF-T Contabilidade (KudibaAccounting)
         .route("/api/v1/accounting/{*path}", any(forward_to_accounting))
         .route("/api/v1/accounting", any(forward_to_accounting))
+        // Rotas de Recursos Humanos e Processamento Salarial (KudibaPayroll)
+        .route("/api/v1/payroll/{*path}", any(forward_to_payroll))
+        .route("/api/v1/payroll", any(forward_to_payroll))
         // Rotas de Sincronização POS (Edge Tauri) e Módulos Comerciais
         .route("/api/v1/{*path}", any(forward_to_core))
         .route("/api/v1", any(forward_to_core))

@@ -6,7 +6,8 @@ pub mod revaluation_commands;
 
 pub use account_commands::{CreateAccountHandler, SeedStandardPgcHandler};
 pub use event_integration_commands::{
-    ProcessInvoiceIssuedCommand, ProcessStockDispatchCommand, ProcessTreasuryReceiptCommand,
+    ProcessInvoiceIssuedCommand, ProcessPayrollPeriodClosedCommand, ProcessStockDispatchCommand,
+    ProcessTreasuryReceiptCommand,
 };
 pub use fiscal_year_commands::{CloseFiscalYearHandler, OpenFiscalYearHandler};
 pub use journal_entry_commands::{PostManualEntryHandler, ReverseEntryHandler};

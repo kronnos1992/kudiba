@@ -1606,6 +1606,183 @@ paths:
             application/xml:
               schema:
                 type: string
+  /api/v1/payroll/employees:
+    post:
+      summary: Cadastrar Novo Colaborador
+      tags:
+      - Recursos Humanos & Payroll
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, full_name, nif, identity_card_number, iban, hire_date]
+              properties:
+                code: { type: string, example: "EMP-001" }
+                full_name: { type: string, example: "Maria Silva Manuel" }
+                nif: { type: string, example: "5412345678" }
+                identity_card_number: { type: string, example: "001234567LA042" }
+                iban: { type: string, example: "AO06004000001234567890123" }
+                hire_date: { type: string, format: date, example: "2024-01-15" }
+                inss_number: { type: string, example: "123456789" }
+                email: { type: string, format: email, example: "maria.manuel@empresa.ao" }
+      responses:
+        '201':
+          description: Colaborador registado com sucesso
+    get:
+      summary: Listar Colaboradores Ativos
+      tags:
+      - Recursos Humanos & Payroll
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Lista de colaboradores ativos da organização
+  /api/v1/payroll/contracts:
+    post:
+      summary: Celebrar Contrato de Trabalho
+      tags:
+      - Recursos Humanos & Payroll
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [employee_id, contract_type, start_date, base_salary]
+              properties:
+                employee_id: { type: string, format: uuid }
+                contract_type: { type: string, enum: [PERMANENT, FIXED_TERM, PROBATION, PART_TIME, INTERNSHIP] }
+                start_date: { type: string, format: date }
+                base_salary: { type: number, example: 350000.00 }
+      responses:
+        '201':
+          description: Contrato de trabalho ativado
+  /api/v1/payroll/periods:
+    post:
+      summary: Abrir Período de Processamento Salarial
+      tags:
+      - Recursos Humanos & Payroll
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, year, month, start_date, end_date]
+              properties:
+                title: { type: string, example: "Folha Salarial - Março 2026" }
+                year: { type: integer, example: 2026 }
+                month: { type: integer, example: 3 }
+                start_date: { type: string, format: date, example: "2026-03-01" }
+                end_date: { type: string, format: date, example: "2026-03-31" }
+      responses:
+        '201':
+          description: Período salarial aberto em rascunho
+    get:
+      summary: Listar Períodos de Processamento Salarial
+      tags:
+      - Recursos Humanos & Payroll
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Lista dos períodos salariais
+  /api/v1/payroll/periods/{id}/calculate:
+    post:
+      summary: Processar e Calcular Salários do Período (IRT Lei 28/20 e INSS DP 227/18)
+      tags:
+      - Recursos Humanos & Payroll
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                overtime_data:
+                  type: array
+                  items:
+                    type: object
+                    required: [employee_id]
+                    properties:
+                      employee_id: { type: string, format: uuid }
+                      overtime_50_hours: { type: number, default: 0.00 }
+                      overtime_75_hours: { type: number, default: 0.00 }
+                      days_worked: { type: integer, default: 22 }
+                      advances: { type: number, default: 0.00 }
+                      other_deductions: { type: number, default: 0.00 }
+      responses:
+        '200':
+          description: Salários calculados e recibos gerados
+  /api/v1/payroll/periods/{id}/close:
+    post:
+      summary: Encerrar Período e Emitir Evento Contabilístico (Partidas Dobradas PGC)
+      tags:
+      - Recursos Humanos & Payroll
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Período encerrado e evento payroll.period.closed publicado no RabbitMQ
+  /api/v1/payroll/periods/{id}/ps2:
+    get:
+      summary: Exportar Ficheiro Bancário de Remessa PS2 / SEPA ASCII
+      tags:
+      - Recursos Humanos & Payroll
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: as_download
+        in: query
+        schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Ficheiro PS2 para transferência em lote nos bancos de Angola
 components:
   securitySchemes:
     BearerAuth:

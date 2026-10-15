@@ -53,7 +53,7 @@ impl MultiChannelInventoryEventPublisher {
 
         channel
             .exchange_declare(
-                ShortString::from("inventory.events"),
+                ShortString::from("fiscal.events"),
                 ExchangeKind::Topic,
                 ExchangeDeclareOptions {
                     durable: true,
@@ -113,8 +113,8 @@ impl InventoryEventPublisher for MultiChannelInventoryEventPublisher {
 
             let confirm = channel
                 .basic_publish(
-                    ShortString::from("inventory.events"),
-                    ShortString::from("inventory.stock_dispatch"),
+                    ShortString::from("fiscal.events"),
+                    ShortString::from("inventory.event.stock_dispatch"),
                     BasicPublishOptions::default(),
                     &payload_bytes,
                     props,
