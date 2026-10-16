@@ -40,6 +40,12 @@ pub struct Config {
     pub environment: String,
     /// Versão do serviço exposta nos endpoints de metadados
     pub service_version: &'static str,
+    /// Segredo partilhado para validação da assinatura perimétrica do Gateway
+    #[allow(dead_code)]
+    pub internal_gateway_secret: String,
+    /// Se ativado, rejeita requisições sem assinatura perimétrica válida do Gateway
+    #[allow(dead_code)]
+    pub enforce_gateway_signature: bool,
 }
 
 impl Config {
@@ -92,6 +98,13 @@ impl Config {
                 .filter(|s| !s.trim().is_empty()),
             environment,
             service_version: env!("CARGO_PKG_VERSION"),
+            internal_gateway_secret: env::var("INTERNAL_GATEWAY_SECRET").unwrap_or_else(|_| {
+                "kudiba_internal_gateway_secret_development_key_change_in_production_2026"
+                    .to_string()
+            }),
+            enforce_gateway_signature: env::var("ENFORCE_GATEWAY_SIGNATURE")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
         }
     }
 

@@ -31,6 +31,15 @@ __pycache__/
 .pytest_cache/
 .venv/
 env/
+*.egg-info/
+build/
+dist/
+
+# Runtime logs locais
+.run_logs/
+
+# Docker overrides locais
+docker-compose.override.yml
 
 # Docker volumes and local data
 postgres_data/

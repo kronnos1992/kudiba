@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(
         port = cfg.port,
         env = %cfg.env,
-        core_api = %cfg.core_api_url,
+        core_api = ?cfg.core_api_url,
         fiscal_engine = %cfg.fiscal_engine_url,
         agt_max_contingency_days = cfg.agt_contingency_max_days,
         "Configurações carregadas com sucesso"

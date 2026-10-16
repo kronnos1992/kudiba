@@ -68,6 +68,16 @@ class PostgresEmployeeRepository(EmployeeRepository):
             model = res.scalar_one_or_none()
             return self._to_entity(model) if model else None
 
+    async def get_by_identity_card(self, tenant_id: UUID, identity_card_number: str) -> Optional[Employee]:
+        async with self.session_factory() as session:
+            stmt = select(EmployeeModel).where(
+                EmployeeModel.tenant_id == tenant_id,
+                EmployeeModel.identity_card_number == identity_card_number,
+            )
+            res = await session.execute(stmt)
+            model = res.scalar_one_or_none()
+            return self._to_entity(model) if model else None
+
     async def list_active(self, tenant_id: UUID) -> List[Employee]:
         async with self.session_factory() as session:
             stmt = (

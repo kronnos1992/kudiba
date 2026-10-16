@@ -172,7 +172,8 @@ INSERT INTO kudiba_core.roles (id, name, description, is_system) VALUES
     ('CONTABILISTA', 'Contabilista Certificado', 'Acesso à faturação, fechos de contas, exportação SAF-T e mapas fiscais', TRUE),
     ('OPERADOR_CAIXA', 'Operador de Caixa (POS)', 'Emissão de faturas no ponto de venda, leitura X e operações diárias', TRUE),
     ('GESTOR_STOCK', 'Gestor de Stocks', 'Controle de inventário, transferências de armazém e guias de transporte', TRUE),
-    ('AUDITOR', 'Auditor Fiscal / Revisor', 'Acesso de leitura para auditoria e conferência de trilha fiscal', TRUE)
+    ('AUDITOR', 'Auditor Fiscal / Revisor', 'Acesso de leitura para auditoria e conferência de trilha fiscal', TRUE),
+    ('GESTOR_RH', 'Gestor de Recursos Humanos', 'Gestão de colaboradores, contratos, folha salarial, férias e assiduidade', TRUE)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     description = EXCLUDED.description;
@@ -195,7 +196,15 @@ INSERT INTO kudiba_core.permissions (id, module, name, description) VALUES
     ('users:read', 'auth', 'Listar Utilizadores', 'Visualização de utilizadores da organização'),
     ('users:invite', 'auth', 'Convidar Utilizadores', 'Envio de convites e associação de utilizadores à empresa'),
     ('users:manage_roles', 'auth', 'Gerir Papéis de Utilizadores', 'Atribuição e revogação de funções de utilizadores'),
-    ('tenant:settings:manage', 'core', 'Gerir Dados da Empresa', 'Actualização de dados fiscais e cadastrais da empresa')
+    ('tenant:settings:manage', 'core', 'Gerir Dados da Empresa', 'Actualização de dados fiscais e cadastrais da empresa'),
+
+    -- Permissões de Recursos Humanos & Payroll (KudibaPayroll)
+    ('payroll:manage', 'payroll', 'Gerir Colaboradores e Contratos', 'Registo, actualização e cessação de colaboradores, departamentos e contratos'),
+    ('payroll:view', 'payroll', 'Consultar Folha Salarial', 'Consulta de recibos, períodos e resumos de processamento salarial'),
+    ('payroll:calculate', 'payroll', 'Processar Salários', 'Cálculo da folha salarial do período (IRT e INSS)'),
+    ('payroll:approve', 'payroll', 'Aprovar e Encerrar Períodos', 'Aprovação e encerramento oficial do período salarial'),
+    ('payroll:export', 'payroll', 'Exportar Remessa Bancária', 'Geração do ficheiro PS2 de transferências em lote'),
+    ('payroll:hr', 'payroll', 'Gerir Férias e Assiduidade', 'Pedidos de férias, aprovações e registos de assiduidade')
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     description = EXCLUDED.description;
@@ -233,6 +242,17 @@ INSERT INTO kudiba_core.role_permissions (role_id, permission_id) VALUES
     ('AUDITOR', 'fiscal:reports:read'),
     ('AUDITOR', 'fiscal:saft:export'),
     ('AUDITOR', 'users:read')
+ON CONFLICT DO NOTHING;
+
+-- GESTOR_RH: Permissões de Recursos Humanos & Payroll
+INSERT INTO kudiba_core.role_permissions (role_id, permission_id) VALUES
+    ('GESTOR_RH', 'payroll:manage'),
+    ('GESTOR_RH', 'payroll:view'),
+    ('GESTOR_RH', 'payroll:calculate'),
+    ('GESTOR_RH', 'payroll:approve'),
+    ('GESTOR_RH', 'payroll:export'),
+    ('GESTOR_RH', 'payroll:hr'),
+    ('GESTOR_RH', 'users:read')
 ON CONFLICT DO NOTHING;
 
 -- -----------------------------------------------------------------------------

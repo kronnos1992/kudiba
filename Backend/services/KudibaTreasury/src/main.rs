@@ -225,6 +225,22 @@ async fn ensure_schema(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             PRIMARY KEY (tenant_id, sequence_type, fiscal_year)
         );
+
+        CREATE TABLE IF NOT EXISTS kudiba_treasury.invoice_receivables (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL,
+            invoice_id VARCHAR(100) NOT NULL,
+            document_number VARCHAR(60) NOT NULL,
+            document_type VARCHAR(10) NOT NULL,
+            payment_mechanism VARCHAR(40),
+            gross_total NUMERIC(15, 4) NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'OUTSTANDING',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_treasury_receivable_invoice UNIQUE (tenant_id, invoice_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_receivables_tenant ON kudiba_treasury.invoice_receivables(tenant_id);
+        CREATE INDEX IF NOT EXISTS idx_receivables_status ON kudiba_treasury.invoice_receivables(tenant_id, status);
         "#
     )
     .execute(pool)

@@ -1502,6 +1502,64 @@ async fn sync_agt_handler(
     }
 }
 
+#[allow(dead_code)]
+fn compute_gateway_signature(secret: &[u8], payload: &str) -> String {
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret);
+    let tag = ring::hmac::sign(&key, payload.as_bytes());
+    tag.as_ref()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>()
+}
+
+#[allow(dead_code)]
+fn verify_internal_gateway_signature(
+    headers: &HeaderMap,
+    method: &str,
+    uri_path: &str,
+    secret: &str,
+    enforce: bool,
+) -> Result<(), ApiError> {
+    let sig_opt = headers
+        .get("X-Gateway-Signature")
+        .and_then(|v| v.to_str().ok());
+    let ts_opt = headers
+        .get("X-Gateway-Timestamp")
+        .and_then(|v| v.to_str().ok());
+
+    if let (Some(sig), Some(ts)) = (sig_opt, ts_opt) {
+        let timestamp = ts.parse::<i64>().map_err(|_| {
+            ApiError::new(
+                StatusCode::UNAUTHORIZED,
+                "Timestamp perimétrico do Gateway inválido.",
+            )
+        })?;
+        let now = chrono::Utc::now().timestamp();
+        if (now - timestamp).abs() > 300 {
+            return Err(ApiError::new(
+                StatusCode::UNAUTHORIZED,
+                "Timestamp perimétrico do Gateway expirado ou desincronizado.",
+            ));
+        }
+
+        let canonical = format!("{}:{}:{}", ts, method, uri_path);
+        let expected = compute_gateway_signature(secret.as_bytes(), &canonical);
+        if sig != expected {
+            return Err(ApiError::new(
+                StatusCode::UNAUTHORIZED,
+                "Assinatura perimétrica do Gateway inválida.",
+            ));
+        }
+    } else if enforce {
+        return Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "Assinatura perimétrica do Gateway ausente.",
+        ));
+    }
+
+    Ok(())
+}
+
 fn authorized_tenant_id(headers: &HeaderMap, allowed_roles: &[&str]) -> Result<Uuid, ApiError> {
     let tenant = headers
         .get("X-Resolved-Tenant-ID")
@@ -1679,5 +1737,50 @@ mod authorization_tests {
         )
         .unwrap_err();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn valida_assinatura_perimetrica_com_sucesso() {
+        let secret = "test_internal_gateway_secret_123456";
+        let now = chrono::Utc::now().timestamp().to_string();
+        let method = "POST";
+        let path = "/api/v1/invoices";
+        let canonical = format!("{}:{}:{}", now, method, path);
+        let signature = compute_gateway_signature(secret.as_bytes(), &canonical);
+
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Gateway-Timestamp", now.parse().unwrap());
+        headers.insert("X-Gateway-Signature", signature.parse().unwrap());
+
+        assert!(verify_internal_gateway_signature(&headers, method, path, secret, true).is_ok());
+    }
+
+    #[test]
+    fn rejeita_assinatura_perimetrica_invalida_ou_expirada() {
+        let secret = "test_internal_gateway_secret_123456";
+        let now = chrono::Utc::now().timestamp().to_string();
+        let method = "POST";
+        let path = "/api/v1/invoices";
+
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Gateway-Timestamp", now.parse().unwrap());
+        headers.insert("X-Gateway-Signature", "invalid_signature".parse().unwrap());
+
+        let err =
+            verify_internal_gateway_signature(&headers, method, path, secret, true).unwrap_err();
+        assert_eq!(err.status(), StatusCode::UNAUTHORIZED);
+
+        // Expirado (mais de 300 segundos atrás)
+        let expired = (chrono::Utc::now().timestamp() - 600).to_string();
+        let canonical = format!("{}:{}:{}", expired, method, path);
+        let signature = compute_gateway_signature(secret.as_bytes(), &canonical);
+
+        let mut exp_headers = HeaderMap::new();
+        exp_headers.insert("X-Gateway-Timestamp", expired.parse().unwrap());
+        exp_headers.insert("X-Gateway-Signature", signature.parse().unwrap());
+
+        let err_exp = verify_internal_gateway_signature(&exp_headers, method, path, secret, true)
+            .unwrap_err();
+        assert_eq!(err_exp.status(), StatusCode::UNAUTHORIZED);
     }
 }

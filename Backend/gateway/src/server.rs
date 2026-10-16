@@ -25,7 +25,8 @@ use crate::middleware::{
 };
 use crate::proxy::{
     forward_to_accounting, forward_to_auth, forward_to_auth_openapi, forward_to_core,
-    forward_to_fiscal, forward_to_inventory, forward_to_payroll, forward_to_treasury,
+    forward_to_fiscal, forward_to_integrations, forward_to_inventory, forward_to_payroll,
+    forward_to_treasury,
 };
 
 /// Estado global compartilhado entre os handlers e middlewares do Gateway
@@ -142,6 +143,26 @@ pub fn create_router(
         .layer(axum_mw::from_fn(tenant_resolver_middleware));
 
     // =========================================================================
+    // ROTAS DE RECEÇÃO DE WEBHOOKS DE INTEGRAÇÃO (PÚBLICAS / INTEGRATION HUB)
+    // =========================================================================
+    // Sistemas externos (ex.: relógios de ponto) autenticam-se pelo segredo do
+    // webhook, não por JWT; por isso ficam fora da camada de autenticação mas
+    // continuam limitadas por rate limit para mitigar floods.
+    let integration_webhook_routes = Router::new()
+        .route(
+            "/api/v1/integrations/webhooks/{*path}",
+            any(forward_to_integrations),
+        )
+        .route(
+            "/api/v1/integrations/webhooks",
+            any(forward_to_integrations),
+        )
+        .layer(axum_mw::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ));
+
+    // =========================================================================
     // ROTAS PROTEGIDAS DO ENTRYPOINT (REVERSE PROXY)
     // =========================================================================
     let api_routes = Router::new()
@@ -162,6 +183,9 @@ pub fn create_router(
         // Rotas de Recursos Humanos e Processamento Salarial (KudibaPayroll)
         .route("/api/v1/payroll/{*path}", any(forward_to_payroll))
         .route("/api/v1/payroll", any(forward_to_payroll))
+        // Rotas de Configuração de Integrações (KudibaIntegrations / backoffice)
+        .route("/api/v1/integrations/{*path}", any(forward_to_integrations))
+        .route("/api/v1/integrations", any(forward_to_integrations))
         // Rotas de Sincronização POS (Edge Tauri) e Módulos Comerciais
         .route("/api/v1/{*path}", any(forward_to_core))
         .route("/api/v1", any(forward_to_core))
@@ -225,6 +249,7 @@ pub fn create_router(
         .merge(services_routes)
         .merge(docs_routes)
         .merge(auth_routes)
+        .merge(integration_webhook_routes)
         .merge(api_routes)
         .with_state(state.clone())
         // Camadas globais de rede e transporte

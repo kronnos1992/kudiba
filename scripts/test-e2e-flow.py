@@ -113,10 +113,11 @@ def main():
     print(f"[{BOLD}3/7{RESET}] Criando armazém '{wh_code}' via Gateway...", end=" ")
     try:
         wh_payload = {
+            "branch_id": BRANCH_ID,
             "code": wh_code,
             "name": f"Armazém Central E2E {test_suffix}",
-            "isDefault": True,
-            "addressDetail": "Zona Industrial de Viana, Luanda"
+            "is_default": True,
+            "address_detail": "Zona Industrial de Viana, Luanda",
         }
         wh_res = api_request("POST", "/api/v1/inventory/warehouses", token=token, body=wh_payload, expected_status=201)
         warehouse_id = wh_res.get("id")
@@ -131,11 +132,14 @@ def main():
     try:
         prod_payload = {
             "code": prod_code,
+            "name": f"Produto Físico E2E Teste {test_suffix}",
             "description": f"Produto Físico E2E Teste {test_suffix}",
-            "productType": "PRODUCT",
-            "unitOfMeasure": "UN",
-            "unitPrice": "2500.00",
-            "minStock": "10.00"
+            "product_type": "P",
+            "is_stockable": True,
+            "unit_of_measure": "UN",
+            "sale_price": "2500.00",
+            "cost_price": "1500.00",
+            "tax_percentage": "14.00",
         }
         prod_res = api_request("POST", "/api/v1/inventory/products", token=token, body=prod_payload, expected_status=201)
         product_id = prod_res.get("id")
@@ -148,18 +152,18 @@ def main():
     print(f"[{BOLD}5/7{RESET}] Registando compra de stock (+100 unidades)...", end=" ")
     try:
         purchase_payload = {
-            "productId": product_id,
-            "warehouseId": warehouse_id,
+            "warehouse_id": warehouse_id,
+            "product_id": product_id,
             "quantity": "100.00",
-            "unitCost": "1500.00",
-            "documentRef": f"COMPRA-{test_suffix}",
-            "notes": "Entrada inicial para teste de fumo E2E"
+            "unit_cost": "1500.00",
+            "document_ref": f"COMPRA-{test_suffix}",
+            "notes": "Entrada inicial para teste de fumo E2E",
         }
-        api_request("POST", "/api/v1/inventory/stock/purchases", token=token, body=purchase_payload, expected_status=201)
+        api_request("POST", "/api/v1/inventory/movements/purchase", token=token, body=purchase_payload, expected_status=201)
         
         # Confere saldo antes da venda
         stock_info = api_request("GET", f"/api/v1/inventory/stock/{product_id}/warehouses/{warehouse_id}", token=token)
-        current_stock = float(stock_info.get("currentStock", 0))
+        current_stock = float(stock_info.get("quantity_on_hand", 0))
         if current_stock != 100.0:
             raise RuntimeError(f"Stock esperado 100.0 mas obteve {current_stock}")
         print(f"{GREEN}OK (Stock inicial: 100.0 | CMP: 1500.00 AOA){RESET}")
@@ -171,24 +175,25 @@ def main():
     print(f"[{BOLD}6/7{RESET}] Emitindo Fatura FT de 10 unidades via KudibaInvoicing...", end=" ")
     try:
         invoice_payload = {
+            "tenantId": TENANT_ID,
             "documentType": "FT",
             "seriesCode": "2026A",
-            "customerTaxId": "5000123456",
+            "fiscalYear": int(time.strftime("%Y")),
             "customerName": "Cliente de Teste Integrado E2E",
             "customerAddress": "Rua Principal 10, Luanda",
             "customerCity": "Luanda",
             "customerCountry": "AO",
-            "paymentMethods": [{"method": "NUMERARIO", "amount": "28500.00"}],
+            "customerNif": "5000123456",
+            "paymentMethods": ["NUMERARIO"],
             "lines": [
                 {
-                    "lineNumber": 1,
                     "productCode": prod_code,
                     "description": f"Produto Físico E2E Teste {test_suffix}",
                     "quantity": "10.00",
                     "unitPrice": "2500.00",
-                    "taxRate": "14.00"
+                    "taxRate": "14.00",
                 }
-            ]
+            ],
         }
         inv_res = api_request("POST", "/api/v1/fiscal/invoices", token=token, body=invoice_payload, expected_status=201)
         doc_num = inv_res.get("documentNumber")
@@ -205,7 +210,7 @@ def main():
         time.sleep(1)
         try:
             stock_info = api_request("GET", f"/api/v1/inventory/stock/{product_id}/warehouses/{warehouse_id}", token=token)
-            curr = float(stock_info.get("currentStock", 100))
+            curr = float(stock_info.get("quantity_on_hand", 100))
             if curr == 90.0:
                 updated_stock = curr
                 break
@@ -216,7 +221,7 @@ def main():
         print(f"{GREEN}SUCESSO! (Stock baixou de 100.0 para 90.0 automaticamente){RESET}")
     else:
         # Tenta verificar se o canal interno ou consumidor recebeu
-        print(f"{YELLOW}AVISO (Stock atual: {stock_info.get('currentStock')}){RESET}")
+        print(f"{YELLOW}AVISO (Stock atual: {stock_info.get('quantity_on_hand')}){RESET}")
         print(f"    Nota: Em ambiente sem RabbitMQ ou com polling longo da outbox, a sincronização pode ocorrer na próxima iteração.")
 
     print(f"\n{BOLD}{GREEN}✔ Ciclo de Teste E2E concluído com êxito!{RESET}\n")

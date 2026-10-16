@@ -11,48 +11,30 @@ LOGS_DIR="$ROOT_DIR/.run_logs"
 
 echo "=== Parando servidores Kudiba locais ==="
 
-# Parar Auth por PID se existir
-if [ -f "$LOGS_DIR/auth.pid" ]; then
-    PID=$(cat "$LOGS_DIR/auth.pid")
-    if kill -0 "$PID" 2>/dev/null; then
-        echo "[+] Encerrando KudibaAuth (PID $PID)..."
-        kill "$PID" 2>/dev/null || true
+stop_service() {
+    local name="$1" pid_file="$2" bin_pattern="$3"
+    if [ -f "$LOGS_DIR/$pid_file" ]; then
+        PID=$(cat "$LOGS_DIR/$pid_file")
+        if kill -0 "$PID" 2>/dev/null; then
+            echo "[+] Encerrando $name (PID $PID)..."
+            kill "$PID" 2>/dev/null || true
+        fi
+        rm -f "$LOGS_DIR/$pid_file"
     fi
-    rm -f "$LOGS_DIR/auth.pid"
-fi
-pkill -f "uvicorn src.main:app" 2>/dev/null || true
+    pkill -f "$bin_pattern" 2>/dev/null || true
+}
 
-# Parar Gateway por PID se existir
-if [ -f "$LOGS_DIR/gateway.pid" ]; then
-    PID=$(cat "$LOGS_DIR/gateway.pid")
-    if kill -0 "$PID" 2>/dev/null; then
-        echo "[+] Encerrando Kudiba Gateway (PID $PID)..."
-        kill "$PID" 2>/dev/null || true
-    fi
-    rm -f "$LOGS_DIR/gateway.pid"
-fi
-pkill -f "kudiba-gateway" 2>/dev/null || true
+stop_service "KudibaAuth" "auth.pid" "uvicorn src.main:app --host 0.0.0.0 --port 8082"
+stop_service "KudibaPayroll" "payroll.pid" "uvicorn src.main:app --host 0.0.0.0 --port 8086"
+stop_service "KudibaIntegrations" "integrations.pid" "uvicorn src.main:app --host 0.0.0.0 --port 8087"
+stop_service "Kudiba Gateway" "gateway.pid" "kudiba-gateway"
+stop_service "KudibaInvoicing" "invoicing.pid" "kudiba-invoicing"
+stop_service "KudibaInventory" "inventory.pid" "kudiba-inventory"
+stop_service "KudibaTreasury" "treasury.pid" "kudiba-treasury"
+stop_service "KudibaAccounting" "accounting.pid" "kudiba-accounting"
 
-# Parar Invoicing por PID se existir
-if [ -f "$LOGS_DIR/invoicing.pid" ]; then
-    PID=$(cat "$LOGS_DIR/invoicing.pid")
-    if kill -0 "$PID" 2>/dev/null; then
-        echo "[+] Encerrando KudibaInvoicing (PID $PID)..."
-        kill "$PID" 2>/dev/null || true
-    fi
-    rm -f "$LOGS_DIR/invoicing.pid"
+if command -v docker >/dev/null 2>&1; then
+    docker rm -f kudiba-rabbitmq-dev >/dev/null 2>&1 || true
 fi
-pkill -f "kudiba-invoicing" 2>/dev/null || true
-
-# Parar Inventory por PID se existir
-if [ -f "$LOGS_DIR/inventory.pid" ]; then
-    PID=$(cat "$LOGS_DIR/inventory.pid")
-    if kill -0 "$PID" 2>/dev/null; then
-        echo "[+] Encerrando KudibaInventory (PID $PID)..."
-        kill "$PID" 2>/dev/null || true
-    fi
-    rm -f "$LOGS_DIR/inventory.pid"
-fi
-pkill -f "kudiba-inventory" 2>/dev/null || true
 
 echo "[✓] Todos os servidores Kudiba foram encerrados com sucesso."

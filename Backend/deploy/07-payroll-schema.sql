@@ -230,3 +230,107 @@ CREATE INDEX IF NOT EXISTS idx_period_tenant ON kudiba_payroll.payroll_periods(t
 CREATE INDEX IF NOT EXISTS idx_payslip_period ON kudiba_payroll.payslips(tenant_id, period_id);
 CREATE INDEX IF NOT EXISTS idx_payslip_employee ON kudiba_payroll.payslips(tenant_id, employee_id);
 CREATE INDEX IF NOT EXISTS idx_payslip_lines_payslip ON kudiba_payroll.payslip_lines(payslip_id);
+
+-- 11. FÉRIAS (LGT 12/23 — 30 dias úteis anuais)
+DO $$ BEGIN
+    CREATE TYPE kudiba_payroll.vacation_status AS ENUM (
+        'PENDING',
+        'APPROVED',
+        'REJECTED',
+        'CANCELLED'
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE kudiba_payroll.absence_type AS ENUM (
+        'UNJUSTIFIED',
+        'JUSTIFIED',
+        'SICKNESS',
+        'MATERNITY',
+        'PATERNITY',
+        'BEREAVEMENT'
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+CREATE TABLE IF NOT EXISTS kudiba_payroll.vacation_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    employee_id UUID NOT NULL REFERENCES kudiba_payroll.employees(id) ON DELETE RESTRICT,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    days INT NOT NULL CHECK (days > 0),
+    status kudiba_payroll.vacation_status NOT NULL DEFAULT 'PENDING',
+    notes TEXT,
+    decided_by UUID,
+    decided_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_vacation_dates CHECK (end_date >= start_date)
+);
+
+CREATE TABLE IF NOT EXISTS kudiba_payroll.absence_records (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    employee_id UUID NOT NULL REFERENCES kudiba_payroll.employees(id) ON DELETE RESTRICT,
+    absence_date DATE NOT NULL,
+    absence_type kudiba_payroll.absence_type NOT NULL DEFAULT 'UNJUSTIFIED',
+    is_paid BOOLEAN NOT NULL DEFAULT FALSE,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_absence_employee_date UNIQUE (tenant_id, employee_id, absence_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vacation_employee ON kudiba_payroll.vacation_requests(tenant_id, employee_id);
+CREATE INDEX IF NOT EXISTS idx_vacation_status ON kudiba_payroll.vacation_requests(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_absence_employee ON kudiba_payroll.absence_records(tenant_id, employee_id);
+CREATE INDEX IF NOT EXISTS idx_absence_date ON kudiba_payroll.absence_records(tenant_id, absence_date);
+
+-- 12. PICAGENS DE ASSIDUIDADE (integradas a partir de sistemas externos de controlo de ponto)
+DO $$ BEGIN
+    CREATE TYPE kudiba_payroll.attendance_direction AS ENUM (
+        'IN',
+        'OUT',
+        'UNKNOWN'
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+CREATE TABLE IF NOT EXISTS kudiba_payroll.attendance_records (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    employee_id UUID NOT NULL REFERENCES kudiba_payroll.employees(id) ON DELETE RESTRICT,
+    employee_code VARCHAR(50),
+    punched_at TIMESTAMPTZ NOT NULL,
+    direction kudiba_payroll.attendance_direction NOT NULL DEFAULT 'UNKNOWN',
+    device_id VARCHAR(120),
+    source VARCHAR(120),
+    external_id VARCHAR(160),
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_attendance_employee_punch UNIQUE (tenant_id, employee_id, punched_at, direction)
+);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_employee ON kudiba_payroll.attendance_records(tenant_id, employee_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_punched ON kudiba_payroll.attendance_records(tenant_id, punched_at);
+CREATE INDEX IF NOT EXISTS idx_attendance_external ON kudiba_payroll.attendance_records(tenant_id, external_id);
+
+-- 13. TRANSACTIONAL OUTBOX (garante consistência eventual com KudibaAccounting)
+CREATE TABLE IF NOT EXISTS kudiba_payroll.payroll_outbox (
+    event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    aggregate_id UUID NOT NULL,
+    event_type VARCHAR(64) NOT NULL,
+    routing_key VARCHAR(120) NOT NULL,
+    payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    published_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_payroll_outbox_pending
+    ON kudiba_payroll.payroll_outbox (created_at)
+    WHERE published_at IS NULL;
+

@@ -13,15 +13,17 @@ pub struct Config {
 
     pub redis_url: String,
 
-    pub core_api_url: String,
+    pub core_api_url: Option<String>,
     pub fiscal_engine_url: String,
     pub auth_service_url: String,
     pub inventory_service_url: String,
     pub treasury_service_url: String,
     pub accounting_service_url: String,
     pub payroll_service_url: String,
+    pub integrations_service_url: String,
 
     pub jwt_secret: String,
+    pub internal_gateway_secret: String,
 
     // Regulamentação AGT - Decreto Presidencial n.º 71/25
     pub agt_contingency_max_days: i64,
@@ -76,11 +78,19 @@ impl Config {
             )
         };
 
-        let mut core_api_url =
-            env::var("CORE_API_URL").unwrap_or_else(|_| "http://localhost:8081".to_string());
-        if !core_api_url.starts_with("http://") && !core_api_url.starts_with("https://") {
-            core_api_url = format!("http://{}", core_api_url);
-        }
+        // O Core API (módulos comerciais) pode não estar implantado em todos os
+        // ambientes; quando CORE_API_URL não é definido o catch-all devolve 404.
+        let core_api_url = env::var("CORE_API_URL")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                if value.starts_with("http://") || value.starts_with("https://") {
+                    value
+                } else {
+                    format!("http://{}", value)
+                }
+            });
 
         let mut fiscal_engine_url = env::var("FISCAL_ENGINE_URL")
             .or_else(|_| env::var("FISCAL_ENGINE_GRPC_TARGET"))
@@ -127,6 +137,14 @@ impl Config {
             payroll_service_url = format!("http://{}", payroll_service_url);
         }
 
+        let mut integrations_service_url = env::var("INTEGRATIONS_SERVICE_URL")
+            .unwrap_or_else(|_| "http://localhost:8087".to_string());
+        if !integrations_service_url.starts_with("http://")
+            && !integrations_service_url.starts_with("https://")
+        {
+            integrations_service_url = format!("http://{}", integrations_service_url);
+        }
+
         const DEVELOPMENT_JWT_SECRET: &str =
             "kudiba_jwt_secret_development_key_change_in_production_2026";
         let is_production =
@@ -171,6 +189,11 @@ impl Config {
             panic!("Production JWT_SECRET must be a non-default secret of at least 32 bytes.");
         }
 
+        const DEVELOPMENT_INTERNAL_GATEWAY_SECRET: &str =
+            "kudiba_internal_gateway_secret_development_key_change_in_production_2026";
+        let internal_gateway_secret = env::var("INTERNAL_GATEWAY_SECRET")
+            .unwrap_or_else(|_| DEVELOPMENT_INTERNAL_GATEWAY_SECRET.to_string());
+
         let (postgres_host, postgres_port) = parse_postgres_config();
         let (rabbitmq_host, rabbitmq_port) = parse_rabbitmq_config();
 
@@ -189,7 +212,9 @@ impl Config {
             treasury_service_url,
             accounting_service_url,
             payroll_service_url,
+            integrations_service_url,
             jwt_secret,
+            internal_gateway_secret,
             agt_contingency_max_days: env::var("AGT_CONTINGENCY_MAX_DAYS")
                 .unwrap_or_else(|_| "60".to_string())
                 .parse::<i64>()

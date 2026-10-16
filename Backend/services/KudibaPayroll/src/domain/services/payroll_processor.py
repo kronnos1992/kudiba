@@ -1,12 +1,13 @@
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Dict, List, Any
+from typing import Any, Dict, List, Optional
 from src.domain.services.irt_calculator import IrtCalculator
 from src.domain.services.inss_calculator import InssCalculator
-from src.domain.value_objects.enums import ComponentType, PayslipLineType
+from src.domain.value_objects.enums import PayslipLineType
 
 
 class PayrollProcessor:
     STANDARD_MONTHLY_HOURS: Decimal = Decimal("173.33")
+    STANDARD_WORKING_DAYS: int = 22
 
     @classmethod
     def process_employee_payroll(
@@ -21,10 +22,25 @@ class PayrollProcessor:
         overtime_75_hours: Decimal = Decimal("0.00"),
         advances: Decimal = Decimal("0.00"),
         other_deductions: Decimal = Decimal("0.00"),
-        days_worked: int = 22,
+        days_worked: Optional[int] = None,
+        absence_days: int = 0,
     ) -> Dict[str, Any]:
+        effective_absence_days = max(0, absence_days)
+        if days_worked is None:
+            days_worked = max(0, cls.STANDARD_WORKING_DAYS - effective_absence_days)
+        else:
+            days_worked = max(0, days_worked)
+            effective_absence_days = max(effective_absence_days, cls.STANDARD_WORKING_DAYS - days_worked)
+
+        absence_deduction = (
+            (base_salary * Decimal(effective_absence_days) / Decimal(cls.STANDARD_WORKING_DAYS))
+            if effective_absence_days > 0
+            else Decimal("0.00")
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        paid_base = (base_salary - absence_deduction).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
         hourly_rate = (base_salary / cls.STANDARD_MONTHLY_HOURS).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        
+
         ot_50_amount = (overtime_50_hours * hourly_rate * Decimal("1.50")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         ot_75_amount = (overtime_75_hours * hourly_rate * Decimal("1.75")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         total_overtime = ot_50_amount + ot_75_amount
@@ -33,7 +49,7 @@ class PayrollProcessor:
         total_gross = base_salary + total_allowances + total_overtime
 
         base_inss = InssCalculator.calculate_base(
-            base_salary=base_salary,
+            base_salary=paid_base,
             food_allowance=food_allowance,
             transport_allowance=transport_allowance,
             overtime_total=total_overtime,
@@ -45,14 +61,14 @@ class PayrollProcessor:
         exempt_food = min(food_allowance, InssCalculator.FOOD_ALLOWANCE_EXEMPT_LIMIT)
         exempt_transport = min(transport_allowance, InssCalculator.TRANSPORT_ALLOWANCE_EXEMPT_LIMIT)
         
-        materia_coletavel_irt = total_gross - exempt_food - exempt_transport - inss_employee
+        materia_coletavel_irt = paid_base + total_allowances + total_overtime - exempt_food - exempt_transport - inss_employee
         if materia_coletavel_irt < Decimal("0.00"):
             materia_coletavel_irt = Decimal("0.00")
         materia_coletavel_irt = materia_coletavel_irt.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
         irt = IrtCalculator.calculate(materia_coletavel_irt)
 
-        total_deductions = inss_employee + irt + advances + other_deductions
+        total_deductions = absence_deduction + inss_employee + irt + advances + other_deductions
         net_salary = total_gross - total_deductions
 
         lines: List[Dict[str, Any]] = [
@@ -66,6 +82,17 @@ class PayrollProcessor:
                 "amount": base_salary,
             }
         ]
+
+        if absence_deduction > Decimal("0.00"):
+            lines.append({
+                "line_type": PayslipLineType.DEDUCTION,
+                "code": "ABSENCE",
+                "description": f"Desconto por Faltas ({effective_absence_days} dia/s)",
+                "reference_value": base_salary,
+                "quantity": Decimal(effective_absence_days),
+                "rate": (base_salary / Decimal(cls.STANDARD_WORKING_DAYS)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                "amount": absence_deduction,
+            })
 
         if food_allowance > Decimal("0.00"):
             lines.append({
@@ -199,6 +226,8 @@ class PayrollProcessor:
 
         return {
             "days_worked": days_worked,
+            "absence_days": effective_absence_days,
+            "absence_deduction": absence_deduction,
             "base_salary": base_salary,
             "total_gross": total_gross,
             "total_allowances": total_allowances,

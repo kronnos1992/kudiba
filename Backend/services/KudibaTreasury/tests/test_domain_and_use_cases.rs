@@ -7,6 +7,7 @@ use uuid::Uuid;
 use kudiba_treasury::application::commands::{
     CloseCashSessionHandler, CreateBankAccountHandler, CreateCashRegisterHandler,
     IssueTreasuryReceiptHandler, OpenCashSessionHandler, RecordCashMovementHandler,
+    RegisterInvoiceReceivableHandler,
 };
 use kudiba_treasury::application::dto::{
     CloseCashSessionRequest, CreateBankAccountRequest, CreateCashRegisterRequest,
@@ -15,12 +16,13 @@ use kudiba_treasury::application::dto::{
 };
 use kudiba_treasury::application::queries::TreasuryQueries;
 use kudiba_treasury::domain::entities::{
-    BankAccount, CashMovement, CashRegister, CashSession, TreasuryReceipt, TreasuryReceiptLine,
+    BankAccount, CashMovement, CashRegister, CashSession, InvoiceReceivable, ReceivableStatus,
+    TreasuryReceipt, TreasuryReceiptLine,
 };
 use kudiba_treasury::domain::error::DomainError;
 use kudiba_treasury::domain::ports::{
     BankAccountRepository, CashMovementRepository, CashRegisterRepository, CashSessionRepository,
-    TreasuryEventPublisher, TreasuryReceiptRepository,
+    InvoiceReceivableRepository, TreasuryEventPublisher, TreasuryReceiptRepository,
 };
 use kudiba_treasury::domain::services::{DiscrepancyType, ReconciliationService};
 use kudiba_treasury::domain::value_objects::{
@@ -1106,4 +1108,91 @@ fn test_parse_incoming_invoice_direct_and_outbox_envelope() {
     assert_eq!(parsed_outbox.gross_total, dec!(125000.00));
     assert_eq!(parsed_outbox.tenant_id, tenant_id);
     assert_eq!(parsed_outbox.invoice_id, invoice_id);
+}
+
+#[derive(Default)]
+struct MockInvoiceReceivableRepository {
+    items: Mutex<HashMap<String, InvoiceReceivable>>,
+}
+
+#[async_trait]
+impl InvoiceReceivableRepository for MockInvoiceReceivableRepository {
+    async fn upsert(&self, receivable: &InvoiceReceivable) -> Result<(), DomainError> {
+        let mut lock = self.items.lock().unwrap();
+        let key = format!("{}:{}", receivable.tenant_id, receivable.invoice_id);
+        lock.insert(key, receivable.clone());
+        Ok(())
+    }
+
+    async fn list(
+        &self,
+        tenant_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<InvoiceReceivable>, DomainError> {
+        let lock = self.items.lock().unwrap();
+        let mut items: Vec<_> = lock
+            .values()
+            .filter(|r| r.tenant_id == tenant_id)
+            .cloned()
+            .collect();
+        items.sort_by_key(|b| std::cmp::Reverse(b.created_at));
+        items.truncate(limit.max(0) as usize);
+        Ok(items)
+    }
+}
+
+#[tokio::test]
+async fn test_register_invoice_receivable_from_event_is_idempotent() {
+    let tenant_id = Uuid::new_v4();
+    let repo = Arc::new(MockInvoiceReceivableRepository::default());
+    let handler = RegisterInvoiceReceivableHandler::new(repo.clone());
+
+    handler
+        .execute(
+            tenant_id,
+            "inv-0001".to_string(),
+            "FT 2026A/000001".to_string(),
+            "FT".to_string(),
+            Some("NUMERARIO".to_string()),
+            dec!(28500.00),
+        )
+        .await
+        .expect("Deveria registar o crédito por liquidar");
+
+    handler
+        .execute(
+            tenant_id,
+            "inv-0001".to_string(),
+            "FT 2026A/000001".to_string(),
+            "FT".to_string(),
+            Some("NUMERARIO".to_string()),
+            dec!(28500.00),
+        )
+        .await
+        .expect("Reenvio do mesmo evento deve ser idempotente");
+
+    let listed = repo.list(tenant_id, 50).await.unwrap();
+    assert_eq!(
+        listed.len(),
+        1,
+        "O evento duplicado não deve gerar novo registo"
+    );
+    assert_eq!(listed[0].document_number, "FT 2026A/000001");
+    assert_eq!(listed[0].document_type, "FT");
+    assert_eq!(listed[0].status, ReceivableStatus::Outstanding);
+    assert_eq!(listed[0].gross_total, dec!(28500.00));
+}
+
+#[tokio::test]
+async fn test_invoice_receivable_requires_document_number() {
+    let result = InvoiceReceivable::new(
+        Uuid::new_v4(),
+        "inv-0002".to_string(),
+        "   ".to_string(),
+        "FT".to_string(),
+        None,
+        dec!(100.00),
+    );
+
+    assert!(matches!(result, Err(DomainError::ValidationError(_))));
 }

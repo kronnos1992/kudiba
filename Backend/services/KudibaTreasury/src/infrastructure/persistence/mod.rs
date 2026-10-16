@@ -1,3 +1,4 @@
+pub mod invoice_receivable_repo;
 pub mod models;
 pub mod postgres_bank_account_repo;
 pub mod postgres_cash_movement_repo;
@@ -5,6 +6,7 @@ pub mod postgres_cash_register_repo;
 pub mod postgres_cash_session_repo;
 pub mod postgres_treasury_receipt_repo;
 
+pub use invoice_receivable_repo::PostgresInvoiceReceivableRepository;
 pub use postgres_bank_account_repo::PostgresBankAccountRepository;
 pub use postgres_cash_movement_repo::PostgresCashMovementRepository;
 pub use postgres_cash_register_repo::PostgresCashRegisterRepository;

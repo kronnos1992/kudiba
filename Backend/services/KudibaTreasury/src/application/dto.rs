@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::domain::entities::{
-    BankAccount, CashMovement, CashRegister, CashSession, TreasuryReceipt, TreasuryReceiptLine,
+    BankAccount, CashMovement, CashRegister, CashSession, InvoiceReceivable, ReceivableStatus,
+    TreasuryReceipt, TreasuryReceiptLine,
 };
 use crate::domain::services::SessionReconciliation;
 use crate::domain::value_objects::{Currency, MovementType, PaymentMethod, SessionStatus};
@@ -266,6 +267,37 @@ impl From<TreasuryReceipt> for TreasuryReceiptResponse {
             issued_at: r.issued_at,
             created_at: r.created_at,
             lines: r.lines.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct InvoiceReceivableResponse {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub invoice_id: String,
+    pub document_number: String,
+    pub document_type: String,
+    pub payment_mechanism: Option<String>,
+    pub gross_total: Decimal,
+    pub status: ReceivableStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<InvoiceReceivable> for InvoiceReceivableResponse {
+    fn from(r: InvoiceReceivable) -> Self {
+        Self {
+            id: r.id,
+            tenant_id: r.tenant_id,
+            invoice_id: r.invoice_id,
+            document_number: r.document_number,
+            document_type: r.document_type,
+            payment_mechanism: r.payment_mechanism,
+            gross_total: r.gross_total,
+            status: r.status,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
         }
     }
 }

@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import Dict, List
+from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 from src.application.dto import OpenPayrollPeriodRequest, CalculatePayrollPeriodRequest
 from src.domain.entities.payroll_period import PayrollPeriod
@@ -7,6 +7,7 @@ from src.domain.entities.payslip import Payslip, PayslipLine
 from src.domain.error import ConflictError, EntityNotFoundError, PeriodClosedError
 from src.domain.ports.contract_repository import ContractRepository
 from src.domain.ports.employee_repository import EmployeeRepository
+from src.domain.ports.hr_repository import HrRepository
 from src.domain.ports.payroll_repository import PayrollRepository
 from src.domain.ports.event_publisher import EventPublisher
 from src.domain.services.payroll_processor import PayrollProcessor
@@ -40,10 +41,12 @@ class CalculatePayrollPeriodUseCase:
         payroll_repo: PayrollRepository,
         contract_repo: ContractRepository,
         employee_repo: EmployeeRepository,
+        hr_repo: Optional[HrRepository] = None,
     ):
         self.payroll_repo = payroll_repo
         self.contract_repo = contract_repo
         self.employee_repo = employee_repo
+        self.hr_repo = hr_repo
 
     async def execute(self, tenant_id: UUID, period_id: UUID, req: CalculatePayrollPeriodRequest) -> PayrollPeriod:
         period = await self.payroll_repo.get_period_by_id(tenant_id, period_id)
@@ -61,7 +64,23 @@ class CalculatePayrollPeriodUseCase:
 
         for contract in active_contracts:
             ot_input = overtime_map.get(contract.employee_id)
-            days_worked = ot_input.days_worked if ot_input else 22
+
+            recorded_absence_days = 0
+            if self.hr_repo:
+                recorded_absence_days = await self.hr_repo.count_unpaid_absence_days(
+                    tenant_id,
+                    contract.employee_id,
+                    period.start_date,
+                    period.end_date,
+                )
+
+            if ot_input and ot_input.days_worked is not None:
+                days_worked = ot_input.days_worked
+                absence_days = recorded_absence_days
+            else:
+                days_worked = None
+                absence_days = recorded_absence_days
+
             ot_50_hours = ot_input.overtime_50_hours if ot_input else Decimal("0.00")
             ot_75_hours = ot_input.overtime_75_hours if ot_input else Decimal("0.00")
             advances = ot_input.advances if ot_input else Decimal("0.00")
@@ -103,6 +122,7 @@ class CalculatePayrollPeriodUseCase:
                 advances=advances,
                 other_deductions=other_deductions,
                 days_worked=days_worked,
+                absence_days=absence_days,
             )
 
             payslip = Payslip.create(
@@ -167,9 +187,10 @@ class ClosePayrollPeriodUseCase:
         await self.payroll_repo.save_period(period)
         await self.payroll_repo.save_payslips(period.id, payslips)
 
-        # Emissão do evento de integração com a Contabilidade Geral
+        # Registo na Transactional Outbox (garante consistência eventual)
+        event_id = uuid4()
         event_payload = {
-            "event_id": str(uuid4()),
+            "event_id": str(event_id),
             "tenant_id": str(tenant_id),
             "period_id": str(period.id),
             "event_type": "payroll.period.closed",
@@ -185,6 +206,24 @@ class ClosePayrollPeriodUseCase:
                 "employeeCount": len(payslips),
             },
         }
-        await self.event_publisher.publish("payroll.period.closed", event_payload)
+        await self.payroll_repo.save_outbox_event(
+            event_id=event_id,
+            tenant_id=tenant_id,
+            aggregate_id=period.id,
+            event_type="payroll.period.closed",
+            routing_key="payroll.event.period.closed",
+            payload=event_payload,
+        )
+
+        # Tentativa de despacho imediato; o worker em background garante reenvio se falhar
+        try:
+            await self.event_publisher.publish("payroll.event.period.closed", event_payload)
+            await self.payroll_repo.mark_outbox_event_published(event_id)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Publicação síncrona no broker falhou (%s). Evento persistido no outbox.", exc
+            )
 
         return period
+

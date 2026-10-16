@@ -12,8 +12,10 @@ GATEWAY_MANIFEST   := Backend/gateway/Cargo.toml
 INVOICING_MANIFEST := Backend/services/KudibaInvoicing/Cargo.toml
 INVENTORY_MANIFEST := Backend/services/KudibaInventory/Cargo.toml
 AUTH_DIR           := Backend/services/KudibaAuth
+PAYROLL_DIR        := Backend/services/KudibaPayroll
+INTEGRATIONS_DIR   := Backend/services/KudibaIntegrations
 LOGS_DIR           := .run_logs
-COMPOSE            := docker compose
+COMPOSE            := docker-compose
 
 .DEFAULT_GOAL := help
 
@@ -59,8 +61,8 @@ check: lint test ## Lint + todos os testes
 # -----------------------------------------------------------------------------
 # Testes
 # -----------------------------------------------------------------------------
-.PHONY: test test-rust test-gateway test-invoicing test-inventory test-auth
-test: test-rust test-auth ## Corre todos os testes (Rust + Python)
+.PHONY: test test-rust test-gateway test-invoicing test-inventory test-auth test-payroll test-integrations
+test: test-rust test-auth test-payroll test-integrations ## Corre todos os testes (Rust + Python)
 
 test-rust: ## Testes do workspace Rust (Gateway + Invoicing + Inventory)
 	cargo test --workspace --manifest-path $(CARGO_MANIFEST)
@@ -77,6 +79,12 @@ test-inventory: ## Testes do KudibaInventory
 test-auth: ## Testes do KudibaAuth (pytest)
 	cd $(AUTH_DIR) && PYTHONPATH=. python3 -m pytest tests/ -q
 
+test-payroll: ## Testes do KudibaPayroll (pytest)
+	cd $(PAYROLL_DIR) && PYTHONPATH=. python3 -m pytest tests/ -q
+
+test-integrations: ## Testes do KudibaIntegrations (pytest)
+	cd $(INTEGRATIONS_DIR) && PYTHONPATH=. python3 -m pytest tests/ -q
+
 test-e2e: ## Corre o teste de integracao ponta-a-ponta (E2E smoke test via Gateway)
 	bash scripts/test-e2e-flow.sh
 
@@ -92,10 +100,32 @@ auth-run: ## Corre o KudibaAuth isolado (uvicorn :8082)
 		python3 -m uvicorn src.main:app --host 0.0.0.0 --port 8082
 
 # -----------------------------------------------------------------------------
+# KudibaPayroll (Python)
+# -----------------------------------------------------------------------------
+.PHONY: payroll-install payroll-run
+payroll-install: ## Instala as dependencias do KudibaPayroll (com extra de testes)
+	cd $(PAYROLL_DIR) && python3 -m pip install -e ".[test]"
+
+payroll-run: ## Corre o KudibaPayroll isolado (uvicorn :8086)
+	cd $(PAYROLL_DIR) && PYTHONPATH=. ENVIRONMENT=development \
+		python3 -m uvicorn src.main:app --host 0.0.0.0 --port 8086
+
+# -----------------------------------------------------------------------------
+# KudibaIntegrations (Python)
+# -----------------------------------------------------------------------------
+.PHONY: integrations-install integrations-run
+integrations-install: ## Instala as dependencias do KudibaIntegrations (com extra de testes)
+	cd $(INTEGRATIONS_DIR) && python3 -m pip install -e ".[test]"
+
+integrations-run: ## Corre o KudibaIntegrations isolado (uvicorn :8087)
+	cd $(INTEGRATIONS_DIR) && PYTHONPATH=. ENVIRONMENT=development \
+		python3 -m uvicorn src.main:app --host 0.0.0.0 --port 8087
+
+# -----------------------------------------------------------------------------
 # Servidores locais (fora do Docker)
 # -----------------------------------------------------------------------------
 .PHONY: up-local down-local restart-local status-local logs-local
-up-local: ## Arranca Auth + Invoicing + Inventory + Gateway nativos
+up-local: ## Arranca Auth + Invoicing + Inventory + Treasury + Accounting + Payroll + Integrations + Gateway nativos
 	bash scripts/start-local.sh
 
 down-local: ## Para os servidores locais nativos
@@ -107,7 +137,7 @@ status-local: ## Mostra o estado dos servidores locais
 	bash scripts/status-local.sh
 
 logs-local: ## Segue os logs locais (.run_logs/*.log)
-	tail -n 50 -f $(LOGS_DIR)/kudiba-auth.log $(LOGS_DIR)/kudiba-invoicing.log $(LOGS_DIR)/kudiba-inventory.log $(LOGS_DIR)/kudiba-gateway.log
+	tail -n 50 -f $(LOGS_DIR)/kudiba-auth.log $(LOGS_DIR)/kudiba-invoicing.log $(LOGS_DIR)/kudiba-inventory.log $(LOGS_DIR)/kudiba-payroll.log $(LOGS_DIR)/kudiba-integrations.log $(LOGS_DIR)/kudiba-gateway.log
 
 # -----------------------------------------------------------------------------
 # Docker
@@ -135,5 +165,5 @@ docker-build: ## Reconstroi as imagens sem arrancar
 # Atalhos
 # -----------------------------------------------------------------------------
 .PHONY: ci dev
-ci: fmt-check clippy test-rust test-auth ## Espelha os passos de CI
+ci: fmt-check clippy test-rust test-auth test-payroll test-integrations ## Espelha os passos de CI
 dev: infra up-local ## Sobe infra (Docker) + servidores locais nativos

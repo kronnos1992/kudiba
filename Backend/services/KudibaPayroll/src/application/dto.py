@@ -11,6 +11,9 @@ from src.domain.value_objects.enums import (
     ComponentType,
     PayslipStatus,
     PayslipLineType,
+    VacationStatus,
+    AbsenceType,
+    AttendanceDirection,
 )
 
 
@@ -34,6 +37,21 @@ class CreateEmployeeRequest(BaseModel):
 
 class TerminateEmployeeRequest(BaseModel):
     termination_date: date
+
+
+class UpdateEmployeeRequest(BaseModel):
+    full_name: Optional[str] = Field(None, max_length=255)
+    identity_card_number: Optional[str] = Field(None, max_length=30)
+    iban: Optional[str] = Field(None, min_length=25, max_length=34)
+    inss_number: Optional[str] = Field(None, max_length=30)
+    birth_date: Optional[date] = None
+    gender: Optional[str] = Field(None, max_length=10)
+    marital_status: Optional[str] = Field(None, max_length=20)
+    dependents_count: Optional[int] = Field(None, ge=0)
+    email: Optional[str] = Field(None, max_length=255)
+    phone: Optional[str] = Field(None, max_length=50)
+    bank_code: Optional[str] = Field(None, max_length=10)
+    address: Optional[str] = None
 
 
 class EmployeeResponse(BaseModel):
@@ -119,7 +137,7 @@ class EmployeeOvertimeInput(BaseModel):
     employee_id: UUID
     overtime_50_hours: Decimal = Field(Decimal("0.00"), ge=Decimal("0.00"))
     overtime_75_hours: Decimal = Field(Decimal("0.00"), ge=Decimal("0.00"))
-    days_worked: int = Field(22, ge=0, le=31)
+    days_worked: Optional[int] = Field(None, ge=0, le=31)
     advances: Decimal = Field(Decimal("0.00"), ge=Decimal("0.00"))
     other_deductions: Decimal = Field(Decimal("0.00"), ge=Decimal("0.00"))
 
@@ -189,3 +207,149 @@ class Ps2ExportResponse(BaseModel):
     content: str
     total_records: int
     total_amount: Decimal
+
+
+class CreateDepartmentRequest(BaseModel):
+    code: str = Field(..., max_length=50)
+    name: str = Field(..., max_length=255)
+    description: Optional[str] = None
+
+
+class DepartmentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    code: str
+    name: str
+    description: Optional[str] = None
+
+
+class CreateJobPositionRequest(BaseModel):
+    code: str = Field(..., max_length=50)
+    title: str = Field(..., max_length=255)
+    department_id: Optional[UUID] = None
+    base_salary_min: Decimal = Field(Decimal("0.00"), ge=Decimal("0.00"))
+    base_salary_max: Decimal = Field(Decimal("0.00"), ge=Decimal("0.00"))
+
+
+class JobPositionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    code: str
+    title: str
+    department_id: Optional[UUID] = None
+    base_salary_min: Decimal
+    base_salary_max: Decimal
+
+
+class EmployeePayslipSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    payslip_id: UUID
+    employee_id: UUID
+    full_name: str
+    total_gross: Decimal
+    total_deductions: Decimal
+    net_salary: Decimal
+    status: PayslipStatus
+
+
+class PeriodSummaryResponse(BaseModel):
+    period_id: UUID
+    title: str
+    year: int
+    month: int
+    status: PeriodStatus
+    employee_count: int
+    total_gross: Decimal
+    total_irt: Decimal
+    total_inss_employee: Decimal
+    total_inss_employer: Decimal
+    total_net: Decimal
+    payslips: List[EmployeePayslipSummary] = Field(default_factory=list)
+
+
+class CreateVacationRequest(BaseModel):
+    employee_id: UUID
+    start_date: date
+    end_date: date
+    days: Optional[int] = Field(None, ge=1, le=60)
+    notes: Optional[str] = None
+
+
+class VacationDecisionRequest(BaseModel):
+    decided_by: UUID
+
+
+class VacationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    employee_id: UUID
+    start_date: date
+    end_date: date
+    days: int
+    status: VacationStatus
+    notes: Optional[str] = None
+    decided_by: Optional[UUID] = None
+    decided_at: Optional[datetime] = None
+
+
+class VacationBalanceResponse(BaseModel):
+    employee_id: UUID
+    year: int
+    entitled_days: Decimal
+    used_days: Decimal
+    pending_days: Decimal
+    available_days: Decimal
+
+
+class CreateAbsenceRequest(BaseModel):
+    employee_id: UUID
+    absence_date: date
+    absence_type: AbsenceType = AbsenceType.UNJUSTIFIED
+    is_paid: bool = False
+    notes: Optional[str] = None
+
+
+class AbsenceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    employee_id: UUID
+    absence_date: date
+    absence_type: str
+    is_paid: bool
+    notes: Optional[str] = None
+
+
+class CreateAttendanceRequest(BaseModel):
+    employee_id: Optional[UUID] = None
+    employee_code: Optional[str] = Field(None, max_length=50)
+    punched_at: datetime
+    direction: AttendanceDirection = AttendanceDirection.UNKNOWN
+    device_id: Optional[str] = Field(None, max_length=120)
+    source: Optional[str] = Field(None, max_length=120)
+    external_id: Optional[str] = Field(None, max_length=160)
+    notes: Optional[str] = None
+
+
+class AttendanceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    employee_id: UUID
+    employee_code: Optional[str] = None
+    punched_at: datetime
+    direction: AttendanceDirection
+    device_id: Optional[str] = None
+    source: Optional[str] = None
+    external_id: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None

@@ -84,6 +84,23 @@ class PostgresContractRepository(ContractRepository):
             models = res.scalars().all()
             return [self._to_entity(m) for m in models]
 
+    async def list_contracts(
+        self,
+        tenant_id: UUID,
+        employee_id: Optional[UUID] = None,
+        status: Optional[ContractStatus] = None,
+    ) -> List[Contract]:
+        async with self.session_factory() as session:
+            stmt = select(ContractModel).where(ContractModel.tenant_id == tenant_id)
+            if employee_id:
+                stmt = stmt.where(ContractModel.employee_id == employee_id)
+            if status:
+                stmt = stmt.where(ContractModel.status == status.value)
+            stmt = stmt.order_by(ContractModel.start_date.desc())
+            res = await session.execute(stmt)
+            models = res.scalars().all()
+            return [self._to_entity(m) for m in models]
+
     async def save(self, contract: Contract) -> None:
         async with self.session_factory() as session:
             async with session.begin():

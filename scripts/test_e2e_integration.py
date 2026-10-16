@@ -18,7 +18,7 @@ def generate_token():
         "tenant_id": TENANT_ID,
         "tenant_slug": "demo",
         "branch_id": BRANCH_ID,
-        "roles": ["ADMIN", "CONTABILISTA", "OPERADOR_CAIXA", "GESTOR_STOCK"],
+        "roles": ["ADMIN", "CONTABILISTA", "OPERADOR_CAIXA", "GESTOR_STOCK", "GESTOR_RH"],
         "exp": int(time.time()) + 7200,
         "iat": int(time.time()),
         "jti": str(uuid.uuid4())
@@ -307,6 +307,149 @@ def main():
     print(f"SAF-T GeneralLedgerEntries -> TotalDebit: {total_debit_elem.text}, TotalCredit: {total_credit_elem.text}")
     assert total_debit_elem is not None and total_credit_elem is not None
     assert total_debit_elem.text == total_credit_elem.text, "TotalDebit e TotalCredit no SAF-T XML não conferem!"
+
+    log_step("8. PROCESSAR FOLHA SALARIAL NO KUDIBAPAYROLL (RH, IRT & INSS)")
+
+    # 8.1 Criar Departamento
+    r_dept = requests.post(f"{BASE_URL}/api/v1/payroll/departments", headers=headers, json={
+        "code": "FIN",
+        "name": "Departamento Financeiro",
+        "description": "Departamento responsável pela contabilidade e tesouraria"
+    })
+    assert r_dept.status_code in [200, 201, 409], f"Falha ao criar departamento: {r_dept.text}"
+    if r_dept.status_code == 409:
+        r_dept_list = requests.get(f"{BASE_URL}/api/v1/payroll/departments", headers=headers)
+        department_id = r_dept_list.json()[0]["id"]
+    else:
+        department_id = r_dept.json()["id"]
+    print(f"Departamento pronto: {department_id}")
+
+    # 8.2 Criar Cargo
+    r_job = requests.post(f"{BASE_URL}/api/v1/payroll/job-positions", headers=headers, json={
+        "code": "CONT-SR",
+        "title": "Contabilista Sénior",
+        "department_id": department_id,
+        "base_salary_min": 300000.0,
+        "base_salary_max": 450000.0
+    })
+    assert r_job.status_code in [200, 201, 409], f"Falha ao criar cargo: {r_job.text}"
+    if r_job.status_code == 409:
+        r_job_list = requests.get(f"{BASE_URL}/api/v1/payroll/job-positions", headers=headers)
+        job_id = r_job_list.json()[0]["id"]
+    else:
+        job_id = r_job.json()["id"]
+    print(f"Cargo pronto: {job_id}")
+
+    # 8.3 Registar Colaborador
+    emp_code = f"EMP-{uuid.uuid4().hex[:6].upper()}"
+    r_emp = requests.post(f"{BASE_URL}/api/v1/payroll/employees", headers=headers, json={
+        "code": emp_code,
+        "full_name": "Maria Silva Manuel",
+        "nif": "5412345679",
+        "identity_card_number": f"001{uuid.uuid4().hex[:8].upper()}LA042",
+        "iban": "AO06004000001234567890123",
+        "hire_date": "2024-01-15",
+        "inss_number": "123456789",
+        "email": f"{emp_code.lower()}@empresa.ao"
+    })
+    assert r_emp.status_code in [200, 201], f"Falha ao registar colaborador: {r_emp.text}"
+    employee_id = r_emp.json()["id"]
+    print(f"Colaborador registado: {employee_id} ({emp_code})")
+
+    # 8.4 Celebrar Contrato
+    r_ctr = requests.post(f"{BASE_URL}/api/v1/payroll/contracts", headers=headers, json={
+        "employee_id": employee_id,
+        "contract_type": "PERMANENT",
+        "start_date": "2024-02-01",
+        "base_salary": 350000.0,
+        "job_position_id": job_id
+    })
+    assert r_ctr.status_code in [200, 201], f"Falha ao celebrar contrato: {r_ctr.text}"
+    contract_id = r_ctr.json()["id"]
+    print(f"Contrato celebrado: {contract_id}")
+
+    # 8.5 Saldo de férias (LGT 30 dias/ano)
+    r_bal = requests.get(
+        f"{BASE_URL}/api/v1/payroll/employees/{employee_id}/vacation-balance",
+        headers=headers, params={"year": 2026}
+    )
+    assert r_bal.status_code == 200, f"Falha ao consultar saldo de férias: {r_bal.text}"
+    print(f"Saldo de férias 2026: {r_bal.json().get('available_days')} dias disponíveis")
+
+    # 8.6 Submeter e aprovar pedido de férias
+    r_vac = requests.post(f"{BASE_URL}/api/v1/payroll/vacations", headers=headers, json={
+        "employee_id": employee_id,
+        "start_date": "2026-04-01",
+        "end_date": "2026-04-10",
+        "notes": "Férias anuais"
+    })
+    assert r_vac.status_code in [200, 201], f"Falha ao submeter pedido de férias: {r_vac.text}"
+    vacation_id = r_vac.json()["id"]
+    r_vac_ok = requests.post(
+        f"{BASE_URL}/api/v1/payroll/vacations/{vacation_id}/approve",
+        headers=headers, json={"decided_by": str(uuid.uuid4())}
+    )
+    assert r_vac_ok.status_code == 200, f"Falha ao aprovar férias: {r_vac_ok.text}"
+    print(f"Pedido de férias {vacation_id} aprovado")
+
+    # 8.7 Registar falta não remunerada (prorroga o cálculo)
+    r_abs = requests.post(f"{BASE_URL}/api/v1/payroll/absences", headers=headers, json={
+        "employee_id": employee_id,
+        "absence_date": "2026-03-05",
+        "absence_type": "UNJUSTIFIED",
+        "is_paid": False,
+        "notes": "Falta injustificada"
+    })
+    assert r_abs.status_code in [200, 201], f"Falha ao registar falta: {r_abs.text}"
+    print("Falta não remunerada registada (será descontada no cálculo)")
+
+    # 8.8 Abrir período salarial
+    r_period = requests.post(f"{BASE_URL}/api/v1/payroll/periods", headers=headers, json={
+        "title": "Folha Salarial - Março 2026",
+        "year": 2026,
+        "month": 3,
+        "start_date": "2026-03-01",
+        "end_date": "2026-03-31"
+    })
+    assert r_period.status_code in [200, 201], f"Falha ao abrir período: {r_period.text}"
+    period_id = r_period.json()["id"]
+    print(f"Período salarial aberto: {period_id}")
+
+    # 8.9 Calcular folha salarial (IRT Lei 28/20 e INSS DP 227/18)
+    r_calc = requests.post(
+        f"{BASE_URL}/api/v1/payroll/periods/{period_id}/calculate",
+        headers=headers, json={"overtime_data": []}
+    )
+    assert r_calc.status_code in [200, 201], f"Falha ao calcular folha salarial: {r_calc.text}"
+    print("Folha salarial calculada com sucesso")
+
+    # 8.10 Resumo consolidado do período
+    r_sum = requests.get(f"{BASE_URL}/api/v1/payroll/periods/{period_id}/summary", headers=headers)
+    assert r_sum.status_code == 200, f"Falha ao obter resumo do período: {r_sum.text}"
+    summary = r_sum.json()
+    print(f"Resumo do período: {summary.get('employee_count')} recibos | "
+          f"Bruto: {float(summary.get('total_gross', 0)):,.2f} Kz | "
+          f"IRT: {float(summary.get('total_irt', 0)):,.2f} Kz | "
+          f"INSS: {float(summary.get('total_inss_employee', 0)):,.2f} Kz")
+
+    # 8.11 Listar recibos do período
+    r_slips = requests.get(f"{BASE_URL}/api/v1/payroll/periods/{period_id}/payslips", headers=headers)
+    assert r_slips.status_code == 200, f"Falha ao listar recibos: {r_slips.text}"
+    payslips = r_slips.json()
+    assert len(payslips) > 0, "Nenhum recibo gerado no período"
+    payslip_id = payslips[0]["id"]
+    print(f"Recibo gerado: {payslip_id} | Líquido: {float(payslips[0].get('net_salary', 0)):,.2f} Kz")
+
+    # 8.12 Descarregar PDF do recibo
+    r_pdf = requests.get(f"{BASE_URL}/api/v1/payroll/payslips/{payslip_id}/pdf", headers=headers)
+    assert r_pdf.status_code == 200, f"Falha ao gerar PDF do recibo: {r_pdf.text}"
+    assert r_pdf.content[:4] == b"%PDF", "Conteúdo devolvido não é um PDF válido"
+    print(f"PDF do recibo gerado ({len(r_pdf.content)} bytes)")
+
+    # 8.13 Marcar recibo como pago
+    r_pay = requests.post(f"{BASE_URL}/api/v1/payroll/payslips/{payslip_id}/pay", headers=headers)
+    assert r_pay.status_code == 200, f"Falha ao marcar recibo como pago: {r_pay.text}"
+    print("Recibo marcado como pago")
 
     log_step("SUCESSO TOTAL! O FLUXO COMPLETO END-TO-END FOI EXECUTADO E VALIDADO.")
 

@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 from uuid import UUID
 from src.domain.entities.contract import Contract, SalaryComponent
+from src.domain.value_objects.enums import ContractStatus
 
 
 class ContractRepository(ABC):
@@ -15,6 +16,15 @@ class ContractRepository(ABC):
 
     @abstractmethod
     async def list_active_contracts(self, tenant_id: UUID) -> List[Contract]:
+        pass
+
+    @abstractmethod
+    async def list_contracts(
+        self,
+        tenant_id: UUID,
+        employee_id: Optional[UUID] = None,
+        status: Optional[ContractStatus] = None,
+    ) -> List[Contract]:
         pass
 
     @abstractmethod

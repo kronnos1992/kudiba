@@ -13,9 +13,10 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     CREATE DATABASE kudiba_treasury;
     CREATE DATABASE kudiba_accounting;
     CREATE DATABASE kudiba_payroll;
+    CREATE DATABASE kudiba_integrations;
 EOSQL
 
-echo "Bancos de dados 'kudiba_auth', 'kudiba_invoicing', 'kudiba_inventory', 'kudiba_treasury', 'kudiba_accounting' e 'kudiba_payroll' criados com sucesso."
+echo "Bancos de dados 'kudiba_auth', 'kudiba_invoicing', 'kudiba_inventory', 'kudiba_treasury', 'kudiba_accounting', 'kudiba_payroll' e 'kudiba_integrations' criados com sucesso."
 
 # 2. Inicialização do schema fiscal no banco 'kudiba_invoicing'
 echo "Aplicando schema fiscal no banco 'kudiba_invoicing'..."
@@ -41,7 +42,11 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_accounting"
 echo "Aplicando schema de payroll no banco 'kudiba_payroll'..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_payroll" -f /docker-entrypoint-initdb.d/07-payroll-schema.sql
 
-# 8. Compatibilidade regressiva para o banco padrão kudiba_erp
+# 8. Inicialização do schema do Integration Hub no banco 'kudiba_integrations'
+echo "Aplicando schema de integrações no banco 'kudiba_integrations'..."
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_integrations" -f /docker-entrypoint-initdb.d/08-integrations-schema.sql
+
+# 9. Compatibilidade regressiva para o banco padrão kudiba_erp
 echo "Aplicando schema no banco padrão '$POSTGRES_DB'..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/01-invoicing-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/02-auth-schema.sql
@@ -49,6 +54,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/05-treasury-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/06-accounting-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/07-payroll-schema.sql
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/08-integrations-schema.sql
 
 echo "================================================================="
 echo "Inicialização de Bancos Concluída com Sucesso!"

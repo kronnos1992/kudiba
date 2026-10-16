@@ -602,8 +602,18 @@ impl AccountingEventConsumer {
                             let _ = channel
                                 .queue_bind(
                                     queue.clone(),
-                                    exchange,
+                                    exchange.clone(),
                                     ShortString::from("treasury.event.#"),
+                                    QueueBindOptions::default(),
+                                    FieldTable::default(),
+                                )
+                                .await;
+
+                            let _ = channel
+                                .queue_bind(
+                                    queue.clone(),
+                                    exchange.clone(),
+                                    ShortString::from("payroll.event.#"),
                                     QueueBindOptions::default(),
                                     FieldTable::default(),
                                 )

@@ -4,7 +4,8 @@ use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::domain::entities::{
-    BankAccount, CashMovement, CashRegister, CashSession, TreasuryReceiptLine,
+    BankAccount, CashMovement, CashRegister, CashSession, InvoiceReceivable, ReceivableStatus,
+    TreasuryReceiptLine,
 };
 use crate::domain::value_objects::{Currency, MovementType, PaymentMethod, SessionStatus};
 
@@ -173,6 +174,37 @@ impl From<TreasuryReceiptLineRow> for TreasuryReceiptLine {
             amount_settled: l.amount_settled,
             notes: l.notes,
             created_at: l.created_at,
+        }
+    }
+}
+
+#[derive(Debug, FromRow)]
+pub struct InvoiceReceivableRow {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub invoice_id: String,
+    pub document_number: String,
+    pub document_type: String,
+    pub payment_mechanism: Option<String>,
+    pub gross_total: Decimal,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<InvoiceReceivableRow> for InvoiceReceivable {
+    fn from(r: InvoiceReceivableRow) -> Self {
+        Self {
+            id: r.id,
+            tenant_id: r.tenant_id,
+            invoice_id: r.invoice_id,
+            document_number: r.document_number,
+            document_type: r.document_type,
+            payment_mechanism: r.payment_mechanism,
+            gross_total: r.gross_total,
+            status: ReceivableStatus::from_db(&r.status),
+            created_at: r.created_at,
+            updated_at: r.updated_at,
         }
     }
 }

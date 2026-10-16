@@ -5,7 +5,21 @@ from src.application.queries.payroll_queries import (
     ListPayrollPeriodsUseCase,
     ListPayslipsUseCase,
     GetPayslipUseCase,
+    ListContractsUseCase,
+    GetContractUseCase,
+    GetPeriodSummaryUseCase,
+    GetVacationBalanceUseCase,
 )
+from src.application.queries.organization_queries import (
+    ListDepartmentsUseCase,
+    ListJobPositionsUseCase,
+)
+from src.application.queries.hr_queries import (
+    ListVacationsUseCase,
+    ListAbsencesUseCase,
+    ListAttendanceUseCase,
+)
+from src.application.queries.pdf_queries import GeneratePayslipPdfUseCase
 from src.application.queries.ps2_queries import ExportPs2UseCase
 
 __all__ = [
@@ -15,5 +29,15 @@ __all__ = [
     "ListPayrollPeriodsUseCase",
     "ListPayslipsUseCase",
     "GetPayslipUseCase",
+    "ListContractsUseCase",
+    "GetContractUseCase",
+    "GetPeriodSummaryUseCase",
+    "GetVacationBalanceUseCase",
+    "ListDepartmentsUseCase",
+    "ListJobPositionsUseCase",
+    "ListVacationsUseCase",
+    "ListAbsencesUseCase",
+    "ListAttendanceUseCase",
+    "GeneratePayslipPdfUseCase",
     "ExportPs2UseCase",
 ]

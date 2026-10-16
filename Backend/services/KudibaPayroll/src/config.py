@@ -10,8 +10,14 @@ class Settings(BaseSettings):
     environment: str = "development"
     database_url: str = _DEVELOPMENT_DATABASE_URL
     rabbitmq_url: Optional[str] = "amqp://kudiba:kudiba_rabbit_pass@localhost:5672/%2f"
+    event_exchange: str = "fiscal.events"
+    attendance_queue: str = "kudiba.payroll.attendance"
+    attendance_consumer_enabled: bool = True
     jwt_secret: str = "kudiba_jwt_secret_development_key_change_in_production_2026"
     jwt_algorithm: str = "HS256"
+    internal_gateway_secret: str = "kudiba_internal_gateway_secret_development_key_change_in_production_2026"
+    enforce_gateway_signature: bool = False
+
 
     model_config = SettingsConfigDict(
         env_file=".env",

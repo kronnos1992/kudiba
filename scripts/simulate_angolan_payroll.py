@@ -313,7 +313,7 @@ if __name__ == "__main__":
         payslips=payslips,
     )
     print("\n" + "=" * 80)
-    print(" 📡 ENVELOPE DE EVENTO AMQP (RABBITMQ fiscal.events -> payroll.period.closed):")
+    print(" 📡 ENVELOPE DE EVENTO AMQP (RABBITMQ fiscal.events -> payroll.event.period.closed):")
     print("=" * 80)
     print(json.dumps(event_payload, indent=2))
 

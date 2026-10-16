@@ -12,7 +12,9 @@ services:
       - GATEWAY_ENV=development
       - REDIS_HOST=gateway-redis
       - REDIS_PORT=6379
-      - CORE_API_URL=http://core-api:8081
+      # Core API (módulos comerciais) é opcional; quando não definido o
+      # catch-all /api/v1/* devolve 404 em vez de 502.
+      # - CORE_API_URL=http://core-api:8081
       - FISCAL_ENGINE_URL=http://fiscal-engine:9090
       - FISCAL_ENGINE_GRPC_TARGET=http://fiscal-engine:9090
       - JWT_SECRET=kudiba_jwt_secret_development_key_change_in_production_2026

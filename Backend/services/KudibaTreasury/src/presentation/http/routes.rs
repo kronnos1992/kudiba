@@ -11,8 +11,8 @@ use uuid::Uuid;
 use crate::application::dto::{
     BankAccountResponse, CashMovementResponse, CashRegisterResponse, CashSessionResponse,
     CloseCashSessionRequest, CreateBankAccountRequest, CreateCashRegisterRequest,
-    IssueTreasuryReceiptRequest, OpenCashSessionRequest, RecordCashMovementRequest,
-    SessionReportResponse, TreasuryReceiptResponse,
+    InvoiceReceivableResponse, IssueTreasuryReceiptRequest, OpenCashSessionRequest,
+    RecordCashMovementRequest, SessionReportResponse, TreasuryReceiptResponse,
 };
 use crate::domain::error::DomainError;
 use crate::state::AppState;
@@ -129,6 +129,11 @@ pub struct CurrentSessionQuery {
 #[derive(Debug, Deserialize)]
 pub struct ReceiptsListQuery {
     pub customer_id: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReceivablesListQuery {
     pub limit: Option<i64>,
 }
 
@@ -424,6 +429,26 @@ pub async fn get_receipt_handler(
     Ok(Json(receipt))
 }
 
+// -----------------------------------------------------------------------------
+// Invoice Receivables Handlers
+// -----------------------------------------------------------------------------
+
+pub async fn list_receivables_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ReceivablesListQuery>,
+) -> Result<Json<Vec<InvoiceReceivableResponse>>, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let receivables = state
+        .receivable_repo
+        .list(tenant_id, limit)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok(Json(receivables.into_iter().map(Into::into).collect()))
+}
+
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
@@ -470,5 +495,10 @@ pub fn create_router(state: AppState) -> Router {
             post(issue_receipt_handler).get(list_receipts_handler),
         )
         .route("/api/v1/treasury/receipts/{id}", get(get_receipt_handler))
+        // Invoice Receivables (registados a partir dos eventos fiscais)
+        .route(
+            "/api/v1/treasury/receivables",
+            get(list_receivables_handler),
+        )
         .with_state(state)
 }

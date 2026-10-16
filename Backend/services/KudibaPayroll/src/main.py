@@ -39,9 +39,16 @@ app_state = create_app_state(settings, session_factory)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.app_state = app_state
+    if app_state.attendance_consumer:
+        await app_state.attendance_consumer.start()
+    await app_state.outbox_worker.start()
     yield
+    await app_state.outbox_worker.stop()
+    if app_state.attendance_consumer:
+        await app_state.attendance_consumer.stop()
     await app_state.publisher.close()
     await engine.dispose()
+
 
 
 app = FastAPI(

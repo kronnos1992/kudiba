@@ -53,3 +53,25 @@ class PayslipLineType(str, Enum):
     EARNING = "EARNING"
     DEDUCTION = "DEDUCTION"
     EMPLOYER_COST = "EMPLOYER_COST"
+
+
+class VacationStatus(str, Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
+
+
+class AbsenceType(str, Enum):
+    UNJUSTIFIED = "UNJUSTIFIED"
+    JUSTIFIED = "JUSTIFIED"
+    SICKNESS = "SICKNESS"
+    MATERNITY = "MATERNITY"
+    PATERNITY = "PATERNITY"
+    BEREAVEMENT = "BEREAVEMENT"
+
+
+class AttendanceDirection(str, Enum):
+    IN = "IN"
+    OUT = "OUT"
+    UNKNOWN = "UNKNOWN"

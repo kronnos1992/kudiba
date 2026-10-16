@@ -13,7 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
 
 Base = declarative_base()
@@ -243,3 +243,97 @@ class PayslipLineModel(Base):
     )
 
     payslip: Mapped["PayslipModel"] = relationship("PayslipModel", back_populates="lines")
+
+
+class VacationRequestModel(Base):
+    __tablename__ = "vacation_requests"
+    __table_args__ = {"schema": "kudiba_payroll"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.employees.id"), nullable=False, index=True
+    )
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    days: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="PENDING", nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    decided_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class AbsenceRecordModel(Base):
+    __tablename__ = "absence_records"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "employee_id", "absence_date", name="uq_absence_employee_date"),
+        {"schema": "kudiba_payroll"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.employees.id"), nullable=False, index=True
+    )
+    absence_date: Mapped[date] = mapped_column(Date, nullable=False)
+    absence_type: Mapped[str] = mapped_column(String(30), default="UNJUSTIFIED", nullable=False)
+    is_paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class AttendanceRecordModel(Base):
+    __tablename__ = "attendance_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "employee_id", "punched_at", "direction", name="uq_attendance_employee_punch"
+        ),
+        {"schema": "kudiba_payroll"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.employees.id"), nullable=False, index=True
+    )
+    employee_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    punched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), default="UNKNOWN", nullable=False)
+    device_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    external_id: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class PayrollOutboxModel(Base):
+    __tablename__ = "payroll_outbox"
+    __table_args__ = {"schema": "kudiba_payroll"}
+
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    aggregate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    routing_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+

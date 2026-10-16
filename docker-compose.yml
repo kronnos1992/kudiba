@@ -15,7 +15,9 @@ services:
       - GATEWAY_ENV=development
       - REDIS_HOST=gateway-redis
       - REDIS_PORT=6379
-      - CORE_API_URL=http://core-api:8081
+      # Core API (módulos comerciais) é opcional; quando não definido o
+      # catch-all /api/v1/* devolve 404 em vez de 502.
+      # - CORE_API_URL=http://core-api:8081
       - AUTH_SERVICE_URL=http://auth-service:8082
       - FISCAL_ENGINE_URL=http://fiscal-engine:9090
       - FISCAL_ENGINE_GRPC_TARGET=http://fiscal-engine:9090
@@ -23,6 +25,7 @@ services:
       - TREASURY_SERVICE_URL=http://treasury-service:8084
       - ACCOUNTING_SERVICE_URL=http://accounting-service:8085
       - PAYROLL_SERVICE_URL=http://payroll-service:8086
+      - INTEGRATIONS_SERVICE_URL=http://integrations-service:8087
       # Sondas TCP do endpoint /health/services
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -202,6 +205,35 @@ services:
           - kudiba-payroll
 
   # ============================================================================
+  # 8. INTEGRATION HUB — FRAMEWORK TRANSVERSAL DE INTEGRAÇÕES (PYTHON / FASTAPI)
+  # Webhook, REST pull agendado e importação de ficheiros configuráveis via
+  # backoffice. Normaliza e publica eventos para os restantes microsserviços.
+  # ============================================================================
+  integrations:
+    build:
+      context: ./Backend/services/KudibaIntegrations
+      dockerfile: Dockerfile
+    container_name: kudiba-integrations
+    restart: unless-stopped
+    environment:
+      - PORT=8087
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql+asyncpg://kudiba:kudiba_secret_pass@postgres:5432/kudiba_integrations
+      - RABBITMQ_URL=amqp://kudiba:kudiba_rabbit_pass@rabbitmq:5672/%2f
+      - JWT_SECRET=kudiba_jwt_secret_development_key_change_in_production_2026
+      # Chave Fernet para cifrar credenciais de integrações (em produção definir)
+      - INTEGRATION_ENCRYPTION_KEY=
+      - SCHEDULER_ENABLED=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      kudiba-internal-network:
+        aliases:
+          - integrations-service
+          - kudiba-integrations
+
+  # ============================================================================
   # 3. ESTADO EFÊMERO & CACHE PERIMÉTRICO (REDIS 7+)
   # ============================================================================
   gateway-redis:
@@ -245,6 +277,8 @@ services:
       - ./Backend/deploy/04-inventory-schema.sql:/docker-entrypoint-initdb.d/04-inventory-schema.sql:ro
       - ./Backend/deploy/05-treasury-schema.sql:/docker-entrypoint-initdb.d/05-treasury-schema.sql:ro
       - ./Backend/deploy/06-accounting-schema.sql:/docker-entrypoint-initdb.d/06-accounting-schema.sql:ro
+      - ./Backend/deploy/07-payroll-schema.sql:/docker-entrypoint-initdb.d/07-payroll-schema.sql:ro
+      - ./Backend/deploy/08-integrations-schema.sql:/docker-entrypoint-initdb.d/08-integrations-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kudiba -d kudiba_erp"]
       interval: 5s

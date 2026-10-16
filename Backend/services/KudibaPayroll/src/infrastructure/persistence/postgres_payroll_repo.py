@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 from sqlalchemy import select, delete
@@ -10,6 +11,7 @@ from src.infrastructure.persistence.models import (
     PayrollPeriodModel,
     PayslipModel,
     PayslipLineModel,
+    PayrollOutboxModel,
 )
 
 
@@ -236,3 +238,57 @@ class PostgresPayrollRepository(PayrollRepository):
             res = await session.execute(stmt)
             model = res.scalar_one_or_none()
             return self._to_payslip_entity(model) if model else None
+
+    async def save_outbox_event(
+        self,
+        event_id: UUID,
+        tenant_id: UUID,
+        aggregate_id: UUID,
+        event_type: str,
+        routing_key: str,
+        payload: dict,
+    ) -> None:
+        async with self.session_factory() as session:
+            async with session.begin():
+                outbox = PayrollOutboxModel(
+                    event_id=event_id,
+                    tenant_id=tenant_id,
+                    aggregate_id=aggregate_id,
+                    event_type=event_type,
+                    routing_key=routing_key,
+                    payload=payload,
+                )
+                session.add(outbox)
+
+    async def list_pending_outbox_events(self, limit: int = 50) -> List[dict]:
+        async with self.session_factory() as session:
+            stmt = (
+                select(PayrollOutboxModel)
+                .where(PayrollOutboxModel.published_at.is_(None))
+                .order_by(PayrollOutboxModel.created_at.asc())
+                .limit(limit)
+            )
+            res = await session.execute(stmt)
+            models = res.scalars().all()
+            return [
+                {
+                    "event_id": m.event_id,
+                    "tenant_id": m.tenant_id,
+                    "aggregate_id": m.aggregate_id,
+                    "event_type": m.event_type,
+                    "routing_key": m.routing_key,
+                    "payload": m.payload,
+                    "created_at": m.created_at,
+                }
+                for m in models
+            ]
+
+    async def mark_outbox_event_published(self, event_id: UUID) -> None:
+        async with self.session_factory() as session:
+            async with session.begin():
+                stmt = select(PayrollOutboxModel).where(PayrollOutboxModel.event_id == event_id)
+                res = await session.execute(stmt)
+                model = res.scalar_one_or_none()
+                if model:
+                    model.published_at = datetime.now(timezone.utc)
+

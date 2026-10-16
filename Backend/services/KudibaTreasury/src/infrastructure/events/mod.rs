@@ -8,9 +8,11 @@ use lapin::{
     Connection, ConnectionProperties, ExchangeKind,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tokio::sync::{mpsc, watch, Mutex};
 use uuid::Uuid;
 
+use crate::application::commands::RegisterInvoiceReceivableHandler;
 use crate::domain::error::DomainError;
 
 pub mod publisher;
@@ -29,15 +31,20 @@ pub struct InvoicePaymentEvent {
 
 pub struct TreasuryEventConsumer {
     rabbitmq_url: Option<String>,
+    register_receivable_cmd: Arc<RegisterInvoiceReceivableHandler>,
     sender: mpsc::Sender<InvoicePaymentEvent>,
     receiver: Mutex<mpsc::Receiver<InvoicePaymentEvent>>,
 }
 
 impl TreasuryEventConsumer {
-    pub fn new(rabbitmq_url: Option<String>) -> Self {
+    pub fn new(
+        rabbitmq_url: Option<String>,
+        register_receivable_cmd: Arc<RegisterInvoiceReceivableHandler>,
+    ) -> Self {
         let (sender, receiver) = mpsc::channel(1024);
         Self {
             rabbitmq_url,
+            register_receivable_cmd,
             sender,
             receiver: Mutex::new(receiver),
         }
@@ -85,11 +92,29 @@ impl TreasuryEventConsumer {
                 } => {
                     match event_opt {
                         Some(event) => {
-                            tracing::info!(
-                                document = %event.document_number,
-                                total = %event.gross_total,
-                                "Evento fiscal recebido na tesouraria"
-                            );
+                            match self
+                                .register_receivable_cmd
+                                .execute(
+                                    event.tenant_id,
+                                    event.invoice_id.to_string(),
+                                    event.document_number.clone(),
+                                    event.document_type.clone(),
+                                    event.payment_mechanism.clone(),
+                                    event.gross_total,
+                                )
+                                .await
+                            {
+                                Ok(()) => tracing::info!(
+                                    document = %event.document_number,
+                                    total = %event.gross_total,
+                                    "Fatura registada como crédito por liquidar na tesouraria"
+                                ),
+                                Err(err) => tracing::warn!(
+                                    document = %event.document_number,
+                                    error = %err,
+                                    "Falha ao registar fatura como crédito por liquidar na tesouraria"
+                                ),
+                            }
                         }
                         None => break,
                     }

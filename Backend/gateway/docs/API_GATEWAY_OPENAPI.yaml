@@ -1367,6 +1367,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TreasuryReceiptResponse'
+  /api/v1/treasury/receivables:
+    get:
+      summary: Listar Faturas por Liquidar (Créditos)
+      description: >-
+        Faturas registadas automaticamente na tesouraria a partir dos eventos
+        fiscais (`fiscal.event.fiscal.document.issued`) e ainda não liquidadas
+        por recibo. Permite acompanhar os créditos a receber por tenant.
+      tags:
+      - Tesouraria & Pagamentos
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+      responses:
+        '200':
+          description: Lista de faturas por liquidar registadas via eventos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InvoiceReceivableResponse'
   /api/v1/accounting/accounts:
     get:
       summary: Listar Plano de Contas PGC
@@ -1672,6 +1703,20 @@ paths:
       responses:
         '201':
           description: Contrato de trabalho ativado
+    get:
+      summary: Listar Contratos de Trabalho
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: employee_id
+        in: query
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Lista de contratos da organização
   /api/v1/payroll/periods:
     post:
       summary: Abrir Período de Processamento Salarial
@@ -1740,7 +1785,7 @@ paths:
                       employee_id: { type: string, format: uuid }
                       overtime_50_hours: { type: number, default: 0.00 }
                       overtime_75_hours: { type: number, default: 0.00 }
-                      days_worked: { type: integer, default: 22 }
+                      days_worked: { type: integer, nullable: true, description: "Dias trabalhados; se omitido assume 22 dias úteis standard (prorrogação automática por faltas)" }
                       advances: { type: number, default: 0.00 }
                       other_deductions: { type: number, default: 0.00 }
       responses:
@@ -1783,6 +1828,720 @@ paths:
       responses:
         '200':
           description: Ficheiro PS2 para transferência em lote nos bancos de Angola
+  /api/v1/payroll/departments:
+    post:
+      summary: Criar Departamento
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name]
+              properties:
+                code: { type: string, example: "FIN" }
+                name: { type: string, example: "Departamento Financeiro" }
+                description: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Departamento criado com sucesso
+    get:
+      summary: Listar Departamentos
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Lista de departamentos da organização
+  /api/v1/payroll/job-positions:
+    post:
+      summary: Criar Cargo / Função
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, title]
+              properties:
+                code: { type: string, example: "CONT-SR" }
+                title: { type: string, example: "Contabilista Sénior" }
+                department_id: { type: string, format: uuid, nullable: true }
+                base_salary_min: { type: number, example: 300000.00 }
+                base_salary_max: { type: number, example: 450000.00 }
+      responses:
+        '201':
+          description: Cargo criado com sucesso
+    get:
+      summary: Listar Cargos
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Lista de cargos da organização
+  /api/v1/payroll/employees/{id}:
+    parameters:
+    - $ref: '#/components/parameters/TenantHeader'
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    get:
+      summary: Consultar Colaborador
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      responses:
+        '200':
+          description: Detalhe do colaborador
+        '404':
+          description: Colaborador não encontrado
+    put:
+      summary: Actualizar Dados do Colaborador
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                full_name: { type: string }
+                email: { type: string, format: email }
+                iban: { type: string }
+                inss_number: { type: string }
+      responses:
+        '200':
+          description: Colaborador actualizado
+        '404':
+          description: Colaborador não encontrado
+  /api/v1/payroll/employees/{id}/terminate:
+    post:
+      summary: Cessar Contrato do Colaborador
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [termination_date]
+              properties:
+                termination_date: { type: string, format: date }
+                reason: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Cessação registada
+  /api/v1/payroll/employees/{id}/vacation-balance:
+    get:
+      summary: Consultar Saldo de Férias (LGT 30 dias/ano)
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: year
+        in: query
+        required: true
+        schema: { type: integer, example: 2026 }
+      responses:
+        '200':
+          description: Saldo de férias anuais e dias já gozados
+  /api/v1/payroll/contracts/{id}:
+    get:
+      summary: Consultar Contrato
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Detalhe do contrato e componentes salariais
+  /api/v1/payroll/contracts/{id}/components:
+    post:
+      summary: Adicionar Componente Salarial ao Contrato
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [component_type, name, amount]
+              properties:
+                component_type: { type: string, enum: [EARNING, DEDUCTION] }
+                name: { type: string, example: "Subsídio de Alimentação" }
+                amount: { type: number, example: 30000.00 }
+                is_taxable_irt: { type: boolean, default: true }
+                is_taxable_inss: { type: boolean, default: true }
+      responses:
+        '201':
+          description: Componente salarial adicionado
+  /api/v1/payroll/vacations:
+    post:
+      summary: Submeter Pedido de Férias
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [employee_id, start_date, end_date]
+              properties:
+                employee_id: { type: string, format: uuid }
+                start_date: { type: string, format: date }
+                end_date: { type: string, format: date }
+                notes: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Pedido de férias submetido para aprovação
+    get:
+      summary: Listar Pedidos de Férias
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: employee_id
+        in: query
+        schema: { type: string, format: uuid }
+      - name: status
+        in: query
+        schema: { type: string, enum: [PENDING, APPROVED, REJECTED, CANCELLED] }
+      responses:
+        '200':
+          description: Lista de pedidos de férias
+  /api/v1/payroll/vacations/{id}/approve:
+    post:
+      summary: Aprovar Pedido de Férias
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decided_by]
+              properties:
+                decided_by: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Pedido de férias aprovado
+  /api/v1/payroll/vacations/{id}/reject:
+    post:
+      summary: Rejeitar Pedido de Férias
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decided_by]
+              properties:
+                decided_by: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Pedido de férias rejeitado
+  /api/v1/payroll/absences:
+    post:
+      summary: Registar Falta / Ausência
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [employee_id, absence_date]
+              properties:
+                employee_id: { type: string, format: uuid }
+                absence_date: { type: string, format: date }
+                absence_type:
+                  type: string
+                  enum: [UNJUSTIFIED, JUSTIFIED, SICKNESS, MATERNITY, PATERNITY, BEREAVEMENT]
+                  default: UNJUSTIFIED
+                is_paid: { type: boolean, default: false }
+                notes: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Ausência registada (desconta no cálculo se não remunerada)
+    get:
+      summary: Listar Registos de Assiduidade
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: employee_id
+        in: query
+        schema: { type: string, format: uuid }
+      - name: date_from
+        in: query
+        schema: { type: string, format: date }
+      - name: date_to
+        in: query
+        schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Lista de registos de assiduidade
+  /api/v1/payroll/periods/{id}:
+    get:
+      summary: Consultar Período de Processamento
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Detalhe do período salarial
+  /api/v1/payroll/periods/{id}/summary:
+    get:
+      summary: Resumo Consolidado do Período (Totais IRT, INSS e Líquidos)
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Resumo com totais de remunerações, descontos e encargos patronais
+  /api/v1/payroll/periods/{id}/payslips:
+    get:
+      summary: Listar Recibos do Período
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Lista de recibos (payslips) gerados no período
+  /api/v1/payroll/payslips/{id}:
+    get:
+      summary: Consultar Recibo de Vencimento
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Detalhe do recibo com linhas de vencimento e descontos
+  /api/v1/payroll/payslips/{id}/pay:
+    post:
+      summary: Marcar Recibo como Pago
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Recibo marcado como pago
+  /api/v1/payroll/payslips/{id}/pdf:
+    get:
+      summary: Descarregar Recibo de Vencimento em PDF
+      tags: [Recursos Humanos & Payroll]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: company_name
+        in: query
+        schema: { type: string, example: "Kudiba Solucoes Tecnologicas Lda" }
+      - name: company_nif
+        in: query
+        schema: { type: string, example: "5412345678" }
+      responses:
+        '200':
+          description: Documento PDF do recibo de vencimento
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+  /api/v1/integrations/endpoints:
+    get:
+      summary: Listar endpoints de integração
+      tags: [Integrações]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Lista de endpoints configurados
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IntegrationEndpoint' }
+    post:
+      summary: Criar endpoint de integração
+      description: Configura ligação a um sistema externo (webhook, REST pull ou importação de ficheiros).
+      tags: [Integrações]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateIntegrationEndpointRequest' }
+      responses:
+        '201':
+          description: Endpoint criado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationEndpoint' }
+  /api/v1/integrations/endpoints/{endpoint_id}:
+    get:
+      summary: Obter endpoint de integração
+      tags: [Integrações]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: endpoint_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Endpoint
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationEndpoint' }
+        '404':
+          description: Endpoint não encontrado
+    put:
+      summary: Atualizar endpoint de integração
+      tags: [Integrações]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: endpoint_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateIntegrationEndpointRequest' }
+      responses:
+        '200':
+          description: Endpoint atualizado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationEndpoint' }
+    delete:
+      summary: Remover endpoint de integração
+      tags: [Integrações]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: endpoint_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Endpoint removido
+  /api/v1/integrations/endpoints/{endpoint_id}/mappings:
+    post:
+      summary: Criar mapeamento de campos para um endpoint
+      tags: [Integrações]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: endpoint_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateIntegrationMappingRequest' }
+      responses:
+        '201':
+          description: Mapeamento criado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationMapping' }
+  /api/v1/integrations/endpoints/{endpoint_id}/run:
+    post:
+      summary: Executar pull do endpoint agora
+      tags: [Integrações]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: endpoint_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Resultado da execução
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationRun' }
+  /api/v1/integrations/endpoints/{endpoint_id}/import:
+    post:
+      summary: Importar ficheiro para um endpoint
+      description: Envia o conteúdo bruto do ficheiro (CSV ou fixed-width) no corpo do pedido.
+      tags: [Integrações]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: endpoint_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema: { type: string }
+          text/plain:
+            schema: { type: string }
+      responses:
+        '200':
+          description: Resultado da importação
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationRun' }
+  /api/v1/integrations/mappings:
+    get:
+      summary: Listar mapeamentos
+      tags: [Integrações]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: endpoint_id
+        in: query
+        schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Lista de mapeamentos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IntegrationMapping' }
+  /api/v1/integrations/mappings/{mapping_id}:
+    put:
+      summary: Atualizar mapeamento
+      tags: [Integrações]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: mapping_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateIntegrationMappingRequest' }
+      responses:
+        '200':
+          description: Mapeamento atualizado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationMapping' }
+    delete:
+      summary: Remover mapeamento
+      tags: [Integrações]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: mapping_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Mapeamento removido
+  /api/v1/integrations/runs:
+    get:
+      summary: Listar execuções de integração (auditoria)
+      tags: [Integrações]
+      security:
+      - BearerAuth: []
+        TenantHeader: []
+      parameters:
+      - $ref: '#/components/parameters/TenantHeader'
+      - name: endpoint_id
+        in: query
+        schema: { type: string, format: uuid }
+      - name: limit
+        in: query
+        schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: Lista de execuções
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IntegrationRun' }
+  /api/v1/integrations/webhooks/{webhook_key}:
+    post:
+      summary: Receber webhook de sistema externo (público)
+      description: Endpoint público consumido por sistemas externos. Não requer JWT.
+      tags: [Integrações]
+      parameters:
+      - name: webhook_key
+        in: path
+        required: true
+        schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '202':
+          description: Webhook aceite para processamento
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookAccepted' }
 components:
   securitySchemes:
     BearerAuth:
@@ -3097,6 +3856,298 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TreasuryReceiptLineResponse'
+    InvoiceReceivableResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        invoice_id:
+          type: string
+        document_number:
+          type: string
+        document_type:
+          type: string
+        payment_mechanism:
+          type: string
+          nullable: true
+        gross_total:
+          type: string
+        status:
+          type: string
+          enum: [Outstanding, Settled]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    IntegrationEndpoint:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        system_type:
+          type: string
+        connector_type:
+          type: string
+          enum: [WEBHOOK, REST_PULL, FILE_IMPORT]
+        description:
+          type: string
+          nullable: true
+        is_enabled:
+          type: boolean
+        auth_type:
+          type: string
+          enum: [NONE, API_KEY, BASIC, BEARER]
+        has_credentials:
+          type: boolean
+        webhook_key:
+          type: string
+          nullable: true
+        webhook_header_name:
+          type: string
+          nullable: true
+        source_url:
+          type: string
+          nullable: true
+        http_method:
+          type: string
+        schedule_interval_seconds:
+          type: integer
+          nullable: true
+        data_format:
+          type: string
+          enum: [JSON, CSV, FIXED_WIDTH]
+        file_delimiter:
+          type: string
+          nullable: true
+        file_has_header:
+          type: boolean
+        file_encoding:
+          type: string
+        last_run_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateIntegrationEndpointRequest:
+      type: object
+      required: [name, system_type, connector_type]
+      properties:
+        name:
+          type: string
+        system_type:
+          type: string
+          example: ATTENDANCE
+        connector_type:
+          type: string
+          enum: [WEBHOOK, REST_PULL, FILE_IMPORT]
+        description:
+          type: string
+        is_enabled:
+          type: boolean
+          default: true
+        auth_type:
+          type: string
+          enum: [NONE, API_KEY, BASIC, BEARER]
+          default: NONE
+        credentials:
+          type: object
+          additionalProperties: true
+        webhook_header_name:
+          type: string
+        webhook_secret:
+          type: string
+        source_url:
+          type: string
+        http_method:
+          type: string
+          default: GET
+        request_headers:
+          type: object
+          additionalProperties: true
+        query_params:
+          type: object
+          additionalProperties: true
+        schedule_interval_seconds:
+          type: integer
+        data_format:
+          type: string
+          enum: [JSON, CSV, FIXED_WIDTH]
+          default: JSON
+        file_delimiter:
+          type: string
+        file_has_header:
+          type: boolean
+          default: true
+        file_encoding:
+          type: string
+          default: utf-8
+        column_widths:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    IntegrationMapping:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        endpoint_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        entity_type:
+          type: string
+        is_enabled:
+          type: boolean
+        record_path:
+          type: string
+          nullable: true
+        field_mappings:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        static_payload:
+          type: object
+          additionalProperties: true
+        dedup_fields:
+          type: array
+          items: { type: string }
+        conflict_policy:
+          type: string
+          enum: [SKIP, UPDATE, FAIL]
+        target_event_type:
+          type: string
+        target_routing_key:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateIntegrationMappingRequest:
+      type: object
+      required: [name, entity_type, target_event_type, target_routing_key]
+      properties:
+        name:
+          type: string
+        entity_type:
+          type: string
+          example: attendance
+        target_event_type:
+          type: string
+          example: attendance.recorded
+        target_routing_key:
+          type: string
+          example: payroll.event.attendance.recorded
+        is_enabled:
+          type: boolean
+          default: true
+        record_path:
+          type: string
+          example: data.records
+        field_mappings:
+          type: array
+          description: Lista de especificações de mapeamento (target/source/type/format/transform/value_map...).
+          items:
+            type: object
+            additionalProperties: true
+        static_payload:
+          type: object
+          additionalProperties: true
+        dedup_fields:
+          type: array
+          items: { type: string }
+        conflict_policy:
+          type: string
+          enum: [SKIP, UPDATE, FAIL]
+          default: SKIP
+    IntegrationRun:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        endpoint_id:
+          type: string
+          format: uuid
+        mapping_id:
+          type: string
+          format: uuid
+          nullable: true
+        trigger:
+          type: string
+          enum: [WEBHOOK, SCHEDULE, MANUAL]
+        status:
+          type: string
+          enum: [SUCCESS, PARTIAL, FAILED]
+        records_received:
+          type: integer
+        records_succeeded:
+          type: integer
+        records_failed:
+          type: integer
+        records_skipped:
+          type: integer
+        message:
+          type: string
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    WebhookAccepted:
+      type: object
+      properties:
+        accepted:
+          type: boolean
+        run_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [SUCCESS, PARTIAL, FAILED]
+        records_received:
+          type: integer
+        records_succeeded:
+          type: integer
+        records_failed:
+          type: integer
+        records_skipped:
+          type: integer
   parameters:
     CorrelationIdHeader:
       name: X-Correlation-ID

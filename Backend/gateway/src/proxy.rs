@@ -11,13 +11,34 @@ use crate::errors::ProblemDetail;
 use crate::server::AppState;
 
 /// Handler de Reverse Proxy para o Core API Server
+///
+/// O Core API (módulos comerciais) é opcional: quando não está configurado,
+/// devolvemos 404 em vez de contactar um host inexistente.
 pub async fn forward_to_core(State(state): State<AppState>, req: Request) -> Response {
+    let Some(base_url) = state.config.core_api_url.as_deref() else {
+        let instance_path = req
+            .uri()
+            .path_and_query()
+            .map(|pq| pq.as_str().to_string())
+            .unwrap_or_else(|| req.uri().path().to_string());
+        return ProblemDetail::new(
+            "https://api.kudiba.ao/errors/not-found",
+            "Recurso Não Encontrado",
+            StatusCode::NOT_FOUND,
+            "O módulo Core API não está implantado neste ambiente e o recurso solicitado não corresponde a nenhum serviço disponível.",
+            instance_path.as_str(),
+            "CORE_API_NOT_CONFIGURED",
+        )
+        .into_response();
+    };
+
     forward_request(
         &state.http_client,
-        &state.config.core_api_url,
+        base_url,
         req,
         state.config.max_body_bytes,
         None,
+        &state.config.internal_gateway_secret,
     )
     .await
 }
@@ -30,6 +51,7 @@ pub async fn forward_to_auth(State(state): State<AppState>, req: Request) -> Res
         req,
         state.config.max_body_bytes,
         None,
+        &state.config.internal_gateway_secret,
     )
     .await
 }
@@ -43,6 +65,7 @@ pub async fn forward_to_auth_openapi(State(state): State<AppState>, req: Request
         req,
         state.config.max_body_bytes,
         Some("/api-docs/openapi.json"),
+        &state.config.internal_gateway_secret,
     )
     .await
 }
@@ -55,6 +78,7 @@ pub async fn forward_to_fiscal(State(state): State<AppState>, req: Request) -> R
         req,
         state.config.max_body_bytes,
         None,
+        &state.config.internal_gateway_secret,
     )
     .await
 }
@@ -66,6 +90,7 @@ pub async fn forward_to_inventory(State(state): State<AppState>, req: Request) -
         req,
         state.config.max_body_bytes,
         None,
+        &state.config.internal_gateway_secret,
     )
     .await
 }
@@ -77,6 +102,7 @@ pub async fn forward_to_treasury(State(state): State<AppState>, req: Request) ->
         req,
         state.config.max_body_bytes,
         None,
+        &state.config.internal_gateway_secret,
     )
     .await
 }
@@ -88,6 +114,7 @@ pub async fn forward_to_accounting(State(state): State<AppState>, req: Request) 
         req,
         state.config.max_body_bytes,
         None,
+        &state.config.internal_gateway_secret,
     )
     .await
 }
@@ -99,8 +126,30 @@ pub async fn forward_to_payroll(State(state): State<AppState>, req: Request) -> 
         req,
         state.config.max_body_bytes,
         None,
+        &state.config.internal_gateway_secret,
     )
     .await
+}
+
+pub async fn forward_to_integrations(State(state): State<AppState>, req: Request) -> Response {
+    forward_request(
+        &state.http_client,
+        &state.config.integrations_service_url,
+        req,
+        state.config.max_body_bytes,
+        None,
+        &state.config.internal_gateway_secret,
+    )
+    .await
+}
+
+pub fn compute_gateway_signature(secret: &[u8], payload: &str) -> String {
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret);
+    let tag = ring::hmac::sign(&key, payload.as_bytes());
+    tag.as_ref()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>()
 }
 
 async fn forward_request(
@@ -109,6 +158,7 @@ async fn forward_request(
     req: Request,
     max_body_bytes: usize,
     path_override: Option<&str>,
+    internal_secret: &str,
 ) -> Response {
     let client_ip = req
         .extensions()
@@ -143,7 +193,8 @@ async fn forward_request(
     };
 
     // Constrói requisição upstream
-    let mut builder = client.request(parts.method, &target_url);
+    let method = parts.method;
+    let mut builder = client.request(method.clone(), &target_url);
 
     // Copia headers, filtrando host
     for (k, v) in &parts.headers {
@@ -154,6 +205,15 @@ async fn forward_request(
     if let Some(client_ip) = client_ip {
         builder = builder.header("X-Forwarded-For", client_ip);
     }
+
+    let timestamp = chrono::Utc::now().timestamp().to_string();
+    let uri_path = parts.uri.path();
+    let canonical = format!("{}:{}:{}", timestamp, method.as_str(), uri_path);
+    let signature = compute_gateway_signature(internal_secret.as_bytes(), &canonical);
+
+    builder = builder
+        .header("X-Gateway-Timestamp", timestamp)
+        .header("X-Gateway-Signature", signature);
 
     if !body_bytes.is_empty() {
         builder = builder.body(body_bytes);

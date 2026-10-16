@@ -4,14 +4,16 @@ use std::sync::Arc;
 use crate::application::commands::{
     CloseCashSessionHandler, CreateBankAccountHandler, CreateCashRegisterHandler,
     IssueTreasuryReceiptHandler, OpenCashSessionHandler, RecordCashMovementHandler,
+    RegisterInvoiceReceivableHandler,
 };
 use crate::application::queries::TreasuryQueries;
 use crate::config::Config;
-use crate::domain::ports::TreasuryEventPublisher;
+use crate::domain::ports::{InvoiceReceivableRepository, TreasuryEventPublisher};
 use crate::infrastructure::events::{MultiChannelTreasuryEventPublisher, TreasuryEventConsumer};
 use crate::infrastructure::persistence::{
     PostgresBankAccountRepository, PostgresCashMovementRepository, PostgresCashRegisterRepository,
-    PostgresCashSessionRepository, PostgresTreasuryReceiptRepository,
+    PostgresCashSessionRepository, PostgresInvoiceReceivableRepository,
+    PostgresTreasuryReceiptRepository,
 };
 
 #[derive(Clone)]
@@ -24,6 +26,7 @@ pub struct AppState {
     pub record_movement_cmd: Arc<RecordCashMovementHandler>,
     pub create_bank_account_cmd: Arc<CreateBankAccountHandler>,
     pub issue_receipt_cmd: Arc<IssueTreasuryReceiptHandler>,
+    pub receivable_repo: Arc<dyn InvoiceReceivableRepository>,
     pub queries: Arc<TreasuryQueries>,
     pub event_consumer: Arc<TreasuryEventConsumer>,
     pub event_publisher: Arc<dyn TreasuryEventPublisher>,
@@ -36,6 +39,8 @@ impl AppState {
         let movement_repo = Arc::new(PostgresCashMovementRepository::new(pool.clone()));
         let bank_repo = Arc::new(PostgresBankAccountRepository::new(pool.clone()));
         let receipt_repo = Arc::new(PostgresTreasuryReceiptRepository::new(pool.clone()));
+        let receivable_repo: Arc<dyn InvoiceReceivableRepository> =
+            Arc::new(PostgresInvoiceReceivableRepository::new(pool.clone()));
 
         let event_publisher: Arc<dyn TreasuryEventPublisher> = Arc::new(
             MultiChannelTreasuryEventPublisher::new(Some(config.rabbitmq_url.clone())),
@@ -62,6 +67,10 @@ impl AppState {
             event_publisher.clone(),
         ));
 
+        let register_receivable_cmd = Arc::new(RegisterInvoiceReceivableHandler::new(
+            receivable_repo.clone(),
+        ));
+
         let queries = Arc::new(TreasuryQueries::new(
             register_repo,
             session_repo,
@@ -70,9 +79,10 @@ impl AppState {
             receipt_repo,
         ));
 
-        let event_consumer = Arc::new(TreasuryEventConsumer::new(Some(
-            config.rabbitmq_url.clone(),
-        )));
+        let event_consumer = Arc::new(TreasuryEventConsumer::new(
+            Some(config.rabbitmq_url.clone()),
+            register_receivable_cmd,
+        ));
 
         Self {
             config: Arc::new(config),
@@ -83,6 +93,7 @@ impl AppState {
             record_movement_cmd,
             create_bank_account_cmd,
             issue_receipt_cmd,
+            receivable_repo,
             queries,
             event_consumer,
             event_publisher,

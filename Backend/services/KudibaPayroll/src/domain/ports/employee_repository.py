@@ -18,6 +18,10 @@ class EmployeeRepository(ABC):
         pass
 
     @abstractmethod
+    async def get_by_identity_card(self, tenant_id: UUID, identity_card_number: str) -> Optional[Employee]:
+        pass
+
+    @abstractmethod
     async def list_active(self, tenant_id: UUID) -> List[Employee]:
         pass
 

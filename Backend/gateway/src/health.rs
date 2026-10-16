@@ -6,8 +6,13 @@
 //!   3. KudibaInvoicing (Motor Fiscal, Assinatura RSA & Decreto 71/25)
 //!   4. PostgreSQL (Base de dados transacional ACID)
 //!   5. RabbitMQ (Message Broker & Filas assíncronas de SAF-T)
-//!   6. Core API (Módulos Comerciais e Administrativos)
-//!   7. AGT Webservices (Comunicação tributária em tempo real e detecção de contingência)
+//!   6. KudibaInventory (Armazéns, Artigos & Movimentos de Stock)
+//!   7. KudibaTreasury (Caixa, Sessões, Recibos & Reconciliação)
+//!   8. KudibaAccounting (PGC, Lançamentos, Balancete & SAF-T Contabilidade)
+//!  9. Core API (Módulos Comerciais e Administrativos - opcional)
+//!  10. KudibaPayroll (Recursos Humanos & Processamento Salarial)
+//!  11. KudibaIntegrations (Framework Transversal de Integrações)
+//!  12. AGT Webservices (Comunicação tributária em tempo real e detecção de contingência)
 
 use std::time::{Duration, Instant};
 
@@ -21,8 +26,8 @@ use crate::server::AppState;
 
 /// Janela mínima entre duas sondagens consolidadas.
 ///
-/// O endpoint é público e dispara 6 verificações concorrentes (incluindo uma
-/// chamada externa à AGT). Sem esta memoização, um cliente em loop causaria
+/// O endpoint é público e dispara várias verificações concorrentes (incluindo
+/// uma chamada externa à AGT). Sem esta memoização, um cliente em loop causaria
 /// amplificação de tráfego contra os serviços internos e contra o canal
 /// governamental.
 const HEALTH_CACHE_TTL: Duration = Duration::from_secs(5);
@@ -32,7 +37,7 @@ const HEALTH_CACHE_TTL: Duration = Duration::from_secs(5);
 #[serde(rename_all = "camelCase")]
 pub struct ServiceHealth {
     pub name: String,
-    pub service_type: String, // "GATEWAY", "CACHE", "FISCAL_ENGINE", "DATABASE", "MESSAGE_BROKER", "CORE_API", "EXTERNAL_GOV"
+    pub service_type: String, // "GATEWAY", "CACHE", "FISCAL_ENGINE", "DATABASE", "MESSAGE_BROKER", "CORE_API", "PAYROLL", "EXTERNAL_GOV"
     pub status: String,       // "HEALTHY", "DEGRADED", "UNAVAILABLE"
     pub endpoint: String,
     pub latency_ms: u64,
@@ -94,12 +99,57 @@ pub async fn cached_system_health(state: &AppState) -> SystemHealthResponse {
 
 /// Executa todas as sondagens de saúde concorrentemente (em paralelo)
 pub async fn check_system_health(state: &AppState) -> SystemHealthResponse {
-    let (redis_health, fiscal_health, pg_health, rabbit_health, core_health, agt_health) = tokio::join!(
+    let (
+        redis_health,
+        fiscal_health,
+        pg_health,
+        rabbit_health,
+        inventory_health,
+        treasury_health,
+        accounting_health,
+        core_health,
+        payroll_health,
+        integrations_health,
+        agt_health,
+    ) = tokio::join!(
         check_redis(state),
         check_fiscal_engine(state),
         check_postgres(&state.config),
         check_rabbitmq(&state.config),
+        check_http_service(
+            state,
+            "Inventário & Stocks (KudibaInventory)",
+            "INVENTORY",
+            &state.config.inventory_service_url,
+            "Gestão de armazéns, artigos e movimentos de stock operacional.",
+            "Módulo de inventário em desenvolvimento ou indisponível",
+        ),
+        check_http_service(
+            state,
+            "Tesouraria & Caixa (KudibaTreasury)",
+            "TREASURY",
+            &state.config.treasury_service_url,
+            "Caixa, sessões, recibos e reconciliação operacionais.",
+            "Módulo de tesouraria em desenvolvimento ou indisponível",
+        ),
+        check_http_service(
+            state,
+            "Contabilidade Geral (KudibaAccounting)",
+            "ACCOUNTING",
+            &state.config.accounting_service_url,
+            "PGC, lançamentos, balancete e SAF-T Contabilidade operacionais.",
+            "Módulo de contabilidade em desenvolvimento ou indisponível",
+        ),
         check_core_api(state),
+        check_payroll(state),
+        check_http_service(
+            state,
+            "Framework de Integrações (KudibaIntegrations)",
+            "INTEGRATIONS",
+            &state.config.integrations_service_url,
+            "Framework transversal de integrações operacional (webhook, REST pull e importação de ficheiros).",
+            "Serviço de integrações em desenvolvimento ou indisponível",
+        ),
         check_agt_webservices(state),
     );
 
@@ -108,7 +158,12 @@ pub async fn check_system_health(state: &AppState) -> SystemHealthResponse {
         fiscal_health,
         pg_health,
         rabbit_health,
+        inventory_health,
+        treasury_health,
+        accounting_health,
         core_health,
+        payroll_health,
+        integrations_health,
         agt_health,
     ];
 
@@ -374,8 +429,44 @@ async fn check_rabbitmq(config: &Config) -> ServiceHealth {
 
 /// 5. Verificação do Core API (Módulos Comerciais e Administrativos)
 async fn check_core_api(state: &AppState) -> ServiceHealth {
+    match state.config.core_api_url.as_deref() {
+        Some(base_url) => {
+            check_http_service(
+                state,
+                "Core API Server",
+                "CORE_API",
+                base_url,
+                "Core API operacional.",
+                "Módulo Core API em desenvolvimento ou offline",
+            )
+            .await
+        }
+        None => ServiceHealth {
+            name: "Core API Server".to_string(),
+            service_type: "CORE_API".to_string(),
+            status: "DEGRADED".to_string(),
+            endpoint: "não configurado".to_string(),
+            latency_ms: 0,
+            message: Some(
+                "Core API não configurado neste ambiente (variável CORE_API_URL ausente)."
+                    .to_string(),
+            ),
+            details: None,
+        },
+    }
+}
+
+/// Sondagem genérica de um serviço HTTP interno (GET `{base_url}/health`).
+async fn check_http_service(
+    state: &AppState,
+    name: &str,
+    service_type: &str,
+    base_url: &str,
+    healthy_message: &str,
+    degraded_message: &str,
+) -> ServiceHealth {
     let start = Instant::now();
-    let health_url = format!("{}/health", state.config.core_api_url.trim_end_matches('/'));
+    let health_url = format!("{}/health", base_url.trim_end_matches('/'));
 
     match state
         .http_client
@@ -388,42 +479,98 @@ async fn check_core_api(state: &AppState) -> ServiceHealth {
             let latency_ms = start.elapsed().as_millis() as u64;
             let details = res.json::<serde_json::Value>().await.ok();
             ServiceHealth {
-                name: "Core API Server".to_string(),
-                service_type: "CORE_API".to_string(),
+                name: name.to_string(),
+                service_type: service_type.to_string(),
                 status: "HEALTHY".to_string(),
-                endpoint: state.config.core_api_url.clone(),
+                endpoint: base_url.to_string(),
                 latency_ms,
-                message: Some("Core API operacional.".to_string()),
+                message: Some(healthy_message.to_string()),
                 details,
             }
         }
-        Ok(res) => ServiceHealth {
-            name: "Core API Server".to_string(),
-            service_type: "CORE_API".to_string(),
+        Ok(res) => {
+            let status_code = res.status();
+            ServiceHealth {
+                name: name.to_string(),
+                service_type: service_type.to_string(),
+                status: "DEGRADED".to_string(),
+                endpoint: base_url.to_string(),
+                latency_ms: start.elapsed().as_millis() as u64,
+                message: Some(format!("{degraded_message} (HTTP {status_code}).")),
+                details: None,
+            }
+        }
+        Err(err) => ServiceHealth {
+            name: name.to_string(),
+            service_type: service_type.to_string(),
             status: "DEGRADED".to_string(),
-            endpoint: state.config.core_api_url.clone(),
+            endpoint: base_url.to_string(),
             latency_ms: start.elapsed().as_millis() as u64,
-            message: Some(format!(
-                "Core API respondeu com código HTTP {}.",
-                res.status()
-            )),
+            message: Some(format!("{degraded_message} ({err}).")),
             details: None,
         },
+    }
+}
+
+/// 6. Verificação do KudibaPayroll (Recursos Humanos & Processamento Salarial)
+async fn check_payroll(state: &AppState) -> ServiceHealth {
+    let start = Instant::now();
+    let health_url = format!(
+        "{}/health",
+        state.config.payroll_service_url.trim_end_matches('/')
+    );
+
+    match state
+        .http_client
+        .get(&health_url)
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+    {
+        Ok(res) if res.status().is_success() => {
+            let latency_ms = start.elapsed().as_millis() as u64;
+            let details = res.json::<serde_json::Value>().await.ok();
+            ServiceHealth {
+                name: "Recursos Humanos & Payroll (KudibaPayroll)".to_string(),
+                service_type: "PAYROLL".to_string(),
+                status: "HEALTHY".to_string(),
+                endpoint: state.config.payroll_service_url.clone(),
+                latency_ms,
+                message: Some(
+                    "Processamento salarial (IRT/INSS) e gestão de RH operacionais.".to_string(),
+                ),
+                details,
+            }
+        }
+        Ok(res) => {
+            let status_code = res.status();
+            ServiceHealth {
+                name: "Recursos Humanos & Payroll (KudibaPayroll)".to_string(),
+                service_type: "PAYROLL".to_string(),
+                status: "DEGRADED".to_string(),
+                endpoint: state.config.payroll_service_url.clone(),
+                latency_ms: start.elapsed().as_millis() as u64,
+                message: Some(format!(
+                    "KudibaPayroll respondeu com código HTTP {status_code}."
+                )),
+                details: None,
+            }
+        }
         Err(err) => ServiceHealth {
-            name: "Core API Server".to_string(),
-            service_type: "CORE_API".to_string(),
-            status: "DEGRADED".to_string(), // Marcado como DEGRADED por estar em desenvolvimento modular
-            endpoint: state.config.core_api_url.clone(),
+            name: "Recursos Humanos & Payroll (KudibaPayroll)".to_string(),
+            service_type: "PAYROLL".to_string(),
+            status: "DEGRADED".to_string(),
+            endpoint: state.config.payroll_service_url.clone(),
             latency_ms: start.elapsed().as_millis() as u64,
             message: Some(format!(
-                "Módulo Core API em desenvolvimento ou offline ({err})."
+                "Módulo de RH & Payroll em desenvolvimento ou offline ({err})."
             )),
             details: None,
         },
     }
 }
 
-/// 6. Estado do Canal Webservices da AGT, reportado pelo conector oficial
+/// 7. Estado do Canal Webservices da AGT, reportado pelo conector oficial
 ///
 /// O gateway não contacta a AGT directamente: o heartbeat tributário é da
 /// responsabilidade do Motor Fiscal, que é o único componente autorizado a

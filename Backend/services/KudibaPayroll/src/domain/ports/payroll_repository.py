@@ -33,3 +33,24 @@ class PayrollRepository(ABC):
     @abstractmethod
     async def get_payslip_by_id(self, tenant_id: UUID, payslip_id: UUID) -> Optional[Payslip]:
         pass
+
+    @abstractmethod
+    async def save_outbox_event(
+        self,
+        event_id: UUID,
+        tenant_id: UUID,
+        aggregate_id: UUID,
+        event_type: str,
+        routing_key: str,
+        payload: dict,
+    ) -> None:
+        pass
+
+    @abstractmethod
+    async def list_pending_outbox_events(self, limit: int = 50) -> List[dict]:
+        pass
+
+    @abstractmethod
+    async def mark_outbox_event_published(self, event_id: UUID) -> None:
+        pass
+
