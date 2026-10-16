@@ -211,3 +211,33 @@ impl ReverseEntryHandler {
         Ok(reversed)
     }
 }
+
+pub struct CreateJournalHandler {
+    journal_repo: Arc<dyn JournalRepository>,
+}
+
+impl CreateJournalHandler {
+    pub fn new(journal_repo: Arc<dyn JournalRepository>) -> Self {
+        Self { journal_repo }
+    }
+
+    pub async fn execute(
+        &self,
+        tenant_id: Uuid,
+        req: crate::application::dto::CreateJournalRequest,
+    ) -> Result<crate::domain::entities::Journal, DomainError> {
+        let existing = self.journal_repo.find_by_code(tenant_id, &req.code).await?;
+        if existing.is_some() {
+            return Err(DomainError::Conflict(format!(
+                "Diário '{}' já existe para este tenant",
+                req.code
+            )));
+        }
+
+        let journal =
+            crate::domain::entities::Journal::new(tenant_id, req.code, req.name, req.journal_type)?;
+
+        self.journal_repo.save(&journal).await?;
+        Ok(journal)
+    }
+}

@@ -36,6 +36,7 @@ use crate::infrastructure::persistence::unit_of_work::{PgSessionFactory, PgUnitO
 /// Estado partilhado da aplicação (casos de uso + infra-estrutura)
 #[derive(Clone)]
 pub struct AppState {
+    pub pool: sqlx::PgPool,
     pub config: Config,
     pub signer: Arc<RsaCryptoSigner>,
     pub agt_client: Arc<AgtClient>,
@@ -84,7 +85,8 @@ impl AppState {
             Arc::new(PgSessionFactory::new(pool.clone()));
         let read_session_factory: Arc<dyn DbSessionFactory> =
             Arc::new(PgSessionFactory::new(read_pool));
-        let uow_factory: Arc<dyn UnitOfWorkFactory> = Arc::new(PgUnitOfWorkFactory::new(pool));
+        let uow_factory: Arc<dyn UnitOfWorkFactory> =
+            Arc::new(PgUnitOfWorkFactory::new(pool.clone()));
         let series_repository: Arc<dyn FiscalSeriesRepository> =
             Arc::new(PgFiscalSeriesRepository::new());
         let invoice_repository: Arc<dyn InvoiceRepository> = Arc::new(PgInvoiceRepository::new());
@@ -113,6 +115,7 @@ impl AppState {
         );
 
         Ok(Self {
+            pool: pool.clone(),
             issue_invoice,
             cancel_invoice,
             create_series: Arc::new(CreateFiscalSeriesUseCase::new(

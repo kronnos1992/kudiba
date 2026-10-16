@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::application::dto::GetInvoiceQuery;
 use crate::domain::entities::invoice::Invoice;
@@ -61,6 +62,33 @@ impl GetInvoiceUseCase {
         Err(DomainError::invalid(
             "Indique invoiceId ou documentNumber para consultar o documento fiscal.",
         ))
+    }
+
+    pub async fn list(
+        &self,
+        tenant_id: Uuid,
+        fiscal_year: i32,
+        fiscal_month: Option<u32>,
+        offset: i64,
+        limit: i64,
+    ) -> Result<Vec<Invoice>, DomainError> {
+        let mut session = self
+            .session_factory
+            .open()
+            .await
+            .map_err(persistence_error)?;
+
+        self.invoice_repository
+            .find_by_period_paginated(
+                session.as_mut(),
+                tenant_id,
+                fiscal_year,
+                fiscal_month,
+                offset,
+                limit,
+            )
+            .await
+            .map_err(persistence_error)
     }
 }
 

@@ -10,8 +10,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::application::dto::{
-    AccountResponse, CreateAccountRequest, CreateFiscalYearRequest, CurrencyRevaluationRequest,
-    JournalEntryResponse, JournalLineResponse, PostManualEntryRequest, ReverseEntryRequest,
+    AccountResponse, CreateAccountRequest, CreateFiscalYearRequest, CreateJournalRequest,
+    CurrencyRevaluationRequest, JournalEntryResponse, JournalLineResponse, PostManualEntryRequest,
+    ReverseEntryRequest,
 };
 use crate::domain::error::DomainError;
 use crate::infrastructure::saft::SaftAccountingGenerator;
@@ -298,6 +299,21 @@ pub async fn list_journals_handler(
         .map_err(map_domain_error)?;
 
     Ok((StatusCode::OK, Json(journals)))
+}
+
+pub async fn create_journal_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateJournalRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let journal = state
+        .create_journal
+        .execute(tenant_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok((StatusCode::CREATED, Json(journal)))
 }
 
 #[derive(Debug, Deserialize)]
@@ -644,7 +660,10 @@ pub fn create_router(state: AppState) -> Router {
             "/api/v1/accounting/fiscal-years/{year}/close",
             post(close_fiscal_year_handler),
         )
-        .route("/api/v1/accounting/journals", get(list_journals_handler))
+        .route(
+            "/api/v1/accounting/journals",
+            get(list_journals_handler).post(create_journal_handler),
+        )
         .route(
             "/api/v1/accounting/entries",
             get(list_entries_handler).post(post_entry_handler),

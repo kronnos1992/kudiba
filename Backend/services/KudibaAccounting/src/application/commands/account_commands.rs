@@ -50,14 +50,75 @@ impl CreateAccountHandler {
 
 pub struct SeedStandardPgcHandler {
     account_repo: Arc<dyn AccountRepository>,
+    journal_repo: Option<Arc<dyn crate::domain::ports::JournalRepository>>,
 }
 
 impl SeedStandardPgcHandler {
     pub fn new(account_repo: Arc<dyn AccountRepository>) -> Self {
-        Self { account_repo }
+        Self {
+            account_repo,
+            journal_repo: None,
+        }
+    }
+
+    pub fn with_journals(
+        account_repo: Arc<dyn AccountRepository>,
+        journal_repo: Arc<dyn crate::domain::ports::JournalRepository>,
+    ) -> Self {
+        Self {
+            account_repo,
+            journal_repo: Some(journal_repo),
+        }
     }
 
     pub async fn execute(&self, tenant_id: Uuid) -> Result<usize, DomainError> {
+        if let Some(j_repo) = &self.journal_repo {
+            let existing_journals = j_repo.list_all(tenant_id).await?;
+            if existing_journals.is_empty() {
+                let default_journals = vec![
+                    (
+                        "VN",
+                        "Diário de Vendas e Facturação",
+                        crate::domain::value_objects::JournalType::Sales,
+                    ),
+                    (
+                        "CP",
+                        "Diário de Compras e Fornecedores",
+                        crate::domain::value_objects::JournalType::Purchases,
+                    ),
+                    (
+                        "CX",
+                        "Diário de Caixa",
+                        crate::domain::value_objects::JournalType::Cash,
+                    ),
+                    (
+                        "BC",
+                        "Diário de Bancos",
+                        crate::domain::value_objects::JournalType::Bank,
+                    ),
+                    (
+                        "OD",
+                        "Diário de Operações Diversas",
+                        crate::domain::value_objects::JournalType::Operations,
+                    ),
+                    (
+                        "FE",
+                        "Diário de Fecho e Apuramento",
+                        crate::domain::value_objects::JournalType::Closing,
+                    ),
+                ];
+                for (code, name, j_type) in default_journals {
+                    let j = crate::domain::entities::Journal::new(
+                        tenant_id,
+                        code.to_string(),
+                        name.to_string(),
+                        j_type,
+                    )?;
+                    j_repo.save(&j).await?;
+                }
+            }
+        }
+
         let existing = self.account_repo.list_all(tenant_id).await?;
         if !existing.is_empty() {
             return Ok(0); // Já inicializado

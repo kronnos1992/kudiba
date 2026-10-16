@@ -11,6 +11,41 @@ export interface SwitchTenantPayload {
   branch_id?: string;
 }
 
+export interface TenantMember {
+  user_id: string;
+  email: string;
+  full_name: string;
+  roles: string[];
+  status: string;
+  default_branch_id?: string | null;
+}
+
+export interface InviteMemberPayload {
+  email: string;
+  full_name: string;
+  roles: string[];
+  branch_id?: string | null;
+  password?: string;
+}
+
+export interface UpdateRolesPayload {
+  roles: string[];
+}
+
+export interface RoleCatalogItem {
+  id: string;
+  name: string;
+  description: string;
+  permissions: string[];
+}
+
+export interface BranchDto {
+  id: string;
+  code: string;
+  name: string;
+  city?: string | null;
+}
+
 export const authApi = {
   login: async (payload: LoginPayload): Promise<LoginResponse> => {
     const response = await apiClient.post<LoginResponse>('/api/v1/auth/login', payload);
@@ -37,6 +72,30 @@ export const authApi = {
 
   switchTenant: async (payload: SwitchTenantPayload): Promise<LoginResponse> => {
     const response = await apiClient.post<LoginResponse>('/api/v1/auth/switch-tenant', payload);
+    return response.data;
+  },
+
+  listMembers: async (): Promise<TenantMember[]> => {
+    const response = await apiClient.get<TenantMember[]>('/api/v1/auth/users');
+    return response.data;
+  },
+
+  inviteMember: async (payload: InviteMemberPayload): Promise<TenantMember> => {
+    const response = await apiClient.post<TenantMember>('/api/v1/auth/users/invite', payload);
+    return response.data;
+  },
+
+  updateMemberRoles: async (userId: string, payload: UpdateRolesPayload): Promise<void> => {
+    await apiClient.put(`/api/v1/auth/users/${userId}/roles`, payload);
+  },
+
+  listBranches: async (): Promise<BranchDto[]> => {
+    const response = await apiClient.get<BranchDto[]>('/api/v1/auth/branches');
+    return response.data;
+  },
+
+  listRoles: async (): Promise<RoleCatalogItem[]> => {
+    const response = await apiClient.get<RoleCatalogItem[]>('/api/v1/auth/roles');
     return response.data;
   },
 

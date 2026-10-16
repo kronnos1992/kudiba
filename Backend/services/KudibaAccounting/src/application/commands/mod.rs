@@ -10,5 +10,7 @@ pub use event_integration_commands::{
     ProcessTreasuryReceiptCommand,
 };
 pub use fiscal_year_commands::{CloseFiscalYearHandler, OpenFiscalYearHandler};
-pub use journal_entry_commands::{PostManualEntryHandler, ReverseEntryHandler};
+pub use journal_entry_commands::{
+    CreateJournalHandler, PostManualEntryHandler, ReverseEntryHandler,
+};
 pub use revaluation_commands::RevalueCurrencyBalancesHandler;

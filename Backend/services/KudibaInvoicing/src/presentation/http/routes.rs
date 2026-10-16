@@ -3,7 +3,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chrono::Utc;
+use chrono::{Datelike, Utc};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -26,9 +26,15 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(root_handler))
         .route("/health", get(health_handler))
-        // REST: emissão de documento fiscal (rota directa e rota encaminhada pelo Gateway)
-        .route("/api/v1/invoices", post(issue_invoice_handler))
-        .route("/api/v1/fiscal/invoices", post(issue_invoice_handler))
+        // REST: emissão e consulta/listagem de documentos fiscais
+        .route(
+            "/api/v1/invoices",
+            post(issue_invoice_handler).get(list_invoices_handler),
+        )
+        .route(
+            "/api/v1/fiscal/invoices",
+            post(issue_invoice_handler).get(list_invoices_handler),
+        )
         // REST: consulta de documento fiscal
         .route("/api/v1/invoices/{id}", get(get_invoice_handler))
         .route("/api/v1/fiscal/invoices/{id}", get(get_invoice_handler))
@@ -60,8 +66,11 @@ pub fn router(state: AppState) -> Router {
         // REST: chave pública RSA para verificação independente das assinaturas
         .route("/api/v1/public-key", get(public_key_handler))
         .route("/api/v1/fiscal/public-key", get(public_key_handler))
-        // REST: abertura explícita de série fiscal (idempotente)
-        .route("/api/v1/fiscal/series", post(create_series_handler))
+        // REST: abertura explícita e listagem de séries fiscais
+        .route(
+            "/api/v1/fiscal/series",
+            post(create_series_handler).get(list_series_handler),
+        )
         // REST: assinatura directa (POS em modo contingência fiscal)
         .route("/api/v1/fiscal/sign", post(sign_direct_handler))
         // REST: validação de assinatura e de sequência da série fiscal
@@ -228,6 +237,107 @@ async fn create_series_handler(
         Ok(series_id) => {
             (StatusCode::CREATED, Json(json!({ "seriesId": series_id }))).into_response()
         }
+        Err(err) => domain_error(err),
+    }
+}
+
+async fn list_series_handler(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let tenant_id = match authorized_tenant_id(
+        &headers,
+        &[
+            "ADMIN",
+            "ADMINISTRADOR",
+            "GESTOR",
+            "CONTABILISTA",
+            "ACCOUNTANT",
+            "OPERADOR_FACTURACAO",
+            "BILLING_OPERATOR",
+        ],
+    ) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response.into_response(),
+    };
+
+    let rows = match sqlx::query(
+        "SELECT id, tenant_id, document_type, series_code, fiscal_year, current_sequence, is_active \
+         FROM kudiba_core.series_fiscais WHERE tenant_id = $1 \
+         ORDER BY fiscal_year DESC, document_type ASC, series_code ASC"
+    )
+    .bind(tenant_id)
+    .fetch_all(&state.pool)
+    .await {
+        Ok(rows) => rows,
+        Err(err) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": err.to_string()}))).into_response(),
+    };
+
+    let list: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| {
+            use sqlx::Row;
+            json!({
+                "id": r.try_get::<Uuid, _>("id").unwrap_or_default(),
+                "tenantId": r.try_get::<Uuid, _>("tenant_id").unwrap_or_default(),
+                "documentType": r.try_get::<String, _>("document_type").unwrap_or_default(),
+                "seriesCode": r.try_get::<String, _>("series_code").unwrap_or_default(),
+                "fiscalYear": r.try_get::<i32, _>("fiscal_year").unwrap_or_default(),
+                "currentSequence": r.try_get::<i64, _>("current_sequence").unwrap_or_default(),
+                "isActive": r.try_get::<bool, _>("is_active").unwrap_or(true),
+            })
+        })
+        .collect();
+
+    Json(list).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListInvoicesParams {
+    #[serde(rename = "tenantId")]
+    pub tenant_id: Option<Uuid>,
+    #[serde(rename = "fiscalYear")]
+    pub fiscal_year: Option<i32>,
+    #[serde(rename = "fiscalMonth")]
+    pub fiscal_month: Option<u32>,
+    pub offset: Option<i64>,
+    pub limit: Option<i64>,
+}
+
+async fn list_invoices_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<ListInvoicesParams>,
+) -> Response {
+    let tenant_id = match authorized_tenant_id(
+        &headers,
+        &[
+            "ADMIN",
+            "ADMINISTRADOR",
+            "GESTOR",
+            "CONTABILISTA",
+            "ACCOUNTANT",
+            "OPERADOR_FACTURACAO",
+            "BILLING_OPERATOR",
+        ],
+    ) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response.into_response(),
+    };
+    if params
+        .tenant_id
+        .is_some_and(|requested| requested != tenant_id)
+    {
+        return forbidden_tenant().into_response();
+    }
+
+    let year = params.fiscal_year.unwrap_or_else(|| Utc::now().year());
+    let offset = params.offset.unwrap_or(0);
+    let limit = params.limit.unwrap_or(50).min(100);
+
+    match state
+        .get_invoice
+        .list(tenant_id, year, params.fiscal_month, offset, limit)
+        .await
+    {
+        Ok(invoices) => Json(invoices).into_response(),
         Err(err) => domain_error(err),
     }
 }

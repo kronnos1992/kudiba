@@ -2,10 +2,10 @@ use sqlx::PgPool;
 use std::sync::Arc;
 
 use crate::application::commands::{
-    CloseFiscalYearHandler, CreateAccountHandler, OpenFiscalYearHandler, PostManualEntryHandler,
-    ProcessInvoiceIssuedCommand, ProcessPayrollPeriodClosedCommand, ProcessStockDispatchCommand,
-    ProcessTreasuryReceiptCommand, RevalueCurrencyBalancesHandler, ReverseEntryHandler,
-    SeedStandardPgcHandler,
+    CloseFiscalYearHandler, CreateAccountHandler, CreateJournalHandler, OpenFiscalYearHandler,
+    PostManualEntryHandler, ProcessInvoiceIssuedCommand, ProcessPayrollPeriodClosedCommand,
+    ProcessStockDispatchCommand, ProcessTreasuryReceiptCommand, RevalueCurrencyBalancesHandler,
+    ReverseEntryHandler, SeedStandardPgcHandler,
 };
 use crate::application::queries::AccountingQueries;
 use crate::config::Config;
@@ -23,6 +23,7 @@ pub struct AppState {
     pub seed_standard_pgc: Arc<SeedStandardPgcHandler>,
     pub open_fiscal_year: Arc<OpenFiscalYearHandler>,
     pub close_fiscal_year: Arc<CloseFiscalYearHandler>,
+    pub create_journal: Arc<CreateJournalHandler>,
     pub post_manual_entry: Arc<PostManualEntryHandler>,
     pub reverse_entry: Arc<ReverseEntryHandler>,
     pub revalue_currency: Arc<RevalueCurrencyBalancesHandler>,
@@ -38,13 +39,17 @@ impl AppState {
         let entry_repo = Arc::new(PostgresJournalEntryRepository::new(pool.clone()));
 
         let create_account = Arc::new(CreateAccountHandler::new(account_repo.clone()));
-        let seed_standard_pgc = Arc::new(SeedStandardPgcHandler::new(account_repo.clone()));
+        let seed_standard_pgc = Arc::new(SeedStandardPgcHandler::with_journals(
+            account_repo.clone(),
+            journal_repo.clone(),
+        ));
         let open_fiscal_year = Arc::new(OpenFiscalYearHandler::new(year_repo.clone()));
         let close_fiscal_year = Arc::new(CloseFiscalYearHandler::new(
             year_repo.clone(),
             entry_repo.clone(),
             journal_repo.clone(),
         ));
+        let create_journal = Arc::new(CreateJournalHandler::new(journal_repo.clone()));
 
         let post_manual_entry = Arc::new(PostManualEntryHandler::new(
             entry_repo.clone(),
@@ -113,6 +118,7 @@ impl AppState {
             seed_standard_pgc,
             open_fiscal_year,
             close_fiscal_year,
+            create_journal,
             post_manual_entry,
             reverse_entry,
             revalue_currency,
