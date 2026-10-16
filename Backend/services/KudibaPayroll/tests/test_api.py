@@ -73,40 +73,48 @@ async def test_gateway_signature_verification():
     import hmac
     import hashlib
     import time
+    from unittest.mock import AsyncMock, MagicMock
     from src.config import get_settings
+    from src.presentation.http.dependencies import get_app_state
 
-    transport = ASGITransport(app=app)
-    settings = get_settings()
+    mock_state = MagicMock()
+    mock_state.list_departments.execute = AsyncMock(return_value=[])
+    app.dependency_overrides[get_app_state] = lambda: mock_state
+    try:
+        transport = ASGITransport(app=app)
+        settings = get_settings()
 
-    now = str(int(time.time()))
-    path = "/api/v1/payroll/departments"
-    canonical = f"{now}:GET:{path}"
-    valid_sig = hmac.new(
-        settings.internal_gateway_secret.encode("utf-8"),
-        canonical.encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
+        now = str(int(time.time()))
+        path = "/api/v1/payroll/departments"
+        canonical = f"{now}:GET:{path}"
+        valid_sig = hmac.new(
+            settings.internal_gateway_secret.encode("utf-8"),
+            canonical.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
 
-    # Assinatura válida deve ser aceite
-    headers_valid = {
-        "X-Resolved-Tenant-ID": "00000000-0000-0000-0000-000000000001",
-        "X-Gateway-Timestamp": now,
-        "X-Gateway-Signature": valid_sig,
-    }
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        resp = await ac.get(path, headers=headers_valid)
-        assert resp.status_code == 200
+        # Assinatura válida deve ser aceite
+        headers_valid = {
+            "X-Resolved-Tenant-ID": "00000000-0000-0000-0000-000000000001",
+            "X-Gateway-Timestamp": now,
+            "X-Gateway-Signature": valid_sig,
+        }
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.get(path, headers=headers_valid)
+            assert resp.status_code == 200
 
-    # Assinatura inválida deve ser rejeitada com 401
-    headers_invalid = {
-        "X-Resolved-Tenant-ID": "00000000-0000-0000-0000-000000000001",
-        "X-Gateway-Timestamp": now,
-        "X-Gateway-Signature": "invalid_signature_hex",
-    }
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        resp = await ac.get(path, headers=headers_invalid)
-        assert resp.status_code == 401
-        data = resp.json()
-        assert "Assinatura perimétrica do Gateway inválida" in data["detail"]
+        # Assinatura inválida deve ser rejeitada com 401
+        headers_invalid = {
+            "X-Resolved-Tenant-ID": "00000000-0000-0000-0000-000000000001",
+            "X-Gateway-Timestamp": now,
+            "X-Gateway-Signature": "invalid_signature_hex",
+        }
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.get(path, headers=headers_invalid)
+            assert resp.status_code == 401
+            data = resp.json()
+            assert "Assinatura perimétrica do Gateway inválida" in data["detail"]
+    finally:
+        app.dependency_overrides.clear()
 
 

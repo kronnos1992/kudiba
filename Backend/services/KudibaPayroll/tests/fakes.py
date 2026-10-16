@@ -122,3 +122,45 @@ class InMemoryHrRepository(HrRepository):
 
     async def save_attendance(self, record: AttendanceRecord) -> None:
         self.attendance.append(record)
+
+
+class InMemoryOrganizationRepository:
+    def __init__(self):
+        self.departments = []
+        self.job_positions = []
+
+    async def get_department_by_id(self, tenant_id: UUID, department_id: UUID):
+        for d in self.departments:
+            if d.tenant_id == tenant_id and d.id == department_id:
+                return d
+        return None
+
+    async def get_department_by_code(self, tenant_id: UUID, code: str):
+        for d in self.departments:
+            if d.tenant_id == tenant_id and d.code == code:
+                return d
+        return None
+
+    async def list_departments(self, tenant_id: UUID):
+        return [d for d in self.departments if d.tenant_id == tenant_id]
+
+    async def save_department(self, department):
+        self.departments.append(department)
+
+    async def get_job_position_by_id(self, tenant_id: UUID, job_position_id: UUID):
+        for j in self.job_positions:
+            if j.tenant_id == tenant_id and j.id == job_position_id:
+                return j
+        return None
+
+    async def get_job_position_by_code(self, tenant_id: UUID, code: str):
+        for j in self.job_positions:
+            if j.tenant_id == tenant_id and j.code == code:
+                return j
+        return None
+
+    async def list_job_positions(self, tenant_id: UUID):
+        return [j for j in self.job_positions if j.tenant_id == tenant_id]
+
+    async def save_job_position(self, job_position):
+        self.job_positions.append(job_position)
