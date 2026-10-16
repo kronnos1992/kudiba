@@ -54,7 +54,7 @@ else
     echo "[+] Iniciando KudibaAuth (HTTP :8082)..."
     pushd "$ROOT_DIR/Backend/services/KudibaAuth" >/dev/null
     PYTHONPATH=. ENVIRONMENT=development \
-    nohup python3 -m uvicorn src.main:app --host 0.0.0.0 --port 8082 > "$LOGS_DIR/kudiba-auth.log" 2>&1 &
+    setsid nohup python3 -m uvicorn src.main:app --host 0.0.0.0 --port 8082 </dev/null > "$LOGS_DIR/kudiba-auth.log" 2>&1 &
     AUTH_PID=$!
     disown $AUTH_PID 2>/dev/null || true
     popd >/dev/null
@@ -71,7 +71,7 @@ else
     PORT=9090 \
     GRPC_PORT=9091 \
     RUST_LOG=info,kudiba_invoicing=debug \
-    nohup "$ROOT_DIR/Backend/target/debug/kudiba-invoicing" > "$LOGS_DIR/kudiba-invoicing.log" 2>&1 &
+    setsid nohup "$ROOT_DIR/Backend/target/debug/kudiba-invoicing" </dev/null > "$LOGS_DIR/kudiba-invoicing.log" 2>&1 &
     INVOICING_PID=$!
     disown $INVOICING_PID 2>/dev/null || true
     echo $INVOICING_PID > "$LOGS_DIR/invoicing.pid"
@@ -86,7 +86,7 @@ else
     echo "[+] Iniciando KudibaInventory (HTTP :8083)..."
     PORT=8083 \
     RUST_LOG=info,kudiba_inventory=debug \
-    nohup "$ROOT_DIR/Backend/target/debug/kudiba-inventory" > "$LOGS_DIR/kudiba-inventory.log" 2>&1 &
+    setsid nohup "$ROOT_DIR/Backend/target/debug/kudiba-inventory" </dev/null > "$LOGS_DIR/kudiba-inventory.log" 2>&1 &
     INVENTORY_PID=$!
     disown $INVENTORY_PID 2>/dev/null || true
     echo $INVENTORY_PID > "$LOGS_DIR/inventory.pid"
@@ -101,7 +101,7 @@ else
     echo "[+] Iniciando KudibaTreasury (HTTP :8084)..."
     PORT=8084 \
     RUST_LOG=info,kudiba_treasury=debug \
-    nohup "$ROOT_DIR/Backend/target/debug/kudiba-treasury" > "$LOGS_DIR/kudiba-treasury.log" 2>&1 &
+    setsid nohup "$ROOT_DIR/Backend/target/debug/kudiba-treasury" </dev/null > "$LOGS_DIR/kudiba-treasury.log" 2>&1 &
     TREASURY_PID=$!
     disown $TREASURY_PID 2>/dev/null || true
     echo $TREASURY_PID > "$LOGS_DIR/treasury.pid"
@@ -116,7 +116,7 @@ else
     echo "[+] Iniciando KudibaAccounting (HTTP :8085)..."
     PORT=8085 \
     RUST_LOG=info,kudiba_accounting=debug \
-    nohup "$ROOT_DIR/Backend/target/debug/kudiba-accounting" > "$LOGS_DIR/kudiba-accounting.log" 2>&1 &
+    setsid nohup "$ROOT_DIR/Backend/target/debug/kudiba-accounting" </dev/null > "$LOGS_DIR/kudiba-accounting.log" 2>&1 &
     ACCOUNTING_PID=$!
     disown $ACCOUNTING_PID 2>/dev/null || true
     echo $ACCOUNTING_PID > "$LOGS_DIR/accounting.pid"
@@ -133,7 +133,7 @@ else
     echo "[+] Iniciando KudibaPayroll (HTTP :8086)..."
     pushd "$ROOT_DIR/Backend/services/KudibaPayroll" >/dev/null
     PYTHONPATH=. ENVIRONMENT=development \
-    nohup python3 -m uvicorn src.main:app --host 0.0.0.0 --port 8086 > "$LOGS_DIR/kudiba-payroll.log" 2>&1 &
+    setsid nohup python3 -m uvicorn src.main:app --host 0.0.0.0 --port 8086 </dev/null > "$LOGS_DIR/kudiba-payroll.log" 2>&1 &
     PAYROLL_PID=$!
     disown $PAYROLL_PID 2>/dev/null || true
     popd >/dev/null
@@ -151,7 +151,7 @@ else
     echo "[+] Iniciando KudibaIntegrations (HTTP :8087)..."
     pushd "$ROOT_DIR/Backend/services/KudibaIntegrations" >/dev/null
     PYTHONPATH=. ENVIRONMENT=development \
-    nohup python3 -m uvicorn src.main:app --host 0.0.0.0 --port 8087 > "$LOGS_DIR/kudiba-integrations.log" 2>&1 &
+    setsid nohup python3 -m uvicorn src.main:app --host 0.0.0.0 --port 8087 </dev/null > "$LOGS_DIR/kudiba-integrations.log" 2>&1 &
     INTEGRATIONS_PID=$!
     disown $INTEGRATIONS_PID 2>/dev/null || true
     popd >/dev/null
@@ -167,6 +167,7 @@ else
     echo "[+] Iniciando Kudiba Gateway (HTTP :8080)..."
     GATEWAY_PORT=8080 \
     GATEWAY_ENV=development \
+    JWT_SECRET=kudiba_jwt_secret_development_key_change_in_production_2026 \
     FISCAL_ENGINE_URL=http://localhost:9090 \
     AUTH_SERVICE_URL=http://localhost:8082 \
     INVENTORY_SERVICE_URL=http://localhost:8083 \
@@ -175,7 +176,7 @@ else
     PAYROLL_SERVICE_URL=http://localhost:8086 \
     INTEGRATIONS_SERVICE_URL=http://localhost:8087 \
     RUST_LOG=info,kudiba_gateway=debug \
-    nohup "$ROOT_DIR/Backend/target/debug/kudiba-gateway" > "$LOGS_DIR/kudiba-gateway.log" 2>&1 &
+    setsid nohup "$ROOT_DIR/Backend/target/debug/kudiba-gateway" </dev/null > "$LOGS_DIR/kudiba-gateway.log" 2>&1 &
     GATEWAY_PID=$!
     disown $GATEWAY_PID 2>/dev/null || true
     echo $GATEWAY_PID > "$LOGS_DIR/gateway.pid"

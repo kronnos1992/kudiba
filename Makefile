@@ -14,6 +14,7 @@ INVENTORY_MANIFEST := Backend/services/KudibaInventory/Cargo.toml
 AUTH_DIR           := Backend/services/KudibaAuth
 PAYROLL_DIR        := Backend/services/KudibaPayroll
 INTEGRATIONS_DIR   := Backend/services/KudibaIntegrations
+FRONTEND_DIR       := Frontend
 LOGS_DIR           := .run_logs
 COMPOSE            := docker-compose
 
@@ -120,6 +121,19 @@ integrations-install: ## Instala as dependencias do KudibaIntegrations (com extr
 integrations-run: ## Corre o KudibaIntegrations isolado (uvicorn :8087)
 	cd $(INTEGRATIONS_DIR) && PYTHONPATH=. ENVIRONMENT=development \
 		python3 -m uvicorn src.main:app --host 0.0.0.0 --port 8087
+
+# -----------------------------------------------------------------------------
+# Frontend (React + Vite + TypeScript)
+# -----------------------------------------------------------------------------
+.PHONY: frontend-install frontend-dev frontend-build
+frontend-install: ## Instala as dependencias do Frontend (npm)
+	cd $(FRONTEND_DIR) && npm install
+
+frontend-dev: ## Arranca o servidor de desenvolvimento do Frontend (porta 3000)
+	cd $(FRONTEND_DIR) && npm run dev
+
+frontend-build: ## Compila o Frontend para producao
+	cd $(FRONTEND_DIR) && npm run build
 
 # -----------------------------------------------------------------------------
 # Servidores locais (fora do Docker)

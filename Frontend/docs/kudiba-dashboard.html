@@ -1,0 +1,2157 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kudiba ERP · Sistema Empresarial de Gestão, Faturação AGT & Recursos Humanos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ==========================================================================
+   SISTEMA DE DESIGN: KUDIBA ENTERPRISE LIQUID GLASS UI
+   Conformidade Legal: Decreto Presidencial 71/25 & Dec. Executivo 385/20 AGT
+   República de Angola · Moeda: Kwanza (Kz / AOA)
+   ========================================================================== */
+:root {
+  /* === TEMA CLARO (Marfim Nobre & Esmeralda Angolana) === */
+  --bg-main: #f5f2eb;
+  --bg-sidebar: #fcfaf6;
+  --bg-card: rgba(255, 253, 249, 0.82);
+  --emerald-primary: #0d5c3a;
+  --emerald-light: #168253;
+  --emerald-dark: #073a24;
+  --emerald-glow: rgba(13, 92, 58, 0.12);
+  --gold-primary: #c59b27;
+  --gold-light: #dfb23b;
+  --gold-dark: #967417;
+  --gold-glow: rgba(197, 155, 39, 0.15);
+  --glass-border: rgba(13, 92, 58, 0.16);
+  --glass-blur: 18px;
+  --text-main: #141c17;
+  --text-muted: #5e6b63;
+  --text-subtle: #8a968f;
+  
+  --color-critico: #dc2626;
+  --color-medio: #d97706;
+  --color-acompanhar: #2563eb;
+  --color-ok: #0d5c3a;
+  --color-purple: #7c3aed;
+
+  --line-soft: rgba(0, 0, 0, 0.06);
+  --line-table: rgba(0, 0, 0, 0.08);
+  --hover-row: rgba(13, 92, 58, 0.05);
+  --hover-nav: rgba(13, 92, 58, 0.06);
+  --card-shadow: 0 12px 36px rgba(13, 92, 58, 0.07);
+  --modal-overlay: rgba(15, 23, 19, 0.65);
+  --topbar-bg: rgba(252, 250, 246, 0.88);
+  --tag-bg-ok: rgba(13, 92, 58, 0.10);
+  --tag-bg-critico: rgba(220, 38, 38, 0.10);
+  --tag-bg-medio: rgba(217, 119, 6, 0.10);
+  --tag-bg-blue: rgba(37, 99, 235, 0.10);
+  --tag-bg-purple: rgba(124, 58, 237, 0.10);
+  --chip-bg: rgba(0, 0, 0, 0.05);
+  --chip-active: var(--emerald-primary);
+  --chip-active-txt: #ffffff;
+}
+
+[data-theme="dark"] {
+  /* === TEMA ESCURO (Obsidiana Vulcânica & Esmeralda Neon) === */
+  --bg-main: #090d12;
+  --bg-sidebar: #0e131b;
+  --bg-card: rgba(14, 19, 28, 0.78);
+  --emerald-primary: #10b981;
+  --emerald-light: #34d399;
+  --emerald-dark: #064e3b;
+  --emerald-glow: rgba(16, 185, 129, 0.20);
+  --gold-primary: #fbbf24;
+  --gold-light: #fcd34d;
+  --gold-dark: #d97706;
+  --gold-glow: rgba(251, 191, 36, 0.18);
+  --glass-border: rgba(16, 185, 129, 0.22);
+  --glass-blur: 20px;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-subtle: #64748b;
+
+  --color-critico: #f87171;
+  --color-medio: #fbbf24;
+  --color-acompanhar: #60a5fa;
+  --color-ok: #34d399;
+  --color-purple: #c084fc;
+
+  --line-soft: rgba(255, 255, 255, 0.07);
+  --line-table: rgba(255, 255, 255, 0.09);
+  --hover-row: rgba(16, 185, 129, 0.08);
+  --hover-nav: rgba(255, 255, 255, 0.05);
+  --card-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --modal-overlay: rgba(3, 7, 12, 0.85);
+  --topbar-bg: rgba(14, 19, 28, 0.88);
+  --tag-bg-ok: rgba(16, 185, 129, 0.16);
+  --tag-bg-critico: rgba(248, 113, 113, 0.16);
+  --tag-bg-medio: rgba(251, 191, 36, 0.16);
+  --tag-bg-blue: rgba(96, 165, 250, 0.16);
+  --tag-bg-purple: rgba(192, 132, 252, 0.16);
+  --chip-bg: rgba(255, 255, 255, 0.08);
+  --chip-active: var(--emerald-primary);
+  --chip-active-txt: #090d12;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  min-height: 100vh;
+  display: flex;
+  overflow-x: hidden;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Background Ambient Glows */
+.liquid-glow-1, .liquid-glow-2 {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(150px);
+  z-index: 0;
+  opacity: 0.6;
+}
+.liquid-glow-1 {
+  width: 700px; height: 700px;
+  top: -200px; right: -150px;
+  background: radial-gradient(circle, var(--emerald-glow), transparent 70%);
+}
+.liquid-glow-2 {
+  width: 550px; height: 550px;
+  bottom: -150px; left: 80px;
+  background: radial-gradient(circle, var(--gold-glow), transparent 70%);
+}
+
+/* ==================== SIDEBAR ==================== */
+aside.sidebar {
+  width: 285px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--line-soft);
+  position: fixed;
+  top: 0; bottom: 0; left: 0;
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  transition: background 0.25s ease;
+}
+.brand {
+  padding: 22px 20px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.brand-mark {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--emerald-primary), var(--gold-primary));
+  color: #fff;
+  font-weight: 800;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px var(--emerald-glow);
+  cursor: pointer;
+}
+.brand-txt b {
+  display: block;
+  font-size: 16px;
+  letter-spacing: -0.3px;
+  color: var(--text-main);
+}
+.brand-txt span {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.nav-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 12px;
+}
+.nav-group-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 14px 12px 6px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-bottom: 3px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.nav-item:hover {
+  background: var(--hover-nav);
+  color: var(--text-main);
+}
+.nav-item.active {
+  background: var(--emerald-primary);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 4px 14px var(--emerald-glow);
+}
+.nav-item svg {
+  width: 17px; height: 17px;
+  flex-shrink: 0;
+}
+.nav-badge {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-family: 'IBM Plex Mono', monospace;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--line-soft);
+  color: inherit;
+}
+.nav-item.active .nav-badge {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.user-bar {
+  padding: 14px 16px;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.02);
+  cursor: pointer;
+}
+.avatar {
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--gold-primary), var(--emerald-primary));
+  color: #fff;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.user-info b { display: block; font-size: 13px; }
+.user-info span { display: block; font-size: 11px; color: var(--text-muted); }
+
+/* ==================== MAIN CONTENT AREA ==================== */
+main.main-wrap {
+  margin-left: 285px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
+  z-index: 10;
+}
+header.topbar {
+  height: 70px;
+  background: var(--topbar-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-bottom: 1px solid var(--line-soft);
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  z-index: 40;
+}
+.topbar-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.breadcrumb {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.breadcrumb span.sep { opacity: 0.4; }
+.page-title {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-family: 'IBM Plex Mono', monospace;
+  padding: 5px 12px;
+  border-radius: 20px;
+  background: var(--tag-bg-ok);
+  color: var(--emerald-primary);
+  border: 1px solid var(--glass-border);
+}
+.status-pill span.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--emerald-primary);
+  box-shadow: 0 0 8px var(--emerald-primary);
+  animation: pulseDot 2s infinite;
+}
+@keyframes pulseDot { 0%{opacity: 0.5;} 50%{opacity: 1;} 100%{opacity: 0.5;} }
+.btn-icon {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-card);
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-icon:hover { border-color: var(--emerald-primary); transform: translateY(-1px); }
+.btn-icon svg { width: 17px; height: 17px; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+  user-select: none;
+  text-decoration: none;
+}
+.btn-primary {
+  background: var(--emerald-primary);
+  color: #fff;
+  box-shadow: 0 4px 14px var(--emerald-glow);
+}
+.btn-primary:hover {
+  background: var(--emerald-light);
+  transform: translateY(-1px);
+}
+.btn-gold {
+  background: var(--gold-primary);
+  color: #fff;
+}
+.btn-gold:hover { background: var(--gold-dark); }
+.btn-outline {
+  background: var(--bg-card);
+  border: 1px solid var(--line-soft);
+  color: var(--text-main);
+}
+.btn-outline:hover {
+  border-color: var(--emerald-primary);
+}
+
+/* ==================== VIEWS & CONTAINERS ==================== */
+.content-body {
+  padding: 28px 32px 56px;
+  flex: 1;
+}
+.view {
+  display: none;
+  animation: fadeInView 0.22s ease forwards;
+}
+.view.active { display: block; }
+@keyframes fadeInView { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Cards & Glassmorphism */
+.glass-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: var(--card-shadow);
+  margin-bottom: 24px;
+  position: relative;
+}
+.card-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.card-title {
+  font-size: 15px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+/* KPI Grids */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+  margin-bottom: 24px;
+}
+.kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: var(--card-shadow);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(var(--glass-blur));
+}
+.kpi-card::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--emerald-primary);
+}
+.kpi-card.gold::after { background: var(--gold-primary); }
+.kpi-card.critico::after { background: var(--color-critico); }
+.kpi-card.blue::after { background: var(--color-acompanhar); }
+.kpi-card.purple::after { background: var(--color-purple); }
+
+.kpi-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.kpi-value {
+  font-size: 24px;
+  font-weight: 800;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-main);
+  letter-spacing: -0.5px;
+}
+.kpi-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kpi-meta b.pos { color: var(--color-ok); font-weight: 700; }
+.kpi-meta b.neg { color: var(--color-critico); font-weight: 700; }
+
+/* Filter Chips & Toolbar */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.chip {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--chip-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.chip:hover { color: var(--text-main); background: rgba(0,0,0,0.08); }
+.chip.active {
+  background: var(--chip-active);
+  color: var(--chip-active-txt);
+  box-shadow: 0 2px 8px var(--emerald-glow);
+}
+.search-input-wrap {
+  position: relative;
+  margin-left: auto;
+}
+.search-input {
+  background: var(--bg-card);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  padding: 7px 12px 7px 32px;
+  font-size: 12.5px;
+  color: var(--text-main);
+  outline: none;
+  width: 230px;
+  transition: all 0.2s ease;
+}
+.search-input:focus {
+  border-color: var(--emerald-primary);
+  width: 300px;
+}
+.search-input-wrap svg {
+  position: absolute;
+  left: 10px; top: 9px;
+  width: 14px; height: 14px;
+  color: var(--text-muted);
+}
+
+/* Glass Tables */
+.table-wrap {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid var(--line-table);
+}
+table.glass-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  text-align: left;
+}
+table.glass-table th {
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.02);
+  color: var(--text-muted);
+  font-weight: 700;
+  border-bottom: 1px solid var(--line-table);
+  white-space: nowrap;
+}
+table.glass-table td {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--text-main);
+  white-space: nowrap;
+}
+table.glass-table tr:last-child td { border-bottom: none; }
+table.glass-table tr:hover td { background: var(--hover-row); }
+.doc-id {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 700;
+  color: var(--emerald-primary);
+}
+.amount {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+}
+
+/* Tags & Badges */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.tag-ok { background: var(--tag-bg-ok); color: var(--color-ok); }
+.tag-critico { background: var(--tag-bg-critico); color: var(--color-critico); }
+.tag-medio { background: var(--tag-bg-medio); color: var(--color-medio); }
+.tag-blue { background: var(--tag-bg-blue); color: var(--color-acompanhar); }
+.tag-purple { background: var(--tag-bg-purple); color: var(--color-purple); }
+
+/* Layout Grids */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+/* POS Specific Layout */
+.pos-layout {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 22px;
+}
+.prod-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+  gap: 14px;
+}
+.prod-tile {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+}
+.prod-tile:hover {
+  border-color: var(--emerald-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px var(--emerald-glow);
+}
+.prod-tile b { font-size: 13px; margin-bottom: 4px; line-height: 1.3; }
+.prod-tile .sku { font-size: 10.5px; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; }
+.prod-tile .price {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--emerald-primary);
+  margin-top: auto;
+  padding-top: 8px;
+  font-family: 'IBM Plex Mono', monospace;
+}
+.cart-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 180px);
+  box-shadow: var(--card-shadow);
+}
+.cart-items { flex: 1; overflow-y: auto; margin: 12px 0; }
+.cart-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+}
+.cart-qty-ctrl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.qty-btn {
+  width: 20px; height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--line-soft);
+  background: var(--chip-bg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+.cart-total-box {
+  border-top: 2px dashed var(--line-table);
+  padding-top: 14px;
+}
+.cart-total-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  font-size: 12.5px;
+}
+.cart-total-final {
+  font-size: 20px;
+  font-weight: 800;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--emerald-primary);
+  margin-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+}
+
+/* Modals */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--modal-overlay);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.2s ease;
+}
+.modal-overlay.active { display: flex; }
+.modal-box {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+  max-width: 680px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 28px;
+  position: relative;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.modal-title { font-size: 18px; font-weight: 800; }
+.close-btn {
+  background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text-muted);
+}
+
+/* Form inputs */
+.form-group {
+  margin-bottom: 14px;
+}
+.form-label {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.form-input, .form-select {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-main);
+  color: var(--text-main);
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.2s ease;
+}
+.form-input:focus, .form-select:focus {
+  border-color: var(--emerald-primary);
+}
+
+/* SVG Chart Styles */
+.chart-container {
+  width: 100%;
+  height: 240px;
+  position: relative;
+}
+svg.svg-chart {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.chart-tooltip {
+  position: absolute;
+  background: var(--text-main);
+  color: var(--bg-main);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: 'IBM Plex Mono', monospace;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 20;
+}
+
+/* Responsive */
+@media (max-width: 1080px) {
+  .grid-2, .pos-layout { grid-template-columns: 1fr; }
+  aside.sidebar { transform: translateX(-100%); }
+  aside.sidebar.mobile-open { transform: translateX(0); }
+  main.main-wrap { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<div class="liquid-glow-1"></div>
+<div class="liquid-glow-2"></div>
+
+<!-- ===================== MODAL DE LOGIN / SELEÇÃO DE TENANT ===================== -->
+<div class="modal-overlay" id="modalLogin">
+  <div class="modal-box" style="max-width:440px;">
+    <div style="text-align:center;margin-bottom:20px;">
+      <div class="brand-mark" style="margin:0 auto 12px;width:52px;height:52px;font-size:26px;">K</div>
+      <h2 style="font-size:20px;font-weight:800;">Kudiba ERP</h2>
+      <p style="font-size:12px;color:var(--text-muted);margin-top:4px;">Autenticação & Controlo de Acesso Perimétrico</p>
+    </div>
+    <form onsubmit="doLogin(event)">
+      <div class="form-group">
+        <label class="form-label">E-mail ou Utilizador</label>
+        <input class="form-input" id="loginEmail" value="admin@kudiba.co.ao" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Palavra-passe</label>
+        <input class="form-input" type="password" id="loginPass" value="••••••••••••" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Estabelecimento / Loja (Multi-Tenant)</label>
+        <select class="form-select" id="loginTenant">
+          <option value="Sede Luanda (Matola)">Sede Luanda (Matola) · NIF: 5418029312</option>
+          <option value="Filial Viana (Logística)">Filial Viana (Logística) · Armazém Central</option>
+          <option value="Delegação Benguela (Litoral)">Delegação Benguela (Litoral)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Perfil de Operador (RBAC)</label>
+        <select class="form-select" id="loginRole">
+          <option value="Administrador Fiscal">Administrador Fiscal (Acesso Global)</option>
+          <option value="Gestor Financeiro">Gestor Financeiro & Tesouraria</option>
+          <option value="Operador de Caixa (POS)">Operador de Caixa (POS)</option>
+          <option value="Técnico de RH (Payroll)">Técnico de RH (Payroll)</option>
+          <option value="Auditor AGT">Auditor AGT (Apenas Leitura)</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;margin-top:10px;">
+        Entrar no Sistema
+      </button>
+    </form>
+    <div style="margin-top:16px;text-align:center;font-size:11px;color:var(--text-muted);">
+      Gateway :8080 · Assinatura HMAC perimétrica ativa
+    </div>
+  </div>
+</div>
+
+<!-- ===================== SIDEBAR ===================== -->
+<aside class="sidebar" id="sidebar">
+  <div class="brand">
+    <div class="brand-mark" onclick="openLoginModal()">K</div>
+    <div class="brand-txt">
+      <b>Kudiba ERP</b>
+      <span id="sidebarTenantLabel">Sede Luanda · AGT Cert.</span>
+    </div>
+  </div>
+
+  <div class="nav-scroll">
+    <div class="nav-group-title">Visão Geral</div>
+    <div class="nav-item active" onclick="go('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Dashboard Executivo
+      <span class="nav-badge">AGT OK</span>
+    </div>
+    <div class="nav-item" onclick="go('pos')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+      Ponto de Venda (POS)
+      <span class="nav-badge">F2</span>
+    </div>
+
+    <div class="nav-group-title">Gestão Comercial & Faturação</div>
+    <div class="nav-item" onclick="go('faturas')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Faturas & Doc. Fiscais
+      <span class="nav-badge">148</span>
+    </div>
+    <div class="nav-item" onclick="go('clientes')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Clientes & NIF
+      <span class="nav-badge">420</span>
+    </div>
+    <div class="nav-item" onclick="go('artigos')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+      Artigos, Stock & CMP
+      <span class="nav-badge">1.2k</span>
+    </div>
+    <div class="nav-item" onclick="go('subscricoes')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+      Avenças & Subscrições
+      <span class="nav-badge">62</span>
+    </div>
+
+    <div class="nav-group-title">Financeiro, Caixa & Fiscal</div>
+    <div class="nav-item" onclick="go('tesouraria')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      Tesouraria & Recibos RC
+      <span class="nav-badge">Fecho Z</span>
+    </div>
+    <div class="nav-item" onclick="go('relatorios')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      SAF-T (AO) & Aging
+      <span class="nav-badge">XML</span>
+    </div>
+
+    <div class="nav-group-title">Recursos Humanos & Folha</div>
+    <div class="nav-item" onclick="go('payroll')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+      Salários & IRT/INSS
+      <span class="nav-badge">Out/26</span>
+    </div>
+
+    <div class="nav-group-title">Integrações & Sistema</div>
+    <div class="nav-item" onclick="go('outbox')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Outbox & Eventos Kafka
+      <span class="nav-badge">HMAC</span>
+    </div>
+    <div class="nav-item" onclick="go('definicoes')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Séries & Chaves RSA
+    </div>
+    <div class="nav-item" onclick="go('ajuda')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Ajuda & Contingência
+    </div>
+  </div>
+
+  <div class="user-bar" onclick="openLoginModal()" title="Clique para trocar de utilizador ou filial">
+    <div class="avatar" id="userAvatar">JC</div>
+    <div class="user-info">
+      <b id="userNameLabel">Jaime Coxe</b>
+      <span id="userRoleLabel">Administrador Fiscal</span>
+    </div>
+  </div>
+</aside>
+
+<!-- ==================== MAIN WRAPPER ==================== -->
+<main class="main-wrap">
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="breadcrumb">
+        <span>Kudiba ERP</span>
+        <span class="sep">/</span>
+        <span id="crumb">Dashboard Executivo</span>
+      </div>
+      <div class="page-title" id="pageTitle">Resumo da Faturação Comercial</div>
+    </div>
+    <div class="topbar-right">
+      <div class="status-pill">
+        <span class="dot"></span>
+        Gateway Axum :8080 · AOA (Kz)
+      </div>
+      <button class="btn-icon" id="themeToggle" onclick="toggleTheme()" title="Alternar Modo Escuro/Claro">
+        <svg id="iconSun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <svg id="iconMoon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+      <button class="btn btn-outline" onclick="go('pos')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/></svg>
+        POS [F2]
+      </button>
+      <button class="btn btn-primary" onclick="openNewInvoiceModal()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        + Nova Fatura Fiscal
+      </button>
+    </div>
+  </header>
+
+  <div class="content-body">
+
+    <!-- ==================== VIEW 1: DASHBOARD ==================== -->
+    <section class="view active" id="dashboard">
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-title">Receita Total Faturada</div>
+          <div class="kpi-value">128.450.000 Kz</div>
+          <div class="kpi-meta"><b class="pos">▲ +12.8%</b> vs. mês anterior</div>
+        </div>
+        <div class="kpi-card gold">
+          <div class="kpi-title">Arrecadado / Liquidado</div>
+          <div class="kpi-value">96.320.000 Kz</div>
+          <div class="kpi-meta"><b class="pos">75.0%</b> taxa de arrecadação</div>
+        </div>
+        <div class="kpi-card blue">
+          <div class="kpi-title">Atrasado / A Cobrar</div>
+          <div class="kpi-value">32.130.000 Kz</div>
+          <div class="kpi-meta">24 faturas pendentes</div>
+        </div>
+        <div class="kpi-card critico">
+          <div class="kpi-title">Vencido em Risco</div>
+          <div class="kpi-value">8.240.000 Kz</div>
+          <div class="kpi-meta"><b class="neg">6 faturas</b> em atraso crítico</div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <!-- Gráfico 1: Área / Tendência Diária Interativa em SVG -->
+        <div class="glass-card">
+          <div class="card-header-bar">
+            <div>
+              <div class="card-title">Evolução de Receita Diária (Outubro/2026)</div>
+              <div class="card-subtitle">Comparação diária da faturação em Milhões de Kwanzas</div>
+            </div>
+            <span class="tag tag-ok">Receita Fiscal AGT</span>
+          </div>
+          <div class="chart-container" id="revChartWrap">
+            <svg class="svg-chart" viewBox="0 0 500 200" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="var(--emerald-primary)" stop-opacity="0.35"/>
+                  <stop offset="100%" stop-color="var(--emerald-primary)" stop-opacity="0.0"/>
+                </linearGradient>
+              </defs>
+              <!-- Linhas de Grelha -->
+              <line x1="0" y1="40" x2="500" y2="40" stroke="var(--line-soft)" stroke-dasharray="4"/>
+              <line x1="0" y1="90" x2="500" y2="90" stroke="var(--line-soft)" stroke-dasharray="4"/>
+              <line x1="0" y1="140" x2="500" y2="140" stroke="var(--line-soft)" stroke-dasharray="4"/>
+              <!-- Área Preenchida -->
+              <polygon points="0,170 40,150 90,130 140,140 190,105 240,110 290,75 340,85 390,50 440,65 500,35 500,190 0,190" fill="url(#areaGrad)"/>
+              <!-- Linha Principal -->
+              <polyline points="0,170 40,150 90,130 140,140 190,105 240,110 290,75 340,85 390,50 440,65 500,35" fill="none" stroke="var(--emerald-primary)" stroke-width="3" stroke-linecap="round"/>
+              <!-- Pontos de dados interativos -->
+              <circle cx="40" cy="150" r="4" fill="var(--emerald-primary)" class="chart-dot" onmouseover="showTip(evt, '03 Out: 3.2M Kz')" onmouseout="hideTip()"/>
+              <circle cx="140" cy="140" r="4" fill="var(--emerald-primary)" class="chart-dot" onmouseover="showTip(evt, '08 Out: 4.1M Kz')" onmouseout="hideTip()"/>
+              <circle cx="240" cy="110" r="4" fill="var(--emerald-primary)" class="chart-dot" onmouseover="showTip(evt, '12 Out: 6.8M Kz')" onmouseout="hideTip()"/>
+              <circle cx="340" cy="85" r="4" fill="var(--emerald-primary)" class="chart-dot" onmouseover="showTip(evt, '14 Out: 8.4M Kz')" onmouseout="hideTip()"/>
+              <circle cx="500" cy="35" r="6" fill="var(--gold-primary)" class="chart-dot" onmouseover="showTip(evt, 'Hoje: 12.5M Kz')" onmouseout="hideTip()"/>
+            </svg>
+            <div id="chartTip" class="chart-tooltip"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;margin-top:8px;">
+            <span>01 Out</span><span>08 Out</span><span>15 Out</span><span>22 Out</span><span>Hoje</span>
+          </div>
+        </div>
+
+        <!-- Gráfico 2: Donut Chart de Repartição Fiscal & IVA -->
+        <div class="glass-card">
+          <div class="card-header-bar">
+            <div>
+              <div class="card-title">Composição do Faturamento & IVA Apurado</div>
+              <div class="card-subtitle">Divisão legal conforme o Código do IVA de Angola</div>
+            </div>
+            <span class="tag tag-blue">Modelo 7 AGT</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:28px;padding:12px 0;">
+            <div style="width:150px;height:150px;flex-shrink:0;position:relative;">
+              <svg viewBox="0 0 36 36" style="width:100%;height:100%;transform:rotate(-90deg);">
+                <!-- Circunferência total = 100 -->
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--line-soft)" stroke-width="4.2"/>
+                <!-- Taxa Normal 14%: 65% -->
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--emerald-primary)" stroke-width="4.2" stroke-dasharray="65 100" stroke-dashoffset="0"/>
+                <!-- Taxa Reduzida 5%: 20% -->
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--gold-primary)" stroke-width="4.2" stroke-dasharray="20 100" stroke-dashoffset="-65"/>
+                <!-- Isento Art. 12º: 15% -->
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--color-acompanhar)" stroke-width="4.2" stroke-dasharray="15 100" stroke-dashoffset="-85"/>
+              </svg>
+              <div style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                <b style="font-size:16px;font-family:'IBM Plex Mono',monospace;">14%</b>
+                <span style="font-size:10px;color:var(--text-muted);">Taxa Base</span>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;flex:1;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;background:var(--emerald-primary);border-radius:3px;"></span>Regime Geral (14%)</span>
+                <b class="amount">83.492.500 Kz</b>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;background:var(--gold-primary);border-radius:3px;"></span>Cesta Básica (5%)</span>
+                <b class="amount">25.690.000 Kz</b>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;background:var(--color-acompanhar);border-radius:3px;"></span>Isenção (Art. 12º M02)</span>
+                <b class="amount">19.267.500 Kz</b>
+              </div>
+              <div style="border-top:1px dashed var(--line-table);padding-top:6px;display:flex;justify-content:space-between;align-items:center;">
+                <span>Retenção na Fonte (6,5%)</span>
+                <b class="amount" style="color:var(--color-critico);">-2.450.000 Kz</b>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Monitor Criptográfico AGT & Status de Microsserviços -->
+      <div class="glass-card">
+        <div class="card-header-bar">
+          <div>
+            <div class="card-title">Infraestrutura do Ecossistema Kudiba & Auditoria Fiscal</div>
+            <div class="card-subtitle">Monitorização de integridade, assinaturas RSA e nós de base de dados</div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-outline" onclick="go('outbox')">Ver Outbox Kafka</button>
+            <button class="btn btn-primary" onclick="go('relatorios')">Exportar SAF-T (AO)</button>
+          </div>
+        </div>
+        <div class="grid-3">
+          <div style="padding:14px;border-radius:12px;background:rgba(0,0,0,0.02);border:1px solid var(--line-soft);">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+              <b>KudibaInvoicing (Rust)</b>
+              <span class="tag tag-ok">99.98% Uptime</span>
+            </div>
+            <p style="font-size:11.5px;color:var(--text-muted);">Encadeamento J-1 íntegro. Chave RSA 2048-bit validada pela AGT sob o nº 999/AGT/2026.</p>
+          </div>
+          <div style="padding:14px;border-radius:12px;background:rgba(0,0,0,0.02);border:1px solid var(--line-soft);">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+              <b>KudibaTreasury (Rust)</b>
+              <span class="tag tag-ok">Sincronizado</span>
+            </div>
+            <p style="font-size:11.5px;color:var(--text-muted);">2 caixas abertos, conciliação TPA Multicaixa ativa e 24 faturas pendentes em aging.</p>
+          </div>
+          <div style="padding:14px;border-radius:12px;background:rgba(0,0,0,0.02);border:1px solid var(--line-soft);">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+              <b>KudibaPayroll (Python)</b>
+              <span class="tag tag-purple">Processado</span>
+            </div>
+            <p style="font-size:11.5px;color:var(--text-muted);">Folha salarial de Outubro/2026 apurada com escalões legais de IRT e INSS (3%+8%).</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 2: FATURAS ==================== -->
+    <section class="view" id="faturas">
+      <div class="glass-card">
+        <div class="card-header-bar">
+          <div>
+            <div class="card-title">Faturas & Documentos Comerciais Homologados</div>
+            <div class="card-subtitle">Decreto Presidencial 71/25 (FT, FR, FP, NC, ND) com assinatura RSA-SHA1</div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-outline" onclick="go('relatorios')">Exportar SAF-T</button>
+            <button class="btn btn-primary" onclick="openNewInvoiceModal()">+ Emitir Documento</button>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <span class="chip active" onclick="filterInvoices('all')">Todas (148)</span>
+          <span class="chip" onclick="filterInvoices('paid')">Pagas (118)</span>
+          <span class="chip" onclick="filterInvoices('pending')">Pendentes (24)</span>
+          <span class="chip" onclick="filterInvoices('overdue')">Vencidas (6)</span>
+          <span class="chip" onclick="filterInvoices('credit')">Notas de Crédito (12)</span>
+          <div class="search-input-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="search-input" id="searchInvoiceInput" oninput="searchInvoices()" placeholder="Pesquisar Nº, Cliente ou NIF..." />
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="glass-table" id="invoiceTable">
+            <thead>
+              <tr>
+                <th>Nº Documento</th>
+                <th>Cliente & NIF</th>
+                <th>Emissão</th>
+                <th>Vencimento</th>
+                <th>Total Ilíquido</th>
+                <th>IVA Apurado</th>
+                <th>Retenção (6,5%)</th>
+                <th>Total Líquido</th>
+                <th>Estado</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr data-status="pending">
+                <td class="doc-id">FT 2026/00148</td>
+                <td><b>Sonangol E.P.</b><br/><span style="font-size:11px;color:var(--text-muted);">NIF: 5401000000</span></td>
+                <td>16/10/2026</td>
+                <td>15/11/2026</td>
+                <td class="amount">12.500.000 Kz</td>
+                <td class="amount">1.750.000 Kz</td>
+                <td class="amount" style="color:var(--color-critico);">-812.500 Kz</td>
+                <td class="amount" style="font-weight:700;">13.437.500 Kz</td>
+                <td><span class="tag tag-blue">Pendente</span></td>
+                <td>
+                  <button class="btn btn-outline" style="padding:4px 8px;font-size:11px;" onclick="viewInvoiceA4('FT 2026/00148', 'Sonangol E.P.', '5401000000', '13.437.500 Kz')">Ver A4</button>
+                  <button class="btn btn-gold" style="padding:4px 8px;font-size:11px;" onclick="liquidateInvoice('FT 2026/00148', 13437500)">Liquidar</button>
+                </td>
+              </tr>
+              <tr data-status="paid">
+                <td class="doc-id">FR 2026/00520</td>
+                <td><b>Unitel S.A.</b><br/><span style="font-size:11px;color:var(--text-muted);">NIF: 5418029312</span></td>
+                <td>16/10/2026</td>
+                <td>16/10/2026</td>
+                <td class="amount">4.200.000 Kz</td>
+                <td class="amount">588.000 Kz</td>
+                <td class="amount">0 Kz</td>
+                <td class="amount" style="font-weight:700;">4.788.000 Kz</td>
+                <td><span class="tag tag-ok">Pago (TPA)</span></td>
+                <td>
+                  <button class="btn btn-outline" style="padding:4px 8px;font-size:11px;" onclick="viewInvoiceA4('FR 2026/00520', 'Unitel S.A.', '5418029312', '4.788.000 Kz')">Ver A4</button>
+                </td>
+              </tr>
+              <tr data-status="pending">
+                <td class="doc-id">FT 2026/00147</td>
+                <td><b>Banco BAI S.A.</b><br/><span style="font-size:11px;color:var(--text-muted);">NIF: 5403112233</span></td>
+                <td>15/10/2026</td>
+                <td>30/10/2026</td>
+                <td class="amount">8.000.000 Kz</td>
+                <td class="amount">1.120.000 Kz</td>
+                <td class="amount" style="color:var(--color-critico);">-520.000 Kz</td>
+                <td class="amount" style="font-weight:700;">8.600.000 Kz</td>
+                <td><span class="tag tag-blue">Pendente</span></td>
+                <td>
+                  <button class="btn btn-outline" style="padding:4px 8px;font-size:11px;" onclick="viewInvoiceA4('FT 2026/00147', 'Banco BAI S.A.', '5403112233', '8.600.000 Kz')">Ver A4</button>
+                </td>
+              </tr>
+              <tr data-status="overdue">
+                <td class="doc-id">FT 2026/00130</td>
+                <td><b>ClimaTech Angola Lda</b><br/><span style="font-size:11px;color:var(--text-muted);">NIF: 5417009821</span></td>
+                <td>01/09/2026</td>
+                <td>01/10/2026</td>
+                <td class="amount">2.500.000 Kz</td>
+                <td class="amount">350.000 Kz</td>
+                <td class="amount">0 Kz</td>
+                <td class="amount" style="font-weight:700;">2.850.000 Kz</td>
+                <td><span class="tag tag-critico">Vencida (15d)</span></td>
+                <td>
+                  <button class="btn btn-gold" style="padding:4px 8px;font-size:11px;" onclick="liquidateInvoice('FT 2026/00130', 2850000)">Cobrar</button>
+                </td>
+              </tr>
+              <tr data-status="credit">
+                <td class="doc-id">NC 2026/00012</td>
+                <td><b>ElectroLuanda Lda</b><br/><span style="font-size:11px;color:var(--text-muted);">NIF: 5422891002</span></td>
+                <td>14/10/2026</td>
+                <td>—</td>
+                <td class="amount">-650.000 Kz</td>
+                <td class="amount">-91.000 Kz</td>
+                <td class="amount">0 Kz</td>
+                <td class="amount" style="font-weight:700;color:var(--color-critico);">-741.000 Kz</td>
+                <td><span class="tag tag-medio">Nota Crédito</span></td>
+                <td>
+                  <button class="btn btn-outline" style="padding:4px 8px;font-size:11px;" onclick="viewInvoiceA4('NC 2026/00012', 'ElectroLuanda Lda', '5422891002', '-741.000 Kz')">Ver NC</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 3: POS TERMINAL ==================== -->
+    <section class="view" id="pos">
+      <div class="pos-layout">
+        <div>
+          <div class="glass-card" style="padding:16px;margin-bottom:16px;">
+            <div class="toolbar" style="margin-bottom:0;">
+              <span class="chip active" onclick="filterPosCat('all')">Todos</span>
+              <span class="chip" onclick="filterPosCat('mercearia')">Mercearia</span>
+              <span class="chip" onclick="filterPosCat('bebidas')">Bebidas</span>
+              <span class="chip" onclick="filterPosCat('frio')">Frescos & Frio</span>
+              <span class="chip" onclick="filterPosCat('servicos')">Serviços</span>
+              <div class="search-input-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input class="search-input" id="posBarcodeInput" placeholder="Passe o leitor de código de barras ou digite..." onkeydown="handleBarcode(event)" />
+              </div>
+            </div>
+          </div>
+
+          <div class="prod-grid" id="posProductGrid">
+            <div class="prod-tile" data-cat="mercearia" onclick="addToCart('Arroz Agulha 5kg', 4500, 'ART-001')">
+              <b>Arroz Agulha 5kg</b>
+              <span class="sku">ART-001 · Stock: 450</span>
+              <div class="price">4.500,00 Kz</div>
+            </div>
+            <div class="prod-tile" data-cat="mercearia" onclick="addToCart('Óleo Alimentar 1L', 1800, 'ART-002')">
+              <b>Óleo Alimentar 1L</b>
+              <span class="sku">ART-002 · Stock: 85</span>
+              <div class="price">1.800,00 Kz</div>
+            </div>
+            <div class="prod-tile" data-cat="mercearia" onclick="addToCart('Leite Ninho 400g', 3100, 'ART-003')">
+              <b>Leite Ninho 400g</b>
+              <span class="sku">ART-003 · Stock: 120</span>
+              <div class="price">3.100,00 Kz</div>
+            </div>
+            <div class="prod-tile" data-cat="bebidas" onclick="addToCart('Água Mineral 500ml', 350, 'ART-004')">
+              <b>Água Mineral 500ml</b>
+              <span class="sku">ART-004 · Stock: 600</span>
+              <div class="price">350,00 Kz</div>
+            </div>
+            <div class="prod-tile" data-cat="mercearia" onclick="addToCart('Açúcar Branco 1kg', 1650, 'ART-005')">
+              <b>Açúcar Branco 1kg</b>
+              <span class="sku">ART-005 · Stock: 210</span>
+              <div class="price">1.650,00 Kz</div>
+            </div>
+            <div class="prod-tile" data-cat="frio" onclick="addToCart('Frango Congelado kg', 2200, 'ART-006')">
+              <b>Frango Congelado kg</b>
+              <span class="sku">ART-006 · Stock: 95</span>
+              <div class="price">2.200,00 Kz</div>
+            </div>
+            <div class="prod-tile" data-cat="servicos" onclick="addToCart('Consultoria Técnica (h)', 35000, 'SRV-001')">
+              <b>Consultoria Técnica (h)</b>
+              <span class="sku">SRV-001 · Serviço</span>
+              <div class="price">35.000,00 Kz</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Painel Lateral de Caixa POS -->
+        <div class="cart-panel">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line-soft);padding-bottom:10px;">
+            <div>
+              <b>Carrinho POS [F4]</b>
+              <div style="font-size:11px;color:var(--text-muted);">Operador: Jaime Coxe</div>
+            </div>
+            <span class="tag tag-ok">Sessão #41 Aberta</span>
+          </div>
+
+          <div style="margin-top:10px;">
+            <input class="form-input" id="posCustomerNif" placeholder="NIF Cliente (ex: 54... ou BI Consumidor Final)" style="font-size:12px;padding:6px 10px;" value="Consumidor Final (999999999)" />
+          </div>
+
+          <div class="cart-items" id="cartItems">
+            <!-- Renderizado dinamicamente via JS -->
+          </div>
+
+          <div class="cart-total-box">
+            <div class="cart-total-row">
+              <span style="color:var(--text-muted);">Incidência IVA</span>
+              <span class="amount" id="cartSubtotal">0,00 Kz</span>
+            </div>
+            <div class="cart-total-row">
+              <span style="color:var(--text-muted);">Total IVA (14%)</span>
+              <span class="amount" id="cartTax">0,00 Kz</span>
+            </div>
+            <div class="cart-total-row cart-total-final">
+              <span>TOTAL (Kz)</span>
+              <span id="cartTotal">0,00 Kz</span>
+            </div>
+            <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px;padding:12px;" onclick="openCheckoutModal()">
+              PAGAR & EMITIR FR [F12]
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 4: CLIENTES ==================== -->
+    <section class="view" id="clientes">
+      <div class="glass-card">
+        <div class="card-header-bar">
+          <div>
+            <div class="card-title">Gestão de Clientes & Contas Correntes</div>
+            <div class="card-subtitle">Regimes fiscais de IVA, limite de crédito e histórico de dívidas</div>
+          </div>
+          <button class="btn btn-primary" onclick="alert('Formulário de cadastro de cliente')">+ Novo Cliente</button>
+        </div>
+        <div class="table-wrap">
+          <table class="glass-table">
+            <thead>
+              <tr>
+                <th>NIF Angolano</th>
+                <th>Nome / Razão Social</th>
+                <th>Regime Tributário</th>
+                <th>Província</th>
+                <th>Limite Crédito</th>
+                <th>Saldo em Aberto</th>
+                <th>Estado</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="doc-id">5401000000</td>
+                <td><b>Sonangol E.P.</b></td>
+                <td><span class="tag tag-ok">Regime Geral (14%)</span></td>
+                <td>Luanda</td>
+                <td class="amount">50.000.000 Kz</td>
+                <td class="amount" style="font-weight:700;color:var(--color-medio);">13.437.500 Kz</td>
+                <td><span class="tag tag-ok">Ativo</span></td>
+                <td><button class="btn btn-outline" style="padding:4px 8px;font-size:11px;" onclick="alert('Extrato de conta corrente')">Extrato</button></td>
+              </tr>
+              <tr>
+                <td class="doc-id">5418029312</td>
+                <td><b>Unitel S.A.</b></td>
+                <td><span class="tag tag-ok">Regime Geral (14%)</span></td>
+                <td>Luanda</td>
+                <td class="amount">30.000.000 Kz</td>
+                <td class="amount" style="font-weight:700;">0,00 Kz</td>
+                <td><span class="tag tag-ok">Regularizado</span></td>
+                <td><button class="btn btn-outline" style="padding:4px 8px;font-size:11px;" onclick="alert('Extrato de conta corrente')">Extrato</button></td>
+              </tr>
+              <tr>
+                <td class="doc-id">00429182LA041</td>
+                <td><b>Manuel António dos Santos</b></td>
+                <td><span class="tag tag-blue">Isento (Art. 12º M02)</span></td>
+                <td>Benguela</td>
+                <td class="amount">1.000.000 Kz</td>
+                <td class="amount" style="font-weight:700;color:var(--color-critico);">450.000 Kz</td>
+                <td><span class="tag tag-critico">Vencido</span></td>
+                <td><button class="btn btn-outline" style="padding:4px 8px;font-size:11px;" onclick="alert('Extrato de conta corrente')">Extrato</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 5: ARTIGOS & CMP ==================== -->
+    <section class="view" id="artigos">
+      <div class="glass-card">
+        <div class="card-header-bar">
+          <div>
+            <div class="card-title">Catálogo de Artigos, Armazéns & Custo Médio (CMP)</div>
+            <div class="card-subtitle">Valorização de stock em Kz através do microsserviço KudibaInventory</div>
+          </div>
+          <button class="btn btn-primary" onclick="alert('Entrada de mercadoria com recálculo automático de CMP')">+ Entrada de Stock</button>
+        </div>
+        <div class="table-wrap">
+          <table class="glass-table">
+            <thead>
+              <tr>
+                <th>Código / SKU</th>
+                <th>Descrição do Artigo</th>
+                <th>Tipo</th>
+                <th>Taxa IVA</th>
+                <th>Custo Médio (CMP)</th>
+                <th>Preço Venda (PVP)</th>
+                <th>Stock Geral</th>
+                <th>Armazém Central</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="doc-id">ART-001</td>
+                <td><b>Arroz Agulha 5kg</b></td>
+                <td><span class="tag tag-ok">Bem Físico</span></td>
+                <td>14% (NOR)</td>
+                <td class="amount">3.650,00 Kz</td>
+                <td class="amount">4.500,00 Kz</td>
+                <td class="amount">450 Sacos</td>
+                <td>350 Sacos</td>
+                <td><span class="tag tag-ok">Normal</span></td>
+              </tr>
+              <tr>
+                <td class="doc-id">ART-002</td>
+                <td><b>Óleo Alimentar 1L</b></td>
+                <td><span class="tag tag-ok">Bem Físico</span></td>
+                <td>14% (NOR)</td>
+                <td class="amount">1.420,00 Kz</td>
+                <td class="amount">1.800,00 Kz</td>
+                <td class="amount">85 Caixas</td>
+                <td>50 Caixas</td>
+                <td><span class="tag tag-medio">Atenção</span></td>
+              </tr>
+              <tr>
+                <td class="doc-id">SRV-001</td>
+                <td><b>Consultoria & Suporte Fiscal</b></td>
+                <td><span class="tag tag-blue">Serviço</span></td>
+                <td>14% (Ret. 6.5%)</td>
+                <td class="amount">—</td>
+                <td class="amount">35.000,00 Kz</td>
+                <td class="amount">—</td>
+                <td>—</td>
+                <td><span class="tag tag-ok">Disponível</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 6: SUBSCRICOES ==================== -->
+    <section class="view" id="subscricoes">
+      <div class="glass-card">
+        <div class="card-header-bar">
+          <div>
+            <div class="card-title">Avenças & Faturação Recorrente</div>
+            <div class="card-subtitle">Emissão periódica programada de faturas FT/FP para contratos contínuos</div>
+          </div>
+          <button class="btn btn-primary" onclick="alert('Nova subscrição recorrente')">+ Nova Subscrição</button>
+        </div>
+        <div class="table-wrap">
+          <table class="glass-table">
+            <thead>
+              <tr>
+                <th>ID Contrato</th>
+                <th>Cliente Contratante</th>
+                <th>Frequência</th>
+                <th>Valor Recorrente</th>
+                <th>Próxima Emissão</th>
+                <th>Documento</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="doc-id">SUB-2026-081</td>
+                <td><b>PetroLuanda S.A.</b></td>
+                <td>Mensal (dia 01)</td>
+                <td class="amount">2.800.000 Kz</td>
+                <td>01/11/2026</td>
+                <td>FT (Fatura)</td>
+                <td><span class="tag tag-ok">Ativo</span></td>
+              </tr>
+              <tr>
+                <td class="doc-id">SUB-2026-044</td>
+                <td><b>Condomínio Vila Flor</b></td>
+                <td>Mensal (dia 05)</td>
+                <td class="amount">850.000 Kz</td>
+                <td>05/11/2026</td>
+                <td>FR (Fatura-Recibo)</td>
+                <td><span class="tag tag-ok">Ativo</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 7: TESOURARIA & RECIBOS RC ==================== -->
+    <section class="view" id="tesouraria">
+      <div class="glass-card">
+        <div class="card-header-bar">
+          <div>
+            <div class="card-title">Tesouraria, Sessões de Caixa & Recibos (RC)</div>
+            <div class="card-subtitle">Microsserviço KudibaTreasury · Liquidação de faturas e fechos de caixa</div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-outline" onclick="openFechoZModal()">Fecho X (Cego)</button>
+            <button class="btn btn-gold" onclick="openFechoZModal()">Fecho Z Diário</button>
+          </div>
+        </div>
+
+        <div class="kpi-grid" style="margin-bottom:18px;">
+          <div class="kpi-card">
+            <div class="kpi-title">Total Liquidado Hoje</div>
+            <div class="kpi-value">7.400.000 Kz</div>
+            <div class="kpi-meta"><b class="pos">8 Recibos RC</b> emitidos</div>
+          </div>
+          <div class="kpi-card gold">
+            <div class="kpi-title">Saldo em Numerário</div>
+            <div class="kpi-value">1.850.000 Kz</div>
+            <div class="kpi-meta">Fundo de maneio: 100.000 Kz</div>
+          </div>
+          <div class="kpi-card blue">
+            <div class="kpi-title">Multicaixa (TPA EMIS)</div>
+            <div class="kpi-value">5.550.000 Kz</div>
+            <div class="kpi-meta">Conciliação bancária OK</div>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="glass-table">
+            <thead>
+              <tr>
+                <th>Nº Recibo RC</th>
+                <th>Fatura Liquidada</th>
+                <th>Cliente & NIF</th>
+                <th>Meio de Pagamento</th>
+                <th>Valor Liquidado</th>
+                <th>Data / Hora</th>
+                <th>Operador</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="doc-id">RC 2026/00092</td>
+                <td>FT 2026/00140</td>
+                <td><b>Sonangol E.P.</b></td>
+                <td><span class="tag tag-ok">Transferência AO06</span></td>
+                <td class="amount">5.000.000 Kz</td>
+                <td>16/10 11:20</td>
+                <td>Jaime Coxe</td>
+              </tr>
+              <tr>
+                <td class="doc-id">RC 2026/00091</td>
+                <td>FT 2026/00138</td>
+                <td><b>Banco BFA</b></td>
+                <td><span class="tag tag-ok">Multicaixa TPA</span></td>
+                <td class="amount">2.400.000 Kz</td>
+                <td>16/10 09:45</td>
+                <td>Maria Silva</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 8: RELATÓRIOS & SAF-T ==================== -->
+    <section class="view" id="relatorios">
+      <div class="glass-card">
+        <div class="card-header-bar">
+          <div>
+            <div class="card-title">SAF-T (AO) XML & Balancete de Antiguidade (Aging)</div>
+            <div class="card-subtitle">Auditoria tributária conforme Portaria da AGT e Decreto 71/25</div>
+          </div>
+          <button class="btn btn-primary" onclick="viewSafTXml()">Visualizar / Validar SAF-T XML</button>
+        </div>
+
+        <!-- Histograma de Antiguidade de Saldos em SVG -->
+        <div class="glass-card" style="padding:16px;margin-bottom:20px;">
+          <b>Histograma de Antiguidade de Contas a Receber (Aging)</b>
+          <div style="margin-top:14px;">
+            <svg class="svg-chart" viewBox="0 0 500 120" style="height:120px;">
+              <!-- Barra 0-30 dias -->
+              <rect x="20" y="20" width="80" height="80" rx="6" fill="var(--emerald-primary)"/>
+              <text x="60" y="15" font-size="11" text-anchor="middle" fill="var(--text-main)" font-family="'IBM Plex Mono', monospace" font-weight="700">23.8M Kz</text>
+              <text x="60" y="115" font-size="10" text-anchor="middle" fill="var(--text-muted)">0 - 30 dias</text>
+              <!-- Barra 31-60 dias -->
+              <rect x="150" y="50" width="80" height="50" rx="6" fill="var(--gold-primary)"/>
+              <text x="190" y="45" font-size="11" text-anchor="middle" fill="var(--text-main)" font-family="'IBM Plex Mono', monospace" font-weight="700">5.4M Kz</text>
+              <text x="190" y="115" font-size="10" text-anchor="middle" fill="var(--text-muted)">31 - 60 dias</text>
+              <!-- Barra 61-90 dias -->
+              <rect x="280" y="75" width="80" height="25" rx="6" fill="var(--color-medio)"/>
+              <text x="320" y="70" font-size="11" text-anchor="middle" fill="var(--text-main)" font-family="'IBM Plex Mono', monospace" font-weight="700">1.8M Kz</text>
+              <text x="320" y="115" font-size="10" text-anchor="middle" fill="var(--text-muted)">61 - 90 dias</text>
+              <!-- Barra > 90 dias -->
+              <rect x="400" y="85" width="80" height="15" rx="6" fill="var(--color-critico)"/>
+              <text x="440" y="80" font-size="11" text-anchor="middle" fill="var(--text-main)" font-family="'IBM Plex Mono', monospace" font-weight="700">1.0M Kz</text>
+              <text x="440" y="115" font-size="10" text-anchor="middle" fill="var(--text-muted)">> 90 dias</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 9: RECURSOS HUMANOS / PAYROLL ==================== -->
+    <section class="view" id="payroll">
+      <div class="glass-card">
+        <div class="card-header-bar">
+          <div>
+            <div class="card-title">Folha Salarial & Apuramento Legal (KudibaPayroll)</div>
+            <div class="card-subtitle">Cálculo de IRT pelos escalões de Angola e Segurança Social (INSS 3% + 8%)</div>
+          </div>
+          <button class="btn btn-primary" onclick="alert('Folha de Outubro/2026 processada com sucesso!')">Reprocessar Mês</button>
+        </div>
+
+        <div class="grid-2" style="margin-bottom:20px;">
+          <!-- Gráfico de Custos Salariais por Departamento em SVG -->
+          <div class="glass-card" style="padding:16px;">
+            <b>Distribuição da Massa Salarial por Departamento</b>
+            <div style="margin-top:14px;">
+              <svg class="svg-chart" viewBox="0 0 400 120" style="height:120px;">
+                <rect x="10" y="20" width="70" height="80" rx="6" fill="var(--emerald-primary)"/>
+                <text x="45" y="15" font-size="10" text-anchor="middle" fill="var(--text-main)" font-family="'IBM Plex Mono'">3.8M Kz</text>
+                <text x="45" y="115" font-size="10" text-anchor="middle" fill="var(--text-muted)">TI</text>
+
+                <rect x="110" y="40" width="70" height="60" rx="6" fill="var(--gold-primary)"/>
+                <text x="145" y="35" font-size="10" text-anchor="middle" fill="var(--text-main)" font-family="'IBM Plex Mono'">2.4M Kz</text>
+                <text x="145" y="115" font-size="10" text-anchor="middle" fill="var(--text-muted)">Finanças</text>
+
+                <rect x="210" y="55" width="70" height="45" rx="6" fill="var(--color-acompanhar)"/>
+                <text x="245" y="50" font-size="10" text-anchor="middle" fill="var(--text-main)" font-family="'IBM Plex Mono'">1.8M Kz</text>
+                <text x="245" y="115" font-size="10" text-anchor="middle" fill="var(--text-muted)">Comercial</text>
+
+                <rect x="310" y="70" width="70" height="30" rx="6" fill="var(--color-purple)"/>
+                <text x="345" y="65" font-size="10" text-anchor="middle" fill="var(--text-main)" font-family="'IBM Plex Mono'">950k Kz</text>
+                <text x="345" y="115" font-size="10" text-anchor="middle" fill="var(--text-muted)">Logística</text>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Resumo de Encargos Sociais -->
+          <div class="glass-card" style="padding:16px;">
+            <b>Resumo Fiscal & Previdenciário</b>
+            <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px;font-size:12.5px;">
+              <div style="display:flex;justify-content:space-between;"><span>Salário Base Global</span><b class="amount">8.950.000 Kz</b></div>
+              <div style="display:flex;justify-content:space-between;"><span>INSS Trabalhadores (3%)</span><b class="amount">268.500 Kz</b></div>
+              <div style="display:flex;justify-content:space-between;"><span>INSS Encargo Patronal (8%)</span><b class="amount">716.000 Kz</b></div>
+              <div style="display:flex;justify-content:space-between;"><span>Retenção Total de IRT</span><b class="amount" style="color:var(--color-critico);">1.240.300 Kz</b></div>
+              <div style="border-top:1px dashed var(--line-table);padding-top:6px;display:flex;justify-content:space-between;">
+                <b>Total Líquido a Transferir</b>
+                <b class="amount" style="color:var(--emerald-primary);font-size:14px;">7.441.200 Kz</b>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="glass-table">
+            <thead>
+              <tr>
+                <th>Colaborador</th>
+                <th>Cargo / Departamento</th>
+                <th>Salário Base</th>
+                <th>Subsídios</th>
+                <th>INSS (3%)</th>
+                <th>IRT Retido</th>
+                <th>Líquido</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><b>António Agostinho</b><br/><span style="font-size:11px;color:var(--text-muted);">NIF: 002918239LA031</span></td>
+                <td>Engenheiro de Software · TI</td>
+                <td class="amount">450.000 Kz</td>
+                <td class="amount">80.000 Kz</td>
+                <td class="amount">15.900 Kz</td>
+                <td class="amount" style="color:var(--color-critico);">-62.400 Kz</td>
+                <td class="amount" style="font-weight:700;">451.700 Kz</td>
+                <td><button class="btn btn-outline" style="padding:4px 8px;font-size:11px;" onclick="viewPayslip('António Agostinho', '450.000 Kz', '15.900 Kz', '62.400 Kz', '451.700 Kz')">Recibo PDF</button></td>
+              </tr>
+              <tr>
+                <td><b>Teresa Patrícia</b><br/><span style="font-size:11px;color:var(--text-muted);">NIF: 003819201LA044</span></td>
+                <td>Analista Financeira · Finanças</td>
+                <td class="amount">380.000 Kz</td>
+                <td class="amount">60.000 Kz</td>
+                <td class="amount">13.200 Kz</td>
+                <td class="amount" style="color:var(--color-critico);">-47.100 Kz</td>
+                <td class="amount" style="font-weight:700;">379.700 Kz</td>
+                <td><button class="btn btn-outline" style="padding:4px 8px;font-size:11px;" onclick="viewPayslip('Teresa Patrícia', '380.000 Kz', '13.200 Kz', '47.100 Kz', '379.700 Kz')">Recibo PDF</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 10: OUTBOX KAFKA ==================== -->
+    <section class="view" id="outbox">
+      <div class="glass-card">
+        <div class="card-header-bar">
+          <div>
+            <div class="card-title">Barramento de Eventos Contabilísticos & Outbox Transacional</div>
+            <div class="card-subtitle">Espelha o microsserviço KudibaIntegrations · Tópicos Kafka e verificação HMAC</div>
+          </div>
+          <span class="tag tag-ok">Outbox Worker: Ativo</span>
+        </div>
+        <div class="table-wrap">
+          <table class="glass-table">
+            <thead>
+              <tr>
+                <th>ID Evento</th>
+                <th>Tópico Kafka</th>
+                <th>Tipo de Evento</th>
+                <th>Payload Resumo</th>
+                <th>Timestamp</th>
+                <th>Assinatura HMAC</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="doc-id">evt_99812a</td>
+                <td><code>kudiba.invoicing.events</code></td>
+                <td><b>InvoiceIssuedEvent</b></td>
+                <td>Doc: FT 2026/00148 · Total: 13.437.500 Kz</td>
+                <td>16/10 12:45:01</td>
+                <td><code>sha256:7f9a...bc41</code></td>
+                <td><span class="tag tag-ok">Publicado</span></td>
+              </tr>
+              <tr>
+                <td class="doc-id">evt_99811b</td>
+                <td><code>kudiba.treasury.events</code></td>
+                <td><b>PaymentReceivedEvent</b></td>
+                <td>Recibo: RC 2026/00092 · 5.000.000 Kz</td>
+                <td>16/10 11:20:15</td>
+                <td><code>sha256:3d2e...44a1</code></td>
+                <td><span class="tag tag-ok">Publicado</span></td>
+              </tr>
+              <tr>
+                <td class="doc-id">evt_99810c</td>
+                <td><code>kudiba.payroll.events</code></td>
+                <td><b>PayrollClosedEvent</b></td>
+                <td>Mês: Out/2026 · Total: 8.950.000 Kz</td>
+                <td>15/10 18:00:00</td>
+                <td><code>sha256:1a8c...90ff</code></td>
+                <td><span class="tag tag-ok">Publicado</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 11: DEFINIÇÕES ==================== -->
+    <section class="view" id="definicoes">
+      <div class="glass-card">
+        <div class="card-header-bar">
+          <div class="card-title">Séries Fiscais, Certificado AGT & Dados da Empresa</div>
+          <button class="btn btn-primary" onclick="alert('Parâmetros salvos no banco de dados com sucesso')">Guardar Parâmetros</button>
+        </div>
+        <div class="grid-2">
+          <div>
+            <b>Contribuinte / Empresa</b>
+            <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px;">
+              <div><label class="form-label">Denominação Social</label><input class="form-input" value="Kudiba Comercial & Serviços Lda" /></div>
+              <div><label class="form-label">NIF da Empresa</label><input class="form-input" value="5418029312" /></div>
+              <div><label class="form-label">Registo Comercial</label><input class="form-input" value="CRC Luanda nº 124.891" /></div>
+              <div><label class="form-label">Moeda Base</label><input class="form-input" value="Kwanza Angolano (Kz / AOA)" readonly /></div>
+            </div>
+          </div>
+          <div>
+            <b>Certificação & Séries de Faturação</b>
+            <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px;">
+              <div><label class="form-label">Número de Validação de Software AGT</label><input class="form-input" value="Certificado nº 999/AGT/2026" readonly /></div>
+              <div><label class="form-label">Chave Pública RSA (PEM)</label><textarea class="form-input" rows="4" style="font-family:'IBM Plex Mono',monospace;font-size:11px;" readonly>-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3f9z...
+-----END PUBLIC KEY-----</textarea></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 12: AJUDA ==================== -->
+    <section class="view" id="ajuda">
+      <div class="glass-card">
+        <div class="card-header-bar">
+          <div class="card-title">Centro de Ajuda, Suporte Legal & Contingência</div>
+        </div>
+        <div class="grid-3">
+          <div style="padding:16px;border-radius:12px;background:rgba(0,0,0,0.02);border:1px solid var(--line-soft);">
+            <b>Manual de Faturação em Contingência</b>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:6px;">Procedimento legal para emissão em livros tipográficos timbrados e recuperação com menção obrigatória na série.</p>
+          </div>
+          <div style="padding:16px;border-radius:12px;background:rgba(0,0,0,0.02);border:1px solid var(--line-soft);">
+            <b>Guia de Submissão SAF-T (AO)</b>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:6px;">Instruções para exportar e validar o ficheiro XML antes de carregar no portal e-AGT sem erros de schema.</p>
+          </div>
+          <div style="padding:16px;border-radius:12px;background:rgba(0,0,0,0.02);border:1px solid var(--line-soft);">
+            <b>Suporte Telefónico & Chat Local</b>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:6px;">Atendimento em Luanda (Seg-Sex, 08h-18h): +244 923 000 000 ou suporte@kudiba.co.ao</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<!-- ==================== MODAL: NOVA FATURA ==================== -->
+<div class="modal-overlay" id="modalNewInvoice">
+  <div class="modal-box" style="max-width:680px;">
+    <div class="modal-header">
+      <div class="modal-title">Emitir Nova Fatura Fiscal (FT / FR)</div>
+      <button class="close-btn" onclick="closeModal('modalNewInvoice')">&times;</button>
+    </div>
+    <div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Tipo de Documento</label>
+          <select class="form-select" id="invType">
+            <option value="FT">FT — Fatura Comercial (A Prazo)</option>
+            <option value="FR">FR — Fatura-Recibo (Pronto Pagamento)</option>
+            <option value="FP">FP — Fatura Proforma (Cotação)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cliente & NIF</label>
+          <select class="form-select" id="invClient">
+            <option value="Sonangol E.P. (5401000000)">Sonangol E.P. · NIF: 5401000000</option>
+            <option value="Unitel S.A. (5418029312)">Unitel S.A. · NIF: 5418029312</option>
+            <option value="Banco BAI (5403112233)">Banco BAI · NIF: 5403112233</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Artigo / Serviço a Adicionar</label>
+        <div style="display:flex;gap:8px;">
+          <select class="form-select" id="invArtSelect">
+            <option value="4500|Arroz Agulha 5kg">Arroz Agulha 5kg · 4.500 Kz</option>
+            <option value="1800|Óleo Alimentar 1L">Óleo Alimentar 1L · 1.800 Kz</option>
+            <option value="35000|Consultoria Fiscal (h)">Consultoria Fiscal (h) · 35.000 Kz</option>
+          </select>
+          <input class="form-input" type="number" id="invArtQty" value="1" min="1" style="width:80px;" />
+          <button class="btn btn-primary" onclick="addInvoiceLine()">Adicionar</button>
+        </div>
+      </div>
+
+      <div class="table-wrap" style="margin:14px 0;">
+        <table class="glass-table" id="invLinesTable">
+          <thead>
+            <tr><th>Descrição</th><th>Qtd</th><th>Preço Unit.</th><th>Taxa IVA</th><th>Total</th></tr>
+          </thead>
+          <tbody id="invLinesBody">
+            <tr><td>Arroz Agulha 5kg</td><td>2</td><td class="amount">4.500 Kz</td><td>14% (NOR)</td><td class="amount">9.000 Kz</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="background:rgba(0,0,0,0.02);padding:14px;border-radius:10px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Incidência IVA:</span><b class="amount" id="invModalSubtotal">9.000,00 Kz</b></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Total IVA (14%):</span><b class="amount" id="invModalTax">1.260,00 Kz</b></div>
+        <div style="display:flex;justify-content:space-between;font-size:16px;border-top:1px solid var(--line-soft);padding-top:6px;">
+          <b>Total Líquido a Pagar:</b><b class="amount" style="color:var(--emerald-primary);" id="invModalTotal">10.260,00 Kz</b>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="submitInvoice()">
+        Assinar Digitalmente (RSA-SHA1) & Selar com AGT
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== MODAL: VISUALIZAR A4 ==================== -->
+<div class="modal-overlay" id="modalViewA4">
+  <div class="modal-box" style="max-width:580px;">
+    <div class="modal-header">
+      <div class="modal-title" id="a4DocTitle">Fatura Comercial A4</div>
+      <button class="close-btn" onclick="closeModal('modalViewA4')">&times;</button>
+    </div>
+    <div style="background:#fff;color:#000;padding:24px;border-radius:8px;font-family:'Plus Jakarta Sans',sans-serif;font-size:11px;">
+      <div style="display:flex;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:10px;">
+        <div>
+          <b style="font-size:14px;">KUDIBA COMERCIAL & SERVIÇOS LDA</b><br/>
+          NIF: 5418029312 · Luanda, Angola<br/>
+          Software Certificado nº 999/AGT/2026
+        </div>
+        <div style="text-align:right;">
+          <b style="font-size:13px;" id="a4DocNum">FT 2026/00148</b><br/>
+          Original · Moeda: AOA (Kz)
+        </div>
+      </div>
+      <div style="margin:14px 0;">
+        <b>Exmo.(s) Sr.(s):</b><br/>
+        <span id="a4ClientName">Sonangol E.P.</span><br/>
+        NIF: <span id="a4ClientNif">5401000000</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:14px;">
+        <thead style="border-bottom:1px solid #000;">
+          <tr><th style="text-align:left;">Descrição</th><th>Qtd</th><th>Preço</th><th>IVA</th><th style="text-align:right;">Total</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Fornecimento de Mercadorias / Serviços</td><td>1</td><td style="text-align:center;">Valor</td><td style="text-align:center;">14%</td><td style="text-align:right;" id="a4DocTotal">13.437.500 Kz</td></tr>
+        </tbody>
+      </table>
+      <div style="border-top:1px solid #000;padding-top:8px;display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;">
+          <b>Assinatura Hash AGT (J-1):</b> k8F2-Processado por programa certificado nº 999/AGT/2026
+        </div>
+        <div style="width:54px;height:54px;border:1px solid #000;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;">
+          [QR AGT]
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== MODAL: FECHO Z ==================== -->
+<div class="modal-overlay" id="modalFechoZ">
+  <div class="modal-box" style="max-width:480px;">
+    <div class="modal-header">
+      <div class="modal-title">Fecho Z Fiscal Diário (AGT)</div>
+      <button class="close-btn" onclick="closeModal('modalFechoZ')">&times;</button>
+    </div>
+    <div style="font-size:13px;">
+      <p style="color:var(--text-muted);margin-bottom:12px;">O Fecho Z fiscal encerra irreversivelmente a sessão do terminal e bloqueia novos registos até a reabertura do próximo dia.</p>
+      <div style="background:rgba(0,0,0,0.02);padding:14px;border-radius:10px;margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Total Faturas-Recibo (FR):</span><b class="amount">7.400.000 Kz</b></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Multicaixa TPA EMIS:</span><b class="amount">5.550.000 Kz</b></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Numerário em Caixa:</span><b class="amount">1.850.000 Kz</b></div>
+        <div style="display:flex;justify-content:space-between;border-top:1px dashed var(--line-soft);padding-top:6px;"><span>Total IVA Recolhido:</span><b class="amount">908.771 Kz</b></div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;" onclick="alert('Fecho Z impresso e assinado digitalmente na base de dados fiscal.');closeModal('modalFechoZ');">
+        Confirmar & Imprimir Fecho Z Fiscal
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentTheme = 'light';
+function applyTheme(t){
+  currentTheme = t;
+  if (t === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+  document.getElementById('iconSun').style.display = t === 'dark' ? 'block' : 'none';
+  document.getElementById('iconMoon').style.display = t === 'dark' ? 'none' : 'block';
+  document.getElementById('themeToggle').title = t === 'dark' ? 'Mudar para tema claro' : 'Mudar para tema escuro';
+}
+function toggleTheme(){
+  applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
+}
+
+const titles = {
+  dashboard: 'Resumo da Faturação Comercial',
+  pos: 'Ponto de Venda (POS / Caixa Rápido)',
+  faturas: 'Faturas e Documentos Comerciais',
+  clientes: 'Gestão de Clientes & Contas Correntes',
+  artigos: 'Catálogo de Artigos, Preçário & Stock',
+  subscricoes: 'Avenças & Subscrições Recorrentes',
+  tesouraria: 'Tesouraria, Caixas & Recibos RC',
+  relatorios: 'Ficheiro SAF-T (AO) & Relatórios Fiscais',
+  payroll: 'Recursos Humanos & Salários (KudibaPayroll)',
+  outbox: 'Barramento de Eventos Contabilísticos & Outbox',
+  definicoes: 'Definições do Sistema & Séries Fiscais',
+  ajuda: 'Centro de Ajuda, Manuais & Legislação'
+};
+
+const breadcrumbs = {
+  dashboard: 'Dashboard Executivo',
+  pos: 'Frente de Caixa',
+  faturas: 'Faturação / Documentos',
+  clientes: 'Clientes & Entidades',
+  artigos: 'Inventário / Catálogo',
+  subscricoes: 'Contratos & Avenças',
+  tesouraria: 'Tesouraria / Caixas',
+  relatorios: 'Auditoria & SAF-T',
+  payroll: 'Recursos Humanos / Payroll',
+  outbox: 'Integrações / Eventos',
+  definicoes: 'Configuração AGT',
+  ajuda: 'Base de Conhecimento'
+};
+
+function go(id){
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const el = document.getElementById(id);
+  if(el) el.classList.add('active');
+
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const activeNav = Array.from(document.querySelectorAll('.nav-item')).find(n => {
+    const fn = n.getAttribute('onclick');
+    return fn && fn.includes("'" + id + "'");
+  });
+  if(activeNav) activeNav.classList.add('active');
+
+  document.getElementById('pageTitle').textContent = titles[id] || 'Kudiba ERP';
+  document.getElementById('crumb').textContent = breadcrumbs[id] || id;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* Modals */
+function openLoginModal(){ document.getElementById('modalLogin').classList.add('active'); }
+function openNewInvoiceModal(){ document.getElementById('modalNewInvoice').classList.add('active'); }
+function openFechoZModal(){ document.getElementById('modalFechoZ').classList.add('active'); }
+function closeModal(id){ document.getElementById(id).classList.remove('active'); }
+
+function doLogin(e){
+  e.preventDefault();
+  const tenant = document.getElementById('loginTenant').value;
+  const role = document.getElementById('loginRole').value;
+  document.getElementById('sidebarTenantLabel').textContent = tenant;
+  document.getElementById('userRoleLabel').textContent = role;
+  closeModal('modalLogin');
+}
+
+/* Tooltip Chart */
+function showTip(evt, text){
+  const tip = document.getElementById('chartTip');
+  tip.textContent = text;
+  tip.style.left = (evt.clientX - 260) + 'px';
+  tip.style.top = (evt.clientY - 120) + 'px';
+  tip.style.opacity = 1;
+}
+function hideTip(){
+  document.getElementById('chartTip').style.opacity = 0;
+}
+
+/* POS Cart Logic */
+let cart = [
+  { name: 'Arroz Agulha 5kg', price: 4500, qty: 1, sku: 'ART-001' },
+  { name: 'Óleo Alimentar 1L', price: 1800, qty: 2, sku: 'ART-002' }
+];
+
+function renderCart(){
+  const wrap = document.getElementById('cartItems');
+  wrap.innerHTML = '';
+  let subtotal = 0;
+  cart.forEach((item, index) => {
+    const itemTotal = item.price * item.qty;
+    subtotal += itemTotal;
+    const row = document.createElement('div');
+    row.className = 'cart-row';
+    row.innerHTML = `<div><b>${item.name}</b><br/><span style="color:var(--text-muted)">${item.qty} x ${item.price.toLocaleString('pt-PT')} Kz</span><div class="cart-qty-ctrl"><button class="qty-btn" onclick="changeQty(${index}, -1)">-</button><button class="qty-btn" onclick="changeQty(${index}, 1)">+</button></div></div><div class="amount">${itemTotal.toLocaleString('pt-PT')} Kz</div>`;
+    wrap.appendChild(row);
+  });
+  const tax = subtotal * 0.14;
+  const total = subtotal + tax;
+  document.getElementById('cartSubtotal').textContent = subtotal.toLocaleString('pt-PT', {minimumFractionDigits:2}) + ' Kz';
+  document.getElementById('cartTax').textContent = tax.toLocaleString('pt-PT', {minimumFractionDigits:2}) + ' Kz';
+  document.getElementById('cartTotal').textContent = total.toLocaleString('pt-PT', {minimumFractionDigits:2}) + ' Kz';
+}
+
+function addToCart(name, price, sku){
+  const existing = cart.find(c => c.name === name);
+  if(existing) { existing.qty += 1; }
+  else { cart.push({ name, price, qty: 1, sku }); }
+  renderCart();
+}
+
+function changeQty(index, delta){
+  cart[index].qty += delta;
+  if(cart[index].qty <= 0) { cart.splice(index, 1); }
+  renderCart();
+}
+
+function filterPosCat(cat){
+  document.querySelectorAll('.prod-tile').forEach(tile => {
+    if(cat === 'all' || tile.getAttribute('data-cat') === cat){
+      tile.style.display = 'flex';
+    } else {
+      tile.style.display = 'none';
+    }
+  });
+}
+
+function handleBarcode(e){
+  if(e.key === 'Enter'){
+    addToCart('Arroz Agulha 5kg (Leitor)', 4500, 'ART-001');
+    e.target.value = '';
+  }
+}
+
+function openCheckoutModal(){
+  if(cart.length === 0){ alert('O carrinho de compras está vazio.'); return; }
+  alert('Pagamento aprovado via TPA EMIS (Multicaixa). Emitindo Fatura-Recibo com assinatura RSA-SHA1 e talão térmico 80mm...');
+  cart = [];
+  renderCart();
+}
+
+/* Invoicing Logic */
+function filterInvoices(status){
+  document.querySelectorAll('#invoiceTable tbody tr').forEach(row => {
+    if(status === 'all' || row.getAttribute('data-status') === status){
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  });
+}
+
+function searchInvoices(){
+  const q = document.getElementById('searchInvoiceInput').value.toLowerCase();
+  document.querySelectorAll('#invoiceTable tbody tr').forEach(row => {
+    const text = row.textContent.toLowerCase();
+    row.style.display = text.includes(q) ? '' : 'none';
+  });
+}
+
+function viewInvoiceA4(docNum, client, nif, total){
+  document.getElementById('a4DocNum').textContent = docNum;
+  document.getElementById('a4ClientName').textContent = client;
+  document.getElementById('a4ClientNif').textContent = nif;
+  document.getElementById('a4DocTotal').textContent = total;
+  document.getElementById('modalViewA4').classList.add('active');
+}
+
+function liquidateInvoice(docNum, total){
+  alert('Fatura ' + docNum + ' liquidada com sucesso em KudibaTreasury. Emitido Recibo RC 2026/00093.');
+}
+
+function addInvoiceLine(){
+  const val = document.getElementById('invArtSelect').value.split('|');
+  const price = parseFloat(val[0]);
+  const name = val[1];
+  const qty = parseInt(document.getElementById('invArtQty').value) || 1;
+  const total = price * qty;
+  const tbody = document.getElementById('invLinesBody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${name}</td><td>${qty}</td><td class="amount">${price.toLocaleString('pt-PT')} Kz</td><td>14% (NOR)</td><td class="amount">${total.toLocaleString('pt-PT')} Kz</td>`;
+  tbody.appendChild(tr);
+}
+
+function submitInvoice(){
+  alert('Fatura FT 2026/00149 emitida, assinada digitalmente com RSA-SHA1 e transmitida ao KudibaTreasury.');
+  closeModal('modalNewInvoice');
+}
+
+function viewSafTXml(){
+  alert('Estrutura SAF-T (AO) XML validada: 0 erros de schema XSD. Ficheiro pronto para entrega à AGT.');
+}
+
+function viewPayslip(nome, base, inss, irt, liquido){
+  alert(`Recibo de Vencimento - ${nome}\nSalário Base: ${base}\nINSS (3%): ${inss}\nIRT: ${irt}\nLíquido a Transferir: ${liquido}`);
+}
+
+/* Inicialização */
+renderCart();
+</script>
+</body>
+</html>

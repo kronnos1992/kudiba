@@ -54,13 +54,13 @@ pub async fn auth_middleware(
         }
     };
 
-    // 1. Validação Criptográfica do Token JWT usando segredo configurado no ambiente
     let key = DecodingKey::from_secret(state.config.jwt_secret.as_bytes());
     let validation = Validation::default();
 
     let token_data = match decode::<KudibaClaims>(auth_header, &key, &validation) {
         Ok(data) => data,
-        Err(_) => {
+        Err(err) => {
+            tracing::warn!("Falha ao decodificar JWT: {:?}", err);
             return ProblemDetail::new(
                 "https://api.kudiba.ao/errors/invalid-token",
                 "Token Inválido ou Expirado",
