@@ -64,7 +64,7 @@ impl Config {
             .parse::<usize>()
             .unwrap_or(10 * 1024 * 1024);
 
-        let redis_host = env::var("REDIS_HOST").unwrap_or_else(|_| "localhost".to_string());
+        let redis_host = env::var("REDIS_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
         let redis_port = env::var("REDIS_PORT").unwrap_or_else(|_| "6379".to_string());
         let redis_password = env::var("REDIS_PASSWORD").unwrap_or_default();
         let redis_db = env::var("REDIS_DB").unwrap_or_else(|_| "0".to_string());

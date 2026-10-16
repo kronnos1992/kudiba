@@ -1,45 +1,11 @@
 import React, { useState } from 'react';
-import styled from 'styled-components';
-import {
-  Box,
-  Typography,
-  TextField,
-  Button,
-  CircularProgress,
-  Alert,
-  Paper,
-} from '@mui/material';
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
-import SecurityIcon from '@mui/icons-material/Security';
+import { Lock, ShieldCheck, Loader2 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
-import { useUiStore } from '../../stores/uiStore';
-import { tokens } from '../../theme/designTokens';
 import { authApi } from '../../api/auth';
 import { StatusBadge } from '../../components/common/StatusBadge';
 
-const LoginContainer = styled.div<{ $mode: 'light' | 'dark' }>`
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: ${({ $mode }) => tokens[$mode].bgMain};
-  padding: 24px;
-`;
-
-const FormCard = styled(Paper)<{ $mode: 'light' | 'dark' }>`
-  width: 100%;
-  max-width: 440px;
-  padding: 40px;
-  border-radius: 16px !important;
-  background: ${({ $mode }) => tokens[$mode].glassBg} !important;
-  border: 1px solid ${({ $mode }) => tokens[$mode].glassBorder} !important;
-  backdrop-filter: blur(16px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08) !important;
-`;
-
 export const LoginView: React.FC = () => {
   const { setSession } = useAuthStore();
-  const themeMode = useUiStore((s) => s.themeMode);
 
   const [email, setEmail] = useState('admin@kudiba.ao');
   const [password, setPassword] = useState('Admin@Kudiba2026!');
@@ -60,7 +26,6 @@ export const LoginView: React.FC = () => {
           ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
           : null;
 
-      // Fallback para sessão local caso o gateway local ainda esteja em arranque
       if (!errorMsg) {
         setSession({
           access_token: 'mock-jwt-token-kudiba-2026',
@@ -97,100 +62,84 @@ export const LoginView: React.FC = () => {
   };
 
   return (
-    <LoginContainer $mode={themeMode}>
-      <FormCard $mode={themeMode} elevation={0}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 4 }}>
-          <Box
-            sx={{
-              width: 52,
-              height: 52,
-              borderRadius: 3,
-              bgcolor: tokens[themeMode].emeraldPrimary,
-              color: '#FFFFFF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontSize: '1.6rem',
-              mb: 2,
-              boxShadow: '0 4px 16px rgba(13, 92, 58, 0.3)',
-            }}
-          >
+    <div className="min-h-screen w-full flex items-center justify-center p-6 bg-slate-50 dark:bg-slate-950 transition-colors">
+      <div className="w-full max-w-md bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-8 sm:p-10">
+        <div className="flex flex-col items-center mb-8 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-emerald-700 text-white flex items-center justify-center font-extrabold text-2xl mb-3 shadow-lg shadow-emerald-700/25">
             K
-          </Box>
-          <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em', mb: 0.5 }}>
-            Kudiba <span style={{ color: tokens[themeMode].goldPrimary }}>ERP</span>
-          </Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+          </div>
+          <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+            Kudiba <span className="text-amber-600 dark:text-amber-400">ERP</span>
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
             Acesso ao Backoffice &amp; Terminal Fiscal AGT
-          </Typography>
-        </Box>
+          </p>
+        </div>
 
         {error && (
-          <Alert severity="error" sx={{ mb: 3 }}>
+          <div className="mb-6 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-sm text-rose-700 dark:text-rose-300">
             {error}
-          </Alert>
+          </div>
         )}
 
-        <form onSubmit={handleSubmit}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <TextField
-              label="Email Corporativo"
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+              Email Corporativo
+            </label>
+            <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              fullWidth
               autoComplete="email"
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all shadow-xs"
+              placeholder="admin@kudiba.ao"
             />
+          </div>
 
-            <TextField
-              label="Palavra-passe"
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+              Palavra-passe
+            </label>
+            <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              fullWidth
               autoComplete="current-password"
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all shadow-xs"
+              placeholder="••••••••••••"
             />
+          </div>
 
-            <Button
-              type="submit"
-              variant="contained"
-              size="large"
-              disabled={loading}
-              startIcon={loading ? <CircularProgress size={18} color="inherit" /> : <LockOutlinedIcon />}
-              sx={{
-                py: 1.4,
-                bgcolor: tokens[themeMode].emeraldPrimary,
-                '&:hover': { bgcolor: tokens[themeMode].emeraldLight },
-                fontWeight: 700,
-              }}
-            >
-              {loading ? 'A autenticar...' : 'Entrar no Sistema'}
-            </Button>
-          </Box>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-emerald-700/20 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-all disabled:opacity-60 cursor-pointer"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>A autenticar...</span>
+              </>
+            ) : (
+              <>
+                <Lock className="w-4 h-4" />
+                <span>Entrar no Sistema</span>
+              </>
+            )}
+          </button>
         </form>
 
-        <Box
-          sx={{
-            mt: 4,
-            pt: 3,
-            borderTop: `1px solid ${tokens[themeMode].border}`,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-            <SecurityIcon sx={{ fontSize: 16, color: tokens[themeMode].status.ok }} />
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-              Gateway :8080
-            </Typography>
-          </Box>
+        <div className="mt-8 pt-5 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-medium">
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span>Gateway :8080</span>
+          </div>
           <StatusBadge status="ok" label="AGT Certificado" size="small" />
-        </Box>
-      </FormCard>
-    </LoginContainer>
+        </div>
+      </div>
+    </div>
   );
 };

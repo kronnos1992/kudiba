@@ -1,138 +1,77 @@
 import React from 'react';
-import styled from 'styled-components';
-import {
-  IconButton,
-  Select,
-  MenuItem,
-  FormControl,
-  Avatar,
-  Box,
-  Typography,
-  Tooltip,
-} from '@mui/material';
-import Brightness4Icon from '@mui/icons-material/Brightness4';
-import Brightness7Icon from '@mui/icons-material/Brightness7';
-import LogoutIcon from '@mui/icons-material/Logout';
-import StorefrontIcon from '@mui/icons-material/Storefront';
-import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
+import { Sun, Moon, LogOut, Store, ShieldCheck } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useUiStore } from '../../stores/uiStore';
-import { tokens } from '../../theme/designTokens';
 import { StatusBadge } from '../common/StatusBadge';
-
-const HeaderBar = styled.header<{ $mode: 'light' | 'dark' }>`
-  height: 64px;
-  background: ${({ $mode }) => tokens[$mode].glassBg};
-  border-bottom: 1px solid ${({ $mode }) => tokens[$mode].border};
-  backdrop-filter: blur(12px);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-`;
-
-const LeftSection = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 16px;
-`;
-
-const RightSection = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 16px;
-`;
 
 export const Header: React.FC = () => {
   const { user, tenants, activeTenant, setActiveTenant, logout } = useAuthStore();
   const { themeMode, toggleTheme } = useUiStore();
 
   return (
-    <HeaderBar $mode={themeMode} className="no-print">
-      <LeftSection>
+    <header className="no-print sticky top-0 z-40 h-16 w-full bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-6 flex items-center justify-between transition-colors">
+      <div className="flex items-center gap-4">
         {tenants.length > 0 && (
-          <FormControl size="small" sx={{ minWidth: 240 }}>
-            <Select
+          <div className="relative">
+            <select
               value={activeTenant?.id || ''}
               onChange={(e) => {
                 const selected = tenants.find((t) => t.id === e.target.value);
                 if (selected) setActiveTenant(selected);
               }}
-              displayEmpty
-              sx={{
-                bgcolor: themeMode === 'light' ? 'rgba(255,255,255,0.8)' : 'rgba(20,26,38,0.8)',
-                borderRadius: 2,
-                fontSize: '0.875rem',
-                fontWeight: 600,
-              }}
+              className="appearance-none bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-sm font-semibold rounded-xl px-3 py-1.5 pr-8 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all cursor-pointer shadow-sm"
             >
               {tenants.map((t) => (
-                <MenuItem key={t.id} value={t.id}>
-                  <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {t.name}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-mono)' }}>
-                      NIF: {t.taxId}
-                    </Typography>
-                  </Box>
-                </MenuItem>
+                <option key={t.id} value={t.id}>
+                  {t.name} (NIF: {t.taxId})
+                </option>
               ))}
-            </Select>
-          </FormControl>
+            </select>
+          </div>
         )}
 
-        <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 1 }}>
-          <StorefrontIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-            Filial Principal
-          </Typography>
-        </Box>
-      </LeftSection>
+        <div className="hidden md:flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+          <Store className="w-4 h-4" />
+          <span>Filial Principal</span>
+        </div>
+      </div>
 
-      <RightSection>
-        <Tooltip title="Motor Fiscal AGT Conforme (RSA-SHA1)">
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-            <VerifiedUserIcon sx={{ color: tokens[themeMode].status.ok, fontSize: 18 }} />
-            <StatusBadge status="ok" label="AGT Conforme" size="small" />
-          </Box>
-        </Tooltip>
+      <div className="flex items-center gap-4">
+        <div className="hidden sm:flex items-center gap-1.5" title="Motor Fiscal AGT Conforme (RSA-SHA1)">
+          <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          <StatusBadge status="ok" label="AGT Conforme" size="small" />
+        </div>
 
-        <IconButton onClick={toggleTheme} size="small" sx={{ color: 'text.primary' }}>
-          {themeMode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
-        </IconButton>
+        <button
+          onClick={toggleTheme}
+          aria-label="Alternar tema"
+          className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+        >
+          {themeMode === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </button>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Avatar
-            sx={{
-              width: 34,
-              height: 34,
-              bgcolor: tokens[themeMode].emeraldPrimary,
-              fontSize: '0.875rem',
-              fontWeight: 700,
-            }}
-          >
+        <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
+          <div className="w-8 h-8 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-sm shadow-sm">
             {user?.fullName?.charAt(0) || 'U'}
-          </Avatar>
-          <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-            <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
+          </div>
+          <div className="hidden sm:block text-left">
+            <p className="text-sm font-semibold leading-tight text-slate-800 dark:text-slate-100">
               {user?.fullName || 'Utilizador Kudiba'}
-            </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               {user?.email || 'admin@kudiba.ao'}
-            </Typography>
-          </Box>
-        </Box>
+            </p>
+          </div>
+        </div>
 
-        <Tooltip title="Terminar Sessão">
-          <IconButton onClick={logout} size="small" color="error">
-            <LogoutIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </RightSection>
-    </HeaderBar>
+        <button
+          onClick={logout}
+          title="Terminar Sessão"
+          className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
+      </div>
+    </header>
   );
 };

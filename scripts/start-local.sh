@@ -168,6 +168,8 @@ else
     GATEWAY_PORT=8080 \
     GATEWAY_ENV=development \
     JWT_SECRET=kudiba_jwt_secret_development_key_change_in_production_2026 \
+    REDIS_HOST=127.0.0.1 \
+    REDIS_PORT=6379 \
     FISCAL_ENGINE_URL=http://localhost:9090 \
     AUTH_SERVICE_URL=http://localhost:8082 \
     INVENTORY_SERVICE_URL=http://localhost:8083 \

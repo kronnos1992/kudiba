@@ -1,60 +1,57 @@
 import React from 'react';
-import { Box, Typography, Button } from '@mui/material';
-import DownloadIcon from '@mui/icons-material/Download';
-import KeyIcon from '@mui/icons-material/Key';
+import { Key, Download } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge } from '../../components/common/StatusBadge';
 
 export const SettingsView: React.FC = () => {
   return (
-    <Box>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
           Configurações Fiscais, Certificação &amp; SAF-T (AO)
-        </Typography>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+        </h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
           Gestão de chaves criptográficas RSA-2048, registo de produtor de software e exportação XML
-        </Typography>
-      </Box>
+        </p>
+      </div>
 
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <GlassCard sx={{ p: 3 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <KeyIcon sx={{ color: '#0D5C3A' }} />
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+      <div className="space-y-4">
+        <GlassCard className="p-6">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2.5">
+              <Key className="w-5 h-5 text-emerald-700 dark:text-emerald-400" />
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 Chave Privada RSA-2048 (Assinatura AGT)
-              </Typography>
-            </Box>
-            <StatusBadge status="ok" label="Chave Ativa & Conforme" />
-          </Box>
-          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+              </h3>
+            </div>
+            <StatusBadge status="ok" label="Chave Ativa &amp; Conforme" />
+          </div>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
             Versão da Chave: 1 • Algoritmo: SHA1withRSA conforme requisitos técnicos da AGT
-          </Typography>
-          <Typography variant="caption" sx={{ fontFamily: 'var(--font-mono)', display: 'block', bgcolor: 'rgba(0,0,0,0.04)', p: 1.5, borderRadius: 1 }}>
+          </p>
+          <div className="font-mono text-xs p-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
             Chave Pública registada no portal da AGT para verificação do ficheiro SAF-T.
-          </Typography>
+          </div>
         </GlassCard>
 
-        <GlassCard sx={{ p: 3 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+        <GlassCard className="p-6">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
               Exportação do Ficheiro SAF-T (AO) Mensal
-            </Typography>
-            <Button
-              variant="outlined"
-              startIcon={<DownloadIcon />}
-              sx={{ fontWeight: 700 }}
+            </h3>
+            <button
               onClick={() => alert('Download do ficheiro SAF-T AO 2026 XML iniciado.')}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-emerald-600/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-sm font-bold transition-all shadow-xs"
             >
-              Exportar XML AGT
-            </Button>
-          </Box>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              <Download className="w-4 h-4" />
+              <span>Exportar XML AGT</span>
+            </button>
+          </div>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Estrutura XML em conformidade com o Decreto Presidencial 385/20 e validações do motor fiscal Kudiba.
-          </Typography>
+          </p>
         </GlassCard>
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
 };

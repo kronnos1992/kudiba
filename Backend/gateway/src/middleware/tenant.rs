@@ -37,17 +37,19 @@ pub async fn tenant_resolver_middleware(mut req: Request, next: Next) -> Respons
     // Estratégia A: Subdomínio (ex: empresa1.kudiba.ao)
     if let Some(host) = req.headers().get("host").and_then(|h| h.to_str().ok()) {
         let clean_host = host.split(':').next().unwrap_or(host);
-        let parts: Vec<&str> = clean_host.split('.').collect();
-        if parts.len() >= 3
-            && parts[0] != "api"
-            && parts[0] != "app"
-            && parts[0] != "staging-api"
-            && parts[0] != "www"
-            && parts[0] != "localhost"
-        {
-            let slug = parts[0].to_string();
-            resolved_slug = Some(slug.clone());
-            resolved_tenant = Some(slug);
+        if clean_host.parse::<std::net::IpAddr>().is_err() {
+            let parts: Vec<&str> = clean_host.split('.').collect();
+            if parts.len() >= 3
+                && parts[0] != "api"
+                && parts[0] != "app"
+                && parts[0] != "staging-api"
+                && parts[0] != "www"
+                && parts[0] != "localhost"
+            {
+                let slug = parts[0].to_string();
+                resolved_slug = Some(slug.clone());
+                resolved_tenant = Some(slug);
+            }
         }
     }
 

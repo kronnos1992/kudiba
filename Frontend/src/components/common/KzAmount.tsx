@@ -1,5 +1,4 @@
 import React from 'react';
-import styled from 'styled-components';
 
 interface KzAmountProps {
   value: number | string;
@@ -7,13 +6,6 @@ interface KzAmountProps {
   showCurrency?: boolean;
   className?: string;
 }
-
-const StyledMono = styled.span`
-  font-family: var(--font-mono, 'IBM Plex Mono', monospace) !important;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  white-space: nowrap;
-`;
 
 export const formatKwanza = (value: number | string, decimals = 2): string => {
   const num = typeof value === 'string' ? parseFloat(value) : value;
@@ -30,13 +22,13 @@ export const KzAmount: React.FC<KzAmountProps> = ({
   value,
   decimals = 2,
   showCurrency = true,
-  className,
+  className = '',
 }) => {
   const formatted = formatKwanza(value, decimals);
 
   return (
-    <StyledMono className={className}>
+    <span className={`font-mono font-semibold tabular-nums whitespace-nowrap ${className}`}>
       {formatted} {showCurrency ? 'Kz' : ''}
-    </StyledMono>
+    </span>
   );
 };

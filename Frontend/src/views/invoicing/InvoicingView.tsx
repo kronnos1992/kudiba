@@ -1,50 +1,30 @@
 import React, { useState } from 'react';
-import styled from 'styled-components';
-import {
-  Box,
-  Typography,
-  Button,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Chip,
-  Dialog,
-  DialogContent,
-  DialogActions,
-  Divider,
-} from '@mui/material';
-import AddCircleIcon from '@mui/icons-material/AddCircle';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import PrintIcon from '@mui/icons-material/Print';
-import { useUiStore } from '../../stores/uiStore';
+import { PlusCircle, Eye, Printer, X } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
-import { tokens } from '../../theme/designTokens';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
 
-const A4Document = styled.div`
-  width: 100%;
-  max-width: 680px;
-  margin: 0 auto;
-  background: #ffffff;
-  color: #000000;
-  padding: 32px;
-  font-family: var(--font-primary, sans-serif);
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-`;
+interface DocumentItem {
+  id: string;
+  type: string;
+  client: string;
+  nif: string;
+  date: string;
+  subtotal: number;
+  tax: number;
+  retention: number;
+  total: number;
+  hash4: string;
+  status: string;
+  statusText: string;
+}
 
 export const InvoicingView: React.FC = () => {
-  const themeMode = useUiStore((s) => s.themeMode);
   const { activeTenant } = useAuthStore();
+  const [selectedDoc, setSelectedDoc] = useState<DocumentItem | null>(null);
 
-  const [selectedDoc, setSelectedDoc] = useState<any | null>(null);
-
-  const mockDocuments = [
+  const mockDocuments: DocumentItem[] = [
     {
       id: 'FT 2026/00142',
       type: 'FT',
@@ -104,210 +84,198 @@ export const InvoicingView: React.FC = () => {
   ];
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box>
-          <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
+    <div className="space-y-6">
+      <div className="no-print flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
             Faturação &amp; Gestão Fiscal AGT
-          </Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Emissão de FT, FR, NC e ND em conformidade com o Decreto Presidencial 71/25
-          </Typography>
-        </Box>
+          </p>
+        </div>
 
-        <Button
-          variant="contained"
-          startIcon={<AddCircleIcon />}
-          sx={{
-            bgcolor: tokens[themeMode].emeraldPrimary,
-            '&:hover': { bgcolor: tokens[themeMode].emeraldLight },
-            fontWeight: 700,
-          }}
-        >
-          Criar Novo Documento
-        </Button>
-      </Box>
+        <button className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-bold shadow-md shadow-emerald-700/20 transition-all cursor-pointer">
+          <PlusCircle className="w-4 h-4" />
+          <span>Criar Novo Documento</span>
+        </button>
+      </div>
 
-      <GlassCard sx={{ p: 2.5 }}>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 700 }}>Tipo</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Nº Documento</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Cliente</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Data</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>Subtotal</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>IVA (14%)</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>Total (Kz)</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>Estado</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>Ações</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
+      <GlassCard className="p-4 no-print">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-bold uppercase text-slate-500 dark:text-slate-400">
+                <th className="py-2.5 px-3">Tipo</th>
+                <th className="py-2.5 px-3">Nº Documento</th>
+                <th className="py-2.5 px-3">Cliente</th>
+                <th className="py-2.5 px-3">Data</th>
+                <th className="py-2.5 px-3 text-right">Subtotal</th>
+                <th className="py-2.5 px-3 text-right">IVA (14%)</th>
+                <th className="py-2.5 px-3 text-right">Total (Kz)</th>
+                <th className="py-2.5 px-3 text-center">Estado</th>
+                <th className="py-2.5 px-3 text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {mockDocuments.map((doc) => (
-                <TableRow key={doc.id} hover>
-                  <TableCell>
-                    <Chip
-                      label={doc.type}
-                      size="small"
-                      sx={{
-                        fontWeight: 800,
-                        bgcolor: doc.type === 'NC' ? '#DC262620' : `${tokens[themeMode].emeraldPrimary}20`,
-                        color: doc.type === 'NC' ? '#DC2626' : tokens[themeMode].emeraldPrimary,
-                      }}
-                    />
-                  </TableCell>
-                  <TableCell sx={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                    {doc.id}
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>{doc.client}</Typography>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-mono)' }}>
-                      NIF: {doc.nif}
-                    </Typography>
-                  </TableCell>
-                  <TableCell sx={{ color: 'text.secondary', fontSize: '0.85rem' }}>{doc.date}</TableCell>
-                  <TableCell align="right">
-                    <KzAmount value={doc.subtotal} />
-                  </TableCell>
-                  <TableCell align="right">
-                    <KzAmount value={doc.tax} />
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>
-                    <KzAmount value={doc.total} />
-                  </TableCell>
-                  <TableCell align="center">
-                    <StatusBadge status={doc.status as 'ok' | 'medio'} label={doc.statusText} />
-                  </TableCell>
-                  <TableCell align="center">
-                    <Button
-                      size="small"
-                      startIcon={<VisibilityIcon />}
-                      onClick={() => setSelectedDoc(doc)}
-                      sx={{ fontWeight: 600 }}
+                <tr key={doc.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                  <td className="py-3 px-3">
+                    <span
+                      className={`inline-block px-2 py-0.5 rounded-md text-xs font-extrabold ${
+                        doc.type === 'NC'
+                          ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                          : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
+                      }`}
                     >
-                      A4
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                      {doc.type}
+                    </span>
+                  </td>
+                  <td className="py-3 px-3 font-mono font-bold text-slate-900 dark:text-white">
+                    {doc.id}
+                  </td>
+                  <td className="py-3 px-3">
+                    <p className="font-semibold text-slate-800 dark:text-slate-200">{doc.client}</p>
+                    <p className="text-xs font-mono text-slate-500 dark:text-slate-400">NIF: {doc.nif}</p>
+                  </td>
+                  <td className="py-3 px-3 text-xs text-slate-500 dark:text-slate-400">{doc.date}</td>
+                  <td className="py-3 px-3 text-right">
+                    <KzAmount value={doc.subtotal} />
+                  </td>
+                  <td className="py-3 px-3 text-right">
+                    <KzAmount value={doc.tax} />
+                  </td>
+                  <td className="py-3 px-3 text-right font-bold">
+                    <KzAmount value={doc.total} />
+                  </td>
+                  <td className="py-3 px-3 text-center">
+                    <StatusBadge status={doc.status as 'ok' | 'medio'} label={doc.statusText} />
+                  </td>
+                  <td className="py-3 px-3 text-center">
+                    <button
+                      onClick={() => setSelectedDoc(doc)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>A4</span>
+                    </button>
+                  </td>
+                </tr>
               ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+            </tbody>
+          </table>
+        </div>
       </GlassCard>
 
-      {/* Modal de Pré-visualização A4 AGT */}
-      <Dialog
-        open={Boolean(selectedDoc)}
-        onClose={() => setSelectedDoc(null)}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogContent sx={{ p: 4, bgcolor: '#F8FAFC' }}>
-          {selectedDoc && (
-            <A4Document className="invoice-a4-page">
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-                <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 800, color: '#0D5C3A' }}>
+      {/* Modal A4 AGT */}
+      {selectedDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-slate-100 dark:bg-slate-900 rounded-2xl shadow-2xl max-w-2xl w-full p-6 relative my-8">
+            <button
+              onClick={() => setSelectedDoc(null)}
+              className="no-print absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="invoice-a4 bg-white text-slate-900 p-8 rounded-lg shadow-sm border border-slate-200">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-lg font-extrabold text-emerald-800">
                     {activeTenant?.name || 'KUDIBA COMÉRCIO GERAL, LDA'}
-                  </Typography>
-                  <Typography variant="body2">Luanda, Angola</Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'var(--font-mono)' }}>
-                    NIF: {activeTenant?.taxId || '5417892341'}
-                  </Typography>
-                </Box>
-                <Box sx={{ textAlign: 'right' }}>
-                  <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                    {selectedDoc.id}
-                  </Typography>
-                  <Typography variant="body2">Data: {selectedDoc.date}</Typography>
-                  <Typography variant="caption" sx={{ color: '#0D5C3A', fontWeight: 700 }}>
+                  </h3>
+                  <p className="text-xs text-slate-600">Luanda, Angola</p>
+                  <p className="text-xs font-mono text-slate-600">
+                    NIF: {activeTenant?.taxId || '5001234567'}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <h4 className="text-lg font-extrabold text-slate-900">{selectedDoc.id}</h4>
+                  <p className="text-xs text-slate-600">Data: {selectedDoc.date}</p>
+                  <span className="inline-block mt-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                     ORIGINAL
-                  </Typography>
-                </Box>
-              </Box>
+                  </span>
+                </div>
+              </div>
 
-              <Divider sx={{ my: 2 }} />
+              <div className="border-t border-slate-200 my-4" />
 
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
-                  DADOS DO CLIENTE
-                </Typography>
-                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                  {selectedDoc.client}
-                </Typography>
-                <Typography variant="body2" sx={{ fontFamily: 'var(--font-mono)' }}>
-                  NIF: {selectedDoc.nif}
-                </Typography>
-              </Box>
+              <div className="mb-6">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Dados do Cliente
+                </span>
+                <p className="font-bold text-sm text-slate-900">{selectedDoc.client}</p>
+                <p className="text-xs font-mono text-slate-600">NIF: {selectedDoc.nif}</p>
+              </div>
 
-              <Table size="small" sx={{ mb: 3 }}>
-                <TableHead>
-                  <TableRow sx={{ bgcolor: '#F1F5F9' }}>
-                    <TableCell sx={{ fontWeight: 700 }}>Descrição</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700 }}>Taxa IVA</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700 }}>Valor (Kz)</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  <TableRow>
-                    <TableCell>Prestação de Serviços Especializados / Fornecimento</TableCell>
-                    <TableCell align="right">14%</TableCell>
-                    <TableCell align="right">
+              <table className="w-full text-xs text-left mb-6">
+                <thead>
+                  <tr className="bg-slate-100 border-b border-slate-200 font-bold text-slate-700">
+                    <th className="py-2 px-3">Descrição</th>
+                    <th className="py-2 px-3 text-right">Taxa IVA</th>
+                    <th className="py-2 px-3 text-right">Valor (Kz)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  <tr>
+                    <td className="py-2.5 px-3">Prestação de Serviços Especializados / Fornecimento</td>
+                    <td className="py-2.5 px-3 text-right">14%</td>
+                    <td className="py-2.5 px-3 text-right font-mono">
                       <KzAmount value={selectedDoc.subtotal} />
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
 
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 4 }}>
-                <Box sx={{ width: 260, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography variant="body2">Incidência:</Typography>
+              <div className="flex justify-end mb-6">
+                <div className="w-64 space-y-1.5 text-xs">
+                  <div className="flex justify-between text-slate-600">
+                    <span>Incidência:</span>
                     <KzAmount value={selectedDoc.subtotal} />
-                  </Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography variant="body2">Total IVA (14%):</Typography>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Total IVA (14%):</span>
                     <KzAmount value={selectedDoc.tax} />
-                  </Box>
+                  </div>
                   {selectedDoc.retention > 0 && (
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', color: '#DC2626' }}>
-                      <Typography variant="body2">Retenção (6,5%):</Typography>
+                    <div className="flex justify-between text-rose-600">
+                      <span>Retenção (6,5%):</span>
                       <KzAmount value={selectedDoc.retention} />
-                    </Box>
+                    </div>
                   )}
-                  <Divider />
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800 }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>Total Documento:</Typography>
+                  <div className="border-t border-slate-200 pt-1.5 flex justify-between font-bold text-sm text-slate-900">
+                    <span>Total Documento:</span>
                     <KzAmount value={selectedDoc.total} />
-                  </Box>
-                </Box>
-              </Box>
+                  </div>
+                </div>
+              </div>
 
-              <Box sx={{ borderTop: '1px solid #CBD5E1', pt: 2, textAlign: 'center', fontSize: '11px', color: '#64748B' }}>
-                <Typography variant="caption" sx={{ display: 'block', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+              <div className="border-t border-slate-200 pt-4 text-center text-[10px] text-slate-500 space-y-1">
+                <p className="font-mono font-bold text-slate-700">
                   {selectedDoc.hash4}-Processado por programa validado nº 000/AGT/2026 Kudiba ERP
-                </Typography>
-                <Typography variant="caption">
-                  Os bens/serviços foram colocados à disposição do adquirente na data do documento.
-                </Typography>
-              </Box>
-            </A4Document>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setSelectedDoc(null)}>Fechar</Button>
-          <Button
-            variant="contained"
-            startIcon={<PrintIcon />}
-            onClick={() => window.print()}
-            sx={{ bgcolor: tokens[themeMode].emeraldPrimary }}
-          >
-            Imprimir A4
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
+                </p>
+                <p>Os bens/serviços foram colocados à disposição do adquirente na data do documento.</p>
+              </div>
+            </div>
+
+            <div className="no-print flex items-center justify-end gap-3 mt-4">
+              <button
+                onClick={() => setSelectedDoc(null)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-bold shadow-xs transition-colors"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Imprimir A4</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };

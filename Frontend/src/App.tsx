@@ -1,11 +1,6 @@
-import React, { useState } from 'react';
-import { ThemeProvider as MuiThemeProvider, CssBaseline } from '@mui/material';
-import { ThemeProvider as StyledThemeProvider } from 'styled-components';
+import React, { useState, useEffect } from 'react';
 import { useAuthStore } from './stores/authStore';
 import { useUiStore } from './stores/uiStore';
-import { createAppTheme } from './theme/muiTheme';
-import { tokens } from './theme/designTokens';
-import { GlobalStyles } from './theme/GlobalStyles';
 import { LoginView } from './views/auth/LoginView';
 import { AppLayout } from './components/layout/AppLayout';
 import { ModuleKey } from './components/layout/Sidebar';
@@ -23,19 +18,16 @@ export const App: React.FC = () => {
   const { themeMode } = useUiStore();
   const [activeModule, setActiveModule] = useState<ModuleKey>('dashboard');
 
-  const muiTheme = createAppTheme(themeMode);
-  const styledTheme = tokens[themeMode];
+  useEffect(() => {
+    if (themeMode === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [themeMode]);
 
   if (!isAuthenticated) {
-    return (
-      <MuiThemeProvider theme={muiTheme}>
-        <StyledThemeProvider theme={styledTheme}>
-          <CssBaseline />
-          <GlobalStyles />
-          <LoginView />
-        </StyledThemeProvider>
-      </MuiThemeProvider>
-    );
+    return <LoginView />;
   }
 
   const renderActiveModule = () => {
@@ -62,14 +54,8 @@ export const App: React.FC = () => {
   };
 
   return (
-    <MuiThemeProvider theme={muiTheme}>
-      <StyledThemeProvider theme={styledTheme}>
-        <CssBaseline />
-        <GlobalStyles />
-        <AppLayout activeModule={activeModule} onSelectModule={setActiveModule}>
-          {renderActiveModule()}
-        </AppLayout>
-      </StyledThemeProvider>
-    </MuiThemeProvider>
+    <AppLayout activeModule={activeModule} onSelectModule={setActiveModule}>
+      {renderActiveModule()}
+    </AppLayout>
   );
 };

@@ -27,11 +27,19 @@ stop_service() {
 stop_service "KudibaAuth" "auth.pid" "uvicorn src.main:app --host 0.0.0.0 --port 8082"
 stop_service "KudibaPayroll" "payroll.pid" "uvicorn src.main:app --host 0.0.0.0 --port 8086"
 stop_service "KudibaIntegrations" "integrations.pid" "uvicorn src.main:app --host 0.0.0.0 --port 8087"
-stop_service "Kudiba Gateway" "gateway.pid" "kudiba-gateway"
 stop_service "KudibaInvoicing" "invoicing.pid" "kudiba-invoicing"
 stop_service "KudibaInventory" "inventory.pid" "kudiba-inventory"
 stop_service "KudibaTreasury" "treasury.pid" "kudiba-treasury"
 stop_service "KudibaAccounting" "accounting.pid" "kudiba-accounting"
+if [ -f "$LOGS_DIR/gateway.pid" ]; then
+    PID=$(cat "$LOGS_DIR/gateway.pid")
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "[+] Encerrando Kudiba Gateway (PID $PID)..."
+        kill "$PID" 2>/dev/null || true
+    fi
+    rm -f "$LOGS_DIR/gateway.pid"
+fi
+pkill -x "kudiba-gateway" 2>/dev/null || true
 
 if command -v docker >/dev/null 2>&1; then
     docker rm -f kudiba-rabbitmq-dev >/dev/null 2>&1 || true

@@ -1,42 +1,49 @@
 import React from 'react';
-import { Box, Typography } from '@mui/material';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
 
 export const TreasuryView: React.FC = () => {
   return (
-    <Box>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
           Tesouraria, Caixas Físicos &amp; Recibos RC
-        </Typography>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+        </h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
           Sessões de caixa, contas bancárias (IBAN AO06) e quitação de faturas a prazo
-        </Typography>
-      </Box>
+        </p>
+      </div>
 
-      <GlassCard sx={{ p: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+      <GlassCard className="p-6">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">
             Caixa Principal (Sessão Aberta)
-          </Typography>
+          </h3>
           <StatusBadge status="ok" label="Fecho Cego Ativo" />
-        </Box>
-        <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
+        </div>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
           Operador: Gestor Comercial Kudiba • Abertura: 08:30:00
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 4 }}>
-          <Box>
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>Saldo em Caixa (Dinheiro):</Typography>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}><KzAmount value={345200.0} /></Typography>
-          </Box>
-          <Box>
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>Multicaixa (TPA):</Typography>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}><KzAmount value={1280450.0} /></Typography>
-          </Box>
-        </Box>
+        </p>
+        <div className="flex flex-wrap gap-8">
+          <div>
+            <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">
+              Saldo em Caixa (Dinheiro):
+            </span>
+            <span className="text-xl font-bold text-slate-900 dark:text-white">
+              <KzAmount value={345200.0} />
+            </span>
+          </div>
+          <div>
+            <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">
+              Multicaixa (TPA):
+            </span>
+            <span className="text-xl font-bold text-slate-900 dark:text-white">
+              <KzAmount value={1280450.0} />
+            </span>
+          </div>
+        </div>
       </GlassCard>
-    </Box>
+    </div>
   );
 };

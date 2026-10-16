@@ -1,16 +1,14 @@
 import React from 'react';
-import styled from 'styled-components';
-import { Box, Typography } from '@mui/material';
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import PointOfSaleIcon from '@mui/icons-material/PointOfSale';
-import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
-import Inventory2Icon from '@mui/icons-material/Inventory2';
-import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
-import BadgeIcon from '@mui/icons-material/Badge';
-import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
-import SettingsIcon from '@mui/icons-material/Settings';
-import { useUiStore } from '../../stores/uiStore';
-import { tokens } from '../../theme/designTokens';
+import {
+  LayoutDashboard,
+  Receipt,
+  FileText,
+  Boxes,
+  Wallet,
+  Users,
+  Scale,
+  Settings,
+} from 'lucide-react';
 
 export type ModuleKey =
   | 'dashboard'
@@ -27,131 +25,58 @@ interface SidebarProps {
   onSelectModule: (module: ModuleKey) => void;
 }
 
-const SidebarContainer = styled.aside<{ $mode: 'light' | 'dark' }>`
-  width: 260px;
-  background: ${({ $mode }) => tokens[$mode].bgSidebar};
-  border-right: 1px solid ${({ $mode }) => tokens[$mode].border};
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  position: sticky;
-  top: 0;
-  flex-shrink: 0;
-`;
-
-const BrandSection = styled.div<{ $mode: 'light' | 'dark' }>`
-  height: 64px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 24px;
-  border-bottom: 1px solid ${({ $mode }) => tokens[$mode].border};
-`;
-
-const NavList = styled.nav`
-  flex: 1;
-  padding: 16px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow-y: auto;
-`;
-
-const NavItem = styled.button<{ $active: boolean; $mode: 'light' | 'dark' }>`
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 14px;
-  border-radius: 8px;
-  border: none;
-  background: ${({ $active, $mode }) =>
-    $active
-      ? $mode === 'light'
-        ? 'rgba(13, 92, 58, 0.12)'
-        : 'rgba(16, 185, 129, 0.18)'
-      : 'transparent'};
-  color: ${({ $active, $mode }) =>
-    $active
-      ? tokens[$mode].emeraldPrimary
-      : tokens[$mode].textSecondary};
-  font-family: var(--font-primary);
-  font-size: 0.875rem;
-  font-weight: ${({ $active }) => ($active ? '700' : '500')};
-  cursor: pointer;
-  text-align: left;
-  transition: all 0.15s ease;
-
-  &:hover {
-    background: ${({ $mode, $active }) =>
-      $active
-        ? $mode === 'light'
-          ? 'rgba(13, 92, 58, 0.16)'
-          : 'rgba(16, 185, 129, 0.22)'
-        : $mode === 'light'
-        ? 'rgba(0, 0, 0, 0.04)'
-        : 'rgba(255, 255, 255, 0.05)'};
-    color: ${({ $mode }) => tokens[$mode].textPrimary};
-  }
-`;
-
-const NAV_ITEMS: Array<{ key: ModuleKey; label: string; icon: React.ReactElement }> = [
-  { key: 'dashboard', label: 'Dashboard Executivo', icon: <DashboardIcon fontSize="small" /> },
-  { key: 'pos', label: 'POS / Caixa Rápido', icon: <PointOfSaleIcon fontSize="small" /> },
-  { key: 'invoicing', label: 'Faturação AGT', icon: <ReceiptLongIcon fontSize="small" /> },
-  { key: 'inventory', label: 'Artigos & Armazéns', icon: <Inventory2Icon fontSize="small" /> },
-  { key: 'treasury', label: 'Tesouraria & Caixa', icon: <AccountBalanceWalletIcon fontSize="small" /> },
-  { key: 'payroll', label: 'Recursos Humanos', icon: <BadgeIcon fontSize="small" /> },
-  { key: 'accounting', label: 'Contabilidade PGC', icon: <AccountBalanceIcon fontSize="small" /> },
-  { key: 'settings', label: 'Configurações & SAF-T', icon: <SettingsIcon fontSize="small" /> },
+const NAV_ITEMS: Array<{ key: ModuleKey; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+  { key: 'dashboard', label: 'Dashboard Executivo', icon: LayoutDashboard },
+  { key: 'pos', label: 'POS / Caixa Rápido', icon: Receipt },
+  { key: 'invoicing', label: 'Faturação AGT', icon: FileText },
+  { key: 'inventory', label: 'Artigos & Armazéns', icon: Boxes },
+  { key: 'treasury', label: 'Tesouraria & Caixa', icon: Wallet },
+  { key: 'payroll', label: 'Recursos Humanos', icon: Users },
+  { key: 'accounting', label: 'Contabilidade PGC', icon: Scale },
+  { key: 'settings', label: 'Configurações & SAF-T', icon: Settings },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onSelectModule }) => {
-  const themeMode = useUiStore((s) => s.themeMode);
-
   return (
-    <SidebarContainer $mode={themeMode} className="no-print">
-      <BrandSection $mode={themeMode}>
-        <Box
-          sx={{
-            width: 32,
-            height: 32,
-            borderRadius: 1.5,
-            bgcolor: tokens[themeMode].emeraldPrimary,
-            color: '#FFFFFF',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: 800,
-            fontSize: '1.1rem',
-            boxShadow: '0 2px 8px rgba(13, 92, 58, 0.3)',
-          }}
-        >
+    <aside className="no-print w-64 h-screen sticky top-0 flex-shrink-0 flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-colors">
+      <div className="h-16 px-6 flex items-center gap-3 border-b border-slate-200 dark:border-slate-800">
+        <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center font-extrabold text-base shadow-sm">
           K
-        </Box>
-        <Box>
-          <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.1, letterSpacing: '-0.02em' }}>
-            Kudiba <span style={{ color: tokens[themeMode].goldPrimary }}>ERP</span>
-          </Typography>
-          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.7rem' }}>
+        </div>
+        <div>
+          <h1 className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight">
+            Kudiba <span className="text-amber-600 dark:text-amber-400">ERP</span>
+          </h1>
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium tracking-wide">
             Angola Fiscal v2026
-          </Typography>
-        </Box>
-      </BrandSection>
+          </p>
+        </div>
+      </div>
 
-      <NavList>
-        {NAV_ITEMS.map((item) => (
-          <NavItem
-            key={item.key}
-            $active={activeModule === item.key}
-            $mode={themeMode}
-            onClick={() => onSelectModule(item.key)}
-          >
-            {item.icon}
-            {item.label}
-          </NavItem>
-        ))}
-      </NavList>
-    </SidebarContainer>
+      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeModule === item.key;
+          return (
+            <button
+              key={item.key}
+              onClick={() => onSelectModule(item.key)}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150 text-left ${
+                isActive
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-400 font-bold shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+              }`}
+            >
+              <Icon
+                className={`w-4 h-4 ${
+                  isActive ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'
+                }`}
+              />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </aside>
   );
 };

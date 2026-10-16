@@ -1,48 +1,28 @@
 import React from 'react';
-import styled from 'styled-components';
-import { useUiStore } from '../../stores/uiStore';
-import { tokens } from '../../theme/designTokens';
-
-import { SxProps, Theme } from '@mui/material';
 
 interface GlassCardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
   elevation?: 'flat' | 'glow';
   className?: string;
-  sx?: SxProps<Theme>;
 }
-
-const StyledCard = styled.div<{ $mode: 'light' | 'dark'; $elevation: 'flat' | 'glow' }>`
-  background: ${({ $mode }) => tokens[$mode].glassBg};
-  border: 1px solid ${({ $mode }) => tokens[$mode].glassBorder};
-  border-radius: ${tokens.radius.lg};
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: ${({ $elevation, $mode }) =>
-    $elevation === 'glow'
-      ? $mode === 'light'
-        ? '0 12px 36px rgba(13, 92, 58, 0.12)'
-        : '0 12px 36px rgba(16, 185, 129, 0.14)'
-      : tokens.shadows.card};
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-
-  &:hover {
-    border-color: ${({ $mode }) =>
-      $mode === 'light' ? 'rgba(13, 92, 58, 0.3)' : 'rgba(16, 185, 129, 0.38)'};
-  }
-`;
 
 export const GlassCard: React.FC<GlassCardProps> = ({
   children,
   elevation = 'flat',
-  className,
+  className = '',
   ...props
 }) => {
-  const themeMode = useUiStore((s) => s.themeMode);
+  const elevationClass =
+    elevation === 'glow'
+      ? 'shadow-[0_12px_36px_rgba(13,92,58,0.12)] border-emerald-500/30'
+      : 'shadow-sm';
 
   return (
-    <StyledCard $mode={themeMode} $elevation={elevation} className={className} {...props}>
+    <div
+      className={`bg-white/90 dark:bg-slate-900/85 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 rounded-2xl transition-all duration-200 hover:border-emerald-600/30 ${elevationClass} ${className}`}
+      {...props}
+    >
       {children}
-    </StyledCard>
+    </div>
   );
 };

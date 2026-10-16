@@ -1,48 +1,24 @@
 import React from 'react';
-import styled from 'styled-components';
 import {
-  Box,
-  Typography,
-  Grid,
-  Button,
-  Chip,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-} from '@mui/material';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import ReceiptIcon from '@mui/icons-material/Receipt';
-import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
-import SecurityIcon from '@mui/icons-material/Security';
-import AddCircleIcon from '@mui/icons-material/AddCircle';
-import PointOfSaleIcon from '@mui/icons-material/PointOfSale';
+  TrendingUp,
+  Receipt,
+  Landmark,
+  ShieldCheck,
+  PlusCircle,
+  Store,
+  ArrowRight,
+} from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
-import { useUiStore } from '../../stores/uiStore';
-import { tokens } from '../../theme/designTokens';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
 
-const PageHeader = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-`;
+interface DashboardViewProps {
+  onNavigate: (module: string) => void;
+}
 
-const KPICard = styled(GlassCard)`
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-`;
-
-export const DashboardView: React.FC<{ onNavigate: (module: string) => void }> = ({ onNavigate }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   const { activeTenant } = useAuthStore();
-  const themeMode = useUiStore((s) => s.themeMode);
 
   const mockRecentInvoices = [
     { id: 'FT 2026/00142', client: 'Sonangol E.P.', date: '16/10/2026', total: 4850000.0, status: 'ok', statusText: 'Assinada AGT' },
@@ -52,169 +28,161 @@ export const DashboardView: React.FC<{ onNavigate: (module: string) => void }> =
   ];
 
   return (
-    <Box>
-      <PageHeader>
-        <Box>
-          <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
             Painel Executivo Financeiro
-          </Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            {activeTenant?.name || 'Kudiba Organização'} • NIF {activeTenant?.taxId || '5417892341'}
-          </Typography>
-        </Box>
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            {activeTenant?.name || 'Kudiba Organização'} • NIF {activeTenant?.taxId || '5001234567'}
+          </p>
+        </div>
 
-        <Box sx={{ display: 'flex', gap: 1.5 }}>
-          <Button
-            variant="outlined"
-            startIcon={<PointOfSaleIcon />}
+        <div className="flex items-center gap-3">
+          <button
             onClick={() => onNavigate('pos')}
-            sx={{
-              borderColor: tokens[themeMode].emeraldPrimary,
-              color: tokens[themeMode].emeraldPrimary,
-              fontWeight: 700,
-            }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-600/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-sm font-bold transition-all shadow-xs"
           >
-            Terminal POS
-          </Button>
+            <Store className="w-4 h-4" />
+            <span>Terminal POS</span>
+          </button>
 
-          <Button
-            variant="contained"
-            startIcon={<AddCircleIcon />}
+          <button
             onClick={() => onNavigate('invoicing')}
-            sx={{
-              bgcolor: tokens[themeMode].emeraldPrimary,
-              '&:hover': { bgcolor: tokens[themeMode].emeraldLight },
-              fontWeight: 700,
-            }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-bold shadow-md shadow-emerald-700/20 transition-all"
           >
-            Emitir Fatura
-          </Button>
-        </Box>
-      </PageHeader>
+            <PlusCircle className="w-4 h-4" />
+            <span>Emitir Fatura</span>
+          </button>
+        </div>
+      </div>
 
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <KPICard>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase' }}>
-                Faturação do Mês
-              </Typography>
-              <TrendingUpIcon sx={{ color: tokens[themeMode].emeraldPrimary, fontSize: 20 }} />
-            </Box>
-            <Typography variant="h5" sx={{ fontWeight: 700 }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <GlassCard className="p-5 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Faturação do Mês
+            </span>
+            <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div className="my-3">
+            <div className="text-2xl font-bold text-slate-900 dark:text-white">
               <KzAmount value={18420500.0} />
-            </Typography>
-            <Typography variant="caption" sx={{ color: tokens[themeMode].status.ok, fontWeight: 600 }}>
-              +14,2% face ao mês anterior
-            </Typography>
-          </KPICard>
-        </Grid>
+            </div>
+          </div>
+          <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+            +14,2% face ao mês anterior
+          </span>
+        </GlassCard>
 
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <KPICard>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase' }}>
-                IVA Liquidado (14%)
-              </Typography>
-              <AccountBalanceIcon sx={{ color: tokens[themeMode].goldPrimary, fontSize: 20 }} />
-            </Box>
-            <Typography variant="h5" sx={{ fontWeight: 700 }}>
+        <GlassCard className="p-5 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              IVA Liquidado (14%)
+            </span>
+            <Landmark className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div className="my-3">
+            <div className="text-2xl font-bold text-slate-900 dark:text-white">
               <KzAmount value={2578870.0} />
-            </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-              Apuramento SAF-T em curso
-            </Typography>
-          </KPICard>
-        </Grid>
+            </div>
+          </div>
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            Apuramento SAF-T em curso
+          </span>
+        </GlassCard>
 
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <KPICard>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase' }}>
-                Retenção na Fonte (6,5%)
-              </Typography>
-              <ReceiptIcon sx={{ color: tokens[themeMode].emeraldPrimary, fontSize: 20 }} />
-            </Box>
-            <Typography variant="h5" sx={{ fontWeight: 700 }}>
+        <GlassCard className="p-5 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Retenção na Fonte (6,5%)
+            </span>
+            <Receipt className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div className="my-3">
+            <div className="text-2xl font-bold text-slate-900 dark:text-white">
               <KzAmount value={315250.0} />
-            </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-              Crédito tributário dedutível
-            </Typography>
-          </KPICard>
-        </Grid>
+            </div>
+          </div>
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            Crédito tributário dedutível
+          </span>
+        </GlassCard>
 
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <KPICard>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase' }}>
-                Certificação AGT
-              </Typography>
-              <SecurityIcon sx={{ color: tokens[themeMode].status.ok, fontSize: 20 }} />
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Chip
-                label="RSA-2048 Válido"
-                size="small"
-                sx={{
-                  bgcolor: `${tokens[themeMode].emeraldPrimary}20`,
-                  color: tokens[themeMode].emeraldPrimary,
-                  fontWeight: 700,
-                  fontSize: '0.75rem',
-                }}
-              />
-            </Box>
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-mono)' }}>
-              Hash J-1 Chaining: OK
-            </Typography>
-          </KPICard>
-        </Grid>
-      </Grid>
+        <GlassCard className="p-5 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Certificação AGT
+            </span>
+            <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div className="my-3">
+            <span className="inline-flex px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+              RSA-2048 Válido
+            </span>
+          </div>
+          <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
+            Hash J-1 Chaining: OK
+          </span>
+        </GlassCard>
+      </div>
 
-      <GlassCard sx={{ p: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+      <GlassCard className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">
             Últimos Documentos Fiscais Emitidos
-          </Typography>
-          <Button size="small" onClick={() => onNavigate('invoicing')} sx={{ fontWeight: 600 }}>
-            Ver Todos
-          </Button>
-        </Box>
+          </h3>
+          <button
+            onClick={() => onNavigate('invoicing')}
+            className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline"
+          >
+            <span>Ver Todos</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
 
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 700 }}>Nº Documento</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Cliente</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Data</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>Total (Kz)</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>Estado Fiscal</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-bold uppercase text-slate-500 dark:text-slate-400">
+                <th className="py-3 px-3">Nº Documento</th>
+                <th className="py-3 px-3">Cliente</th>
+                <th className="py-3 px-3">Data</th>
+                <th className="py-3 px-3 text-right">Total (Kz)</th>
+                <th className="py-3 px-3 text-center">Estado Fiscal</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {mockRecentInvoices.map((inv) => (
-                <TableRow key={inv.id} hover>
-                  <TableCell sx={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                <tr
+                  key={inv.id}
+                  className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                >
+                  <td className="py-3.5 px-3 font-mono font-bold text-slate-900 dark:text-white">
                     {inv.id}
-                  </TableCell>
-                  <TableCell>{inv.client}</TableCell>
-                  <TableCell sx={{ color: 'text.secondary', fontSize: '0.85rem' }}>{inv.date}</TableCell>
-                  <TableCell align="right">
+                  </td>
+                  <td className="py-3.5 px-3 text-slate-700 dark:text-slate-300">
+                    {inv.client}
+                  </td>
+                  <td className="py-3.5 px-3 text-xs text-slate-500 dark:text-slate-400">
+                    {inv.date}
+                  </td>
+                  <td className="py-3.5 px-3 text-right">
                     <KzAmount value={inv.total} />
-                  </TableCell>
-                  <TableCell align="center">
+                  </td>
+                  <td className="py-3.5 px-3 text-center">
                     <StatusBadge
                       status={inv.status as 'ok' | 'medio'}
                       label={inv.statusText}
                     />
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+            </tbody>
+          </table>
+        </div>
       </GlassCard>
-    </Box>
+    </div>
   );
 };

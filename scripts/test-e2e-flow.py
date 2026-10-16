@@ -62,6 +62,8 @@ def api_request(method: str, path: str, token: str = None, body: dict = None, ex
     headers = {"Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+        headers["X-Tenant-ID"] = TENANT_ID
+        headers["X-Branch-ID"] = BRANCH_ID
     data = None
     if body is not None:
         headers["Content-Type"] = "application/json"
