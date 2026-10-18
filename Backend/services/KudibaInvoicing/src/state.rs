@@ -55,6 +55,8 @@ pub struct AppState {
     pub export_saft: Arc<ExportSaftUseCase>,
     pub fiscal_reports: Arc<FiscalReportsUseCase>,
     pub pos_reports: Arc<crate::application::queries::pos_reports::PosReportsUseCase>,
+    pub dashboard_summary:
+        Arc<crate::application::queries::dashboard_summary::DashboardSummaryUseCase>,
     pub sync_agt: Arc<SyncAgtUseCase>,
     #[allow(dead_code)]
     pub event_publisher: Arc<crate::infrastructure::outbox::MultiChannelEventPublisher>,
@@ -157,6 +159,11 @@ impl AppState {
             fiscal_reports: Arc::new(FiscalReportsUseCase::new(read_session_factory.clone())),
             pos_reports: Arc::new(
                 crate::application::queries::pos_reports::PosReportsUseCase::new(
+                    read_session_factory.clone(),
+                ),
+            ),
+            dashboard_summary: Arc::new(
+                crate::application::queries::dashboard_summary::DashboardSummaryUseCase::new(
                     read_session_factory.clone(),
                 ),
             ),

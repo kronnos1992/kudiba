@@ -1,6 +1,7 @@
 import uuid
 from dataclasses import dataclass, field
-from typing import List, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 
 @dataclass(frozen=True)
@@ -9,6 +10,7 @@ class BranchSummaryDto:
     code: str
     name: str
     city: Optional[str] = None
+    address_detail: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -21,6 +23,99 @@ class TenantSummaryDto:
     permissions: List[str]
     default_branch: Optional[BranchSummaryDto] = None
     branches: List[BranchSummaryDto] = field(default_factory=list)
+    subscribed_modules: List[str] = field(default_factory=list)
+    license_valid_until: Optional[datetime] = None
+    trade_name: Optional[str] = None
+    address_detail: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: str = "AO"
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    website: Optional[str] = None
+    logo_data_url: Optional[str] = None
+    commercial_registry: Optional[str] = None
+    share_capital: Optional[str] = None
+    currency: str = "AOA"
+    tax_regime_code: str = "REGIME_GERAL"
+    tax_office_code: Optional[str] = None
+    agt_cert_number: Optional[str] = None
+    default_withholding_rate: float = 6.50
+    invoice_footer_notes: Optional[str] = None
+    bank_accounts: List[Dict[str, Any]] = field(default_factory=list)
+    onboarding_completed: bool = False
+
+
+@dataclass(frozen=True)
+class TenantSettingsDto:
+    id: uuid.UUID
+    slug: str
+    company_name: str
+    trade_name: Optional[str]
+    nif: str
+    address_detail: Optional[str]
+    city: Optional[str]
+    province: Optional[str]
+    postal_code: Optional[str]
+    country: str
+    phone: Optional[str]
+    email: Optional[str]
+    website: Optional[str]
+    logo_data_url: Optional[str]
+    commercial_registry: Optional[str]
+    share_capital: Optional[str]
+    currency: str
+    tax_regime_code: str
+    tax_office_code: Optional[str]
+    agt_cert_number: Optional[str]
+    default_withholding_rate: float
+    invoice_footer_notes: Optional[str]
+    bank_accounts: List[Dict[str, Any]]
+    onboarding_completed: bool
+    status: str
+    subscribed_modules: List[str] = field(default_factory=list)
+    license_valid_until: Optional[datetime] = None
+
+
+@dataclass(frozen=True)
+class UpdateTenantSettingsCommand:
+    tenant_id: uuid.UUID
+    actor_user_id: uuid.UUID
+    company_name: Optional[str] = None
+    trade_name: Optional[str] = None
+    nif: Optional[str] = None
+    address_detail: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    website: Optional[str] = None
+    logo_data_url: Optional[str] = None
+    commercial_registry: Optional[str] = None
+    share_capital: Optional[str] = None
+    currency: Optional[str] = None
+    tax_regime_code: Optional[str] = None
+    tax_office_code: Optional[str] = None
+    agt_cert_number: Optional[str] = None
+    default_withholding_rate: Optional[float] = None
+    invoice_footer_notes: Optional[str] = None
+    bank_accounts: Optional[List[Dict[str, Any]]] = None
+    onboarding_completed: Optional[bool] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CreateBranchCommand:
+    tenant_id: uuid.UUID
+    actor_user_id: uuid.UUID
+    code: str
+    name: str
+    city: Optional[str] = None
+    address_detail: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -113,3 +208,4 @@ class UserProfileDto:
     is_superadmin: bool
     phone_number: Optional[str] = None
     tenants: List[TenantSummaryDto] = field(default_factory=list)
+

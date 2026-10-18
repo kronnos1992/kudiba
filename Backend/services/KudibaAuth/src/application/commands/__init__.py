@@ -4,6 +4,10 @@ from src.application.commands.logout_user import LogoutUserUseCase
 from src.application.commands.switch_tenant import SwitchTenantUseCase
 from src.application.commands.invite_user import InviteUserUseCase
 from src.application.commands.update_user_roles import UpdateUserRolesUseCase
+from src.application.commands.update_tenant_settings import (
+    CreateBranchUseCase,
+    UpdateTenantSettingsUseCase,
+)
 
 __all__ = [
     "AuthenticateUserUseCase",
@@ -12,4 +16,7 @@ __all__ = [
     "SwitchTenantUseCase",
     "InviteUserUseCase",
     "UpdateUserRolesUseCase",
+    "UpdateTenantSettingsUseCase",
+    "CreateBranchUseCase",
 ]
+

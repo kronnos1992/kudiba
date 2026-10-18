@@ -1,6 +1,18 @@
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
-from src.application.dto import EmployeePayslipSummary, PeriodSummaryResponse, VacationBalanceResponse
+from src.application.dto import (
+    AnnualPayrollSummary,
+    EmployeePayslipSummary,
+    EmployeeStatusCounts,
+    MonthlyPayrollPoint,
+    OrganizationSummary,
+    PayrollDashboardSummaryResponse,
+    PayrollPeriodTotals,
+    PeriodSummaryResponse,
+    VacationBalanceResponse,
+)
 from src.domain.entities.contract import Contract
 from src.domain.entities.employee import Employee
 from src.domain.entities.payroll_period import PayrollPeriod
@@ -9,7 +21,9 @@ from src.domain.error import EntityNotFoundError
 from src.domain.ports.contract_repository import ContractRepository
 from src.domain.ports.employee_repository import EmployeeRepository
 from src.domain.ports.hr_repository import HrRepository
+from src.domain.ports.organization_repository import OrganizationRepository
 from src.domain.ports.payroll_repository import PayrollRepository
+from src.domain.value_objects.enums import EmployeeStatus
 
 
 class GetEmployeeUseCase:
@@ -157,4 +171,92 @@ class GetVacationBalanceUseCase:
             used_days=balance.used_days,
             pending_days=balance.pending_days,
             available_days=balance.available_days,
+        )
+
+
+class GetDashboardSummaryUseCase:
+    def __init__(
+        self,
+        employee_repo: EmployeeRepository,
+        payroll_repo: PayrollRepository,
+        org_repo: OrganizationRepository,
+    ):
+        self.employee_repo = employee_repo
+        self.payroll_repo = payroll_repo
+        self.org_repo = org_repo
+
+    async def execute(
+        self, tenant_id: UUID, year: Optional[int] = None
+    ) -> PayrollDashboardSummaryResponse:
+        target_year = year or datetime.now(timezone.utc).year
+
+        status_counts = await self.employee_repo.count_by_status(tenant_id)
+        employees = EmployeeStatusCounts(
+            total=sum(status_counts.values()),
+            active=status_counts.get(EmployeeStatus.ACTIVE.value, 0),
+            on_leave=status_counts.get(EmployeeStatus.ON_LEAVE.value, 0),
+            suspended=status_counts.get(EmployeeStatus.SUSPENDED.value, 0),
+            terminated=status_counts.get(EmployeeStatus.TERMINATED.value, 0),
+        )
+
+        departments = await self.org_repo.list_departments(tenant_id)
+        job_positions = await self.org_repo.list_job_positions(tenant_id)
+
+        periods = await self.payroll_repo.list_periods(tenant_id)
+        latest = periods[0] if periods else None
+        latest_period = (
+            PayrollPeriodTotals(
+                period_id=latest.id,
+                title=latest.title,
+                year=latest.year,
+                month=latest.month,
+                status=latest.status,
+                total_gross=latest.total_gross,
+                total_net=latest.total_net,
+                total_irt=latest.total_irt,
+                total_inss_employee=latest.total_inss_employee,
+                total_inss_employer=latest.total_inss_employer,
+            )
+            if latest
+            else None
+        )
+
+        year_periods = [p for p in periods if p.year == target_year]
+        monthly = sorted(
+            [
+                MonthlyPayrollPoint(
+                    month=p.month,
+                    status=p.status,
+                    total_gross=p.total_gross,
+                    total_net=p.total_net,
+                )
+                for p in year_periods
+            ],
+            key=lambda point: point.month,
+        )
+
+        annual = AnnualPayrollSummary(
+            year=target_year,
+            periods_processed=len(year_periods),
+            total_gross=sum((p.total_gross for p in year_periods), Decimal("0.00")),
+            total_net=sum((p.total_net for p in year_periods), Decimal("0.00")),
+            total_irt=sum((p.total_irt for p in year_periods), Decimal("0.00")),
+            total_inss_employee=sum(
+                (p.total_inss_employee for p in year_periods), Decimal("0.00")
+            ),
+            total_inss_employer=sum(
+                (p.total_inss_employer for p in year_periods), Decimal("0.00")
+            ),
+            monthly=monthly,
+        )
+
+        return PayrollDashboardSummaryResponse(
+            generated_at=datetime.now(timezone.utc),
+            employees=employees,
+            organization=OrganizationSummary(
+                departments=len(departments),
+                job_positions=len(job_positions),
+            ),
+            latest_period=latest_period,
+            annual=annual,
         )

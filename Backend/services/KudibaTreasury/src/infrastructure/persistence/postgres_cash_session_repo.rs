@@ -27,8 +27,8 @@ impl CashSessionRepository for PostgresCashSessionRepository {
     ) -> Result<Option<CashSession>, DomainError> {
         let row = sqlx::query_as::<_, CashSessionRow>(
             r#"
-            SELECT id, tenant_id, register_id, operator_user_id, opened_at, closed_at,
-                   opening_balance, closing_balance_counted, closing_balance_system,
+            SELECT id, tenant_id, register_id, pos_session_id, operator_user_id, opened_at,
+                   closed_at, opening_balance, closing_balance_counted, closing_balance_system,
                    discrepancy, status, notes, created_at, updated_at
             FROM kudiba_treasury.cash_sessions
             WHERE tenant_id = $1 AND id = $2
@@ -50,8 +50,8 @@ impl CashSessionRepository for PostgresCashSessionRepository {
     ) -> Result<Option<CashSession>, DomainError> {
         let row = sqlx::query_as::<_, CashSessionRow>(
             r#"
-            SELECT id, tenant_id, register_id, operator_user_id, opened_at, closed_at,
-                   opening_balance, closing_balance_counted, closing_balance_system,
+            SELECT id, tenant_id, register_id, pos_session_id, operator_user_id, opened_at,
+                   closed_at, opening_balance, closing_balance_counted, closing_balance_system,
                    discrepancy, status, notes, created_at, updated_at
             FROM kudiba_treasury.cash_sessions
             WHERE tenant_id = $1 AND register_id = $2 AND status = $3
@@ -76,8 +76,8 @@ impl CashSessionRepository for PostgresCashSessionRepository {
     ) -> Result<Vec<CashSession>, DomainError> {
         let rows = sqlx::query_as::<_, CashSessionRow>(
             r#"
-            SELECT id, tenant_id, register_id, operator_user_id, opened_at, closed_at,
-                   opening_balance, closing_balance_counted, closing_balance_system,
+            SELECT id, tenant_id, register_id, pos_session_id, operator_user_id, opened_at,
+                   closed_at, opening_balance, closing_balance_counted, closing_balance_system,
                    discrepancy, status, notes, created_at, updated_at
             FROM kudiba_treasury.cash_sessions
             WHERE tenant_id = $1 AND register_id = $2
@@ -95,19 +95,42 @@ impl CashSessionRepository for PostgresCashSessionRepository {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    async fn count_open_by_pos_session(
+        &self,
+        tenant_id: Uuid,
+        pos_session_id: Uuid,
+    ) -> Result<i64, DomainError> {
+        let row = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM kudiba_treasury.cash_sessions
+            WHERE tenant_id = $1 AND pos_session_id = $2 AND status = $3
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(pos_session_id)
+        .bind(SessionStatus::Open)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+        Ok(row)
+    }
+
     async fn save(&self, session: &CashSession) -> Result<(), DomainError> {
         sqlx::query(
             r#"
             INSERT INTO kudiba_treasury.cash_sessions
-                (id, tenant_id, register_id, operator_user_id, opened_at, closed_at,
+                (id, tenant_id, register_id, pos_session_id, operator_user_id, opened_at, closed_at,
                  opening_balance, closing_balance_counted, closing_balance_system,
                  discrepancy, status, notes, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             "#,
         )
         .bind(session.id)
         .bind(session.tenant_id)
         .bind(session.register_id)
+        .bind(session.pos_session_id)
         .bind(&session.operator_user_id)
         .bind(session.opened_at)
         .bind(session.closed_at)

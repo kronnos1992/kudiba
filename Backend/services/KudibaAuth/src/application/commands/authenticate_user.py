@@ -11,6 +11,7 @@ from src.domain.error import (
     AccountInactiveError,
     AccountLockedError,
     InvalidCredentialsError,
+    LicenseExpiredError,
     TenantAccessForbiddenError,
 )
 from src.domain.entities.refresh_token import RefreshToken
@@ -92,7 +93,10 @@ class AuthenticateUserUseCase:
                     details={"reason": "ACCOUNT_LOCKED", "minutes": minutes},
                 )
                 await uow.commit()
-                raise AccountLockedError(minutes_remaining=minutes)
+                raise AccountLockedError(
+                    minutes_remaining=minutes,
+                    retry_after_seconds=self.security_policy.seconds_remaining(user, now),
+                )
 
             if not user.is_active:
                 raise AccountInactiveError()
@@ -139,6 +143,18 @@ class AuthenticateUserUseCase:
             tenant = await self.tenant_repo.find_by_id(tenant_id)
             if not tenant or not tenant.is_active:
                 raise TenantAccessForbiddenError("A empresa solicitada não existe ou está inactiva.")
+            if tenant.license_expired(now):
+                await self.audit_repo.record_event(
+                    action="LOGIN_BLOCKED",
+                    user_id=user.id,
+                    tenant_id=tenant_id,
+                    email_attempted=email_vo.value,
+                    ip_address=cmd.ip_address,
+                    user_agent=cmd.user_agent,
+                    details={"reason": "LICENSE_EXPIRED"},
+                )
+                await uow.commit()
+                raise LicenseExpiredError()
             tenant_slug = tenant.slug
             tenant_name = tenant.company_name
             tenant_nif = tenant.nif
@@ -164,6 +180,7 @@ class AuthenticateUserUseCase:
                 permissions=permissions,
                 tenant_slug=tenant_slug,
                 branch_id=str(branch_id) if branch_id else None,
+                modules=tenant.subscribed_modules,
             )
 
             # 8. Emite e persiste Refresh Token rotativo
@@ -191,10 +208,19 @@ class AuthenticateUserUseCase:
                 details={"roles": roles, "branch_id": str(branch_id) if branch_id else None},
             )
 
+            from src.application.queries.get_tenant_settings import build_tenant_summary_dto
+
             # Carrega filiais do tenant para o resumo
             branches = await self.tenant_repo.find_branches(tenant_id)
             branch_dtos = [
-                BranchSummaryDto(id=b.id, code=b.code, name=b.name, city=b.city) for b in branches
+                BranchSummaryDto(
+                    id=b.id,
+                    code=b.code,
+                    name=b.name,
+                    city=b.city,
+                    address_detail=b.address_detail,
+                )
+                for b in branches
             ]
 
             return AuthenticationResult(
@@ -208,14 +234,12 @@ class AuthenticateUserUseCase:
                     full_name=user.full_name,
                     is_superadmin=user.is_superadmin,
                 ),
-                active_tenant=TenantSummaryDto(
-                    id=tenant_id,
-                    slug=tenant_slug,
-                    company_name=tenant_name,
-                    nif=tenant_nif,
+                active_tenant=build_tenant_summary_dto(
+                    tenant=tenant,
                     roles=roles,
                     permissions=permissions,
                     default_branch=branch_dto,
                     branches=branch_dtos,
                 ),
             )
+

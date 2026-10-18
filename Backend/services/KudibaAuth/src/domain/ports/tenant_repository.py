@@ -25,3 +25,8 @@ class ITenantRepository(ABC):
     @abstractmethod
     async def save_branch(self, branch: Branch) -> None:
         pass
+
+    @abstractmethod
+    async def update_tenant(self, tenant: Tenant) -> Tenant:
+        pass
+

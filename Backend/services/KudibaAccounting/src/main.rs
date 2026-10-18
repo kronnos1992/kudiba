@@ -7,8 +7,8 @@ use kudiba_accounting::config::Config;
 use kudiba_accounting::presentation::http::create_router;
 use kudiba_accounting::state::AppState;
 
-const MAX_DB_CONNECT_ATTEMPTS: u32 = 10;
-const DB_CONNECT_RETRY_DELAY: Duration = Duration::from_secs(3);
+const MAX_DB_CONNECT_ATTEMPTS: u32 = 2;
+const DB_CONNECT_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,7 +23,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = Config::from_env();
     let pool = connect_with_retry(&config).await?;
-    ensure_schema(&pool).await?;
+    if let Err(err) = ensure_schema(&pool).await {
+        tracing::warn!("Aviso: não foi possível verificar schema inicial de contabilidade ({}).", err);
+    }
 
     let app_state = AppState::new(config.clone(), pool);
 
@@ -67,7 +69,13 @@ async fn connect_with_retry(config: &Config) -> Result<sqlx::PgPool, sqlx::Error
                 attempt += 1;
                 tokio::time::sleep(DB_CONNECT_RETRY_DELAY).await;
             }
-            Err(err) => return Err(err),
+            Err(err) => {
+                tracing::warn!(
+                    "Aviso: falha inicial na ligação ao PostgreSQL ({}). KudibaAccounting em modo degradado.",
+                    err
+                );
+                return config.create_lazy_db_pool();
+            }
         }
     }
 }

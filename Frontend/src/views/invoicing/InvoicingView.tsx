@@ -72,7 +72,7 @@ export const InvoicingView: React.FC = () => {
   });
 
   // Formulário de Novo Documento
-  const [docType, setDocType] = useState<'FT' | 'FR' | 'NC' | 'ND'>('FT');
+  const [docType, setDocType] = useState<'FT' | 'FR' | 'NC' | 'ND' | 'GT' | 'GR'>('FT');
   const [seriesCode, setSeriesCode] = useState<string>('2026A');
   const [customerName, setCustomerName] = useState<string>('');
   const [customerNif, setCustomerNif] = useState<string>('5000123456');
@@ -80,6 +80,18 @@ export const InvoicingView: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<string>('NUMERARIO');
   const [applyWithholding, setApplyWithholding] = useState<boolean>(false);
   const [sourceDocNumber, setSourceDocNumber] = useState<string>('');
+
+  // Dados de Transporte (GT / GR)
+  const [vehiclePlateNumber, setVehiclePlateNumber] = useState<string>('LD-45-89-AO');
+  const [loadingAddress, setLoadingAddress] = useState<string>('Armazém Central Luanda');
+  const [loadingCity, setLoadingCity] = useState<string>('Luanda');
+  const [loadingDateTime, setLoadingDateTime] = useState<string>(new Date().toISOString().slice(0, 16));
+  const [unloadingAddress, setUnloadingAddress] = useState<string>('Armazém Destino Viana');
+  const [unloadingCity, setUnloadingCity] = useState<string>('Luanda');
+  const [unloadingDateTime, setUnloadingDateTime] = useState<string>(new Date(Date.now() + 86400000).toISOString().slice(0, 16));
+
+  const [saftValidationResult, setSaftValidationResult] = useState<{ isValid: boolean; errors?: string[] } | null>(null);
+  const [isValidatingSaft, setIsValidatingSaft] = useState<boolean>(false);
 
   const [lines, setLines] = useState<
     Array<{
@@ -110,12 +122,26 @@ export const InvoicingView: React.FC = () => {
   const servicesSubtotal = lines
     .filter((l) => l.isService)
     .reduce((acc, l) => acc + l.quantity * l.unitPrice, 0);
-  const withholdingSubtotal = applyWithholding ? servicesSubtotal * 0.065 : 0;
+  const defaultWithholdingRate = activeTenant?.default_withholding_rate ?? 6.5;
+  const withholdingSubtotal = applyWithholding
+    ? servicesSubtotal * (defaultWithholdingRate / 100)
+    : 0;
   const totalAmount = netSubtotal + taxSubtotal - withholdingSubtotal;
 
   // Mutations
   const issueMutation = useMutation({
-    mutationFn: (payload: IssueInvoicePayload) => invoicingApi.issueInvoice(payload),
+    mutationFn: async (payload: IssueInvoicePayload) => {
+      const issued = await invoicingApi.issueInvoice(payload);
+      const id = issued.invoiceId || issued.id;
+      if (id) {
+        try {
+          return await invoicingApi.getInvoice(id);
+        } catch {
+          return issued as unknown as Invoice;
+        }
+      }
+      return issued as unknown as Invoice;
+    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: ['series'] });
@@ -240,12 +266,67 @@ export const InvoicingView: React.FC = () => {
     );
   };
 
+  const handleValidateSaft = async () => {
+    try {
+      setIsValidatingSaft(true);
+      setSaftValidationResult(null);
+      const blob = await invoicingApi.exportSaftXml(saftStart, saftEnd);
+      const text = await blob.text();
+      const res = await invoicingApi.validateSaftXml(text);
+      setSaftValidationResult(res);
+    } catch (err: any) {
+      setSaftValidationResult({
+        isValid: false,
+        errors: [err?.response?.data?.detail || 'Erro ao comunicar com validador XSD da AGT.'],
+      });
+    } finally {
+      setIsValidatingSaft(false);
+    }
+  };
+
+  const handleDownloadTaxPdf = async () => {
+    try {
+      const blob = await invoicingApi.getTaxReportPdf(saftStart, saftEnd);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Mapa_IVA_2026_${activeTenant?.taxId || 'Kudiba'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert('Erro ao transferir Mapa de Impostos em PDF.');
+    }
+  };
+
+  const handleDownloadTaxExcel = async () => {
+    try {
+      const blob = await invoicingApi.getTaxReportExcel(saftStart, saftEnd);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Mapa_IVA_2026_${activeTenant?.taxId || 'Kudiba'}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert('Erro ao transferir Mapa de Impostos em Excel.');
+    }
+  };
+
   const handleIssueSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeTenant?.id) return;
 
     if ((docType === 'NC' || docType === 'ND') && !sourceDocNumber.trim()) {
       alert('Notas de Crédito e Débito exigem referência ao documento retificado.');
+      return;
+    }
+
+    if ((docType === 'GT' || docType === 'GR') && !vehiclePlateNumber.trim()) {
+      alert('Guias de Transporte e Remessa exigem a matrícula da viatura conforme regras da AGT.');
       return;
     }
 
@@ -263,6 +344,13 @@ export const InvoicingView: React.FC = () => {
       paymentMethods: [paymentMethod],
       applyWithholding,
       withholdingRate: applyWithholding ? 6.5 : undefined,
+      vehiclePlateNumber: (docType === 'GT' || docType === 'GR') ? vehiclePlateNumber : undefined,
+      loadingAddress: (docType === 'GT' || docType === 'GR') ? loadingAddress : undefined,
+      loadingCity: (docType === 'GT' || docType === 'GR') ? loadingCity : undefined,
+      loadingDateTime: (docType === 'GT' || docType === 'GR') ? loadingDateTime : undefined,
+      unloadingAddress: (docType === 'GT' || docType === 'GR') ? unloadingAddress : undefined,
+      unloadingCity: (docType === 'GT' || docType === 'GR') ? unloadingCity : undefined,
+      unloadingDateTime: (docType === 'GT' || docType === 'GR') ? unloadingDateTime : undefined,
       lines: lines.map((l) => ({
         productCode: l.productCode,
         description: l.description,
@@ -290,20 +378,20 @@ export const InvoicingView: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header com Abas */}
-      <div className="no-print flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+      <div className="no-print flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4">
+        <div className="min-w-0">
+          <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
             Faturação &amp; Gestão Fiscal AGT
           </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Emissão certificada (Dec. Pres. n.º 71/25 &amp; 385/20) • Chave RSA-2048 ativa
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
           <button
             onClick={() => setActiveTab('invoices')}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
               activeTab === 'invoices'
                 ? 'bg-emerald-700 text-white shadow-xs'
                 : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50'
@@ -315,7 +403,7 @@ export const InvoicingView: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('new_invoice')}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
               activeTab === 'new_invoice'
                 ? 'bg-emerald-700 text-white shadow-xs'
                 : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50'
@@ -327,7 +415,7 @@ export const InvoicingView: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('series')}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
               activeTab === 'series'
                 ? 'bg-emerald-700 text-white shadow-xs'
                 : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50'
@@ -339,7 +427,7 @@ export const InvoicingView: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('saft')}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
               activeTab === 'saft'
                 ? 'bg-emerald-700 text-white shadow-xs'
                 : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50'
@@ -442,7 +530,7 @@ export const InvoicingView: React.FC = () => {
                             {inv.documentType}
                           </span>
                         </td>
-                        <td className="py-3 px-3 font-mono font-bold text-slate-900 dark:text-white">
+                        <td className="py-3 px-3 font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
                           {inv.documentNumber}
                         </td>
                         <td className="py-3 px-3">
@@ -453,16 +541,16 @@ export const InvoicingView: React.FC = () => {
                             NIF: {inv.customerNif || 'Consumidor Final'}
                           </p>
                         </td>
-                        <td className="py-3 px-3 text-xs text-slate-500 dark:text-slate-400">
+                        <td className="py-3 px-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
                           {inv.issuedAt ? new Date(inv.issuedAt).toLocaleDateString('pt-AO') : '—'}
                         </td>
-                        <td className="py-3 px-3 text-right">
+                        <td className="py-3 px-3 text-right whitespace-nowrap">
                           <KzAmount value={inv.netTotal} />
                         </td>
-                        <td className="py-3 px-3 text-right">
+                        <td className="py-3 px-3 text-right whitespace-nowrap">
                           <KzAmount value={inv.taxTotal} />
                         </td>
-                        <td className="py-3 px-3 text-right font-bold">
+                        <td className="py-3 px-3 text-right font-bold whitespace-nowrap">
                           <KzAmount value={inv.grossTotal} />
                         </td>
                         <td className="py-3 px-3 text-center">
@@ -518,8 +606,8 @@ export const InvoicingView: React.FC = () => {
       {activeTab === 'new_invoice' && (
         <form onSubmit={handleIssueSubmit} className="space-y-6 no-print">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <GlassCard className="lg:col-span-2 p-6 space-y-6">
-              <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+            <GlassCard className="lg:col-span-2 p-4 sm:p-6 space-y-6 min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200 dark:border-slate-800">
                 <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <FileText className="w-4 h-4 text-emerald-600" />
                   Dados do Documento Fiscal
@@ -537,10 +625,12 @@ export const InvoicingView: React.FC = () => {
                     onChange={(e) => setDocType(e.target.value as any)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
-                    <option value="FT">FT — Fatura</option>
+                    <option value="FT">FT — Fatura Comercial</option>
                     <option value="FR">FR — Fatura-Recibo</option>
                     <option value="NC">NC — Nota de Crédito</option>
                     <option value="ND">ND — Nota de Débito</option>
+                    <option value="GT">GT — Guia de Transporte</option>
+                    <option value="GR">GR — Guia de Remessa</option>
                   </select>
                 </div>
 
@@ -582,6 +672,101 @@ export const InvoicingView: React.FC = () => {
                   </select>
                 </div>
               </div>
+
+              {(docType === 'GT' || docType === 'GR') && (
+                <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-blue-900 dark:text-blue-300">
+                    <Layers className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>Dados Obrigatórios de Transporte (Decreto Presidencial 71/25)</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Matrícula da Viatura
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={vehiclePlateNumber}
+                        onChange={(e) => setVehiclePlateNumber(e.target.value.toUpperCase())}
+                        placeholder="Ex: LD-01-23-AA"
+                        className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 font-mono text-sm uppercase"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Local de Carga
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          required
+                          value={loadingAddress}
+                          onChange={(e) => setLoadingAddress(e.target.value)}
+                          placeholder="Endereço de partida"
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 text-sm"
+                        />
+                        <input
+                          type="text"
+                          required
+                          value={loadingCity}
+                          onChange={(e) => setLoadingCity(e.target.value)}
+                          placeholder="Cidade"
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Local de Descarga
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          required
+                          value={unloadingAddress}
+                          onChange={(e) => setUnloadingAddress(e.target.value)}
+                          placeholder="Endereço de destino"
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 text-sm"
+                        />
+                        <input
+                          type="text"
+                          required
+                          value={unloadingCity}
+                          onChange={(e) => setUnloadingCity(e.target.value)}
+                          placeholder="Cidade"
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Data e Hora de Início do Transporte
+                      </label>
+                      <input
+                        type="datetime-local"
+                        required
+                        value={loadingDateTime}
+                        onChange={(e) => setLoadingDateTime(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 text-sm font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Previsão de Chegada
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={unloadingDateTime}
+                        onChange={(e) => setUnloadingDateTime(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 text-sm font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {(docType === 'NC' || docType === 'ND') && (
                 <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
@@ -684,8 +869,8 @@ export const InvoicingView: React.FC = () => {
                       key={idx}
                       className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3"
                     >
-                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
-                        <div className="sm:col-span-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-6 xl:grid-cols-12 gap-2.5 items-center">
+                        <div className="sm:col-span-2 xl:col-span-3">
                           <label className="block text-[11px] text-slate-500 mb-1">
                             Artigo / Código
                           </label>
@@ -703,7 +888,7 @@ export const InvoicingView: React.FC = () => {
                           </select>
                         </div>
 
-                        <div className="sm:col-span-4">
+                        <div className="sm:col-span-4 xl:col-span-4">
                           <label className="block text-[11px] text-slate-500 mb-1">
                             Descrição
                           </label>
@@ -722,7 +907,7 @@ export const InvoicingView: React.FC = () => {
                           />
                         </div>
 
-                        <div className="sm:col-span-2">
+                        <div className="sm:col-span-2 xl:col-span-2">
                           <label className="block text-[11px] text-slate-500 mb-1">
                             Preço Unit. (Kz)
                           </label>
@@ -745,7 +930,7 @@ export const InvoicingView: React.FC = () => {
                           />
                         </div>
 
-                        <div className="sm:col-span-1">
+                        <div className="sm:col-span-2 xl:col-span-1">
                           <label className="block text-[11px] text-slate-500 mb-1">Qtd</label>
                           <input
                             type="number"
@@ -765,7 +950,7 @@ export const InvoicingView: React.FC = () => {
                           />
                         </div>
 
-                        <div className="sm:col-span-1">
+                        <div className="sm:col-span-1 xl:col-span-1">
                           <label className="block text-[11px] text-slate-500 mb-1">IVA</label>
                           <select
                             value={line.taxRate}
@@ -785,7 +970,7 @@ export const InvoicingView: React.FC = () => {
                           </select>
                         </div>
 
-                        <div className="sm:col-span-1 flex justify-center pt-4">
+                        <div className="sm:col-span-1 xl:col-span-1 flex justify-end sm:justify-center sm:pt-4">
                           {lines.length > 1 && (
                             <button
                               type="button"
@@ -812,7 +997,10 @@ export const InvoicingView: React.FC = () => {
                             }
                             className="rounded text-emerald-600"
                           />
-                          <span>Prestação de Serviços (sujeito a Retenção de 6,5%)</span>
+                          <span>
+                            Prestação de Serviços (sujeito a Retenção de{' '}
+                            {defaultWithholdingRate.toString().replace('.', ',')}%)
+                          </span>
                         </label>
                       </div>
                     </div>
@@ -834,7 +1022,7 @@ export const InvoicingView: React.FC = () => {
                     <KzAmount value={netSubtotal} />
                   </div>
                   <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                    <span>IVA Liquidado (14%):</span>
+                    <span>IVA Liquidado:</span>
                     <KzAmount value={taxSubtotal} />
                   </div>
 
@@ -847,12 +1035,14 @@ export const InvoicingView: React.FC = () => {
                         className="rounded text-emerald-600"
                       />
                       <span className="font-semibold text-slate-700 dark:text-slate-300">
-                        Aplicar Retenção na Fonte (6,5%)
+                        Aplicar Retenção na Fonte ({defaultWithholdingRate.toString().replace('.', ',')}%)
                       </span>
                     </label>
                     {applyWithholding && (
                       <div className="flex justify-between text-rose-600 font-semibold mt-1.5">
-                        <span>Retenção (6,5% s/ Serviços):</span>
+                        <span>
+                          Retenção ({defaultWithholdingRate.toString().replace('.', ',')}% s/ Serviços):
+                        </span>
                         <span>- <KzAmount value={withholdingSubtotal} /></span>
                       </div>
                     )}
@@ -1026,7 +1216,7 @@ export const InvoicingView: React.FC = () => {
                 Administração Geral Tributária (AGT).
               </p>
 
-              <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">
                     Data Inicial
@@ -1051,14 +1241,79 @@ export const InvoicingView: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                onClick={handleDownloadSaft}
-                disabled={saftLoading}
-                className="w-full py-3 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-emerald-700/20"
-              >
-                <Download className="w-4 h-4" />
-                <span>{saftLoading ? 'A gerar ficheiro SAF-T XML...' : 'Exportar SAF-T (AO) XML'}</span>
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                <button
+                  onClick={handleDownloadSaft}
+                  disabled={saftLoading}
+                  className="py-2.5 px-3 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>{saftLoading ? 'A gerar SAF-T...' : 'Exportar SAF-T XML'}</span>
+                </button>
+
+                <button
+                  onClick={handleValidateSaft}
+                  disabled={isValidatingSaft || saftLoading}
+                  className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>{isValidatingSaft ? 'A validar...' : 'Validar Schema AGT'}</span>
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  Mapas Oficiais de Apuramento de IVA
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    onClick={handleDownloadTaxPdf}
+                    className="py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5"
+                  >
+                    <FileText className="w-4 h-4 text-rose-500" />
+                    <span>Mapa de Impostos (PDF)</span>
+                  </button>
+
+                  <button
+                    onClick={handleDownloadTaxExcel}
+                    className="py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5"
+                  >
+                    <Download className="w-4 h-4 text-emerald-600" />
+                    <span>Mapa de Impostos (Excel)</span>
+                  </button>
+                </div>
+              </div>
+
+              {saftValidationResult && (
+                <div
+                  className={`p-3 rounded-xl border text-xs space-y-1 ${
+                    saftValidationResult.isValid
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 font-bold">
+                    {saftValidationResult.isValid ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <span>Ficheiro SAF-T válido contra o Schema XSD da AGT.</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                        <span>Erros de conformidade detetados no SAF-T:</span>
+                      </>
+                    )}
+                  </div>
+                  {saftValidationResult.errors && saftValidationResult.errors.length > 0 && (
+                    <ul className="list-disc list-inside text-[11px] pl-1 space-y-0.5">
+                      {saftValidationResult.errors.map((err, idx) => (
+                        <li key={idx}>{err}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </GlassCard>
 
             <GlassCard className="p-6 space-y-4">
@@ -1076,7 +1331,7 @@ export const InvoicingView: React.FC = () => {
                     key={r.regimeCode}
                     className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 text-xs space-y-1"
                   >
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-wrap justify-between items-center gap-1">
                       <span className="font-bold text-slate-800 dark:text-slate-100">
                         {r.displayName}
                       </span>
@@ -1084,7 +1339,7 @@ export const InvoicingView: React.FC = () => {
                         Taxa Padrão: {r.standardRate}%
                       </span>
                     </div>
-                    <div className="flex justify-between text-slate-500 text-[11px]">
+                    <div className="flex flex-wrap justify-between text-slate-500 text-[11px] gap-1">
                       <span>Taxas Permitidas: {r.allowedRates.join('%, ')}%</span>
                       <span>Crédito Fiscal: {r.allowsInputVatCredit ? 'Sim' : 'Não'}</span>
                     </div>
@@ -1098,29 +1353,66 @@ export const InvoicingView: React.FC = () => {
 
       {/* MODAL OFICIAL A4 AGT */}
       {selectedInvoice && !thermalTicketText && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-slate-100 dark:bg-slate-900 rounded-2xl shadow-2xl max-w-2xl w-full p-6 relative my-8">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-slate-100 dark:bg-slate-900 rounded-2xl shadow-2xl max-w-2xl w-full p-3 sm:p-6 relative my-4 sm:my-8 max-h-[92vh] overflow-y-auto">
             <button
               onClick={() => setSelectedInvoice(null)}
-              className="no-print absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
+              className="no-print absolute top-3 right-3 sm:top-4 sm:right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
 
-            <div className="invoice-a4 bg-white text-slate-900 p-8 rounded-lg shadow-sm border border-slate-200">
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h3 className="text-lg font-extrabold text-emerald-800">
-                    {activeTenant?.name || 'KUDIBA COMÉRCIO GERAL, LDA'}
-                  </h3>
-                  <p className="text-xs text-slate-600">{selectedInvoice.issuerAddress}</p>
-                  <p className="text-xs text-slate-600">{selectedInvoice.issuerCity}, Angola</p>
-                  <p className="text-xs font-mono text-slate-600 font-bold mt-1">
-                    NIF: {selectedInvoice.issuerNif}
-                  </p>
+            <div className="invoice-a4 bg-white text-slate-900 p-4 sm:p-8 rounded-lg shadow-sm border border-slate-200">
+              <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
+                <div className="flex items-start gap-3">
+                  {activeTenant?.logo_data_url && (
+                    <img
+                      src={activeTenant.logo_data_url}
+                      alt="Logótipo"
+                      className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg object-contain border border-slate-200 bg-white p-1 shrink-0"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <h3 className="text-base sm:text-lg font-extrabold text-emerald-800">
+                      {activeTenant?.trade_name || activeTenant?.name || 'KUDIBA COMÉRCIO GERAL, LDA'}
+                    </h3>
+                    {activeTenant?.trade_name &&
+                      activeTenant?.name &&
+                      activeTenant.trade_name !== activeTenant.name && (
+                        <p className="text-xs font-semibold text-slate-700">{activeTenant.name}</p>
+                      )}
+                    <p className="text-xs text-slate-600">
+                      {activeTenant?.address_detail || selectedInvoice.issuerAddress}
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      {activeTenant?.city || selectedInvoice.issuerCity}
+                      {activeTenant?.province ? ` — ${activeTenant.province}` : ''},{' '}
+                      {activeTenant?.country === 'AO' || !activeTenant?.country
+                        ? 'Angola'
+                        : activeTenant.country}
+                    </p>
+                    <p className="text-xs font-mono text-slate-700 font-bold mt-1">
+                      NIF: {activeTenant?.nif || selectedInvoice.issuerNif}
+                      {activeTenant?.commercial_registry
+                        ? ` | Reg. Com.: ${activeTenant.commercial_registry}`
+                        : ''}
+                    </p>
+                    {activeTenant?.share_capital && (
+                      <p className="text-[11px] text-slate-500">
+                        Capital Social: {activeTenant.share_capital}
+                      </p>
+                    )}
+                    {(activeTenant?.phone || activeTenant?.email || activeTenant?.website) && (
+                      <p className="text-[11px] text-slate-500 mt-0.5 break-words">
+                        {[activeTenant?.phone, activeTenant?.email, activeTenant?.website]
+                          .filter(Boolean)
+                          .join(' • ')}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right">
-                  <h4 className="text-lg font-extrabold text-slate-900">
+                <div className="sm:text-right shrink-0">
+                  <h4 className="text-base sm:text-lg font-extrabold text-slate-900">
                     {selectedInvoice.documentNumber}
                   </h4>
                   <p className="text-xs text-slate-600">
@@ -1155,37 +1447,39 @@ export const InvoicingView: React.FC = () => {
                 )}
               </div>
 
-              <table className="w-full text-xs text-left mb-6">
-                <thead>
-                  <tr className="bg-slate-100 border-b border-slate-200 font-bold text-slate-700">
-                    <th className="py-2 px-3">Código</th>
-                    <th className="py-2 px-3">Descrição</th>
-                    <th className="py-2 px-3 text-center">Qtd</th>
-                    <th className="py-2 px-3 text-right">Preço Unit.</th>
-                    <th className="py-2 px-3 text-right">Taxa IVA</th>
-                    <th className="py-2 px-3 text-right">Total (Kz)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {selectedInvoice.lines?.map((line, i) => (
-                    <tr key={i}>
-                      <td className="py-2.5 px-3 font-mono text-slate-500">{line.productCode}</td>
-                      <td className="py-2.5 px-3 font-semibold">{line.description}</td>
-                      <td className="py-2.5 px-3 text-center font-mono">{line.quantity}</td>
-                      <td className="py-2.5 px-3 text-right font-mono">
-                        <KzAmount value={line.unitPrice} />
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono">{line.taxRate}%</td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold">
-                        <KzAmount value={line.lineTotal || line.quantity * line.unitPrice} />
-                      </td>
+              <div className="overflow-x-auto mb-6">
+                <table className="w-full text-xs text-left">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-200 font-bold text-slate-700">
+                      <th className="py-2 px-3">Código</th>
+                      <th className="py-2 px-3">Descrição</th>
+                      <th className="py-2 px-3 text-center">Qtd</th>
+                      <th className="py-2 px-3 text-right">Preço Unit.</th>
+                      <th className="py-2 px-3 text-right">Taxa IVA</th>
+                      <th className="py-2 px-3 text-right">Total (Kz)</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedInvoice.lines?.map((line, i) => (
+                      <tr key={i}>
+                        <td className="py-2.5 px-3 font-mono text-slate-500 whitespace-nowrap">{line.productCode}</td>
+                        <td className="py-2.5 px-3 font-semibold">{line.description}</td>
+                        <td className="py-2.5 px-3 text-center font-mono">{line.quantity}</td>
+                        <td className="py-2.5 px-3 text-right font-mono whitespace-nowrap">
+                          <KzAmount value={line.unitPrice} />
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono">{line.taxRate}%</td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold whitespace-nowrap">
+                          <KzAmount value={line.lineTotal || line.quantity * line.unitPrice} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
               <div className="flex justify-end mb-6">
-                <div className="w-64 space-y-1.5 text-xs">
+                <div className="w-full sm:w-64 space-y-1.5 text-xs">
                   <div className="flex justify-between text-slate-600">
                     <span>Incidência Líquida:</span>
                     <KzAmount value={selectedInvoice.netTotal} />
@@ -1196,7 +1490,9 @@ export const InvoicingView: React.FC = () => {
                   </div>
                   {selectedInvoice.withholdingTotal > 0 && (
                     <div className="flex justify-between text-rose-600">
-                      <span>Retenção na Fonte (6,5%):</span>
+                      <span>
+                        Retenção na Fonte ({defaultWithholdingRate.toString().replace('.', ',')}%):
+                      </span>
                       <KzAmount value={selectedInvoice.withholdingTotal} />
                     </div>
                   )}
@@ -1207,15 +1503,35 @@ export const InvoicingView: React.FC = () => {
                 </div>
               </div>
 
+              {activeTenant?.bank_accounts && activeTenant.bank_accounts.length > 0 && (
+                <div className="border-t border-slate-200 pt-3 mb-3 text-[11px] text-slate-600">
+                  <p className="font-bold uppercase tracking-wider text-[10px] text-slate-400 mb-1">
+                    Coordenadas Bancárias para Pagamento
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {activeTenant.bank_accounts.map((acc, idx) => (
+                      <div key={idx} className="font-mono text-[11px] break-all">
+                        <span className="font-bold text-slate-700">{acc.bank_name}:</span>{' '}
+                        {acc.iban} ({acc.currency || 'AOA'})
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="border-t border-slate-200 pt-4 text-center text-[10px] text-slate-500 space-y-1">
                 <p className="font-mono font-bold text-slate-700">
-                  {selectedInvoice.validationChars}-Processado por programa validado nº 999/AGT/2026 Kudiba ERP
+                  {selectedInvoice.validationChars}-Processado por programa validado nº{' '}
+                  {activeTenant?.agt_cert_number || '999/AGT/2026'} Kudiba ERP
                 </p>
-                <p>Os bens/serviços foram colocados à disposição do adquirente na data do documento.</p>
+                <p>
+                  {activeTenant?.invoice_footer_notes ||
+                    'Os bens/serviços foram colocados à disposição do adquirente na data do documento.'}
+                </p>
               </div>
             </div>
 
-            <div className="no-print flex items-center justify-end gap-3 mt-4">
+            <div className="no-print flex flex-wrap items-center justify-end gap-2 sm:gap-3 mt-4">
               <button
                 onClick={() => setSelectedInvoice(null)}
                 className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 transition-colors"

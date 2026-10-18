@@ -160,7 +160,25 @@ else
 fi
 wait_for_health "http://127.0.0.1:8087/health" "KudibaIntegrations" 60 || true
 
-# 8. Kudiba Gateway (HTTP :8080)
+# 8. KudibaBackoffice (FastAPI :8088)
+if lsof -i :8088 >/dev/null 2>&1 || nc -z 127.0.0.1 8088 2>/dev/null; then
+    echo "[-] KudibaBackoffice já está em execução (porta 8088 ocupada)."
+elif ! python3 -c "import uvicorn" >/dev/null 2>&1; then
+    echo "[!] KudibaBackoffice não iniciado: uvicorn indisponível."
+else
+    echo "[+] Iniciando KudibaBackoffice (HTTP :8088)..."
+    pushd "$ROOT_DIR/Backend/services/KudibaBackoffice" >/dev/null
+    PYTHONPATH=. ENVIRONMENT=development \
+    setsid nohup python3 -m uvicorn src.main:app --host 0.0.0.0 --port 8088 </dev/null > "$LOGS_DIR/kudiba-backoffice.log" 2>&1 &
+    BACKOFFICE_PID=$!
+    disown $BACKOFFICE_PID 2>/dev/null || true
+    popd >/dev/null
+    echo $BACKOFFICE_PID > "$LOGS_DIR/backoffice.pid"
+    echo "    KudibaBackoffice iniciado com PID $BACKOFFICE_PID (logs em $LOGS_DIR/kudiba-backoffice.log)"
+fi
+wait_for_health "http://127.0.0.1:8088/health" "KudibaBackoffice" 60 || true
+
+# 9. Kudiba Gateway (HTTP :8080)
 if lsof -i :8080 >/dev/null 2>&1 || nc -z 127.0.0.1 8080 2>/dev/null; then
     echo "[-] Kudiba Gateway já está em execução (porta 8080 ocupada)."
 else
@@ -177,6 +195,7 @@ else
     ACCOUNTING_SERVICE_URL=http://localhost:8085 \
     PAYROLL_SERVICE_URL=http://localhost:8086 \
     INTEGRATIONS_SERVICE_URL=http://localhost:8087 \
+    BACKOFFICE_SERVICE_URL=http://localhost:8088 \
     RUST_LOG=info,kudiba_gateway=debug \
     setsid nohup "$ROOT_DIR/Backend/target/debug/kudiba-gateway" </dev/null > "$LOGS_DIR/kudiba-gateway.log" 2>&1 &
     GATEWAY_PID=$!

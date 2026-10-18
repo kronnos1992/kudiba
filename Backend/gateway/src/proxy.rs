@@ -143,6 +143,19 @@ pub async fn forward_to_integrations(State(state): State<AppState>, req: Request
     .await
 }
 
+/// Handler de Reverse Proxy para o Backoffice B2B (KudibaBackoffice — Clientes & Licenças)
+pub async fn forward_to_backoffice(State(state): State<AppState>, req: Request) -> Response {
+    forward_request(
+        &state.http_client,
+        &state.config.backoffice_service_url,
+        req,
+        state.config.max_body_bytes,
+        None,
+        &state.config.internal_gateway_secret,
+    )
+    .await
+}
+
 pub fn compute_gateway_signature(secret: &[u8], payload: &str) -> String {
     let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret);
     let tag = ring::hmac::sign(&key, payload.as_bytes());

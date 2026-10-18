@@ -163,10 +163,16 @@ impl SaftXmlGenerator {
             "    <CompanyName>{}</CompanyName>",
             xml_escape(&meta.tenant.company_name)
         );
+        let business_name = meta
+            .tenant
+            .trade_name
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(&meta.tenant.company_name);
         let _ = writeln!(
             xml,
             "    <BusinessName>{}</BusinessName>",
-            xml_escape(&meta.tenant.company_name)
+            xml_escape(business_name)
         );
         xml.push_str("    <CompanyAddress>\n");
         let _ = writeln!(
@@ -200,6 +206,18 @@ impl SaftXmlGenerator {
             xml_escape(meta.software_version)
         );
         xml.push_str("    <HeaderComment>SAF-T (AO) Mensal gerado pelo Kudiba ERP em conformidade com o Decreto Presidencial n.º 71/25</HeaderComment>\n");
+        if let Some(phone) = meta.tenant.phone.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            let truncated: String = phone.chars().take(20).collect();
+            let _ = writeln!(xml, "    <Telephone>{}</Telephone>", xml_escape(&truncated));
+        }
+        if let Some(email) = meta.tenant.email.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            let truncated: String = email.chars().take(254).collect();
+            let _ = writeln!(xml, "    <Email>{}</Email>", xml_escape(&truncated));
+        }
+        if let Some(website) = meta.tenant.website.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            let truncated: String = website.chars().take(60).collect();
+            let _ = writeln!(xml, "    <Website>{}</Website>", xml_escape(&truncated));
+        }
         xml.push_str("  </Header>\n");
 
         Ok(())
@@ -576,13 +594,23 @@ mod tests {
             id: Uuid::new_v4(),
             slug: "demo".to_string(),
             company_name: "Kudiba Comercial Lda".to_string(),
+            trade_name: Some("Kudiba ERP".to_string()),
             nif: "5001234567".to_string(),
             address_detail: Some("Rua de teste, 1".to_string()),
             city: Some("Luanda".to_string()),
+            province: Some("Luanda".to_string()),
+            postal_code: Some("1000".to_string()),
             country: Some("AO".to_string()),
+            phone: Some("+244 923 000 111".to_string()),
+            email: Some("fiscal@kudiba.ao".to_string()),
+            website: Some("https://www.kudiba.ao".to_string()),
             commercial_registry: Some("REG-1234".to_string()),
+            share_capital: Some("5.000.000,00 AOA".to_string()),
+            currency: Some("AOA".to_string()),
             tax_office_code: Some("REP-01".to_string()),
             agt_cert_number: Some("42/AGT/2026".to_string()),
+            invoice_footer_notes: None,
+            bank_accounts: Vec::new(),
             status: "ACTIVE".to_string(),
             tax_regime_code: "REGIME_GERAL".to_string(),
             contingency_started_at: None,

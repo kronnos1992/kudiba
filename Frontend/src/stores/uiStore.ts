@@ -4,10 +4,16 @@ import { ThemeMode } from '../theme/designTokens';
 interface UiState {
   themeMode: ThemeMode;
   sidebarOpen: boolean;
+  mobileSidebarOpen: boolean;
+  sidebarCollapsed: boolean;
   toggleTheme: () => void;
   setThemeMode: (mode: ThemeMode) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
+  toggleMobileSidebar: () => void;
+  setMobileSidebarOpen: (open: boolean) => void;
+  toggleSidebarCollapsed: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
 }
 
 const getInitialTheme = (): ThemeMode => {
@@ -19,6 +25,8 @@ const getInitialTheme = (): ThemeMode => {
 export const useUiStore = create<UiState>((set) => ({
   themeMode: getInitialTheme(),
   sidebarOpen: true,
+  mobileSidebarOpen: false,
+  sidebarCollapsed: false,
 
   toggleTheme: () =>
     set((state) => {
@@ -34,4 +42,10 @@ export const useUiStore = create<UiState>((set) => ({
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+  toggleMobileSidebar: () =>
+    set((state) => ({ mobileSidebarOpen: !state.mobileSidebarOpen })),
+  setMobileSidebarOpen: (mobileSidebarOpen) => set({ mobileSidebarOpen }),
+  toggleSidebarCollapsed: () =>
+    set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+  setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
 }));

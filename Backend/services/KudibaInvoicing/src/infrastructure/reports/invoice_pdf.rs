@@ -15,6 +15,7 @@ use lopdf::{dictionary, Document, Object, Stream};
 use rust_decimal::Decimal;
 
 use crate::domain::entities::invoice::Invoice;
+use crate::domain::entities::tenant::Tenant;
 use crate::domain::error::DomainError;
 use crate::domain::services::fiscal_qr::AgtQrCodeService;
 
@@ -24,6 +25,15 @@ impl InvoicePdfGenerator {
     /// Produz o ficheiro binário PDF (formato A4) do documento fiscal
     pub fn generate_pdf(
         invoice: &Invoice,
+        company_name: &str,
+        software_cert: &str,
+    ) -> Result<Vec<u8>, DomainError> {
+        Self::generate_pdf_with_tenant(invoice, None, company_name, software_cert)
+    }
+
+    pub fn generate_pdf_with_tenant(
+        invoice: &Invoice,
+        tenant: Option<&Tenant>,
         company_name: &str,
         software_cert: &str,
     ) -> Result<Vec<u8>, DomainError> {
@@ -70,52 +80,131 @@ impl InvoicePdfGenerator {
         // 1. TOPO & CABEÇALHO DO EMITENTE E DOCUMENTO
         // =====================================================================
 
+        let display_title = tenant
+            .and_then(|t| t.trade_name.as_deref())
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| tenant.map(|t| t.company_name.as_str()))
+            .unwrap_or(company_name);
+
         // Dados do Emitente (Lado Esquerdo)
         Self::add_text(
             &mut operations,
             "F2",
-            15.0,
+            14.5,
             40.0,
-            788.0,
-            company_name,
+            792.0,
+            display_title,
             (0.1, 0.15, 0.3),
         );
 
-        let issuer_nif = invoice.issuer_nif.as_deref().unwrap_or("999999999");
+        let mut header_y = 778.0;
+        if let Some(t) = tenant {
+            if t.trade_name
+                .as_deref()
+                .is_some_and(|tr| !tr.trim().is_empty() && tr.trim() != t.company_name.trim())
+            {
+                Self::add_text(
+                    &mut operations,
+                    "F2",
+                    8.5,
+                    40.0,
+                    header_y,
+                    &t.company_name,
+                    (0.25, 0.25, 0.25),
+                );
+                header_y -= 11.0;
+            }
+        }
+
+        let issuer_nif = invoice
+            .issuer_nif
+            .as_deref()
+            .or_else(|| tenant.map(|t| t.nif.as_str()))
+            .unwrap_or("999999999");
+
+        let mut nif_line = format!("NIF: {}", issuer_nif);
+        if let Some(reg) = tenant
+            .and_then(|t| t.commercial_registry.as_deref())
+            .filter(|s| !s.trim().is_empty())
+        {
+            nif_line.push_str(&format!(" | {}", reg));
+        }
         Self::add_text(
             &mut operations,
             "F2",
-            9.5,
+            8.5,
             40.0,
-            772.0,
-            &format!("NIF: {}", issuer_nif),
+            header_y,
+            &nif_line,
             (0.2, 0.2, 0.2),
         );
+        header_y -= 11.0;
+
+        if let Some(cap) = tenant
+            .and_then(|t| t.share_capital.as_deref())
+            .filter(|s| !s.trim().is_empty())
+        {
+            Self::add_text(
+                &mut operations,
+                "F1",
+                8.0,
+                40.0,
+                header_y,
+                &format!("Capital Social: {}", cap),
+                (0.35, 0.35, 0.35),
+            );
+            header_y -= 10.5;
+        }
 
         let issuer_addr = invoice
             .issuer_address
             .as_deref()
+            .or_else(|| tenant.and_then(|t| t.address_detail.as_deref()))
             .unwrap_or("Sede Comercial");
-        let issuer_city = invoice.issuer_city.as_deref().unwrap_or("Luanda");
-        let issuer_country = invoice.issuer_country.as_deref().unwrap_or("Angola");
+        let issuer_city = invoice
+            .issuer_city
+            .as_deref()
+            .or_else(|| tenant.and_then(|t| t.city.as_deref()))
+            .unwrap_or("Luanda");
+        let issuer_country = invoice
+            .issuer_country
+            .as_deref()
+            .or_else(|| tenant.and_then(|t| t.country.as_deref()))
+            .unwrap_or("Angola");
         Self::add_text(
             &mut operations,
             "F1",
-            8.5,
+            8.0,
             40.0,
-            758.0,
-            &format!("{}, {}", issuer_addr, issuer_city),
+            header_y,
+            &format!("{}, {} - {}", issuer_addr, issuer_city, issuer_country),
             (0.35, 0.35, 0.35),
         );
-        Self::add_text(
-            &mut operations,
-            "F1",
-            8.5,
-            40.0,
-            746.0,
-            issuer_country,
-            (0.35, 0.35, 0.35),
-        );
+        header_y -= 10.5;
+
+        if let Some(t) = tenant {
+            let mut contacts = Vec::new();
+            if let Some(p) = t.phone.as_deref().filter(|s| !s.trim().is_empty()) {
+                contacts.push(format!("Tel: {}", p));
+            }
+            if let Some(e) = t.email.as_deref().filter(|s| !s.trim().is_empty()) {
+                contacts.push(e.to_string());
+            }
+            if let Some(w) = t.website.as_deref().filter(|s| !s.trim().is_empty()) {
+                contacts.push(w.to_string());
+            }
+            if !contacts.is_empty() {
+                Self::add_text(
+                    &mut operations,
+                    "F1",
+                    7.5,
+                    40.0,
+                    header_y,
+                    &contacts.join(" | "),
+                    (0.4, 0.4, 0.4),
+                );
+            }
+        }
 
         // Tipo e Identificação do Documento (Lado Direito)
         let doc_title = match invoice.document_type.as_str() {
@@ -644,6 +733,40 @@ impl InvoicePdfGenerator {
             vat_row_y -= 11.0;
         }
 
+        // 4.1b Coordenadas Bancárias (IBANs da Empresa)
+        if let Some(t) = tenant {
+            if !t.bank_accounts.is_empty() && vat_row_y > 145.0 {
+                let mut bank_y = vat_row_y - 6.0;
+                Self::add_text(
+                    &mut operations,
+                    "F2",
+                    8.0,
+                    40.0,
+                    bank_y,
+                    "COORDENADAS BANCÁRIAS PARA PAGAMENTO:",
+                    (0.12, 0.23, 0.54),
+                );
+                bank_y -= 11.0;
+                for acc in t.bank_accounts.iter().take(4) {
+                    if bank_y < 125.0 {
+                        break;
+                    }
+                    let curr = acc.currency.as_deref().unwrap_or("AOA");
+                    let bank_line = format!("• {} ({}): {}", acc.bank_name, curr, acc.iban);
+                    Self::add_text(
+                        &mut operations,
+                        "F1",
+                        7.5,
+                        42.0,
+                        bank_y,
+                        &bank_line,
+                        (0.25, 0.25, 0.25),
+                    );
+                    bank_y -= 10.0;
+                }
+            }
+        }
+
         // 4.2 Caixa de Totais Finais (Lado Direito: x=330 a x=555)
         let total_box_top = summary_y;
         let mut tot_y = total_box_top - 2.0;
@@ -853,13 +976,18 @@ impl InvoicePdfGenerator {
             (0.35, 0.35, 0.35),
         );
 
+        let footer_note = tenant
+            .and_then(|t| t.invoice_footer_notes.as_deref())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("Os bens ou serviços foram colocados à disposição do adquirente na data e local do presente documento.");
+
         Self::add_text(
             &mut operations,
             "F3",
             7.0,
             120.0,
             70.0,
-            "Os bens ou serviços foram colocados à disposição do adquirente na data e local do presente documento.",
+            footer_note,
             (0.4, 0.4, 0.4),
         );
 

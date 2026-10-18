@@ -55,4 +55,11 @@ impl Config {
             .connect(&self.database_url)
             .await
     }
+
+    pub fn create_lazy_db_pool(&self) -> Result<PgPool, sqlx::Error> {
+        PgPoolOptions::new()
+            .max_connections(self.db_max_connections)
+            .acquire_timeout(Duration::from_secs(5))
+            .connect_lazy(&self.database_url)
+    }
 }

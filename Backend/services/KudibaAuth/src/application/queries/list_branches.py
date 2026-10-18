@@ -12,7 +12,14 @@ class ListBranchesUseCase:
     async def execute(self, tenant_id: uuid.UUID) -> List[BranchSummaryDto]:
         branches = await self.tenant_repo.find_branches(tenant_id)
         return [
-            BranchSummaryDto(id=b.id, code=b.code, name=b.name, city=b.city)
+            BranchSummaryDto(
+                id=b.id,
+                code=b.code,
+                name=b.name,
+                city=b.city,
+                address_detail=b.address_detail,
+            )
             for b in branches
             if b.is_active
         ]
+

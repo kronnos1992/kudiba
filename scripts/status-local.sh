@@ -49,6 +49,7 @@ check_service "KudibaTreasury" "http://127.0.0.1:8084/health"
 check_service "KudibaAccounting" "http://127.0.0.1:8085/health"
 check_service "KudibaPayroll" "http://127.0.0.1:8086/health"
 check_service "KudibaIntegrations" "http://127.0.0.1:8087/health"
+check_service "KudibaBackoffice" "http://127.0.0.1:8088/health"
 
 echo "--- Kudiba Gateway (HTTP :8080) ---"
 if curl -s -f http://127.0.0.1:8080/health >/dev/null 2>&1; then

@@ -19,10 +19,42 @@ pub struct KudibaClaims {
     pub tenant_slug: Option<String>,
     pub branch_id: Option<String>,
     pub roles: Vec<String>,
+    /// Módulos subscritos pela licença do tenant. `None` = sem restrição
+    /// (tenants legados pré-licenças); `Some(vec![])` = nenhum módulo.
+    #[serde(default)]
+    pub modules: Option<Vec<String>>,
     pub exp: usize,
     #[serde(default)]
     pub iat: Option<usize>,
     pub jti: Option<String>,
+}
+
+/// Mapeia o caminho da API ao módulo de negócio exigido pela licença do cliente.
+/// Devolve `None` para módulos core (sempre activos: dashboard, pos, settings,
+/// auth, backoffice) e para caminhos que não pertencem a um módulo subscrito.
+pub fn required_module_for_path(path: &str) -> Option<&'static str> {
+    let clean = path.trim_end_matches('/');
+    let matches = |prefix: &str| clean == prefix || clean.starts_with(&format!("{prefix}/"));
+
+    if matches("/api/v1/fiscal") || matches("/api/v1/invoices") {
+        return Some("invoicing");
+    }
+    if matches("/api/v1/inventory") {
+        return Some("inventory");
+    }
+    if matches("/api/v1/treasury") {
+        return Some("treasury");
+    }
+    if matches("/api/v1/accounting") {
+        return Some("accounting");
+    }
+    if matches("/api/v1/payroll") {
+        return Some("payroll");
+    }
+    if matches("/api/v1/integrations") {
+        return Some("integrations");
+    }
+    None
 }
 
 pub async fn auth_middleware(
@@ -206,6 +238,25 @@ pub async fn auth_middleware(
         ).into_response();
     }
 
+    // 3b. Enforcement de Módulos da Licença:
+    // O caminho solicitado pode exigir um módulo que o cliente não subscreveu.
+    if let Some(required_module) = required_module_for_path(&path) {
+        let subscribed = match &claims.modules {
+            None => true,
+            Some(modules) => modules.iter().any(|m| m == required_module),
+        };
+        if !subscribed {
+            return ProblemDetail::new(
+                "https://api.kudiba.ao/errors/module-not-subscribed",
+                "Módulo Não Subscrito",
+                StatusCode::FORBIDDEN,
+                "A licença deste cliente não inclui o módulo solicitado. Contacte o administrador do seu Kudiba para activar o módulo.",
+                path,
+                "MODULE_NOT_SUBSCRIBED",
+            ).into_response();
+        }
+    }
+
     // Garante que o header downstream contenha o UUID canônico do tenant
     if let Ok(tenant_uuid_val) = HeaderValue::from_str(&claims.tenant_id) {
         req.headers_mut()
@@ -230,7 +281,7 @@ pub async fn auth_middleware(
 
 #[cfg(test)]
 mod tests {
-    use super::KudibaClaims;
+    use super::{required_module_for_path, KudibaClaims};
 
     #[test]
     fn claims_sem_iat_continuam_desserializaveis() {
@@ -238,6 +289,7 @@ mod tests {
         let claims: KudibaClaims =
             serde_json::from_str(json).expect("deve desserializar claims legadas");
         assert_eq!(claims.iat, None);
+        assert_eq!(claims.modules, None);
     }
 
     #[test]
@@ -247,5 +299,61 @@ mod tests {
         let claims: KudibaClaims =
             serde_json::from_str(json).expect("deve desserializar claims com iat");
         assert_eq!(claims.iat, Some(123));
+    }
+
+    #[test]
+    fn claims_com_modules_refletem_a_licenca_do_cliente() {
+        let json = r#"{"sub":"u1","tenant_id":"t1","roles":["ADMIN"],"exp":999,"modules":["invoicing","inventory"]}"#;
+        let claims: KudibaClaims =
+            serde_json::from_str(json).expect("deve desserializar claims com módulos");
+        assert_eq!(
+            claims.modules,
+            Some(vec!["invoicing".to_string(), "inventory".to_string()])
+        );
+    }
+
+    #[test]
+    fn caminhos_de_modulos_subscritos_sao_mapeados() {
+        assert_eq!(
+            required_module_for_path("/api/v1/invoices/123"),
+            Some("invoicing")
+        );
+        assert_eq!(
+            required_module_for_path("/api/v1/fiscal"),
+            Some("invoicing")
+        );
+        assert_eq!(
+            required_module_for_path("/api/v1/inventory/products"),
+            Some("inventory")
+        );
+        assert_eq!(
+            required_module_for_path("/api/v1/treasury/cash-sessions"),
+            Some("treasury")
+        );
+        assert_eq!(
+            required_module_for_path("/api/v1/payroll/runs"),
+            Some("payroll")
+        );
+        assert_eq!(
+            required_module_for_path("/api/v1/accounting/journal"),
+            Some("accounting")
+        );
+        assert_eq!(
+            required_module_for_path("/api/v1/integrations/connections"),
+            Some("integrations")
+        );
+    }
+
+    #[test]
+    fn caminhos_core_nao_exigem_modulo() {
+        assert_eq!(required_module_for_path("/api/v1/backoffice/clients"), None);
+        assert_eq!(required_module_for_path("/api/v1/auth/me"), None);
+        assert_eq!(required_module_for_path("/health"), None);
+    }
+
+    #[test]
+    fn prefixos_parciais_nao_activam_enforcement() {
+        assert_eq!(required_module_for_path("/api/v1/inventory-foo"), None);
+        assert_eq!(required_module_for_path("/api/v1/invoicing2"), None);
     }
 }

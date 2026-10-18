@@ -14,9 +14,10 @@ class KudibaClaims:
     jti: str
     tenant_slug: Optional[str] = None
     branch_id: Optional[str] = None
+    modules: Optional[List[str]] = None
 
     def to_dict(self) -> dict:
-        return {
+        payload = {
             "sub": self.sub,
             "tenant_id": self.tenant_id,
             "tenant_slug": self.tenant_slug,
@@ -27,3 +28,6 @@ class KudibaClaims:
             "iat": self.iat,
             "jti": self.jti,
         }
+        if self.modules is not None:
+            payload["modules"] = list(self.modules)
+        return payload

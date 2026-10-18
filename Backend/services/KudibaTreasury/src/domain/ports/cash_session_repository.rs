@@ -22,6 +22,11 @@ pub trait CashSessionRepository: Send + Sync {
         register_id: Uuid,
         limit: i64,
     ) -> Result<Vec<CashSession>, DomainError>;
+    async fn count_open_by_pos_session(
+        &self,
+        tenant_id: Uuid,
+        pos_session_id: Uuid,
+    ) -> Result<i64, DomainError>;
     async fn save(&self, session: &CashSession) -> Result<(), DomainError>;
     async fn update(&self, session: &CashSession) -> Result<(), DomainError>;
 }

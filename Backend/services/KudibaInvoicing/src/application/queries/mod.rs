@@ -1,4 +1,5 @@
 //! QUERY STACK — casos de uso de leitura (bypass de escrita, sem locks).
+pub mod dashboard_summary;
 pub mod export_saft;
 pub mod fiscal_reports;
 pub mod get_invoice;

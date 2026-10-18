@@ -17,13 +17,26 @@ CREATE TABLE IF NOT EXISTS kudiba_core.tenants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     slug VARCHAR(64) UNIQUE NOT NULL,
     company_name VARCHAR(255) NOT NULL,
+    trade_name VARCHAR(255),
     nif VARCHAR(20) UNIQUE NOT NULL,
     address_detail TEXT,
     city VARCHAR(128),
+    province VARCHAR(128),
+    postal_code VARCHAR(32),
     country VARCHAR(2),
+    phone VARCHAR(64),
+    email VARCHAR(255),
+    website VARCHAR(255),
+    logo_data_url TEXT,
     commercial_registry VARCHAR(64),
-    tax_office_code VARCHAR(32),
+    share_capital VARCHAR(64),
+    currency VARCHAR(3) NOT NULL DEFAULT 'AOA',
+    tax_office_code VARCHAR(128),
     agt_cert_number VARCHAR(64),
+    default_withholding_rate NUMERIC(5, 2) NOT NULL DEFAULT 6.50,
+    invoice_footer_notes TEXT,
+    bank_accounts JSONB NOT NULL DEFAULT '[]'::jsonb,
+    onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
     status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE', -- ACTIVE, SUSPENDED, CONTINGENCY
     contingency_started_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -268,9 +281,25 @@ ALTER TABLE kudiba_core.invoices
 ALTER TABLE kudiba_core.invoice_lines
     ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(18, 4) NOT NULL DEFAULT 0;
 ALTER TABLE kudiba_core.tenants
+    ADD COLUMN IF NOT EXISTS trade_name VARCHAR(255),
     ADD COLUMN IF NOT EXISTS address_detail TEXT,
     ADD COLUMN IF NOT EXISTS city VARCHAR(128),
-    ADD COLUMN IF NOT EXISTS country VARCHAR(2);
+    ADD COLUMN IF NOT EXISTS province VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS postal_code VARCHAR(32),
+    ADD COLUMN IF NOT EXISTS country VARCHAR(2),
+    ADD COLUMN IF NOT EXISTS phone VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS email VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS website VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS logo_data_url TEXT,
+    ADD COLUMN IF NOT EXISTS commercial_registry VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS share_capital VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'AOA',
+    ADD COLUMN IF NOT EXISTS tax_office_code VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS agt_cert_number VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS default_withholding_rate NUMERIC(5, 2) NOT NULL DEFAULT 6.50,
+    ADD COLUMN IF NOT EXISTS invoice_footer_notes TEXT,
+    ADD COLUMN IF NOT EXISTS bank_accounts JSONB NOT NULL DEFAULT '[]'::jsonb,
+    ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Outbox transacional para o sistema de contabilidade consumir sem perder eventos.
 CREATE TABLE IF NOT EXISTS kudiba_core.accounting_outbox (
@@ -427,13 +456,34 @@ CREATE TABLE IF NOT EXISTS kudiba_core.pos_z_reports (
 -- -----------------------------------------------------------------------------
 -- TENANT DE DEMONSTRAÇÃO
 -- -----------------------------------------------------------------------------
-INSERT INTO kudiba_core.tenants (id, slug, company_name, nif, agt_cert_number, tax_regime_code)
+INSERT INTO kudiba_core.tenants (
+    id, slug, company_name, trade_name, nif, address_detail, city, province, country,
+    phone, email, website, commercial_registry, share_capital, currency,
+    tax_office_code, agt_cert_number, tax_regime_code, default_withholding_rate,
+    invoice_footer_notes, bank_accounts, onboarding_completed
+)
 VALUES (
     'a0000000-0000-0000-0000-000000000001',
     'demo',
     'Kudiba Comercial & Serviços Lda',
+    'Kudiba Comercial',
     '5001234567',
+    'Avenida 4 de Fevereiro, Edifício Baía de Luanda, 7.º Andar',
+    'Luanda',
+    'Luanda',
+    'AO',
+    '+244 923 000 000',
+    'geral@kudiba.ao',
+    'https://kudiba.ao',
+    'CRC Luanda n.º 2026-00412',
+    '2.000.000,00 Kz',
+    'AOA',
+    '1.ª Repartição Fiscal de Luanda',
     'CERT-AGT-2026/0042',
-    'REGIME_GERAL'
+    'REGIME_GERAL',
+    6.50,
+    'Os bens e serviços foram colocados à disposição do adquirente na data e local do documento.',
+    '[{"bank_name": "Banco Angolano de Investimentos (BAI)", "iban": "AO06.0040.0000.1234.5678.9012.3", "account_number": "123456789.10.001", "swift": "BAIPAOPL", "currency": "AOA", "is_primary": true}]'::jsonb,
+    TRUE
 ) ON CONFLICT (slug) DO NOTHING;
 

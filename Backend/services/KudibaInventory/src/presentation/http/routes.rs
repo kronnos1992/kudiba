@@ -701,10 +701,28 @@ async fn process_invoice_issued_handler(
     Ok((StatusCode::OK, Json(result)))
 }
 
+async fn dashboard_summary_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let summary = state
+        .get_dashboard_summary_query
+        .execute(tenant_id)
+        .await
+        .map_err(map_domain_error)?;
+    Ok(Json(summary))
+}
+
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
         .route("/ready", get(ready_handler))
+        // Painel Executivo
+        .route(
+            "/api/v1/inventory/dashboard/summary",
+            get(dashboard_summary_handler),
+        )
         // Produtos
         .route(
             "/api/v1/inventory/products",

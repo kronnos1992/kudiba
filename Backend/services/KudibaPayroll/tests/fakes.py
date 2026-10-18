@@ -47,6 +47,14 @@ class FakeEmployeeRepository(EmployeeRepository):
     async def list_active(self, tenant_id: UUID) -> List[Employee]:
         return [e for e in self._by_id.values() if e.tenant_id == tenant_id]
 
+    async def count_by_status(self, tenant_id: UUID) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for employee in self._by_id.values():
+            if employee.tenant_id == tenant_id:
+                status = getattr(employee.status, "value", employee.status)
+                counts[status] = counts.get(status, 0) + 1
+        return counts
+
     async def save(self, employee: Employee) -> None:
         self._by_id[employee.id] = employee
         self._by_code[(employee.tenant_id, employee.code)] = employee

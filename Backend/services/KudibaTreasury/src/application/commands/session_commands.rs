@@ -6,22 +6,27 @@ use crate::application::dto::{
 };
 use crate::domain::entities::CashSession;
 use crate::domain::error::DomainError;
-use crate::domain::ports::{CashMovementRepository, CashRegisterRepository, CashSessionRepository};
+use crate::domain::ports::{
+    CashMovementRepository, CashRegisterRepository, CashSessionRepository, PosSessionRepository,
+};
 use crate::domain::services::ReconciliationService;
 
 pub struct OpenCashSessionHandler {
     register_repo: Arc<dyn CashRegisterRepository>,
     session_repo: Arc<dyn CashSessionRepository>,
+    pos_session_repo: Arc<dyn PosSessionRepository>,
 }
 
 impl OpenCashSessionHandler {
     pub fn new(
         register_repo: Arc<dyn CashRegisterRepository>,
         session_repo: Arc<dyn CashSessionRepository>,
+        pos_session_repo: Arc<dyn PosSessionRepository>,
     ) -> Self {
         Self {
             register_repo,
             session_repo,
+            pos_session_repo,
         }
     }
 
@@ -44,6 +49,17 @@ impl OpenCashSessionHandler {
             ));
         }
 
+        let pos_session = self
+            .pos_session_repo
+            .find_open_session_by_register(tenant_id, req.register_id)
+            .await?
+            .ok_or_else(|| {
+                DomainError::InvalidSessionState(format!(
+                    "O caixa '{}' não tem sessão POS aberta. Um gestor deve abrir a sessão POS antes do operador iniciar turno",
+                    register.code
+                ))
+            })?;
+
         if let Some(open_session) = self
             .session_repo
             .find_open_session_by_register(tenant_id, req.register_id)
@@ -58,6 +74,7 @@ impl OpenCashSessionHandler {
         let session = CashSession::open(
             tenant_id,
             req.register_id,
+            pos_session.id,
             req.operator_user_id,
             req.opening_balance,
         )?;

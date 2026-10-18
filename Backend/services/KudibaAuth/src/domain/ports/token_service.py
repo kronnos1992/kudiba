@@ -13,6 +13,7 @@ class ITokenService(ABC):
         tenant_slug: Optional[str] = None,
         branch_id: Optional[str] = None,
         expires_minutes: Optional[int] = None,
+        modules: Optional[List[str]] = None,
     ) -> Tuple[str, str, int]:
         """Retorna (token_jwt, jti, exp_timestamp)."""
         pass

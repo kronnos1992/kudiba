@@ -27,6 +27,7 @@ stop_service() {
 stop_service "KudibaAuth" "auth.pid" "uvicorn src.main:app --host 0.0.0.0 --port 8082"
 stop_service "KudibaPayroll" "payroll.pid" "uvicorn src.main:app --host 0.0.0.0 --port 8086"
 stop_service "KudibaIntegrations" "integrations.pid" "uvicorn src.main:app --host 0.0.0.0 --port 8087"
+stop_service "KudibaBackoffice" "backoffice.pid" "uvicorn src.main:app --host 0.0.0.0 --port 8088"
 stop_service "KudibaInvoicing" "invoicing.pid" "kudiba-invoicing"
 stop_service "KudibaInventory" "inventory.pid" "kudiba-inventory"
 stop_service "KudibaTreasury" "treasury.pid" "kudiba-treasury"

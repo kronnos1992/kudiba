@@ -6,23 +6,24 @@ use uuid::Uuid;
 
 use kudiba_treasury::application::commands::{
     CloseCashSessionHandler, CreateBankAccountHandler, CreateCashRegisterHandler,
-    IssueTreasuryReceiptHandler, OpenCashSessionHandler, RecordCashMovementHandler,
-    RegisterInvoiceReceivableHandler,
+    IssueTreasuryReceiptHandler, OpenCashSessionHandler, OpenPosSessionHandler,
+    RecordCashMovementHandler, RegisterInvoiceReceivableHandler,
 };
 use kudiba_treasury::application::dto::{
     CloseCashSessionRequest, CreateBankAccountRequest, CreateCashRegisterRequest,
-    IssueTreasuryReceiptRequest, OpenCashSessionRequest, ReceiptLineRequest,
-    RecordCashMovementRequest,
+    IssueTreasuryReceiptRequest, OpenCashSessionRequest, OpenPosSessionRequest,
+    ReceiptLineRequest, RecordCashMovementRequest,
 };
 use kudiba_treasury::application::queries::TreasuryQueries;
 use kudiba_treasury::domain::entities::{
-    BankAccount, CashMovement, CashRegister, CashSession, InvoiceReceivable, ReceivableStatus,
-    TreasuryReceipt, TreasuryReceiptLine,
+    BankAccount, CashMovement, CashRegister, CashSession, InvoiceReceivable, PosSession,
+    ReceivableStatus, TreasuryReceipt, TreasuryReceiptLine,
 };
 use kudiba_treasury::domain::error::DomainError;
 use kudiba_treasury::domain::ports::{
     BankAccountRepository, CashMovementRepository, CashRegisterRepository, CashSessionRepository,
-    InvoiceReceivableRepository, TreasuryEventPublisher, TreasuryReceiptRepository,
+    InvoiceReceivableRepository, PosSessionRepository, TreasuryEventPublisher,
+    TreasuryReceiptRepository,
 };
 use kudiba_treasury::domain::services::{DiscrepancyType, ReconciliationService};
 use kudiba_treasury::domain::value_objects::{
@@ -87,15 +88,29 @@ fn test_cash_session_lifecycle_and_reconciliation() {
     let tenant_id = Uuid::new_v4();
     let register_id = Uuid::new_v4();
 
-    let negative_session =
-        CashSession::open(tenant_id, register_id, "op-001".to_string(), dec!(-100));
+    let pos_session_id = Uuid::new_v4();
+
+    let negative_session = CashSession::open(
+        tenant_id,
+        register_id,
+        pos_session_id,
+        "op-001".to_string(),
+        dec!(-100),
+    );
     assert!(negative_session.is_err());
 
-    let empty_op = CashSession::open(tenant_id, register_id, "  ".to_string(), dec!(5000));
+    let empty_op = CashSession::open(
+        tenant_id,
+        register_id,
+        pos_session_id,
+        "  ".to_string(),
+        dec!(5000),
+    );
     assert!(empty_op.is_err());
 
-    let mut session = CashSession::open(tenant_id, register_id, "op-001".to_string(), dec!(10000))
-        .expect("Falha ao abrir sessão");
+    let mut session =
+        CashSession::open(tenant_id, register_id, pos_session_id, "op-001".to_string(), dec!(10000))
+            .expect("Falha ao abrir sessão");
 
     assert_eq!(session.status, SessionStatus::Open);
     assert_eq!(session.opening_balance, dec!(10000));
@@ -424,6 +439,22 @@ impl CashSessionRepository for MockCashSessionRepository {
         Ok(list)
     }
 
+    async fn count_open_by_pos_session(
+        &self,
+        tenant_id: Uuid,
+        pos_session_id: Uuid,
+    ) -> Result<i64, DomainError> {
+        let lock = self.items.lock().unwrap();
+        Ok(lock
+            .values()
+            .filter(|s| {
+                s.tenant_id == tenant_id
+                    && s.pos_session_id == Some(pos_session_id)
+                    && s.status == SessionStatus::Open
+            })
+            .count() as i64)
+    }
+
     async fn save(&self, session: &CashSession) -> Result<(), DomainError> {
         let mut lock = self.items.lock().unwrap();
         lock.insert(session.id, session.clone());
@@ -431,6 +462,69 @@ impl CashSessionRepository for MockCashSessionRepository {
     }
 
     async fn update(&self, session: &CashSession) -> Result<(), DomainError> {
+        let mut lock = self.items.lock().unwrap();
+        lock.insert(session.id, session.clone());
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct MockPosSessionRepository {
+    items: Mutex<HashMap<Uuid, PosSession>>,
+}
+
+#[async_trait]
+impl PosSessionRepository for MockPosSessionRepository {
+    async fn find_by_id(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+    ) -> Result<Option<PosSession>, DomainError> {
+        let lock = self.items.lock().unwrap();
+        Ok(lock
+            .values()
+            .find(|s| s.tenant_id == tenant_id && s.id == id)
+            .cloned())
+    }
+
+    async fn find_open_session_by_register(
+        &self,
+        tenant_id: Uuid,
+        register_id: Uuid,
+    ) -> Result<Option<PosSession>, DomainError> {
+        let lock = self.items.lock().unwrap();
+        Ok(lock
+            .values()
+            .find(|s| {
+                s.tenant_id == tenant_id
+                    && s.register_id == register_id
+                    && s.status == SessionStatus::Open
+            })
+            .cloned())
+    }
+
+    async fn list_by_tenant(
+        &self,
+        tenant_id: Uuid,
+        _limit: i64,
+    ) -> Result<Vec<PosSession>, DomainError> {
+        let lock = self.items.lock().unwrap();
+        let mut list: Vec<_> = lock
+            .values()
+            .filter(|s| s.tenant_id == tenant_id)
+            .cloned()
+            .collect();
+        list.sort_by(|a, b| b.opened_at.cmp(&a.opened_at));
+        Ok(list)
+    }
+
+    async fn save(&self, session: &PosSession) -> Result<(), DomainError> {
+        let mut lock = self.items.lock().unwrap();
+        lock.insert(session.id, session.clone());
+        Ok(())
+    }
+
+    async fn update(&self, session: &PosSession) -> Result<(), DomainError> {
         let mut lock = self.items.lock().unwrap();
         lock.insert(session.id, session.clone());
         Ok(())
@@ -660,6 +754,7 @@ async fn test_full_application_use_case_flow() {
 
     let reg_repo = Arc::new(MockCashRegisterRepository::default());
     let sess_repo = Arc::new(MockCashSessionRepository::default());
+    let pos_repo = Arc::new(MockPosSessionRepository::default());
     let mov_repo = Arc::new(MockCashMovementRepository::default());
     let bank_repo = Arc::new(MockBankAccountRepository::default());
     let rec_repo = Arc::new(MockTreasuryReceiptRepository::with_repos(
@@ -668,7 +763,12 @@ async fn test_full_application_use_case_flow() {
     ));
 
     let create_reg = CreateCashRegisterHandler::new(reg_repo.clone());
-    let open_sess = OpenCashSessionHandler::new(reg_repo.clone(), sess_repo.clone());
+    let open_pos = OpenPosSessionHandler::new(reg_repo.clone(), pos_repo.clone());
+    let open_sess = OpenCashSessionHandler::new(
+        reg_repo.clone(),
+        sess_repo.clone(),
+        pos_repo.clone(),
+    );
     let close_sess = CloseCashSessionHandler::new(sess_repo.clone(), mov_repo.clone());
     let record_mov = RecordCashMovementHandler::new(sess_repo.clone(), mov_repo.clone());
     let create_bank = CreateBankAccountHandler::new(bank_repo.clone());
@@ -715,7 +815,20 @@ async fn test_full_application_use_case_flow() {
         .await;
     assert!(matches!(dup_reg, Err(DomainError::AlreadyExists(_))));
 
-    // 2. Abrir Sessão de Caixa
+    // 2. Abrir Sessão POS e depois Sessão de Caixa
+    let pos_session = open_pos
+        .execute(
+            tenant_id,
+            "usr-manager-01".to_string(),
+            OpenPosSessionRequest {
+                register_id: register.id,
+                notes: Some("Abertura do dia".to_string()),
+            },
+        )
+        .await
+        .expect("Falha ao abrir sessão POS");
+    assert_eq!(pos_session.status, SessionStatus::Open);
+
     let session = open_sess
         .execute(
             tenant_id,

@@ -10,9 +10,10 @@ use uuid::Uuid;
 
 use crate::application::dto::{
     BankAccountResponse, CashMovementResponse, CashRegisterResponse, CashSessionResponse,
-    CloseCashSessionRequest, CreateBankAccountRequest, CreateCashRegisterRequest,
-    InvoiceReceivableResponse, IssueTreasuryReceiptRequest, OpenCashSessionRequest,
-    RecordCashMovementRequest, SessionReportResponse, TreasuryReceiptResponse,
+    CloseCashSessionRequest, ClosePosSessionRequest, CreateBankAccountRequest,
+    CreateCashRegisterRequest, InvoiceReceivableResponse, IssueTreasuryReceiptRequest,
+    OpenCashSessionRequest, OpenPosSessionRequest, PosSessionResponse, RecordCashMovementRequest,
+    SessionReportResponse, TreasuryReceiptResponse,
 };
 use crate::domain::error::DomainError;
 use crate::state::AppState;
@@ -119,6 +120,59 @@ pub fn extract_tenant_id(headers: &HeaderMap) -> Result<Uuid, (StatusCode, Json<
             )),
         )),
     }
+}
+
+pub fn extract_user_id(headers: &HeaderMap) -> Result<String, (StatusCode, Json<ProblemDetail>)> {
+    let raw = headers
+        .get("X-Resolved-User-ID")
+        .or_else(|| headers.get("x-resolved-user-id"))
+        .and_then(|h| h.to_str().ok());
+
+    match raw.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(id) => Ok(id.to_string()),
+        None => Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ProblemDetail::new(
+                StatusCode::UNAUTHORIZED,
+                "Utilizador Não Identificado",
+                "O cabeçalho X-Resolved-User-ID é obrigatório.",
+                "USER_HEADER_MISSING",
+            )),
+        )),
+    }
+}
+
+pub fn require_roles(
+    headers: &HeaderMap,
+    allowed: &[&str],
+) -> Result<(), (StatusCode, Json<ProblemDetail>)> {
+    let roles: Vec<String> = headers
+        .get("X-Resolved-Roles")
+        .and_then(|h| h.to_str().ok())
+        .map(|raw| {
+            raw.split(',')
+                .map(|r| r.trim().to_uppercase())
+                .filter(|r| !r.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if roles
+        .iter()
+        .any(|r| r == "SUPER_ADMIN" || allowed.contains(&r.as_str()))
+    {
+        return Ok(());
+    }
+
+    Err((
+        StatusCode::FORBIDDEN,
+        Json(ProblemDetail::new(
+            StatusCode::FORBIDDEN,
+            "Acesso Negado",
+            "O seu perfil não tem permissão para executar esta operação.",
+            "FORBIDDEN",
+        )),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -298,6 +352,90 @@ pub async fn get_session_report_handler(
 }
 
 // -----------------------------------------------------------------------------
+// POS Sessions (Nível Gestor)
+// -----------------------------------------------------------------------------
+
+pub async fn open_pos_session_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<OpenPosSessionRequest>,
+) -> Result<(StatusCode, Json<PosSessionResponse>), (StatusCode, Json<ProblemDetail>)> {
+    require_roles(&headers, &["ADMIN"])?;
+    let tenant_id = extract_tenant_id(&headers)?;
+    let user_id = extract_user_id(&headers)?;
+    let session = state
+        .open_pos_session_cmd
+        .execute(tenant_id, user_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok((StatusCode::CREATED, Json(session)))
+}
+
+pub async fn close_pos_session_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<ClosePosSessionRequest>,
+) -> Result<Json<PosSessionResponse>, (StatusCode, Json<ProblemDetail>)> {
+    require_roles(&headers, &["ADMIN"])?;
+    let tenant_id = extract_tenant_id(&headers)?;
+    let user_id = extract_user_id(&headers)?;
+    let session = state
+        .close_pos_session_cmd
+        .execute(tenant_id, id, user_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok(Json(session))
+}
+
+pub async fn get_current_pos_session_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<CurrentSessionQuery>,
+) -> Result<Json<Option<PosSessionResponse>>, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let session = state
+        .pos_session_repo
+        .find_open_session_by_register(tenant_id, query.register_id)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok(Json(session.map(Into::into)))
+}
+
+pub async fn pos_panel_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<PosPanelQuery>,
+) -> Result<
+    Json<crate::application::queries::pos_panel::PosPanelResponse>,
+    (StatusCode, Json<ProblemDetail>),
+> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let date = query
+        .date
+        .unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let panel = crate::application::queries::pos_panel::fetch(
+        &state.db_pool,
+        tenant_id,
+        query.register_id,
+        date,
+    )
+    .await
+    .map_err(map_domain_error)?;
+
+    Ok(Json(panel))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PosPanelQuery {
+    pub register_id: Option<Uuid>,
+    pub date: Option<chrono::NaiveDate>,
+}
+
+// -----------------------------------------------------------------------------
 // Cash Movements Handlers
 // -----------------------------------------------------------------------------
 
@@ -449,16 +587,50 @@ pub async fn list_receivables_handler(
     Ok(Json(receivables.into_iter().map(Into::into).collect()))
 }
 
+// -----------------------------------------------------------------------------
+// Dashboard Executivo
+// -----------------------------------------------------------------------------
+
+pub async fn dashboard_summary_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<crate::application::queries::dashboard_summary::TreasuryDashboardSummary>, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let summary = crate::application::queries::dashboard_summary::fetch(&state.db_pool, tenant_id)
+        .await
+        .map_err(map_domain_error)?;
+    Ok(Json(summary))
+}
+
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
         .route("/ready", get(ready_handler))
+        // Dashboard Executivo
+        .route(
+            "/api/v1/treasury/dashboard/summary",
+            get(dashboard_summary_handler),
+        )
         // Cash Registers
         .route(
             "/api/v1/treasury/registers",
             post(create_register_handler).get(list_registers_handler),
         )
         .route("/api/v1/treasury/registers/{id}", get(get_register_handler))
+        // POS Sessions (Nível Gestor)
+        .route(
+            "/api/v1/treasury/pos-sessions/open",
+            post(open_pos_session_handler),
+        )
+        .route(
+            "/api/v1/treasury/pos-sessions/{id}/close",
+            post(close_pos_session_handler),
+        )
+        .route(
+            "/api/v1/treasury/pos-sessions/current",
+            get(get_current_pos_session_handler),
+        )
+        .route("/api/v1/treasury/pos/panel", get(pos_panel_handler))
         // Cash Sessions
         .route("/api/v1/treasury/sessions/open", post(open_session_handler))
         .route(

@@ -24,9 +24,9 @@ use crate::middleware::{
     ratelimit::rate_limit_middleware, tenant::tenant_resolver_middleware,
 };
 use crate::proxy::{
-    forward_to_accounting, forward_to_auth, forward_to_auth_openapi, forward_to_core,
-    forward_to_fiscal, forward_to_integrations, forward_to_inventory, forward_to_payroll,
-    forward_to_treasury,
+    forward_to_accounting, forward_to_auth, forward_to_auth_openapi, forward_to_backoffice,
+    forward_to_core, forward_to_fiscal, forward_to_integrations, forward_to_inventory,
+    forward_to_payroll, forward_to_treasury,
 };
 
 /// Estado global compartilhado entre os handlers e middlewares do Gateway
@@ -186,6 +186,9 @@ pub fn create_router(
         // Rotas de Configuração de Integrações (KudibaIntegrations / backoffice)
         .route("/api/v1/integrations/{*path}", any(forward_to_integrations))
         .route("/api/v1/integrations", any(forward_to_integrations))
+        // Rotas de Backoffice B2B — Clientes & Licenças (KudibaBackoffice)
+        .route("/api/v1/backoffice/{*path}", any(forward_to_backoffice))
+        .route("/api/v1/backoffice", any(forward_to_backoffice))
         // Rotas de Sincronização POS (Edge Tauri) e Módulos Comerciais
         .route("/api/v1/{*path}", any(forward_to_core))
         .route("/api/v1", any(forward_to_core))

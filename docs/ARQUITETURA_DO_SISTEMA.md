@@ -168,9 +168,11 @@ Em conformidade com a exigência legal de que não podem existir saltos de numer
 ### 5.5 Anulação Legal com Nota de Crédito (NC)
 - É terminantemente proibido apagar faturas emitidas. Para retificar ou anular um documento, o endpoint `POST /api/v1/fiscal/invoices/{id}/cancel` emite uma Nota de Crédito retificativa vinculada ao documento de origem (`sourceDocumentNumber`), invertendo contabilisticamente débitos e créditos.
 
-### 5.6 Memória Fiscal POS (Leitura X e Fecho Z)
-- **Leitura X:** Relatório informativo intradiário de conferência de caixa sem fechar a sessão fiscal.
-- **Fecho Z:** Relatório diário oficial e obrigatório. Possui numeração sequencial anual (`Z YYYY/NNNNNN`), data de gravação, totalizadores acumulados e é guardado de forma permanente na tabela `kudiba_core.pos_z_reports`.
+### 5.6 Memória Fiscal POS (Leitura X, Fecho Z e Painel dos POS)
+- **Leitura X:** Relatório informativo intradiário de conferência de caixa sem fechar a sessão fiscal. Endpoint `GET /api/v1/fiscal/pos/reports/x` (e variante térmica `/reports/x/thermal`). Acessível também ao perfil `OPERADOR_CAIXA`.
+- **Fecho Z:** Relatório diário oficial e obrigatório. Possui numeração sequencial anual (`Z YYYY/NNNNNN`), data de gravação, totalizadores acumulados (IVA, retenções, imposto de selo, meios de pagamento) e é guardado de forma permanente na tabela `kudiba_core.pos_z_reports`. Endpoint `POST /api/v1/fiscal/pos/reports/z`, com histórico imutável em `GET /api/v1/fiscal/pos/reports`. Fecho Z restrito a perfis de gestão.
+- **Sessões POS em dois níveis (KudibaTreasury):** o **gestor** abre uma *Sessão POS* (`POST /api/v1/treasury/pos-sessions/open`, perfil `ADMIN`) que habilita a operação do terminal; os **operadores** abrem turnos de caixa (`cash_sessions`) dentro dessa sessão, registando vendas, reforços e sangrias em `cash_movements`. O fecho da Sessão POS só é permitido após o fecho de todos os turnos de caixa do terminal.
+- **Painel dos POS:** consulta consolidada por dia e por terminal (`GET /api/v1/treasury/pos/panel`) que agrega, a partir dos movimentos de tesouraria, a faturação **por caixa** e **por usuário** (nº e total de vendas, reforços, sangrias, despesas e numerário esperado), complementando os totais fiscais do Fecho Z. Interface no ecrã POS do frontend, em abas *Venda / Painel dos POS / Relatórios X-Z*, com gating de visibilidade por perfil (operadores de caixa veem apenas o seu terminal e a Leitura X).
 
 ### 5.7 Geração e Validação do SAF-T (AO) v1.01_01
 - **Streaming em Memória Constante ($O(1)$):** Ao exportar ficheiros SAF-T de milhões de registos, o gerador faz streaming de leitura paginada no banco e escrita incremental para o cliente HTTP, prevenindo exaustão de memória RAM.

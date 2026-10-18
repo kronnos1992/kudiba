@@ -19,6 +19,7 @@ from src.application.dto import (
     EmployeeResponse,
     JobPositionResponse,
     OpenPayrollPeriodRequest,
+    PayrollDashboardSummaryResponse,
     PayrollPeriodResponse,
     PayslipResponse,
     PeriodSummaryResponse,
@@ -358,5 +359,20 @@ def create_payroll_router() -> APIRouter:
             media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
+
+    # =========================================================================
+    # PAINEL EXECUTIVO (DASHBOARD)
+    # =========================================================================
+    @router.get(
+        "/dashboard/summary",
+        response_model=PayrollDashboardSummaryResponse,
+        tags=["Painel Executivo"],
+    )
+    async def get_dashboard_summary(
+        year: Optional[int] = Query(None, ge=2020, le=2100),
+        tenant_id: UUID = Depends(get_current_tenant_id),
+        app_state=Depends(get_app_state),
+    ):
+        return await app_state.get_dashboard_summary.execute(tenant_id, year)
 
     return router

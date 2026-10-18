@@ -10,6 +10,7 @@ Guia para agentes de código que trabalham neste repositório.
 - `Backend/services/KudibaTreasury/` — microserviço de tesouraria, caixa e pagamentos em Rust (workspace Cargo).
 - `Backend/services/KudibaAuth/` — microserviço de Autenticação & RBAC em **Python/FastAPI** (Clean Architecture). NÃO faz parte do workspace Rust.
 - `Backend/services/KudibaPayroll/` — microserviço de Recursos Humanos, contratos, folha salarial (IRT/INSS), férias e assiduidade em **Python/FastAPI** (Clean Architecture + CQRS). NÃO faz parte do workspace Rust.
+- `Backend/services/KudibaBackoffice/` — microserviço de Backoffice B2B: clientes subscritores, licenças anuais por módulos e espelho da licença em `kudiba_core.tenants`, em **Python/FastAPI** (Clean Architecture). NÃO faz parte do workspace Rust.
 - `Backend/deploy/` — scripts SQL de inicialização das bases de dados.
 - `Frontend/`, `proto/`, `docs/`, `scripts/` — ver README raiz.
 
@@ -40,7 +41,7 @@ cargo clippy --workspace --manifest-path Backend/Cargo.toml -- -D warnings
 
 `protoc` é necessário para compilar os serviços que usam gRPC.
 
-### Python (KudibaAuth + KudibaPayroll)
+### Python (KudibaAuth + KudibaPayroll + KudibaIntegrations + KudibaBackoffice)
 
 ```bash
 # KudibaAuth
@@ -50,9 +51,13 @@ PYTHONPATH=. python3 -m pytest tests/ -q
 # KudibaPayroll
 cd Backend/services/KudibaPayroll
 PYTHONPATH=. python3 -m pytest tests/ -q
+
+# KudibaBackoffice
+cd Backend/services/KudibaBackoffice
+PYTHONPATH=. python3 -m pytest tests/ -q
 ```
 
-Requer as dependências do `pyproject.toml` (incluindo o extra `test`: `pytest`, `pytest-asyncio`, `httpx`). Instalação: `make auth-install` / `make payroll-install`. Ou corre via Makefile: `make test-auth`, `make test-payroll`.
+Requer as dependências do `pyproject.toml` (incluindo o extra `test`: `pytest`, `pytest-asyncio`, `httpx`). Instalação: `make auth-install` / `make payroll-install` / `make backoffice-install`. Ou corre via Makefile: `make test-auth`, `make test-payroll`, `make test-backoffice`.
 
 ## Notas de ambiente (Windows)
 

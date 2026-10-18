@@ -55,6 +55,7 @@ class SqlAlchemyUserTenantRepository(IUserTenantRepository):
                 status=membership.status,
             )
             session.add(m)
+            await session.flush()
             if owns_session:
                 await session.commit()
 

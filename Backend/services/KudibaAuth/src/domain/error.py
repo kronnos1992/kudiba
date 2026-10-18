@@ -14,12 +14,15 @@ class InvalidCredentialsError(DomainError):
 
 
 class AccountLockedError(DomainError):
-    def __init__(self, minutes_remaining: int):
+    def __init__(self, minutes_remaining: int, retry_after_seconds: int | None = None):
         super().__init__(
             f"Conta temporariamente bloqueada por excesso de tentativas falhadas. Tente novamente em {minutes_remaining} minutos.",
             code="ACCOUNT_LOCKED",
         )
         self.minutes_remaining = minutes_remaining
+        self.retry_after_seconds = (
+            retry_after_seconds if retry_after_seconds is not None else minutes_remaining * 60
+        )
 
 
 class AccountInactiveError(DomainError):
@@ -30,6 +33,11 @@ class AccountInactiveError(DomainError):
 class TenantAccessForbiddenError(DomainError):
     def __init__(self, message: str = "O utilizador não tem permissão para aceder à organização solicitada."):
         super().__init__(message, code="TENANT_ACCESS_FORBIDDEN")
+
+
+class LicenseExpiredError(DomainError):
+    def __init__(self, message: str = "A licença desta empresa expirou. Contacte o Kudiba para renovar a subscrição."):
+        super().__init__(message, code="LICENSE_EXPIRED")
 
 
 class TokenReusedError(DomainError):

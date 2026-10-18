@@ -1,8 +1,14 @@
-import React, { useState } from 'react';
-import { Lock, ShieldCheck, Loader2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Lock, ShieldCheck, Loader2, Timer } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { authApi } from '../../api/auth';
 import { StatusBadge } from '../../components/common/StatusBadge';
+
+const formatCountdown = (totalSeconds: number): string => {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
 
 export const LoginView: React.FC = () => {
   const { setSession } = useAuthStore();
@@ -11,22 +17,46 @@ export const LoginView: React.FC = () => {
   const [password, setPassword] = useState('Admin@Kudiba2026!');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lockSeconds, setLockSeconds] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (lockSeconds === null) return;
+    if (lockSeconds <= 0) {
+      setLockSeconds(null);
+      setError(null);
+      return;
+    }
+    const t = setTimeout(() => setLockSeconds((v) => (v === null ? null : v - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [lockSeconds]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (lockSeconds !== null && lockSeconds > 0) return;
     setError(null);
+    setLockSeconds(null);
     setLoading(true);
 
     try {
       const response = await authApi.login({ email, password });
       setSession(response);
     } catch (err: unknown) {
-      const errorMsg =
+      const data =
         err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-          : null;
+          ? (err as { response?: { status?: number; data?: { detail?: string; code?: string; retry_after_seconds?: number } } }).response
+          : undefined;
+      const errorMsg = data?.data?.detail;
 
-      if (!errorMsg) {
+      if (data?.status === 423 && data?.data?.code === 'ACCOUNT_LOCKED') {
+        const seconds =
+          typeof data.data.retry_after_seconds === 'number' && data.data.retry_after_seconds > 0
+            ? data.data.retry_after_seconds
+            : 15 * 60;
+        setError(
+          `Conta temporariamente bloqueada por excesso de tentativas falhadas. Tente novamente em ${formatCountdown(seconds)}.`
+        );
+        setLockSeconds(seconds);
+      } else if (!errorMsg) {
         setSession({
           access_token: 'mock-jwt-token-kudiba-2026',
           refresh_token: 'mock-refresh-token-kudiba-2026',
@@ -55,8 +85,7 @@ export const LoginView: React.FC = () => {
         });
       } else {
         setError(errorMsg || 'Credenciais inválidas. Verifique o email e senha.');
-      }
-    } finally {
+      }    } finally {
       setLoading(false);
     }
   };
@@ -77,8 +106,28 @@ export const LoginView: React.FC = () => {
         </div>
 
         {error && (
-          <div className="mb-6 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-sm text-rose-700 dark:text-rose-300">
-            {error}
+          <div
+            className={`mb-6 p-3.5 rounded-xl border text-sm ${
+              lockSeconds !== null
+                ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300'
+                : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300'
+            }`}
+          >
+            <div className="flex items-start gap-2">
+              {lockSeconds !== null && <Timer className="w-4 h-4 mt-0.5 shrink-0" />}
+              <div>
+                {lockSeconds !== null ? (
+                  <>
+                    Conta temporariamente bloqueada por excesso de tentativas falhadas. Tente
+                    novamente em{' '}
+                    <span className="font-bold tabular-nums">{formatCountdown(lockSeconds)}</span>
+                    .
+                  </>
+                ) : (
+                  error
+                )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -115,13 +164,18 @@ export const LoginView: React.FC = () => {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (lockSeconds !== null && lockSeconds > 0)}
             className="w-full py-3 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-emerald-700/20 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-all disabled:opacity-60 cursor-pointer"
           >
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span>A autenticar...</span>
+              </>
+            ) : lockSeconds !== null && lockSeconds > 0 ? (
+              <>
+                <Timer className="w-4 h-4" />
+                <span>Bloqueado ({formatCountdown(lockSeconds)})</span>
               </>
             ) : (
               <>

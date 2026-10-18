@@ -10,12 +10,67 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ENUM, JSONB, UUID
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
 
 Base = declarative_base()
 
 SCHEMA = "kudiba_integrations"
+
+ConnectorTypeEnum = ENUM(
+    "WEBHOOK",
+    "REST_PULL",
+    "FILE_IMPORT",
+    name="connector_type",
+    schema=SCHEMA,
+    create_type=False,
+)
+
+AuthTypeEnum = ENUM(
+    "NONE",
+    "API_KEY",
+    "BASIC",
+    "BEARER",
+    name="auth_type",
+    schema=SCHEMA,
+    create_type=False,
+)
+
+DataFormatEnum = ENUM(
+    "JSON",
+    "CSV",
+    "FIXED_WIDTH",
+    name="data_format",
+    schema=SCHEMA,
+    create_type=False,
+)
+
+ConflictPolicyEnum = ENUM(
+    "SKIP",
+    "UPDATE",
+    "FAIL",
+    name="conflict_policy",
+    schema=SCHEMA,
+    create_type=False,
+)
+
+RunTriggerEnum = ENUM(
+    "WEBHOOK",
+    "SCHEDULE",
+    "MANAL",
+    name="run_trigger",
+    schema=SCHEMA,
+    create_type=False,
+)
+
+RunStatusEnum = ENUM(
+    "SUCCESS",
+    "PARTIAL",
+    "FAILED",
+    name="run_status",
+    schema=SCHEMA,
+    create_type=False,
+)
 
 
 class IntegrationEndpointModel(Base):
@@ -29,11 +84,11 @@ class IntegrationEndpointModel(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     system_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    connector_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    connector_type: Mapped[str] = mapped_column(ConnectorTypeEnum, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    auth_type: Mapped[str] = mapped_column(String(20), default="NONE", nullable=False)
+    auth_type: Mapped[str] = mapped_column(AuthTypeEnum, default="NONE", nullable=False)
     encrypted_credentials: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     webhook_key: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
@@ -46,7 +101,7 @@ class IntegrationEndpointModel(Base):
     query_params: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     schedule_interval_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
-    data_format: Mapped[str] = mapped_column(String(20), default="JSON", nullable=False)
+    data_format: Mapped[str] = mapped_column(DataFormatEnum, default="JSON", nullable=False)
     file_delimiter: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
     file_has_header: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     file_encoding: Mapped[str] = mapped_column(String(20), default="utf-8", nullable=False)
@@ -85,7 +140,7 @@ class IntegrationMappingModel(Base):
     field_mappings: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     static_payload: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     dedup_fields: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
-    conflict_policy: Mapped[str] = mapped_column(String(20), default="SKIP", nullable=False)
+    conflict_policy: Mapped[str] = mapped_column(ConflictPolicyEnum, default="SKIP", nullable=False)
     target_event_type: Mapped[str] = mapped_column(String(120), nullable=False)
     target_routing_key: Mapped[str] = mapped_column(String(160), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -115,8 +170,8 @@ class IntegrationRunModel(Base):
         ForeignKey(f"{SCHEMA}.integration_mappings.id", ondelete="SET NULL"),
         nullable=True,
     )
-    trigger: Mapped[str] = mapped_column(String(20), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    trigger: Mapped[str] = mapped_column(RunTriggerEnum, nullable=False)
+    status: Mapped[str] = mapped_column(RunStatusEnum, nullable=False)
     records_received: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     records_succeeded: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     records_failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

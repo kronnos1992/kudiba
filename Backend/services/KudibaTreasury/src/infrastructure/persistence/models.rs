@@ -41,6 +41,7 @@ pub struct CashSessionRow {
     pub id: Uuid,
     pub tenant_id: Uuid,
     pub register_id: Uuid,
+    pub pos_session_id: Option<Uuid>,
     pub operator_user_id: String,
     pub opened_at: DateTime<Utc>,
     pub closed_at: Option<DateTime<Utc>>,
@@ -60,6 +61,7 @@ impl From<CashSessionRow> for CashSession {
             id: s.id,
             tenant_id: s.tenant_id,
             register_id: s.register_id,
+            pos_session_id: s.pos_session_id,
             operator_user_id: s.operator_user_id,
             opened_at: s.opened_at,
             closed_at: s.closed_at,
@@ -67,6 +69,41 @@ impl From<CashSessionRow> for CashSession {
             closing_balance_counted: s.closing_balance_counted,
             closing_balance_system: s.closing_balance_system,
             discrepancy: s.discrepancy,
+            status: s.status,
+            notes: s.notes,
+            created_at: s.created_at,
+            updated_at: s.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, FromRow)]
+pub struct PosSessionRow {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub register_id: Uuid,
+    pub opened_by: String,
+    pub opened_at: DateTime<Utc>,
+    pub closed_by: Option<String>,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub closing_notes: Option<String>,
+    pub status: SessionStatus,
+    pub notes: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<PosSessionRow> for crate::domain::entities::PosSession {
+    fn from(s: PosSessionRow) -> Self {
+        Self {
+            id: s.id,
+            tenant_id: s.tenant_id,
+            register_id: s.register_id,
+            opened_by: s.opened_by,
+            opened_at: s.opened_at,
+            closed_by: s.closed_by,
+            closed_at: s.closed_at,
+            closing_notes: s.closing_notes,
             status: s.status,
             notes: s.notes,
             created_at: s.created_at,

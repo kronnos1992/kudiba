@@ -190,17 +190,23 @@ Linhas de itens faturados (produtos e serviços).
 | `exemption_code` | `VARCHAR(10) NULL` | Código de motivo de isenção oficial AGT (`M00` a `M99`). |
 
 #### Tabela `pos_z_reports`
-Relatórios de fecho de caixa fiscal diário (Fecho Z).
+Relatórios de fecho de caixa fiscal diário (Fecho Z), imutáveis e com numeração sequencial anual (`Z YYYY/NNNNNN`). Expostos ao frontend via `GET /api/v1/fiscal/pos/reports`.
 | Coluna | Tipo | Descrição |
 | :--- | :--- | :--- |
 | `id` | `UUID PRIMARY KEY` | Identificador do fecho fiscal. |
 | `tenant_id` | `UUID REFERENCES tenants(id)` | Empresa proprietária. |
-| `z_number` | `VARCHAR(50) NOT NULL UNIQUE` | Numeração anual no formato `Z 2026/000001`. |
-| `fiscal_day` | `DATE NOT NULL` | Dia fiscal fechado. |
-| `total_sales` | `NUMERIC(18,2) NOT NULL` | Montante bruto total faturado no dia. |
-| `total_tax` | `NUMERIC(18,2) NOT NULL` | Montante total de IVA recolhido. |
-| `first_doc_number`| `VARCHAR(100) NOT NULL` | Primeira fatura emitida no período. |
-| `last_doc_number` | `VARCHAR(100) NOT NULL` | Última fatura emitida no período. |
+| `fiscal_year` | `INT NOT NULL` | Ano fiscal do fecho. |
+| `sequence_number` | `BIGINT NOT NULL` | Sequência dentro do ano (`UNIQUE (tenant_id, fiscal_year, sequence_number)`). |
+| `z_number` | `VARCHAR(64) NOT NULL` | Numeração anual no formato `Z 2026/000001` (`UNIQUE (tenant_id, z_number)`). |
+| `closing_date` | `DATE NOT NULL` | Dia fiscal fechado. |
+| `pos_terminal_id` | `VARCHAR(64) NULL` | Terminal/caixa que originou o fecho. |
+| `opened_at` / `closed_at` | `TIMESTAMPTZ` | Início e instante de gravação do fecho. |
+| `first_document_number` / `last_document_number` | `VARCHAR(64) NULL` | Primeiro e último documento do período. |
+| `invoices_count` / `credit_notes_count` | `BIGINT NOT NULL` | Contagem de faturas e notas de crédito. |
+| `gross_sales_total`, `discounts_total`, `credit_notes_total`, `net_sales_total`, `vat_total`, `withholding_total`, `stamp_duty_total`, `final_total` | `NUMERIC(18,4) NOT NULL` | Totalizadores fiscais do dia. |
+| `taxes_summary` / `payment_methods_summary` | `JSONB NOT NULL` | Desdobramentos por taxa de imposto e por meio de pagamento. |
+| `actor_user_id` | `VARCHAR(64) NULL` | Utilizador que executou o fecho. |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | Momento de criação do registo. |
 
 #### Tabela `accounting_outbox`
 Padrão *Transactional Outbox* para publicação atómica e garantida de eventos.
@@ -243,3 +249,68 @@ CREATE TRIGGER trg_protect_invoices
 BEFORE UPDATE OR DELETE ON kudiba_core.invoices
 FOR EACH ROW EXECUTE FUNCTION kudiba_core.fn_protect_invoices();
 ```
+
+---
+
+## 5. Base de Dados: `kudiba_treasury`
+
+Base de dados isolada do microsserviço **KudibaTreasury** (`:8084`), no esquema `kudiba_treasury`. Suporta caixas físicos/virtuais, sessões de caixa e Sessões POS (turno do gestor), movimentos, contas bancárias e recibos de quitação. O schema é criado no arranque do serviço (`ensure_schema`) e espelhado em `Backend/deploy/05-treasury-schema.sql`.
+
+### 5.1 Tipos Enumerados
+
+| Tipo | Valores |
+| :--- | :--- |
+| `session_status` | `OPEN`, `CLOSED` |
+| `movement_type` | `SUPPLY`, `BLEED`, `SALE_RECEIPT`, `EXPENSE` |
+| `payment_method` | `NUMERARIO`, `MULTICAIXA`, `TRANSFERENCIA`, `GPO_REFERENCE` |
+| `currency_code` | `AOA`, `USD`, `EUR` |
+
+### 5.2 Tabela `cash_registers`
+Caixas físicos ou virtuais (PDV).
+| Coluna | Tipo | Descrição |
+| :--- | :--- | :--- |
+| `id` | `UUID PRIMARY KEY` | Identificador do caixa. |
+| `tenant_id` | `UUID NOT NULL` | Empresa proprietária. |
+| `branch_id` | `UUID NULL` | Filial associada. |
+| `code` / `name` | `VARCHAR NOT NULL` | Código e designação do caixa (`UNIQUE (tenant_id, code)`). |
+| `is_active` | `BOOLEAN NOT NULL` | Estado do caixa. |
+| `created_at` / `updated_at` | `TIMESTAMPTZ NOT NULL` | Auditoria temporal. |
+
+### 5.3 Tabela `pos_sessions`
+**Sessão POS** ao nível do gestor: habilita a operação do terminal e agrega os turnos de caixa do dia.
+| Coluna | Tipo | Descrição |
+| :--- | :--- | :--- |
+| `id` | `UUID PRIMARY KEY` | Identificador da Sessão POS. |
+| `tenant_id` | `UUID NOT NULL` | Empresa proprietária. |
+| `register_id` | `UUID REFERENCES cash_registers(id)` | Terminal associado. |
+| `opened_by` | `VARCHAR(100) NOT NULL` | Gestor que abriu a sessão. |
+| `opened_at` | `TIMESTAMPTZ NOT NULL` | Momento de abertura. |
+| `closed_by` | `VARCHAR(100) NULL` | Gestor que encerrou a sessão. |
+| `closed_at` | `TIMESTAMPTZ NULL` | Momento do fecho. |
+| `closing_notes` / `notes` | `TEXT NULL` | Observações de fecho e abertura. |
+| `status` | `session_status NOT NULL` | `OPEN` enquanto a operação do terminal estiver ativa. |
+
+Índice parcial `uq_open_pos_session_per_register (tenant_id, register_id) WHERE status = 'OPEN'` garante uma única Sessão POS aberta por terminal.
+
+### 5.3.1 Tabela `cash_sessions`
+Sessões de caixa (turno do operador) abertas **dentro** de uma Sessão POS. Colunas principais: `register_id`, `pos_session_id` (FK para `pos_sessions`), `operator_user_id`, `opening_balance`, `closing_balance_counted`, `closing_balance_system`, `discrepancy` e `status`. Índice parcial `uq_open_session_per_register` garante um único turno aberto por caixa; `idx_sessions_pos` acelera a contagem de turnos por Sessão POS.
+
+### 5.4 Tabela `cash_movements`
+Movimentos de caixa que alimentam a reconciliação e o **Painel dos POS** (faturação por caixa e por usuário).
+| Coluna | Tipo | Descrição |
+| :--- | :--- | :--- |
+| `id` | `UUID PRIMARY KEY` | Identificador do movimento. |
+| `tenant_id` | `UUID NOT NULL` | Empresa proprietária. |
+| `session_id` | `UUID REFERENCES cash_sessions(id)` | Turno de caixa de origem. |
+| `register_id` | `UUID REFERENCES cash_registers(id)` | Caixa onde ocorreu. |
+| `movement_type` | `movement_type NOT NULL` | Suprimento, sangria, entrada de venda ou despesa. |
+| `amount` | `NUMERIC(15,4) NOT NULL` | Montante do movimento. |
+| `reason` | `TEXT NOT NULL` | Justificação. |
+| `operator_user_id` | `VARCHAR(100) NOT NULL` | Operador que registou (base do desdobramento por usuário). |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | Instante do movimento. |
+
+### 5.5 Outras Tabelas
+- `bank_accounts`: contas bancárias da empresa (AOA/USD/EUR) com `iban` único por tenant.
+- `treasury_receipts` / `treasury_receipt_lines`: recibos de quitação (RC) e respetivas linhas de fatura liquidada.
+- `treasury_sequences`: sequências atómicas de tesouraria.
+- `invoice_receivables`: créditos por liquidar, espelhados a partir de eventos fiscais.

@@ -14,6 +14,7 @@ INVENTORY_MANIFEST := Backend/services/KudibaInventory/Cargo.toml
 AUTH_DIR           := Backend/services/KudibaAuth
 PAYROLL_DIR        := Backend/services/KudibaPayroll
 INTEGRATIONS_DIR   := Backend/services/KudibaIntegrations
+BACKOFFICE_DIR     := Backend/services/KudibaBackoffice
 FRONTEND_DIR       := Frontend
 LOGS_DIR           := .run_logs
 COMPOSE            := docker-compose
@@ -62,8 +63,8 @@ check: lint test ## Lint + todos os testes
 # -----------------------------------------------------------------------------
 # Testes
 # -----------------------------------------------------------------------------
-.PHONY: test test-rust test-gateway test-invoicing test-inventory test-auth test-payroll test-integrations
-test: test-rust test-auth test-payroll test-integrations ## Corre todos os testes (Rust + Python)
+.PHONY: test test-rust test-gateway test-invoicing test-inventory test-auth test-payroll test-integrations test-backoffice
+test: test-rust test-auth test-payroll test-integrations test-backoffice ## Corre todos os testes (Rust + Python)
 
 test-rust: ## Testes do workspace Rust (Gateway + Invoicing + Inventory)
 	cargo test --workspace --manifest-path $(CARGO_MANIFEST)
@@ -85,6 +86,9 @@ test-payroll: ## Testes do KudibaPayroll (pytest)
 
 test-integrations: ## Testes do KudibaIntegrations (pytest)
 	cd $(INTEGRATIONS_DIR) && PYTHONPATH=. python3 -m pytest tests/ -q
+
+test-backoffice: ## Testes do KudibaBackoffice (pytest)
+	cd $(BACKOFFICE_DIR) && PYTHONPATH=. python3 -m pytest tests/ -q
 
 test-e2e: ## Corre o teste de integracao ponta-a-ponta (E2E smoke test via Gateway)
 	bash scripts/test-e2e-flow.sh
@@ -123,6 +127,17 @@ integrations-run: ## Corre o KudibaIntegrations isolado (uvicorn :8087)
 		python3 -m uvicorn src.main:app --host 0.0.0.0 --port 8087
 
 # -----------------------------------------------------------------------------
+# KudibaBackoffice (Python)
+# -----------------------------------------------------------------------------
+.PHONY: backoffice-install backoffice-run
+backoffice-install: ## Instala as dependencias do KudibaBackoffice (com extra de testes)
+	cd $(BACKOFFICE_DIR) && python3 -m pip install -e ".[test]"
+
+backoffice-run: ## Corre o KudibaBackoffice isolado (uvicorn :8088)
+	cd $(BACKOFFICE_DIR) && PYTHONPATH=. ENVIRONMENT=development \
+		python3 -m uvicorn src.main:app --host 0.0.0.0 --port 8088
+
+# -----------------------------------------------------------------------------
 # Frontend (React + Vite + TypeScript)
 # -----------------------------------------------------------------------------
 .PHONY: frontend-install frontend-dev frontend-build
@@ -139,7 +154,7 @@ frontend-build: ## Compila o Frontend para producao
 # Servidores locais (fora do Docker)
 # -----------------------------------------------------------------------------
 .PHONY: up-local down-local restart-local status-local logs-local
-up-local: ## Arranca Auth + Invoicing + Inventory + Treasury + Accounting + Payroll + Integrations + Gateway nativos
+up-local: ## Arranca Auth + Invoicing + Inventory + Treasury + Accounting + Payroll + Integrations + Backoffice + Gateway nativos
 	bash scripts/start-local.sh
 
 down-local: ## Para os servidores locais nativos
@@ -151,7 +166,7 @@ status-local: ## Mostra o estado dos servidores locais
 	bash scripts/status-local.sh
 
 logs-local: ## Segue os logs locais (.run_logs/*.log)
-	tail -n 50 -f $(LOGS_DIR)/kudiba-auth.log $(LOGS_DIR)/kudiba-invoicing.log $(LOGS_DIR)/kudiba-inventory.log $(LOGS_DIR)/kudiba-payroll.log $(LOGS_DIR)/kudiba-integrations.log $(LOGS_DIR)/kudiba-gateway.log
+	tail -n 50 -f $(LOGS_DIR)/kudiba-auth.log $(LOGS_DIR)/kudiba-invoicing.log $(LOGS_DIR)/kudiba-inventory.log $(LOGS_DIR)/kudiba-payroll.log $(LOGS_DIR)/kudiba-integrations.log $(LOGS_DIR)/kudiba-backoffice.log $(LOGS_DIR)/kudiba-gateway.log
 
 # -----------------------------------------------------------------------------
 # Docker
@@ -179,5 +194,5 @@ docker-build: ## Reconstroi as imagens sem arrancar
 # Atalhos
 # -----------------------------------------------------------------------------
 .PHONY: ci dev
-ci: fmt-check clippy test-rust test-auth test-payroll test-integrations ## Espelha os passos de CI
+ci: fmt-check clippy test-rust test-auth test-payroll test-integrations test-backoffice ## Espelha os passos de CI
 dev: infra up-local ## Sobe infra (Docker) + servidores locais nativos

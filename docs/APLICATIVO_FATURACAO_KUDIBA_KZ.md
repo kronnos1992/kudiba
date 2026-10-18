@@ -207,6 +207,10 @@ Registo de recebimentos, abertura e fecho de caixas (Fecho Z e X), conciliação
 ### 6.4 Emissão de Recibo Fiscal (`RC`)
 * Quando uma fatura a crédito (`FT`) é paga na tesouraria, o sistema emite o **Recibo RC**, assinado digitalmente com chave RSA-SHA1, atualizando o saldo do cliente em `invoice_receivables` e estornando a dívida de forma auditável.
 
+### 6.5 Sessões POS em Dois Níveis e Painel dos POS
+* **Sessão POS (Gestor):** o gestor abre uma *Sessão POS* por terminal (`ADMIN`), que habilita a operação do dia. Os turnos de caixa dos operadores (`OPERADOR_CAIXA`) são abertos **dentro** desta sessão; o gestor só pode fechar a Sessão POS depois de encerrados todos os turnos de caixa.
+* **Painel dos POS:** ecrã com KPIs do dia e desdobramento da faturação **por caixa** e **por usuário** (nº/total de vendas, reforços, sangrias, despesas e numerário esperado), complementado pelas abas *Venda / Painel dos POS / Relatórios X-Z*. Operadores de caixa veem apenas o seu terminal e a Leitura X; o Fecho Z e a visão global ficam restritos a perfis de gestão.
+
 ---
 
 ## 📈 Ecrã 7: Relatórios, Balancetes & SAF-T (AO) (Reports)

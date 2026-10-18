@@ -258,10 +258,12 @@ export const payrollApi = {
     return res.data;
   },
 
-  terminateEmployee: async (id: string, termination_date: string): Promise<Employee> => {
-    const res = await apiClient.post<Employee>(`/api/v1/payroll/employees/${id}/terminate`, {
-      termination_date,
-    });
+  terminateEmployee: async (
+    id: string,
+    payload: string | { termination_date: string; reason?: string }
+  ): Promise<Employee> => {
+    const data = typeof payload === 'string' ? { termination_date: payload } : payload;
+    const res = await apiClient.post<Employee>(`/api/v1/payroll/employees/${id}/terminate`, data);
     return res.data;
   },
 
@@ -334,13 +336,47 @@ export const payrollApi = {
   },
 
   // Férias
-  listVacations: async (): Promise<VacationRequest[]> => {
-    const res = await apiClient.get<VacationRequest[]>('/api/v1/payroll/vacations');
+  listVacations: async (params?: { employee_id?: string; status?: string }): Promise<VacationRequest[]> => {
+    const res = await apiClient.get<VacationRequest[]>('/api/v1/payroll/vacations', { params });
     return res.data;
   },
 
   requestVacation: async (payload: CreateVacationPayload): Promise<VacationRequest> => {
     const res = await apiClient.post<VacationRequest>('/api/v1/payroll/vacations', payload);
+    return res.data;
+  },
+
+  approveVacation: async (vacationId: string): Promise<VacationRequest> => {
+    const res = await apiClient.post<VacationRequest>(`/api/v1/payroll/vacations/${vacationId}/approve`);
+    return res.data;
+  },
+
+  rejectVacation: async (vacationId: string, notes?: string): Promise<VacationRequest> => {
+    const res = await apiClient.post<VacationRequest>(`/api/v1/payroll/vacations/${vacationId}/reject`, { notes });
+    return res.data;
+  },
+
+  // Assiduidade e Faltas
+  listAbsences: async (params?: { employee_id?: string; from_date?: string; to_date?: string }): Promise<any[]> => {
+    const res = await apiClient.get<any[]>('/api/v1/payroll/absences', { params });
+    return res.data;
+  },
+
+  createAbsence: async (payload: {
+    employee_id: string;
+    absence_date: string;
+    absence_type?: string;
+    is_paid?: boolean;
+    notes?: string;
+  }): Promise<any> => {
+    const res = await apiClient.post('/api/v1/payroll/absences', payload);
+    return res.data;
+  },
+
+  getDashboardSummary: async (year?: number): Promise<any> => {
+    const res = await apiClient.get('/api/v1/payroll/dashboard/summary', {
+      params: year ? { year } : undefined,
+    });
     return res.data;
   },
 };

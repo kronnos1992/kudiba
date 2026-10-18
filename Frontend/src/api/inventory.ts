@@ -322,4 +322,26 @@ export const inventoryApi = {
     const res = await apiClient.put<CommercialEntity>(`/api/v1/inventory/entities/${id}`, payload);
     return res.data;
   },
+
+  getDashboardSummary: async (): Promise<any> => {
+    const res = await apiClient.get('/api/v1/inventory/dashboard/summary');
+    return res.data;
+  },
+
+  processInvoiceIssued: async (payload: {
+    invoiceId: string;
+    tenantId: string;
+    documentNumber: string;
+    documentType: string;
+    lines: Array<{
+      lineNumber: number;
+      productCode: string;
+      description: string;
+      quantity: number;
+      unitPrice?: number;
+    }>;
+  }): Promise<any> => {
+    const res = await apiClient.post('/api/v1/inventory/events/invoice-issued', payload);
+    return res.data;
+  },
 };

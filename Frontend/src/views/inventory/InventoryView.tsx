@@ -318,65 +318,65 @@ export const InventoryView: React.FC = () => {
   }, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Header & Identificação */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-            <Boxes className="w-7 h-7 text-emerald-600" />
-            Gestão de Artigos, Armazéns &amp; Stocks
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4">
+        <div className="min-w-0">
+          <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+            <Boxes className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-600 shrink-0" />
+            <span>Gestão de Artigos, Armazéns &amp; Stocks</span>
           </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
             Catálogo certificado AGT, valorização por Custo Médio Ponderado (CMP), lotes e armazéns via KudibaInventory
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {activeTab === 'products' && (
             <button
               onClick={() => {
                 resetProductForm();
                 setShowProductModal(true);
               }}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm transition-colors"
             >
-              <PlusCircle className="w-4 h-4" />
-              Novo Artigo / Serviço
+              <PlusCircle className="w-4 h-4 shrink-0" />
+              <span>Novo Artigo / Serviço</span>
             </button>
           )}
 
           {activeTab === 'warehouses' && (
             <button
               onClick={() => setShowWarehouseModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm transition-colors"
             >
-              <PlusCircle className="w-4 h-4" />
-              Novo Armazém
+              <PlusCircle className="w-4 h-4 shrink-0" />
+              <span>Novo Armazém</span>
             </button>
           )}
 
           {activeTab === 'movements' && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => setShowPurchaseModal(true)}
-                className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg shadow-sm"
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-medium rounded-lg shadow-sm"
               >
-                <PlusCircle className="w-4 h-4" />
-                Entrada (Compra)
+                <PlusCircle className="w-4 h-4 shrink-0" />
+                <span>Entrada (Compra)</span>
               </button>
               <button
                 onClick={() => setShowTransferModal(true)}
-                className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg shadow-sm"
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-medium rounded-lg shadow-sm"
               >
-                <ArrowRightLeft className="w-4 h-4" />
-                Transferência
+                <ArrowRightLeft className="w-4 h-4 shrink-0" />
+                <span>Transferência</span>
               </button>
               <button
                 onClick={() => setShowAdjustModal(true)}
-                className="inline-flex items-center gap-2 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg shadow-sm"
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs sm:text-sm font-medium rounded-lg shadow-sm"
               >
-                <AlertTriangle className="w-4 h-4" />
-                Ajuste / Quebra
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>Ajuste / Quebra</span>
               </button>
             </div>
           )}
@@ -384,35 +384,35 @@ export const InventoryView: React.FC = () => {
           {activeTab === 'batches' && (
             <button
               onClick={() => setShowBatchModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow-sm"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm"
             >
-              <PlusCircle className="w-4 h-4" />
-              Criar Lote
+              <PlusCircle className="w-4 h-4 shrink-0" />
+              <span>Criar Lote</span>
             </button>
           )}
 
           {activeTab === 'entities' && (
             <button
               onClick={() => setShowEntityModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow-sm"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm"
             >
-              <PlusCircle className="w-4 h-4" />
-              Registar Entidade
+              <PlusCircle className="w-4 h-4 shrink-0" />
+              <span>Registar Entidade</span>
             </button>
           )}
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <GlassCard className="p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Total Artigos &amp; Serviços</span>
-            <div className="p-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 rounded-lg">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+        <GlassCard className="p-4 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase truncate">Total Artigos &amp; Serviços</span>
+            <div className="p-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 rounded-lg shrink-0">
               <Package className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
+          <div className="mt-2 text-lg sm:text-xl 2xl:text-2xl font-bold text-slate-900 dark:text-white truncate">
             {totalProducts}
           </div>
           <span className="text-xs text-slate-400">
@@ -420,29 +420,29 @@ export const InventoryView: React.FC = () => {
           </span>
         </GlassCard>
 
-        <GlassCard className="p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Armazéns Ativos</span>
-            <div className="p-2 bg-blue-50 dark:bg-blue-950/40 text-blue-600 rounded-lg">
+        <GlassCard className="p-4 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase truncate">Armazéns Ativos</span>
+            <div className="p-2 bg-blue-50 dark:bg-blue-950/40 text-blue-600 rounded-lg shrink-0">
               <WarehouseIcon className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
+          <div className="mt-2 text-lg sm:text-xl 2xl:text-2xl font-bold text-slate-900 dark:text-white truncate">
             {warehouses.length}
           </div>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-slate-400 truncate block">
             Filial {activeBranch?.name || 'Sede'}
           </span>
         </GlassCard>
 
-        <GlassCard className="p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Entidades Registadas</span>
-            <div className="p-2 bg-purple-50 dark:bg-purple-950/40 text-purple-600 rounded-lg">
+        <GlassCard className="p-4 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase truncate">Entidades Registadas</span>
+            <div className="p-2 bg-purple-50 dark:bg-purple-950/40 text-purple-600 rounded-lg shrink-0">
               <Users className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
+          <div className="mt-2 text-lg sm:text-xl 2xl:text-2xl font-bold text-slate-900 dark:text-white truncate">
             {entities.length}
           </div>
           <span className="text-xs text-slate-400">
@@ -450,14 +450,14 @@ export const InventoryView: React.FC = () => {
           </span>
         </GlassCard>
 
-        <GlassCard className="p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Valor Patrimonial Registado</span>
-            <div className="p-2 bg-amber-50 dark:bg-amber-950/40 text-amber-600 rounded-lg">
+        <GlassCard className="p-4 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase truncate">Valor Patrimonial Registado</span>
+            <div className="p-2 bg-amber-50 dark:bg-amber-950/40 text-amber-600 rounded-lg shrink-0">
               <TrendingUp className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
+          <div className="mt-2 text-lg sm:text-xl 2xl:text-2xl font-bold text-slate-900 dark:text-white truncate">
             <KzAmount value={totalValuation || 2600000} />
           </div>
           <span className="text-xs text-emerald-600 font-medium">
@@ -467,72 +467,72 @@ export const InventoryView: React.FC = () => {
       </div>
 
       {/* Tabs de Navegação */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-1">
+      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-1 overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab('products')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'products'
               ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
         >
-          <Package className="w-4 h-4" />
-          Catálogo de Artigos &amp; Serviços
+          <Package className="w-4 h-4 shrink-0" />
+          <span>Catálogo de Artigos &amp; Serviços</span>
         </button>
 
         <button
           onClick={() => setActiveTab('warehouses')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'warehouses'
               ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
         >
-          <WarehouseIcon className="w-4 h-4" />
-          Armazéns &amp; Depósitos
+          <WarehouseIcon className="w-4 h-4 shrink-0" />
+          <span>Armazéns &amp; Depósitos</span>
         </button>
 
         <button
           onClick={() => setActiveTab('movements')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'movements'
               ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
         >
-          <History className="w-4 h-4" />
-          Movimentos de Stock &amp; CMP
+          <History className="w-4 h-4 shrink-0" />
+          <span>Movimentos de Stock &amp; CMP</span>
         </button>
 
         <button
           onClick={() => setActiveTab('batches')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'batches'
               ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
         >
-          <CalendarDays className="w-4 h-4" />
-          Lotes &amp; Validades
+          <CalendarDays className="w-4 h-4 shrink-0" />
+          <span>Lotes &amp; Validades</span>
         </button>
 
         <button
           onClick={() => setActiveTab('entities')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'entities'
               ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
         >
-          <Users className="w-4 h-4" />
-          Clientes &amp; Fornecedores
+          <Users className="w-4 h-4 shrink-0" />
+          <span>Clientes &amp; Fornecedores</span>
         </button>
       </div>
 
       {/* Conteúdo da Tab 1: Artigos & Serviços */}
       {activeTab === 'products' && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+          <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
             <div className="relative w-full sm:w-80">
               <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
               <input
@@ -544,7 +544,7 @@ export const InventoryView: React.FC = () => {
               />
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <button
                 onClick={() => setTypeFilter('ALL')}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${

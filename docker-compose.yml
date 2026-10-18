@@ -26,6 +26,7 @@ services:
       - ACCOUNTING_SERVICE_URL=http://accounting-service:8085
       - PAYROLL_SERVICE_URL=http://payroll-service:8086
       - INTEGRATIONS_SERVICE_URL=http://integrations-service:8087
+      - BACKOFFICE_SERVICE_URL=http://backoffice-service:8088
       # Sondas TCP do endpoint /health/services
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -234,7 +235,33 @@ services:
           - kudiba-integrations
 
   # ============================================================================
-  # 3. ESTADO EFÊMERO & CACHE PERIMÉTRICO (REDIS 7+)
+  # 9. BACKOFFICE B2B — CLIENTES & LICENÇAS ANUAIS (PYTHON / FASTAPI)
+  # Gere os clientes subscritores, as licenças anuais por módulos e o espelho
+  # da licença em kudiba_core.tenants. Escreve em kudiba_backoffice e kudiba_auth.
+  # ============================================================================
+  backoffice:
+    build:
+      context: ./Backend/services/KudibaBackoffice
+      dockerfile: Dockerfile
+    container_name: kudiba-backoffice
+    restart: unless-stopped
+    environment:
+      - PORT=8088
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql+asyncpg://kudiba:kudiba_secret_pass@postgres:5432/kudiba_backoffice
+      - AUTH_DATABASE_URL=postgresql+asyncpg://kudiba:kudiba_secret_pass@postgres:5432/kudiba_auth
+      - JWT_SECRET=kudiba_jwt_secret_development_key_change_in_production_2026
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      kudiba-internal-network:
+        aliases:
+          - backoffice-service
+          - kudiba-backoffice
+
+  # ============================================================================
+  # 3. ESTADO EFÉMERO & CACHE PERIMÉTRICO (REDIS 7+)
   # ============================================================================
   gateway-redis:
     image: redis:7.4-alpine
@@ -279,6 +306,7 @@ services:
       - ./Backend/deploy/06-accounting-schema.sql:/docker-entrypoint-initdb.d/06-accounting-schema.sql:ro
       - ./Backend/deploy/07-payroll-schema.sql:/docker-entrypoint-initdb.d/07-payroll-schema.sql:ro
       - ./Backend/deploy/08-integrations-schema.sql:/docker-entrypoint-initdb.d/08-integrations-schema.sql:ro
+      - ./Backend/deploy/09-backoffice-schema.sql:/docker-entrypoint-initdb.d/09-backoffice-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kudiba -d kudiba_erp"]
       interval: 5s

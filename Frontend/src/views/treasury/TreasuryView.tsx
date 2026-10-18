@@ -30,6 +30,7 @@ import {
   CreateBankAccountPayload,
   IssueReceiptPayload,
 } from '../../api/treasury';
+import { toast } from '../../stores/toastStore';
 import { inventoryApi } from '../../api/inventory';
 
 type TreasuryTab = 'registers' | 'receipts' | 'bank_accounts' | 'receivables';
@@ -66,6 +67,24 @@ export const TreasuryView: React.FC = () => {
     queryKey: ['treasury_registers', activeTenant?.id],
     queryFn: () => treasuryApi.listRegisters(),
     enabled: Boolean(activeTenant?.id),
+  });
+
+  const { data: registerSessionsMap = {}, isLoading: sessionsMapLoading } = useQuery({
+    queryKey: ['treasury_register_sessions', activeTenant?.id, registers.map((r) => r.id).join(',')],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        registers.map(async (r) => {
+          try {
+            const session = await treasuryApi.getCurrentSession(r.id);
+            return [r.id, session] as const;
+          } catch {
+            return [r.id, null] as const;
+          }
+        })
+      );
+      return Object.fromEntries(entries) as Record<string, CashSession | null>;
+    },
+    enabled: Boolean(activeTenant?.id) && registers.length > 0,
   });
 
   const { data: bankAccounts = [], isLoading: banksLoading } = useQuery({
@@ -139,8 +158,13 @@ export const TreasuryView: React.FC = () => {
     mutationFn: (payload: CreateCashRegisterPayload) => treasuryApi.createRegister(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['treasury_registers'] });
+      queryClient.invalidateQueries({ queryKey: ['treasury_register_sessions'] });
       setShowRegisterModal(false);
       setRegisterForm({ code: '', name: '' });
+      toast.success('Posto de caixa criado com sucesso.');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.error || err?.response?.data?.detail || 'Erro ao criar posto de caixa.');
     },
   });
 
@@ -148,7 +172,19 @@ export const TreasuryView: React.FC = () => {
     mutationFn: (payload: OpenCashSessionPayload) => treasuryApi.openSession(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['treasury_registers'] });
+      queryClient.invalidateQueries({ queryKey: ['treasury_register_sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['pos_current_session'] });
       setOpenSessionRegister(null);
+      toast.success('Sessão de caixa aberta com sucesso.');
+    },
+    onError: (err: any) => {
+      queryClient.invalidateQueries({ queryKey: ['treasury_register_sessions'] });
+      setOpenSessionRegister(null);
+      toast.error(
+        err?.response?.data?.error ||
+          err?.response?.data?.detail ||
+          'Este caixa já possui uma sessão aberta. Encerre a sessão atual antes de abrir uma nova.'
+      );
     },
   });
 
@@ -157,9 +193,15 @@ export const TreasuryView: React.FC = () => {
       treasuryApi.closeSession(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['treasury_registers'] });
+      queryClient.invalidateQueries({ queryKey: ['treasury_register_sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['pos_current_session'] });
       setCloseSessionTarget(null);
       setClosingCountedInput('');
       setClosingNotesInput('');
+      toast.success('Sessão de caixa encerrada com sucesso.');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.error || err?.response?.data?.detail || 'Erro ao encerrar sessão de caixa.');
     },
   });
 
@@ -167,9 +209,15 @@ export const TreasuryView: React.FC = () => {
     mutationFn: (payload: RecordCashMovementPayload) => treasuryApi.recordMovement(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['treasury_registers'] });
+      queryClient.invalidateQueries({ queryKey: ['treasury_register_sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['treasury_session_report'] });
       setMovementSessionTarget(null);
       setMovementAmountInput('');
       setMovementReasonInput('');
+      toast.success('Movimento de caixa registado.');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.error || err?.response?.data?.detail || 'Erro ao registar movimento.');
     },
   });
 
@@ -212,62 +260,62 @@ export const TreasuryView: React.FC = () => {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Header & Identificação */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-            <Landmark className="w-7 h-7 text-emerald-600" />
-            Tesouraria, Caixas &amp; Contas Bancárias
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4">
+        <div className="min-w-0">
+          <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+            <Landmark className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-600 shrink-0" />
+            <span>Tesouraria, Caixas &amp; Contas Bancárias</span>
           </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
             Sessões de caixa com fecho cego, contas bancárias (IBAN AO06) e emissão de recibos RC via KudibaTreasury
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {activeTab === 'registers' && (
             <button
               onClick={() => setShowRegisterModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm transition-colors"
             >
-              <PlusCircle className="w-4 h-4" />
-              Novo Posto / Caixa
+              <PlusCircle className="w-4 h-4 shrink-0" />
+              <span>Novo Posto / Caixa</span>
             </button>
           )}
 
           {activeTab === 'bank_accounts' && (
             <button
               onClick={() => setShowBankModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm transition-colors"
             >
-              <PlusCircle className="w-4 h-4" />
-              Adicionar Conta Bancária
+              <PlusCircle className="w-4 h-4 shrink-0" />
+              <span>Adicionar Conta Bancária</span>
             </button>
           )}
 
           {activeTab === 'receipts' && (
             <button
               onClick={() => setShowReceiptModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm transition-colors"
             >
-              <PlusCircle className="w-4 h-4" />
-              Emitir Recibo de Quitação (RC)
+              <PlusCircle className="w-4 h-4 shrink-0" />
+              <span>Emitir Recibo de Quitação (RC)</span>
             </button>
           )}
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <GlassCard className="p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Liquidez Bancária</span>
-            <div className="p-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 rounded-lg">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+        <GlassCard className="p-4 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase truncate">Liquidez Bancária</span>
+            <div className="p-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 rounded-lg shrink-0">
               <Building2 className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
+          <div className="mt-2 text-lg sm:text-xl 2xl:text-2xl font-bold text-slate-900 dark:text-white truncate">
             <KzAmount value={totalBankBalance} />
           </div>
           <span className="text-xs text-slate-400">
@@ -275,29 +323,29 @@ export const TreasuryView: React.FC = () => {
           </span>
         </GlassCard>
 
-        <GlassCard className="p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Caixas Físicos</span>
-            <div className="p-2 bg-blue-50 dark:bg-blue-950/40 text-blue-600 rounded-lg">
+        <GlassCard className="p-4 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase truncate">Caixas Físicos</span>
+            <div className="p-2 bg-blue-50 dark:bg-blue-950/40 text-blue-600 rounded-lg shrink-0">
               <Wallet className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
+          <div className="mt-2 text-lg sm:text-xl 2xl:text-2xl font-bold text-slate-900 dark:text-white truncate">
             {registers.length} Postos
           </div>
-          <span className="text-xs text-emerald-600 font-medium">
+          <span className="text-xs text-emerald-600 font-medium truncate block">
             Filial {activeBranch?.name || 'Sede Principal'}
           </span>
         </GlassCard>
 
-        <GlassCard className="p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Total Quitado (RC)</span>
-            <div className="p-2 bg-purple-50 dark:bg-purple-950/40 text-purple-600 rounded-lg">
+        <GlassCard className="p-4 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase truncate">Total Quitado (RC)</span>
+            <div className="p-2 bg-purple-50 dark:bg-purple-950/40 text-purple-600 rounded-lg shrink-0">
               <Receipt className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
+          <div className="mt-2 text-lg sm:text-xl 2xl:text-2xl font-bold text-slate-900 dark:text-white truncate">
             <KzAmount value={totalSettledReceipts} />
           </div>
           <span className="text-xs text-slate-400">
@@ -305,14 +353,14 @@ export const TreasuryView: React.FC = () => {
           </span>
         </GlassCard>
 
-        <GlassCard className="p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Contas a Receber</span>
-            <div className="p-2 bg-amber-50 dark:bg-amber-950/40 text-amber-600 rounded-lg">
+        <GlassCard className="p-4 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase truncate">Contas a Receber</span>
+            <div className="p-2 bg-amber-50 dark:bg-amber-950/40 text-amber-600 rounded-lg shrink-0">
               <FileCheck2 className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
+          <div className="mt-2 text-lg sm:text-xl 2xl:text-2xl font-bold text-slate-900 dark:text-white truncate">
             <KzAmount value={totalReceivables} />
           </div>
           <span className="text-xs text-amber-600 font-medium">
@@ -322,53 +370,53 @@ export const TreasuryView: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-1">
+      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-1 overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab('registers')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'registers'
               ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
         >
-          <Wallet className="w-4 h-4" />
-          Caixas Físicos &amp; Sessões
+          <Wallet className="w-4 h-4 shrink-0" />
+          <span>Caixas Físicos &amp; Sessões</span>
         </button>
 
         <button
           onClick={() => setActiveTab('receipts')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'receipts'
               ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
         >
-          <Receipt className="w-4 h-4" />
-          Recibos de Quitação (RC)
+          <Receipt className="w-4 h-4 shrink-0" />
+          <span>Recibos de Quitação (RC)</span>
         </button>
 
         <button
           onClick={() => setActiveTab('bank_accounts')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'bank_accounts'
               ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
         >
-          <Building2 className="w-4 h-4" />
-          Contas Bancárias (AO06)
+          <Building2 className="w-4 h-4 shrink-0" />
+          <span>Contas Bancárias (AO06)</span>
         </button>
 
         <button
           onClick={() => setActiveTab('receivables')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'receivables'
               ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
         >
-          <FileCheck2 className="w-4 h-4" />
-          Faturas a Prazo (A Receber)
+          <FileCheck2 className="w-4 h-4 shrink-0" />
+          <span>Faturas a Prazo (A Receber)</span>
         </button>
       </div>
 
@@ -385,82 +433,148 @@ export const TreasuryView: React.FC = () => {
                 Nenhum caixa registado. Clique em "Novo Posto / Caixa" para criar.
               </div>
             ) : (
-              registers.map((r) => (
-                <GlassCard key={r.id} className="p-5 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded">
-                        {r.code}
-                      </span>
-                      <StatusBadge status={r.is_active ? 'ok' : 'acompanhar'} label={r.is_active ? 'Ativo' : 'Inativo'} />
-                    </div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                      {r.name}
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Filial: {activeBranch?.name || 'Sede'} • ID: {r.id.slice(0, 8)}...
-                    </p>
-                  </div>
+              registers.map((r) => {
+                const currentSession = registerSessionsMap[r.id] ?? null;
+                const isSessionOpen = currentSession?.status === 'OPEN';
 
-                  <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <button
-                        onClick={() => setOpenSessionRegister(r)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
-                      >
-                        <Unlock className="w-3.5 h-3.5" />
-                        Abrir Caixa
-                      </button>
+                return (
+                  <GlassCard key={r.id} className="p-4 sm:p-5 flex flex-col justify-between min-w-0">
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded">
+                          {r.code}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                              isSessionOpen
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                            }`}
+                          >
+                            {isSessionOpen ? (
+                              <>
+                                <Unlock className="w-3 h-3" />
+                                Caixa Aberto
+                              </>
+                            ) : (
+                              <>
+                                <Lock className="w-3 h-3" />
+                                Caixa Fechado
+                              </>
+                            )}
+                          </span>
+                          <StatusBadge
+                            status={r.is_active ? 'ok' : 'acompanhar'}
+                            label={r.is_active ? 'Ativo' : 'Inativo'}
+                          />
+                        </div>
+                      </div>
+                      <h3 className="text-base font-bold text-slate-900 dark:text-white truncate">
+                        {r.name}
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1 truncate">
+                        Filial: {activeBranch?.name || 'Sede'} • ID: {r.id.slice(0, 8)}...
+                      </p>
 
-                      <button
-                        onClick={async () => {
-                          const cur = await treasuryApi.getCurrentSession(r.id);
-                          if (cur) {
-                            setCloseSessionTarget(cur);
-                          } else {
-                            alert('Não existe sessão aberta para este caixa.');
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors"
-                      >
-                        <Lock className="w-3.5 h-3.5" />
-                        Fecho Cego
-                      </button>
-
-                      <button
-                        onClick={async () => {
-                          const cur = await treasuryApi.getCurrentSession(r.id);
-                          if (cur) {
-                            setMovementSessionTarget(cur);
-                          } else {
-                            alert('É necessário ter uma sessão aberta para registar movimentos.');
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
-                      >
-                        <ArrowDownCircle className="w-3.5 h-3.5" />
-                        Movimento
-                      </button>
+                      {isSessionOpen && currentSession && (
+                        <div className="mt-3 p-2.5 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/60 flex items-center justify-between text-xs">
+                          <span className="text-emerald-800 dark:text-emerald-300 font-medium">
+                            Fundo Inicial:
+                          </span>
+                          <span className="font-bold text-emerald-900 dark:text-emerald-200">
+                            <KzAmount value={Number(currentSession.opening_balance)} />
+                          </span>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="pt-2">
-                      <button
-                        onClick={async () => {
-                          const cur = await treasuryApi.getCurrentSession(r.id);
-                          if (cur) {
-                            setReportModalSessionId(cur.id);
-                          } else {
-                            alert('Nenhuma sessão aberta no momento para gerar relatório.');
+                    <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <button
+                          type="button"
+                          disabled={isSessionOpen || sessionsMapLoading}
+                          onClick={async () => {
+                            const existing = await treasuryApi.getCurrentSession(r.id);
+                            if (existing && existing.status === 'OPEN') {
+                              queryClient.invalidateQueries({ queryKey: ['treasury_register_sessions'] });
+                              toast.error('Este caixa já está aberto. Efetue o fecho antes de abrir uma nova sessão.');
+                              return;
+                            }
+                            setOpenSessionRegister(r);
+                          }}
+                          title={
+                            isSessionOpen
+                              ? 'Este caixa já está aberto. Feche a sessão atual antes de abrir novamente.'
+                              : 'Abrir nova sessão de caixa'
                           }
-                        }}
-                        className="w-full text-center text-xs font-medium text-slate-500 hover:text-emerald-600 py-1"
-                      >
-                        Ver Relatório da Sessão Atual
-                      </button>
+                          className="flex-1 justify-center inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          <Unlock className="w-3.5 h-3.5 shrink-0" />
+                          <span>{isSessionOpen ? 'Aberto' : 'Abrir'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={!isSessionOpen || sessionsMapLoading}
+                          onClick={() => {
+                            if (currentSession) {
+                              setCloseSessionTarget(currentSession);
+                            } else {
+                              toast.error('Não existe sessão aberta para este caixa.');
+                            }
+                          }}
+                          title={
+                            !isSessionOpen
+                              ? 'O caixa está fechado. Abra uma sessão primeiro.'
+                              : 'Efetuar fecho cego de caixa'
+                          }
+                          className="flex-1 justify-center inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          <Lock className="w-3.5 h-3.5 shrink-0" />
+                          <span>Fecho</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={!isSessionOpen || sessionsMapLoading}
+                          onClick={() => {
+                            if (currentSession) {
+                              setMovementSessionTarget(currentSession);
+                            } else {
+                              toast.error('É necessário ter uma sessão aberta para registar movimentos.');
+                            }
+                          }}
+                          title={
+                            !isSessionOpen
+                              ? 'Abra uma sessão de caixa para registar entradas/sangrias.'
+                              : 'Registar reforço, sangria ou despesa'
+                          }
+                          className="flex-1 justify-center inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          <ArrowDownCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>Movimento</span>
+                        </button>
+                      </div>
+
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          disabled={!isSessionOpen || sessionsMapLoading}
+                          onClick={() => {
+                            if (currentSession) {
+                              setReportModalSessionId(currentSession.id);
+                            }
+                          }}
+                          className="w-full text-center text-xs font-medium text-slate-500 hover:text-emerald-600 py-1 disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          Ver Relatório da Sessão Atual
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </GlassCard>
-              ))
+                  </GlassCard>
+                );
+              })
             )}
           </div>
         </div>
@@ -469,8 +583,8 @@ export const TreasuryView: React.FC = () => {
       {/* Tab 2: Recibos de Quitação (RC) */}
       {activeTab === 'receipts' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="relative w-80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative w-full sm:w-80">
               <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
               <input
                 type="text"

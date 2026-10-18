@@ -5,10 +5,12 @@ from pydantic import BaseModel, EmailStr, Field
 
 from src.application.dto import (
     AuthenticateUserCommand,
+    CreateBranchCommand,
     InviteUserCommand,
     LogoutUserCommand,
     RotateRefreshTokenCommand,
     SwitchTenantCommand,
+    UpdateTenantSettingsCommand,
     UpdateUserRolesCommand,
 )
 from src.presentation.http.deps import (
@@ -45,6 +47,47 @@ class InviteHttpRequest(BaseModel):
 
 class UpdateRolesHttpRequest(BaseModel):
     roles: List[str] = Field(..., min_length=1, description="Novos papéis")
+
+
+class BankAccountHttpItem(BaseModel):
+    bank_name: str = Field(..., description="Nome da instituição bancária")
+    iban: str = Field(..., description="IBAN da conta")
+    account_number: Optional[str] = Field("", description="Número da conta")
+    swift: Optional[str] = Field("", description="Código SWIFT/BIC")
+    currency: Optional[str] = Field("AOA", description="Moeda da conta")
+    is_primary: Optional[bool] = Field(False, description="Conta principal para documentos")
+
+
+class UpdateTenantSettingsHttpRequest(BaseModel):
+    company_name: Optional[str] = Field(None, min_length=2, max_length=255, description="Denominação Social")
+    trade_name: Optional[str] = Field(None, max_length=255, description="Nome Comercial / Marca")
+    nif: Optional[str] = Field(None, min_length=5, max_length=20, description="NIF")
+    address_detail: Optional[str] = Field(None, description="Endereço completo da sede")
+    city: Optional[str] = Field(None, max_length=128, description="Município / Cidade")
+    province: Optional[str] = Field(None, max_length=128, description="Província")
+    postal_code: Optional[str] = Field(None, max_length=32, description="Código Postal / Caixa Postal")
+    country: Optional[str] = Field(None, max_length=2, description="Código ISO do País (ex: AO)")
+    phone: Optional[str] = Field(None, max_length=64, description="Telefone oficial")
+    email: Optional[str] = Field(None, max_length=255, description="E-mail oficial nos documentos")
+    website: Optional[str] = Field(None, max_length=255, description="Website oficial")
+    logo_data_url: Optional[str] = Field(None, description="Logótipo da empresa em Base64 Data URL ou URL")
+    commercial_registry: Optional[str] = Field(None, max_length=64, description="Conservatória / Matrícula Comercial")
+    share_capital: Optional[str] = Field(None, max_length=64, description="Capital Social")
+    currency: Optional[str] = Field(None, max_length=3, description="Moeda operacional (AOA, USD, EUR)")
+    tax_regime_code: Optional[str] = Field(None, max_length=32, description="Regime de IVA (REGIME_GERAL, REGIME_SIMPLIFICADO, REGIME_EXCLUSAO)")
+    tax_office_code: Optional[str] = Field(None, max_length=128, description="Repartição Fiscal")
+    agt_cert_number: Optional[str] = Field(None, max_length=64, description="Número de Certificação AGT")
+    default_withholding_rate: Optional[float] = Field(None, ge=0, le=100, description="Taxa de retenção na fonte padrão (%)")
+    invoice_footer_notes: Optional[str] = Field(None, description="Menções ou observações no rodapé dos documentos")
+    bank_accounts: Optional[List[BankAccountHttpItem]] = Field(None, description="Coordenadas bancárias constantes nos documentos oficiais")
+    onboarding_completed: Optional[bool] = Field(None, description="Indica se a parametrização inicial foi concluída")
+
+
+class CreateBranchHttpRequest(BaseModel):
+    code: str = Field(..., min_length=2, max_length=32, description="Código da filial (ex: LOJA01)")
+    name: str = Field(..., min_length=2, max_length=128, description="Nome da filial ou estabelecimento")
+    city: Optional[str] = Field(None, max_length=128, description="Município / Cidade")
+    address_detail: Optional[str] = Field(None, description="Morada do estabelecimento")
 
 
 def create_auth_router() -> APIRouter:
@@ -145,6 +188,59 @@ def create_auth_router() -> APIRouter:
         return await app_state.get_user_profile.execute(ctx.user_id)
 
     @router.get(
+        "/tenant/settings",
+        summary="Consultar Parametrização da Empresa Activa",
+        description="Retorna os parâmetros globais, fiscais, identidade visual e coordenadas bancárias da empresa activa.",
+    )
+    async def get_tenant_settings(
+        request: Request,
+        ctx: SecurityContext = Depends(get_security_context),
+    ):
+        app_state = get_app_state(request)
+        return await app_state.get_tenant_settings.execute(ctx.tenant_id)
+
+    @router.put(
+        "/tenant/settings",
+        summary="Actualizar Parametrização da Empresa Activa",
+        description="Actualiza os dados globais e específicos da empresa constantes nos documentos oficiais, exigindo 'tenant:settings:manage' ou papel ADMIN.",
+    )
+    async def update_tenant_settings(
+        req: UpdateTenantSettingsHttpRequest,
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("tenant:settings:manage")),
+    ):
+        app_state = get_app_state(request)
+        cmd = UpdateTenantSettingsCommand(
+            tenant_id=ctx.tenant_id,
+            actor_user_id=ctx.user_id,
+            company_name=req.company_name,
+            trade_name=req.trade_name,
+            nif=req.nif,
+            address_detail=req.address_detail,
+            city=req.city,
+            province=req.province,
+            postal_code=req.postal_code,
+            country=req.country,
+            phone=req.phone,
+            email=req.email,
+            website=req.website,
+            logo_data_url=req.logo_data_url,
+            commercial_registry=req.commercial_registry,
+            share_capital=req.share_capital,
+            currency=req.currency,
+            tax_regime_code=req.tax_regime_code,
+            tax_office_code=req.tax_office_code,
+            agt_cert_number=req.agt_cert_number,
+            default_withholding_rate=req.default_withholding_rate,
+            invoice_footer_notes=req.invoice_footer_notes,
+            bank_accounts=[item.model_dump() for item in req.bank_accounts] if req.bank_accounts is not None else None,
+            onboarding_completed=req.onboarding_completed,
+            ip_address=extract_client_ip(request),
+            user_agent=request.headers.get("User-Agent"),
+        )
+        return await app_state.update_tenant_settings.execute(cmd)
+
+    @router.get(
         "/users",
         summary="Listar Membros da Organização",
         description="Executa o caso de uso ListTenantMembersUseCase exigindo a permissão 'users:read'.",
@@ -214,6 +310,28 @@ def create_auth_router() -> APIRouter:
         app_state = get_app_state(request)
         return await app_state.list_branches.execute(ctx.tenant_id)
 
+    @router.post(
+        "/branches",
+        status_code=status.HTTP_201_CREATED,
+        summary="Registar Nova Filial / Estabelecimento Comercial",
+        description="Cria uma nova filial ou loja associada à empresa activa.",
+    )
+    async def create_branch(
+        req: CreateBranchHttpRequest,
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("tenant:settings:manage")),
+    ):
+        app_state = get_app_state(request)
+        cmd = CreateBranchCommand(
+            tenant_id=ctx.tenant_id,
+            actor_user_id=ctx.user_id,
+            code=req.code,
+            name=req.name,
+            city=req.city,
+            address_detail=req.address_detail,
+        )
+        return await app_state.create_branch.execute(cmd)
+
     @router.get(
         "/roles",
         summary="Catálogo de Papéis e Permissões",
@@ -224,3 +342,4 @@ def create_auth_router() -> APIRouter:
         return await app_state.list_roles.execute()
 
     return router
+

@@ -4,13 +4,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.application.commands import (
     AuthenticateUserUseCase,
+    CreateBranchUseCase,
     InviteUserUseCase,
     LogoutUserUseCase,
     RotateRefreshTokenUseCase,
     SwitchTenantUseCase,
+    UpdateTenantSettingsUseCase,
     UpdateUserRolesUseCase,
 )
 from src.application.queries import (
+    GetTenantSettingsUseCase,
     GetUserProfileUseCase,
     ListBranchesUseCase,
     ListRolesUseCase,
@@ -44,9 +47,12 @@ class AppState:
     switch_tenant: SwitchTenantUseCase
     invite_user: InviteUserUseCase
     update_user_roles: UpdateUserRolesUseCase
+    update_tenant_settings: UpdateTenantSettingsUseCase
+    create_branch: CreateBranchUseCase
 
     # Casos de Uso (Queries)
     get_user_profile: GetUserProfileUseCase
+    get_tenant_settings: GetTenantSettingsUseCase
     list_tenant_members: ListTenantMembersUseCase
     list_branches: ListBranchesUseCase
     list_roles: ListRolesUseCase
@@ -132,11 +138,27 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         session_revocation_ttl_seconds=config.jwt_access_expiration_minutes * 60 + 60,
     )
 
+    update_tenant_settings = UpdateTenantSettingsUseCase(
+        uow_factory=uow_factory,
+        tenant_repo=tenant_repo,
+        audit_repo=audit_repo,
+    )
+
+    create_branch = CreateBranchUseCase(
+        uow_factory=uow_factory,
+        tenant_repo=tenant_repo,
+        audit_repo=audit_repo,
+    )
+
     # 3. Casos de Uso (Queries)
     get_user_profile = GetUserProfileUseCase(
         user_repo=user_repo,
         tenant_repo=tenant_repo,
         user_tenant_repo=user_tenant_repo,
+    )
+
+    get_tenant_settings = GetTenantSettingsUseCase(
+        tenant_repo=tenant_repo,
     )
 
     list_tenant_members = ListTenantMembersUseCase(
@@ -163,8 +185,12 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         switch_tenant=switch_tenant,
         invite_user=invite_user,
         update_user_roles=update_user_roles,
+        update_tenant_settings=update_tenant_settings,
+        create_branch=create_branch,
         get_user_profile=get_user_profile,
+        get_tenant_settings=get_tenant_settings,
         list_tenant_members=list_tenant_members,
         list_branches=list_branches,
         list_roles=list_roles,
     )
+

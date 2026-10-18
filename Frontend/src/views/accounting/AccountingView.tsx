@@ -331,9 +331,9 @@ export const AccountingView: React.FC = () => {
     <div className="space-y-6">
       {/* Header Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white">
               Contabilidade Geral &amp; PGC Angolano
             </h2>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
@@ -377,13 +377,13 @@ export const AccountingView: React.FC = () => {
       </div>
 
       {/* KPI Cards Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <GlassCard className="p-4 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <GlassCard className="p-4 flex items-center gap-3.5 min-w-0">
+          <div className="w-11 h-11 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold shrink-0">
             <Scale className="w-6 h-6" />
           </div>
-          <div>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+          <div className="min-w-0 flex-1">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block truncate">
               Equilíbrio Contabilístico
             </span>
             <div className="flex items-center gap-2 mt-0.5">
@@ -396,40 +396,40 @@ export const AccountingView: React.FC = () => {
           </div>
         </GlassCard>
 
-        <GlassCard className="p-4 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+        <GlassCard className="p-4 flex items-center gap-3.5 min-w-0">
+          <div className="w-11 h-11 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold shrink-0">
             <CheckCircle className="w-6 h-6" />
           </div>
-          <div>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+          <div className="min-w-0 flex-1">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block truncate">
               Total Débitos (Período)
             </span>
-            <span className="text-lg font-bold text-slate-900 dark:text-white">
+            <span className="text-base sm:text-lg font-bold text-slate-900 dark:text-white block truncate">
               <KzAmount value={parseFloat(String(trialBalance?.total_period_debit || 0))} />
             </span>
           </div>
         </GlassCard>
 
-        <GlassCard className="p-4 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+        <GlassCard className="p-4 flex items-center gap-3.5 min-w-0">
+          <div className="w-11 h-11 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold shrink-0">
             <BookOpen className="w-6 h-6" />
           </div>
-          <div>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+          <div className="min-w-0 flex-1">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block truncate">
               Total Créditos (Período)
             </span>
-            <span className="text-lg font-bold text-slate-900 dark:text-white">
+            <span className="text-base sm:text-lg font-bold text-slate-900 dark:text-white block truncate">
               <KzAmount value={parseFloat(String(trialBalance?.total_period_credit || 0))} />
             </span>
           </div>
         </GlassCard>
 
-        <GlassCard className="p-4 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+        <GlassCard className="p-4 flex items-center gap-3.5 min-w-0">
+          <div className="w-11 h-11 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold shrink-0">
             <Calendar className="w-6 h-6" />
           </div>
-          <div>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+          <div className="min-w-0 flex-1">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block truncate">
               Exercício Fiscal
             </span>
             <div className="flex items-center gap-2 mt-0.5">
@@ -446,10 +446,10 @@ export const AccountingView: React.FC = () => {
 
       {/* Tabs Navigation */}
       <div className="border-b border-slate-200 dark:border-slate-800">
-        <nav className="flex space-x-6 overflow-x-auto">
+        <nav className="flex space-x-6 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveTab('trial_balance')}
-            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
+            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
               activeTab === 'trial_balance'
                 ? 'border-blue-600 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
@@ -461,7 +461,7 @@ export const AccountingView: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('entries')}
-            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
+            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
               activeTab === 'entries'
                 ? 'border-blue-600 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
@@ -473,7 +473,7 @@ export const AccountingView: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('chart')}
-            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
+            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
               activeTab === 'chart'
                 ? 'border-blue-600 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
@@ -485,7 +485,7 @@ export const AccountingView: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('journals_years')}
-            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
+            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
               activeTab === 'journals_years'
                 ? 'border-blue-600 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
@@ -497,7 +497,7 @@ export const AccountingView: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('revaluation')}
-            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
+            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
               activeTab === 'revaluation'
                 ? 'border-blue-600 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'

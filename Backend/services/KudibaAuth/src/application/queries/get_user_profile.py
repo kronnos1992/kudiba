@@ -42,22 +42,34 @@ class GetUserProfileUseCase:
             if m.default_branch_id:
                 branch = await self.tenant_repo.find_branch_by_id(m.default_branch_id, tenant.id)
                 if branch:
-                    branch_dto = BranchSummaryDto(id=branch.id, code=branch.code, name=branch.name, city=branch.city)
+                    branch_dto = BranchSummaryDto(
+                        id=branch.id,
+                        code=branch.code,
+                        name=branch.name,
+                        city=branch.city,
+                        address_detail=branch.address_detail,
+                    )
 
             roles = await self.user_tenant_repo.get_user_roles_in_tenant(user.id, tenant.id)
             permissions = await self.user_tenant_repo.get_roles_permissions(roles)
 
             branches = await self.tenant_repo.find_branches(tenant.id)
             branch_dtos = [
-                BranchSummaryDto(id=b.id, code=b.code, name=b.name, city=b.city) for b in branches
+                BranchSummaryDto(
+                    id=b.id,
+                    code=b.code,
+                    name=b.name,
+                    city=b.city,
+                    address_detail=b.address_detail,
+                )
+                for b in branches
             ]
 
+            from src.application.queries.get_tenant_settings import build_tenant_summary_dto
+
             tenants_summary.append(
-                TenantSummaryDto(
-                    id=tenant.id,
-                    slug=tenant.slug,
-                    company_name=tenant.company_name,
-                    nif=tenant.nif,
+                build_tenant_summary_dto(
+                    tenant=tenant,
                     roles=roles,
                     permissions=permissions,
                     default_branch=branch_dto,

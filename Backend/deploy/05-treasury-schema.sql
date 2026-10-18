@@ -68,6 +68,30 @@ CREATE INDEX IF NOT EXISTS idx_sessions_register ON kudiba_treasury.cash_session
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON kudiba_treasury.cash_sessions(register_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_open_session_per_register ON kudiba_treasury.cash_sessions (tenant_id, register_id) WHERE status = 'OPEN';
 
+-- 3b. SESSÕES POS (NÍVEL DO GESTOR — ABRE/FECHA A OPERAÇÃO DO TERMINAL NO DIA)
+CREATE TABLE IF NOT EXISTS kudiba_treasury.pos_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    register_id UUID NOT NULL REFERENCES kudiba_treasury.cash_registers(id) ON DELETE RESTRICT,
+    opened_by VARCHAR(100) NOT NULL,
+    opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    closed_by VARCHAR(100),
+    closed_at TIMESTAMPTZ,
+    closing_notes TEXT,
+    status kudiba_treasury.session_status NOT NULL DEFAULT 'OPEN',
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pos_sessions_tenant ON kudiba_treasury.pos_sessions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_pos_sessions_register ON kudiba_treasury.pos_sessions(register_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_open_pos_session_per_register ON kudiba_treasury.pos_sessions (tenant_id, register_id) WHERE status = 'OPEN';
+
+ALTER TABLE kudiba_treasury.cash_sessions
+    ADD COLUMN IF NOT EXISTS pos_session_id UUID REFERENCES kudiba_treasury.pos_sessions(id);
+CREATE INDEX IF NOT EXISTS idx_sessions_pos ON kudiba_treasury.cash_sessions(pos_session_id);
+
 -- 4. MOVIMENTOS DE CAIXA (SANGRIA, SUPRIMENTO, ENTRADA DE VENDA, DESPESA)
 CREATE TABLE IF NOT EXISTS kudiba_treasury.cash_movements (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

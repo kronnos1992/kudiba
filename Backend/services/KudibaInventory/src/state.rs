@@ -8,7 +8,8 @@ use crate::application::commands::{
     UpdateProductPriceCommand, UpdateWarehouseCommand,
 };
 use crate::application::queries::{
-    GetBatchQuery, GetEntityQuery, GetProductQuery, GetStockQuery, GetWarehouseQuery,
+    GetBatchQuery, GetDashboardSummaryQuery, GetEntityQuery, GetProductQuery, GetStockQuery,
+    GetWarehouseQuery,
 };
 use crate::config::Config;
 use crate::domain::ports::db_session::DbSessionFactory;
@@ -44,6 +45,7 @@ pub struct AppState {
     pub get_warehouse_query: Arc<GetWarehouseQuery>,
     pub get_stock_query: Arc<GetStockQuery>,
     pub get_batch_query: Arc<GetBatchQuery>,
+    pub get_dashboard_summary_query: Arc<GetDashboardSummaryQuery>,
 }
 
 impl AppState {
@@ -154,8 +156,9 @@ impl AppState {
             warehouse_repo,
         ));
         let get_stock_query = Arc::new(GetStockQuery::new(session_factory.clone(), stock_repo));
-        let get_batch_query = Arc::new(GetBatchQuery::new(session_factory, batch_repo));
-
+        let get_batch_query = Arc::new(GetBatchQuery::new(session_factory.clone(), batch_repo));
+        let get_dashboard_summary_query =
+            Arc::new(GetDashboardSummaryQuery::new(session_factory));
         Self {
             config: Arc::new(config),
             db_pool: pool,
@@ -179,6 +182,7 @@ impl AppState {
             get_warehouse_query,
             get_stock_query,
             get_batch_query,
+            get_dashboard_summary_query,
         }
     }
 }

@@ -108,14 +108,18 @@ O motor fiscal `KudibaInvoicing` atende plenamente ao **Decreto Presidencial n.�
    - Talão térmico de caixa de 80mm em PDF condensado e em texto puro com comandos ESC/POS (48 colunas).
 8. **QR Code Fiscal Oficial AGT**: Geração da string canónica oficial (`A:NIF*B:Doc*C:Total*D:Data*E:Hash`), matriz gráfica ASCII e imagem vectorial SVG com correção de erro nível M.
 9. **Anulação Legal com Emissão de Nota de Crédito (NC)**: Anulação e retificação formal vinculada ao documento de origem com inversão contábil, idempotência fiscal e preservação de histórico.
-10. **Memória Fiscal POS (Leitura X e Fecho Z)**:
-    - Leitura X intradiária para conferência de vendas e meios de pagamento a qualquer momento.
-    - Fecho Z diário oficial obrigatório com numeração anual sequencial (`Z YYYY/NNNNNN`) persistido na tabela `kudiba_core.pos_z_reports` com idempotência diária e renderização térmica/PDF.
-11. **Campos Logísticos de Transporte para Guias (GT e GR)**: Registo e validações obrigatórias de matrícula, transportador, locais e datas/horas de carga e descarga nos termos do Artigo 18.º do RJFDE.
-12. **Streaming SAF-T XML em Memória Constante $O(1)$**: Leitura paginada no PostgreSQL e streaming contínuo via `SaftXmlGenerator::write_xml_stream`, viabilizando arquivos gigantes sem estouro de memória RAM.
-13. **Separação de Pools para Read-Replicas**: Roteamento de relatórios pesados e exportações analíticas para `DATABASE_READ_URL`, preservando o pool primário `DATABASE_URL` para escritas transacionais ACID.
-14. **Conector Webservices da AGT**: Heartbeat contínuo de conectividade e latência com ativação automática de modo de contingência fiscal, além de despacho em lote de faturas assinadas.
-15. **Regimes Tributários e Catálogo de Isenções**: Enquadramento automático por volume de negócios (Exclusão, Simplificado e Geral) e validação de códigos legais de isenção M00 a M99.
+10. **Memória Fiscal POS (Leitura X, Fecho Z e Histórico)**:
+    - Leitura X intradiária para conferência de vendas e meios de pagamento a qualquer momento (`GET /api/v1/fiscal/pos/reports/x`), acessível também ao perfil `OPERADOR_CAIXA`.
+    - Fecho Z diário oficial obrigatório com numeração anual sequencial (`Z YYYY/NNNNNN`) persistido na tabela `kudiba_core.pos_z_reports` com idempotência diária e renderização térmica/PDF (`POST /api/v1/fiscal/pos/reports/z`).
+    - Histórico imutável de Fechos Z (`GET /api/v1/fiscal/pos/reports`) com filtro por terminal e data, restrito a perfis de gestão.
+11. **Sessões POS em Dois Níveis e Painel dos POS (KudibaTreasury)**:
+    - O gestor abre uma Sessão POS (`POST /api/v1/treasury/pos-sessions/open`, perfil `ADMIN`) que habilita a operação do terminal; os operadores abrem turnos de caixa dentro dela.
+    - Painel dos POS (`GET /api/v1/treasury/pos/panel`) com KPIs do dia e faturação desdobrada **por caixa** e **por usuário** a partir de `cash_movements`, complementando os totais fiscais do Fecho Z.
+12. **Campos Logísticos de Transporte para Guias (GT e GR)**: Registo e validações obrigatórias de matrícula, transportador, locais e datas/horas de carga e descarga nos termos do Artigo 18.º do RJFDE.
+13. **Streaming SAF-T XML em Memória Constante $O(1)$**: Leitura paginada no PostgreSQL e streaming contínuo via `SaftXmlGenerator::write_xml_stream`, viabilizando arquivos gigantes sem estouro de memória RAM.
+14. **Separação de Pools para Read-Replicas**: Roteamento de relatórios pesados e exportações analíticas para `DATABASE_READ_URL`, preservando o pool primário `DATABASE_URL` para escritas transacionais ACID.
+15. **Conector Webservices da AGT**: Heartbeat contínuo de conectividade e latência com ativação automática de modo de contingência fiscal, além de despacho em lote de faturas assinadas.
+16. **Regimes Tributários e Catálogo de Isenções**: Enquadramento automático por volume de negócios (Exclusão, Simplificado e Geral) e validação de códigos legais de isenção M00 a M99.
 
 ### 5.2 Validação por Testes Automatizados
 - **84 testes unitários e de integração** executados e aprovados com 100% de sucesso (`cargo test --bin kudiba-invoicing`):

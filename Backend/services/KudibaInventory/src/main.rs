@@ -7,8 +7,8 @@ use kudiba_inventory::config::Config;
 use kudiba_inventory::presentation::http::create_router;
 use kudiba_inventory::state::AppState;
 
-const MAX_DB_CONNECT_ATTEMPTS: u32 = 10;
-const DB_CONNECT_RETRY_DELAY: Duration = Duration::from_secs(5);
+const MAX_DB_CONNECT_ATTEMPTS: u32 = 2;
+const DB_CONNECT_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -66,7 +66,13 @@ async fn connect_with_retry(config: &Config) -> Result<sqlx::PgPool, sqlx::Error
                 attempt += 1;
                 tokio::time::sleep(DB_CONNECT_RETRY_DELAY).await;
             }
-            Err(err) => return Err(err),
+            Err(err) => {
+                tracing::warn!(
+                    "Aviso: falha inicial na ligação ao PostgreSQL ({}). KudibaInventory em modo degradado.",
+                    err
+                );
+                return config.create_lazy_db_pool();
+            }
         }
     }
 }

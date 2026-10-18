@@ -30,6 +30,7 @@ from src.application.queries import (
     GetContractUseCase,
     GetPeriodSummaryUseCase,
     GetVacationBalanceUseCase,
+    GetDashboardSummaryUseCase,
     ListDepartmentsUseCase,
     ListJobPositionsUseCase,
     ListVacationsUseCase,
@@ -85,6 +86,7 @@ class AppState:
     get_contract: GetContractUseCase
     get_period_summary: GetPeriodSummaryUseCase
     get_vacation_balance: GetVacationBalanceUseCase
+    get_dashboard_summary: GetDashboardSummaryUseCase
     list_departments: ListDepartmentsUseCase
     list_job_positions: ListJobPositionsUseCase
     list_vacations: ListVacationsUseCase
@@ -134,6 +136,9 @@ def create_app_state(
     get_contract = GetContractUseCase(contract_repo)
     get_period_summary = GetPeriodSummaryUseCase(payroll_repo, employee_repo)
     get_vacation_balance = GetVacationBalanceUseCase(hr_repo, employee_repo)
+    get_dashboard_summary = GetDashboardSummaryUseCase(
+        employee_repo, payroll_repo, org_repo
+    )
     list_departments = ListDepartmentsUseCase(org_repo)
     list_job_positions = ListJobPositionsUseCase(org_repo)
     list_vacations = ListVacationsUseCase(hr_repo)
@@ -192,6 +197,7 @@ def create_app_state(
         get_contract=get_contract,
         get_period_summary=get_period_summary,
         get_vacation_balance=get_vacation_balance,
+        get_dashboard_summary=get_dashboard_summary,
         list_departments=list_departments,
         list_job_positions=list_job_positions,
         list_vacations=list_vacations,

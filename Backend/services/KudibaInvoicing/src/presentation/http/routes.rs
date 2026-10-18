@@ -114,11 +114,20 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/fiscal/reports/tax/pdf",
             get(fiscal_report_pdf_handler),
         )
+        // REST: Painel Executivo de Faturação (agregação do exercício)
+        .route(
+            "/api/v1/fiscal/dashboard/summary",
+            get(dashboard_summary_handler),
+        )
         // REST: Relatórios de Caixa e Memória Fiscal POS (Leitura X e Fecho Z)
         .route("/api/v1/fiscal/pos/reports/x", get(pos_leitura_x_handler))
         .route(
             "/api/v1/fiscal/pos/reports/x/thermal",
             get(pos_leitura_x_thermal_handler),
+        )
+        .route(
+            "/api/v1/fiscal/pos/reports",
+            get(pos_z_reports_history_handler),
         )
         .route("/api/v1/fiscal/pos/reports/z", post(pos_fecho_z_handler))
         .route(
@@ -130,6 +139,11 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/fiscal/agt/sync", post(sync_agt_handler))
         // REST: Gestão de chaves criptográficas para certificação AGT
         .route("/api/v1/fiscal/keys/generate", post(generate_keys_handler))
+        // REST: Parametrização cadastral e fiscal da empresa (Tenant)
+        .route(
+            "/api/v1/fiscal/tenant",
+            get(get_fiscal_tenant_handler).put(upsert_fiscal_tenant_handler),
+        )
         .merge(crate::presentation::http::swagger::router::<AppState>())
         .with_state(state)
 }
@@ -473,11 +487,22 @@ async fn get_invoice_pdf_handler(
         Err(err) => return domain_error(err),
     };
 
-    let company_name = "Kudiba ERP";
-    match crate::infrastructure::reports::InvoicePdfGenerator::generate_pdf(
+    let tenant = load_tenant_by_id(&state.pool, tenant_id).await;
+    let company_name = tenant
+        .as_ref()
+        .map(|t| t.company_name.as_str())
+        .unwrap_or("Kudiba ERP");
+    let software_cert = tenant
+        .as_ref()
+        .and_then(|t| t.agt_cert_number.as_deref())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(&state.config.agt_software_cert);
+
+    match crate::infrastructure::reports::InvoicePdfGenerator::generate_pdf_with_tenant(
         &invoice,
+        tenant.as_ref(),
         company_name,
-        &state.config.agt_software_cert,
+        software_cert,
     ) {
         Ok(bytes) => {
             let mut resp_headers = HeaderMap::new();
@@ -541,14 +566,25 @@ async fn get_invoice_thermal_handler(
         Err(err) => return domain_error(err),
     };
 
-    let company_name = "Kudiba ERP";
+    let tenant = load_tenant_by_id(&state.pool, tenant_id).await;
+    let company_name = tenant
+        .as_ref()
+        .and_then(|t| t.trade_name.as_deref())
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| tenant.as_ref().map(|t| t.company_name.as_str()))
+        .unwrap_or("Kudiba ERP");
+    let software_cert = tenant
+        .as_ref()
+        .and_then(|t| t.agt_cert_number.as_deref())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(&state.config.agt_software_cert);
     let requested_format = params.format.as_deref().unwrap_or("pdf").to_lowercase();
 
     if requested_format == "text" || requested_format == "txt" {
         match crate::infrastructure::reports::InvoiceThermalGenerator::generate_text(
             &invoice,
             company_name,
-            &state.config.agt_software_cert,
+            software_cert,
         ) {
             Ok(text) => {
                 let mut resp_headers = HeaderMap::new();
@@ -564,7 +600,7 @@ async fn get_invoice_thermal_handler(
         match crate::infrastructure::reports::InvoiceThermalGenerator::generate_pdf(
             &invoice,
             company_name,
-            &state.config.agt_software_cert,
+            software_cert,
         ) {
             Ok(bytes) => {
                 let mut resp_headers = HeaderMap::new();
@@ -1321,11 +1357,51 @@ fn build_pdf_report_response(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct DashboardSummaryQueryParams {
+    pub year: Option<i32>,
+}
+
+async fn dashboard_summary_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<DashboardSummaryQueryParams>,
+) -> Response {
+    let tenant_id = match authorized_tenant_id(
+        &headers,
+        &[
+            "ADMIN",
+            "ADMINISTRADOR",
+            "GESTOR",
+            "CONTABILISTA",
+            "ACCOUNTANT",
+            "OPERADOR_FACTURACAO",
+            "BILLING_OPERATOR",
+        ],
+    ) {
+        Ok(t) => t,
+        Err(resp) => return resp.into_response(),
+    };
+
+    let year = params
+        .year
+        .unwrap_or_else(|| Utc::now().year());
+    let query = crate::application::queries::dashboard_summary::DashboardSummaryQuery {
+        tenant_id,
+        year,
+    };
+
+    match state.dashboard_summary.execute(query).await {
+        Ok(summary) => Json(summary).into_response(),
+        Err(err) => domain_error(err),
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct PosReportQueryParams {
     #[serde(rename = "tenantId")]
     pub tenant_id: Option<Uuid>,
     pub date: Option<chrono::NaiveDate>,
-    #[serde(rename = "posTerminalId")]
+    #[serde(rename = "posTerminalId", alias = "seriesCode")]
     pub pos_terminal_id: Option<String>,
     pub format: Option<String>,
 }
@@ -1336,6 +1412,7 @@ pub struct CloseZReportPayload {
     pub tenant_id: Option<Uuid>,
     pub fiscal_year: Option<i32>,
     pub date: Option<chrono::NaiveDate>,
+    #[serde(alias = "seriesCode")]
     pub pos_terminal_id: Option<String>,
     pub format: Option<String>,
 }
@@ -1353,6 +1430,7 @@ async fn pos_leitura_x_handler(
             "GESTOR",
             "CONTABILISTA",
             "ACCOUNTANT",
+            "OPERADOR_CAIXA",
             "OPERADOR_FACTURACAO",
             "BILLING_OPERATOR",
         ],
@@ -1395,6 +1473,7 @@ async fn pos_leitura_x_thermal_handler(
             "GESTOR",
             "CONTABILISTA",
             "ACCOUNTANT",
+            "OPERADOR_CAIXA",
             "OPERADOR_FACTURACAO",
             "BILLING_OPERATOR",
         ],
@@ -1448,6 +1527,48 @@ async fn pos_leitura_x_thermal_handler(
             }
             Err(err) => domain_error(err),
         }
+    }
+}
+
+async fn pos_z_reports_history_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<PosReportQueryParams>,
+) -> Response {
+    let tenant_id = match authorized_tenant_id(
+        &headers,
+        &[
+            "ADMIN",
+            "ADMINISTRADOR",
+            "GESTOR",
+            "CONTABILISTA",
+            "ACCOUNTANT",
+            "OPERADOR_CAIXA",
+            "OPERADOR_FACTURACAO",
+            "BILLING_OPERATOR",
+        ],
+    ) {
+        Ok(t) => t,
+        Err(resp) => return resp.into_response(),
+    };
+    if params
+        .tenant_id
+        .is_some_and(|requested| requested != tenant_id)
+    {
+        return forbidden_tenant().into_response();
+    }
+
+    let query = crate::application::queries::pos_reports::ZReportListQuery {
+        tenant_id,
+        from: None,
+        to: params.date,
+        pos_terminal_id: params.pos_terminal_id,
+        limit: None,
+    };
+
+    match state.pos_reports.execute_list_z_reports(query).await {
+        Ok(reports) => Json(reports).into_response(),
+        Err(err) => domain_error(err),
     }
 }
 
@@ -1749,6 +1870,223 @@ async fn generate_keys_handler(headers: HeaderMap) -> Response {
         )
             .into_response(),
         Err(err) => domain_error(err),
+    }
+}
+
+async fn load_tenant_by_id(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+) -> Option<crate::domain::entities::tenant::Tenant> {
+    let sql = "SELECT id, slug, company_name, trade_name, nif, address_detail, city, province, postal_code, country, \
+               phone, email, website, commercial_registry, share_capital, currency, tax_office_code, \
+               agt_cert_number, invoice_footer_notes, bank_accounts, status, tax_regime_code, contingency_started_at \
+               FROM kudiba_core.tenants WHERE id = $1";
+    let row = sqlx::query(sql).bind(tenant_id).fetch_optional(pool).await.ok()??;
+    crate::infrastructure::persistence::tenant_repository::PgTenantRepository::map_row(&row).ok()
+}
+
+async fn get_fiscal_tenant_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    let tenant_id = match authorized_tenant_id(
+        &headers,
+        &[
+            "ADMIN",
+            "ADMINISTRADOR",
+            "GESTOR",
+            "CONTABILISTA",
+            "ACCOUNTANT",
+            "OPERADOR_FACTURACAO",
+            "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+        ],
+    ) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response.into_response(),
+    };
+
+    match load_tenant_by_id(&state.pool, tenant_id).await {
+        Some(tenant) => (StatusCode::OK, Json(tenant)).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Tenant não encontrado na base fiscal." })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpsertFiscalTenantRequest {
+    #[serde(alias = "slug")]
+    pub slug: Option<String>,
+    #[serde(alias = "company_name")]
+    pub company_name: String,
+    #[serde(alias = "trade_name")]
+    pub trade_name: Option<String>,
+    pub nif: String,
+    #[serde(alias = "address_detail")]
+    pub address_detail: Option<String>,
+    pub city: Option<String>,
+    pub province: Option<String>,
+    #[serde(alias = "postal_code")]
+    pub postal_code: Option<String>,
+    pub country: Option<String>,
+    pub phone: Option<String>,
+    pub email: Option<String>,
+    pub website: Option<String>,
+    #[serde(alias = "logo_data_url")]
+    pub logo_data_url: Option<String>,
+    #[serde(alias = "commercial_registry")]
+    pub commercial_registry: Option<String>,
+    #[serde(alias = "share_capital")]
+    pub share_capital: Option<String>,
+    pub currency: Option<String>,
+    #[serde(alias = "tax_regime_code")]
+    pub tax_regime_code: Option<String>,
+    #[serde(alias = "tax_office_code")]
+    pub tax_office_code: Option<String>,
+    #[serde(alias = "agt_cert_number")]
+    pub agt_cert_number: Option<String>,
+    #[serde(alias = "default_withholding_rate")]
+    pub default_withholding_rate: Option<f64>,
+    #[serde(alias = "invoice_footer_notes")]
+    pub invoice_footer_notes: Option<String>,
+    #[serde(alias = "bank_accounts")]
+    pub bank_accounts: Option<serde_json::Value>,
+    #[serde(alias = "onboarding_completed")]
+    pub onboarding_completed: Option<bool>,
+}
+
+async fn upsert_fiscal_tenant_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpsertFiscalTenantRequest>,
+) -> Response {
+    let tenant_id = match authorized_tenant_id(
+        &headers,
+        &["ADMIN", "ADMINISTRADOR", "GESTOR", "CONTABILISTA"],
+    ) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response.into_response(),
+    };
+
+    let slug = payload
+        .slug
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("tenant-{}", &tenant_id.to_string()[..8]));
+    let country = payload
+        .country
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("AO")
+        .to_string();
+    let currency = payload
+        .currency
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("AOA")
+        .to_string();
+    let tax_regime_code = payload
+        .tax_regime_code
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("REGIME_GERAL")
+        .to_string();
+    let withholding_rate = payload.default_withholding_rate.unwrap_or(6.5);
+    let bank_accounts = payload
+        .bank_accounts
+        .unwrap_or_else(|| json!([]))
+        .to_string();
+    let onboarding_completed = payload.onboarding_completed.unwrap_or(true);
+
+    let sql = r#"
+        INSERT INTO kudiba_core.tenants (
+            id, slug, company_name, trade_name, nif,
+            address_detail, city, province, postal_code, country,
+            phone, email, website, logo_data_url,
+            commercial_registry, share_capital, currency,
+            tax_regime_code, tax_office_code, agt_cert_number,
+            default_withholding_rate, invoice_footer_notes, bank_accounts,
+            onboarding_completed, status
+        ) VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $9, $10,
+            $11, $12, $13, $14,
+            $15, $16, $17,
+            $18, $19, $20,
+            $21, $22, $23::jsonb,
+            $24, 'ACTIVE'
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            company_name = EXCLUDED.company_name,
+            trade_name = EXCLUDED.trade_name,
+            nif = EXCLUDED.nif,
+            address_detail = EXCLUDED.address_detail,
+            city = EXCLUDED.city,
+            province = EXCLUDED.province,
+            postal_code = EXCLUDED.postal_code,
+            country = EXCLUDED.country,
+            phone = EXCLUDED.phone,
+            email = EXCLUDED.email,
+            website = EXCLUDED.website,
+            logo_data_url = COALESCE(EXCLUDED.logo_data_url, kudiba_core.tenants.logo_data_url),
+            commercial_registry = EXCLUDED.commercial_registry,
+            share_capital = EXCLUDED.share_capital,
+            currency = EXCLUDED.currency,
+            tax_regime_code = EXCLUDED.tax_regime_code,
+            tax_office_code = EXCLUDED.tax_office_code,
+            agt_cert_number = EXCLUDED.agt_cert_number,
+            default_withholding_rate = EXCLUDED.default_withholding_rate,
+            invoice_footer_notes = EXCLUDED.invoice_footer_notes,
+            bank_accounts = EXCLUDED.bank_accounts,
+            onboarding_completed = EXCLUDED.onboarding_completed,
+            updated_at = NOW()
+    "#;
+
+    let res = sqlx::query(sql)
+        .bind(tenant_id)
+        .bind(&slug)
+        .bind(payload.company_name.trim())
+        .bind(payload.trade_name.as_deref().map(str::trim))
+        .bind(payload.nif.trim())
+        .bind(payload.address_detail.as_deref().map(str::trim))
+        .bind(payload.city.as_deref().map(str::trim))
+        .bind(payload.province.as_deref().map(str::trim))
+        .bind(payload.postal_code.as_deref().map(str::trim))
+        .bind(&country)
+        .bind(payload.phone.as_deref().map(str::trim))
+        .bind(payload.email.as_deref().map(str::trim))
+        .bind(payload.website.as_deref().map(str::trim))
+        .bind(payload.logo_data_url.as_deref())
+        .bind(payload.commercial_registry.as_deref().map(str::trim))
+        .bind(payload.share_capital.as_deref().map(str::trim))
+        .bind(&currency)
+        .bind(&tax_regime_code)
+        .bind(payload.tax_office_code.as_deref().map(str::trim))
+        .bind(payload.agt_cert_number.as_deref().map(str::trim))
+        .bind(withholding_rate)
+        .bind(payload.invoice_footer_notes.as_deref().map(str::trim))
+        .bind(&bank_accounts)
+        .bind(onboarding_completed)
+        .execute(&state.pool)
+        .await;
+
+    match res {
+        Ok(_) => match load_tenant_by_id(&state.pool, tenant_id).await {
+            Some(tenant) => (StatusCode::OK, Json(tenant)).into_response(),
+            None => (StatusCode::OK, Json(json!({ "status": "updated" }))).into_response(),
+        },
+        Err(err) => domain_error(DomainError::invalid(format!(
+            "Falha ao sincronizar dados fiscais da empresa: {err}"
+        ))),
     }
 }
 

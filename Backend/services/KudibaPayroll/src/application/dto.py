@@ -353,3 +353,55 @@ class AttendanceResponse(BaseModel):
     external_id: Optional[str] = None
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
+
+
+class EmployeeStatusCounts(BaseModel):
+    total: int
+    active: int
+    on_leave: int
+    suspended: int
+    terminated: int
+
+
+class OrganizationSummary(BaseModel):
+    departments: int
+    job_positions: int
+
+
+class PayrollPeriodTotals(BaseModel):
+    period_id: UUID
+    title: str
+    year: int
+    month: int
+    status: PeriodStatus
+    total_gross: Decimal
+    total_net: Decimal
+    total_irt: Decimal
+    total_inss_employee: Decimal
+    total_inss_employer: Decimal
+
+
+class MonthlyPayrollPoint(BaseModel):
+    month: int
+    status: PeriodStatus
+    total_gross: Decimal
+    total_net: Decimal
+
+
+class AnnualPayrollSummary(BaseModel):
+    year: int
+    periods_processed: int
+    total_gross: Decimal
+    total_net: Decimal
+    total_irt: Decimal
+    total_inss_employee: Decimal
+    total_inss_employer: Decimal
+    monthly: List[MonthlyPayrollPoint] = Field(default_factory=list)
+
+
+class PayrollDashboardSummaryResponse(BaseModel):
+    generated_at: datetime
+    employees: EmployeeStatusCounts
+    organization: OrganizationSummary
+    latest_period: Optional[PayrollPeriodTotals] = None
+    annual: AnnualPayrollSummary

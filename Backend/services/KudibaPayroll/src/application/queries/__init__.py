@@ -9,6 +9,7 @@ from src.application.queries.payroll_queries import (
     GetContractUseCase,
     GetPeriodSummaryUseCase,
     GetVacationBalanceUseCase,
+    GetDashboardSummaryUseCase,
 )
 from src.application.queries.organization_queries import (
     ListDepartmentsUseCase,
@@ -33,6 +34,7 @@ __all__ = [
     "GetContractUseCase",
     "GetPeriodSummaryUseCase",
     "GetVacationBalanceUseCase",
+    "GetDashboardSummaryUseCase",
     "ListDepartmentsUseCase",
     "ListJobPositionsUseCase",
     "ListVacationsUseCase",

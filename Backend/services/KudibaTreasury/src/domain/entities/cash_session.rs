@@ -11,6 +11,7 @@ pub struct CashSession {
     pub id: Uuid,
     pub tenant_id: Uuid,
     pub register_id: Uuid,
+    pub pos_session_id: Option<Uuid>,
     pub operator_user_id: String,
     pub opened_at: DateTime<Utc>,
     pub closed_at: Option<DateTime<Utc>>,
@@ -28,6 +29,7 @@ impl CashSession {
     pub fn open(
         tenant_id: Uuid,
         register_id: Uuid,
+        pos_session_id: Uuid,
         operator_user_id: String,
         opening_balance: Decimal,
     ) -> Result<Self, DomainError> {
@@ -49,6 +51,7 @@ impl CashSession {
             id: Uuid::new_v4(),
             tenant_id,
             register_id,
+            pos_session_id: Some(pos_session_id),
             operator_user_id,
             opened_at: now,
             closed_at: None,

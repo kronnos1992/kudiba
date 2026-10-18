@@ -5,20 +5,25 @@ import pytest
 
 from src.application.commands import (
     AuthenticateUserUseCase,
+    CreateBranchUseCase,
     InviteUserUseCase,
     LogoutUserUseCase,
     RotateRefreshTokenUseCase,
     SwitchTenantUseCase,
+    UpdateTenantSettingsUseCase,
     UpdateUserRolesUseCase,
 )
 from src.application.dto import (
     AuthenticateUserCommand,
+    CreateBranchCommand,
     InviteUserCommand,
     LogoutUserCommand,
     RotateRefreshTokenCommand,
     SwitchTenantCommand,
+    UpdateTenantSettingsCommand,
     UpdateUserRolesCommand,
 )
+from src.application.queries import GetTenantSettingsUseCase
 from src.domain.entities.branch import Branch
 from src.domain.entities.refresh_token import RefreshToken
 from src.domain.entities.tenant import Tenant
@@ -112,6 +117,10 @@ class MockTenantRepository(ITenantRepository):
 
     async def save_branch(self, branch: Branch) -> None:
         self.branches[branch.id] = branch
+
+    async def update_tenant(self, tenant: Tenant) -> Tenant:
+        self.tenants[tenant.id] = tenant
+        return tenant
 
 
 class MockUserTenantRepository(IUserTenantRepository):
@@ -212,7 +221,7 @@ class MockPasswordHasher(IPasswordHasher):
 
 
 class MockTokenService(ITokenService):
-    def create_access_token(self, user_id, tenant_id, roles, permissions, tenant_slug=None, branch_id=None, expires_minutes=None):
+    def create_access_token(self, user_id, tenant_id, roles, permissions, tenant_slug=None, branch_id=None, expires_minutes=None, modules=None):
         return f"jwt_{user_id}_{tenant_id}", str(uuid.uuid4()), int(datetime.now(timezone.utc).timestamp()) + 900
 
     def decode_access_token(self, token: str):
@@ -630,3 +639,87 @@ async def test_logout_use_case_blacklists_jwt():
     await use_case.execute(cmd)
 
     assert await cache_svc.is_token_blacklisted("jwt-uuid-1234") is True
+
+
+@pytest.mark.asyncio
+async def test_update_and_get_tenant_settings_use_case():
+    uow_factory = MockUnitOfWorkFactory()
+    tenant_repo = MockTenantRepository()
+    audit_repo = MockAuditRepository()
+
+    tenant_id = uuid.uuid4()
+    actor_id = uuid.uuid4()
+    tenant_repo.tenants[tenant_id] = Tenant(
+        id=tenant_id,
+        slug="empresa-nova",
+        company_name="Empresa Nova Lda",
+        nif="5417123456",
+        onboarding_completed=False,
+    )
+
+    update_uc = UpdateTenantSettingsUseCase(uow_factory, tenant_repo, audit_repo)
+    get_uc = GetTenantSettingsUseCase(tenant_repo)
+
+    initial = await get_uc.execute(tenant_id)
+    assert initial.onboarding_completed is False
+    assert initial.company_name == "Empresa Nova Lda"
+
+    updated = await update_uc.execute(
+        UpdateTenantSettingsCommand(
+            tenant_id=tenant_id,
+            company_name="Empresa Nova Angola, Lda.",
+            nif="5417123456",
+            trade_name="Empresa Nova",
+            address_detail="Av. Comandante Valódia, 100",
+            city="Luanda",
+            province="Luanda",
+            postal_code="1000",
+            country="AO",
+            phone="+244 923 111 222",
+            email="geral@empresanova.ao",
+            website="https://www.empresanova.ao",
+            commercial_registry="Matrícula n.º 9988-24/CML",
+            share_capital="2.000.000,00 AOA",
+            currency="AOA",
+            tax_regime_code="REGIME_GERAL",
+            tax_office_code="1ª Repartição Fiscal de Luanda",
+            agt_cert_number="AGT/2026/0099",
+            default_withholding_rate=6.5,
+            invoice_footer_notes="Processado por programa validado n.º AGT/2026/0099",
+            bank_accounts=[
+                {
+                    "bank_name": "BAI",
+                    "iban": "AO06.0040.0000.1234.5678.9012.3",
+                    "account_number": "1234567890",
+                    "swift": "BAIPAOlu",
+                    "currency": "AOA",
+                    "is_primary": True,
+                }
+            ],
+            onboarding_completed=True,
+            actor_user_id=actor_id,
+        )
+    )
+
+    assert updated.company_name == "Empresa Nova Angola, Lda."
+    assert updated.trade_name == "Empresa Nova"
+    assert updated.onboarding_completed is True
+    assert len(updated.bank_accounts) == 1
+    assert updated.bank_accounts[0]["bank_name"] == "BAI"
+    assert audit_repo.events[-1]["action"] == "TENANT_SETTINGS_UPDATED"
+
+    create_branch_uc = CreateBranchUseCase(uow_factory, tenant_repo, audit_repo)
+    branch_dto = await create_branch_uc.execute(
+        CreateBranchCommand(
+            tenant_id=tenant_id,
+            code="FILIAL-01",
+            name="Filial Talatona",
+            address_detail="Via S8, Talatona",
+            city="Luanda",
+            actor_user_id=actor_id,
+        )
+    )
+    assert branch_dto.code == "FILIAL-01"
+    assert branch_dto.name == "Filial Talatona"
+    assert branch_dto.address_detail == "Via S8, Talatona"
+

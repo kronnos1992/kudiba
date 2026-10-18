@@ -41,6 +41,7 @@ class SqlAlchemyUserRepository(IUserRepository):
                 locked_until=user.locked_until,
             )
             session.add(m)
+            await session.flush()
             if owns_session:
                 await session.commit()
 

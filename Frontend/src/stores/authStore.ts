@@ -5,6 +5,7 @@ interface AuthActions {
   setSession: (response: LoginResponse) => void;
   updateTokens: (accessToken: string, refreshToken: string) => void;
   setActiveTenant: (tenant: Tenant, branch?: Branch) => void;
+  updateActiveTenantSettings: (updates: Partial<Tenant>) => void;
   setUser: (user: User) => void;
   logout: () => void;
   setLoading: (loading: boolean) => void;
@@ -51,9 +52,16 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
 
     const normalizeTenant = (t: Tenant): Tenant => ({
       ...t,
-      name: t.name || t.company_name || 'Organização Kudiba',
+      name: t.trade_name || t.name || t.company_name || 'Organização Kudiba',
+      company_name: t.company_name || t.name || 'Organização Kudiba',
       taxId: t.taxId || t.nif || '',
+      nif: t.nif || t.taxId || '',
       currency: t.currency || 'AOA',
+      country: t.country || 'AO',
+      tax_regime_code: t.tax_regime_code || 'REGIME_GERAL',
+      default_withholding_rate: t.default_withholding_rate ?? 6.5,
+      bank_accounts: t.bank_accounts || [],
+      onboarding_completed: t.onboarding_completed ?? true,
       branches: t.branches && t.branches.length > 0 ? t.branches : (t.default_branch ? [t.default_branch] : []),
     });
 
@@ -101,6 +109,35 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
       localStorage.removeItem(STORAGE_KEYS.ACTIVE_BRANCH);
     }
     set({ activeTenant: tenant, activeBranch: selectedBranch });
+  },
+
+  updateActiveTenantSettings: (updates) => {
+    set((state) => {
+      if (!state.activeTenant) return state;
+      const updatedTenant: Tenant = {
+        ...state.activeTenant,
+        ...updates,
+        name:
+          updates.trade_name ||
+          updates.company_name ||
+          updates.name ||
+          state.activeTenant.trade_name ||
+          state.activeTenant.company_name ||
+          state.activeTenant.name,
+        company_name: updates.company_name || state.activeTenant.company_name || state.activeTenant.name,
+        taxId: updates.nif || updates.taxId || state.activeTenant.nif || state.activeTenant.taxId,
+        nif: updates.nif || updates.taxId || state.activeTenant.nif || state.activeTenant.taxId,
+      };
+      const updatedTenants = state.tenants.map((t) =>
+        t.id === updatedTenant.id ? updatedTenant : t
+      );
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_TENANT, JSON.stringify(updatedTenant));
+      localStorage.setItem(STORAGE_KEYS.TENANTS, JSON.stringify(updatedTenants));
+      return {
+        activeTenant: updatedTenant,
+        tenants: updatedTenants,
+      };
+    });
   },
 
   setUser: (user) => {

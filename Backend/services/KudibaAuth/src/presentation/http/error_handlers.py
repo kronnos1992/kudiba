@@ -8,6 +8,7 @@ from src.domain.error import (
     DomainError,
     EntityNotFoundError,
     InvalidCredentialsError,
+    LicenseExpiredError,
     SessionExpiredError,
     TenantAccessForbiddenError,
     TokenReusedError,
@@ -21,7 +22,10 @@ def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
 
     if isinstance(exc, (InvalidCredentialsError, SessionExpiredError, TokenReusedError)):
         status_code = status.HTTP_401_UNAUTHORIZED
-    elif isinstance(exc, (AccountInactiveError, TenantAccessForbiddenError, AuthorizationError)):
+    elif isinstance(
+        exc,
+        (AccountInactiveError, TenantAccessForbiddenError, AuthorizationError, LicenseExpiredError),
+    ):
         status_code = status.HTTP_403_FORBIDDEN
     elif isinstance(exc, EntityNotFoundError):
         status_code = status.HTTP_404_NOT_FOUND
@@ -38,9 +42,13 @@ def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
         "instance": path,
         "code": error_code,
     }
+    if isinstance(exc, AccountLockedError):
+        problem["retry_after_seconds"] = exc.retry_after_seconds
 
     headers = {}
     if status_code == status.HTTP_401_UNAUTHORIZED:
         headers["WWW-Authenticate"] = "Bearer"
+    if isinstance(exc, AccountLockedError):
+        headers["Retry-After"] = str(exc.retry_after_seconds)
 
     return JSONResponse(status_code=status_code, content=problem, headers=headers)

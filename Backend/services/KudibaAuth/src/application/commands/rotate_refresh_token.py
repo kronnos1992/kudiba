@@ -8,7 +8,12 @@ from src.application.dto import (
     UserSummaryDto,
 )
 from src.domain.entities.refresh_token import RefreshToken
-from src.domain.error import SessionExpiredError, TenantAccessForbiddenError, TokenReusedError
+from src.domain.error import (
+    LicenseExpiredError,
+    SessionExpiredError,
+    TenantAccessForbiddenError,
+    TokenReusedError,
+)
 from src.domain.ports.audit_repository import IAuditRepository
 from src.domain.ports.refresh_token_repository import IRefreshTokenRepository
 from src.domain.ports.tenant_repository import ITenantRepository
@@ -108,6 +113,17 @@ class RotateRefreshTokenUseCase:
             tenant = await self.tenant_repo.find_by_id(token_entry.tenant_id)
             if not tenant or not tenant.is_active:
                 raise TenantAccessForbiddenError("A empresa associada à sessão não existe ou está inactiva.")
+            if tenant.license_expired(now):
+                await self.audit_repo.record_event(
+                    action="LOGIN_BLOCKED",
+                    user_id=user.id,
+                    tenant_id=token_entry.tenant_id,
+                    ip_address=cmd.ip_address,
+                    user_agent=cmd.user_agent,
+                    details={"reason": "LICENSE_EXPIRED"},
+                )
+                await uow.commit()
+                raise LicenseExpiredError()
             tenant_slug = tenant.slug
             tenant_name = tenant.company_name
             tenant_nif = tenant.nif
@@ -129,6 +145,7 @@ class RotateRefreshTokenUseCase:
                 permissions=permissions,
                 tenant_slug=tenant_slug,
                 branch_id=str(branch_id) if branch_id else None,
+                modules=tenant.subscribed_modules,
             )
 
             await self.audit_repo.record_event(
@@ -140,9 +157,18 @@ class RotateRefreshTokenUseCase:
                 details={"family_id": str(token_entry.family_id)},
             )
 
+            from src.application.queries.get_tenant_settings import build_tenant_summary_dto
+
             branches = await self.tenant_repo.find_branches(token_entry.tenant_id)
             branch_dtos = [
-                BranchSummaryDto(id=b.id, code=b.code, name=b.name, city=b.city) for b in branches
+                BranchSummaryDto(
+                    id=b.id,
+                    code=b.code,
+                    name=b.name,
+                    city=b.city,
+                    address_detail=b.address_detail,
+                )
+                for b in branches
             ]
 
             return AuthenticationResult(
@@ -156,14 +182,12 @@ class RotateRefreshTokenUseCase:
                     full_name=user.full_name,
                     is_superadmin=user.is_superadmin,
                 ),
-                active_tenant=TenantSummaryDto(
-                    id=token_entry.tenant_id,
-                    slug=tenant_slug,
-                    company_name=tenant_name,
-                    nif=tenant_nif,
+                active_tenant=build_tenant_summary_dto(
+                    tenant=tenant,
                     roles=roles,
                     permissions=permissions,
                     default_branch=branch_dto,
                     branches=branch_dtos,
                 ),
             )
+

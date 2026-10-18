@@ -26,6 +26,7 @@ export interface CashSession {
   id: string;
   tenant_id: string;
   register_id: string;
+  pos_session_id: string | null;
   operator_user_id: string;
   opened_at: string;
   closed_at: string | null;
@@ -174,6 +175,90 @@ export interface InvoiceReceivable {
   updated_at: string;
 }
 
+export interface PosSession {
+  id: string;
+  tenant_id: string;
+  register_id: string;
+  opened_by: string;
+  opened_at: string;
+  closed_by: string | null;
+  closed_at: string | null;
+  closing_notes: string | null;
+  status: SessionStatusType;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OpenPosSessionPayload {
+  register_id: string;
+  notes?: string;
+}
+
+export interface ClosePosSessionPayload {
+  notes?: string;
+}
+
+export interface PosSessionSummary {
+  id: string;
+  opened_by: string;
+  opened_at: string;
+}
+
+export interface CashSessionSummary {
+  id: string;
+  operator_user_id: string;
+  opened_at: string;
+  opening_balance: string | number;
+}
+
+export interface PosRegisterPanel {
+  register_id: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+  pos_session: PosSessionSummary | null;
+  cash_session: CashSessionSummary | null;
+  sales_count: number;
+  sales_total: string | number;
+  supplies_total: string | number;
+  bleeds_total: string | number;
+  expenses_total: string | number;
+  expected_cash: string | number;
+  last_movement_at: string | null;
+}
+
+export interface PosOperatorPanel {
+  operator_user_id: string;
+  sales_count: number;
+  sales_total: string | number;
+  supplies_total: string | number;
+  bleeds_total: string | number;
+  expenses_total: string | number;
+  net_cash_total: string | number;
+}
+
+export interface PosPanelTotals {
+  total_registers: number;
+  active_registers: number;
+  open_pos_sessions: number;
+  open_cash_sessions: number;
+  sales_count: number;
+  sales_total: string | number;
+  supplies_total: string | number;
+  bleeds_total: string | number;
+  expenses_total: string | number;
+}
+
+export interface PosPanelResponse {
+  tenant_id: string;
+  date: string;
+  generated_at: string;
+  totals: PosPanelTotals;
+  registers: PosRegisterPanel[];
+  operators: PosOperatorPanel[];
+}
+
 export const treasuryApi = {
   // Caixas Físicos
   listRegisters: async (): Promise<CashRegister[]> => {
@@ -267,6 +352,35 @@ export const treasuryApi = {
     const res = await apiClient.get<InvoiceReceivable[]>('/api/v1/treasury/receivables', {
       params: { limit },
     });
+    return res.data;
+  },
+
+  getDashboardSummary: async (): Promise<any> => {
+    const res = await apiClient.get('/api/v1/treasury/dashboard/summary');
+    return res.data;
+  },
+
+  // Sessões POS (turno do gestor)
+  openPosSession: async (payload: OpenPosSessionPayload): Promise<PosSession> => {
+    const res = await apiClient.post<PosSession>('/api/v1/treasury/pos-sessions/open', payload);
+    return res.data;
+  },
+
+  closePosSession: async (id: string, payload: ClosePosSessionPayload): Promise<PosSession> => {
+    const res = await apiClient.post<PosSession>(`/api/v1/treasury/pos-sessions/${id}/close`, payload);
+    return res.data;
+  },
+
+  getCurrentPosSession: async (registerId: string): Promise<PosSession | null> => {
+    const res = await apiClient.get<PosSession | null>('/api/v1/treasury/pos-sessions/current', {
+      params: { register_id: registerId },
+    });
+    return res.data;
+  },
+
+  // Painel dos POS (KPIs do dia, por caixa e por usuário)
+  getPosPanel: async (params?: { register_id?: string; date?: string }): Promise<PosPanelResponse> => {
+    const res = await apiClient.get<PosPanelResponse>('/api/v1/treasury/pos/panel', { params });
     return res.data;
   },
 };

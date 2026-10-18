@@ -7,8 +7,8 @@ use kudiba_treasury::config::Config;
 use kudiba_treasury::presentation::http::create_router;
 use kudiba_treasury::state::AppState;
 
-const MAX_DB_CONNECT_ATTEMPTS: u32 = 10;
-const DB_CONNECT_RETRY_DELAY: Duration = Duration::from_secs(5);
+const MAX_DB_CONNECT_ATTEMPTS: u32 = 2;
+const DB_CONNECT_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,7 +23,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = Config::from_env();
     let pool = connect_with_retry(&config).await?;
-    ensure_schema(&pool).await?;
+    if let Err(err) = ensure_schema(&pool).await {
+        tracing::warn!("Aviso: não foi possível verificar schema inicial de tesouraria ({}).", err);
+    }
 
     let app_state = AppState::new(config.clone(), pool);
 
@@ -67,7 +69,13 @@ async fn connect_with_retry(config: &Config) -> Result<sqlx::PgPool, sqlx::Error
                 attempt += 1;
                 tokio::time::sleep(DB_CONNECT_RETRY_DELAY).await;
             }
-            Err(err) => return Err(err),
+            Err(err) => {
+                tracing::warn!(
+                    "Aviso: falha inicial na ligação ao PostgreSQL ({}). KudibaTreasury em modo degradado.",
+                    err
+                );
+                return config.create_lazy_db_pool();
+            }
         }
     }
 }
@@ -154,6 +162,28 @@ async fn ensure_schema(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
         CREATE INDEX IF NOT EXISTS idx_sessions_register ON kudiba_treasury.cash_sessions(register_id);
         CREATE INDEX IF NOT EXISTS idx_sessions_status ON kudiba_treasury.cash_sessions(register_id, status);
         CREATE UNIQUE INDEX IF NOT EXISTS uq_open_session_per_register ON kudiba_treasury.cash_sessions (tenant_id, register_id) WHERE status = 'OPEN';
+
+        CREATE TABLE IF NOT EXISTS kudiba_treasury.pos_sessions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL,
+            register_id UUID NOT NULL REFERENCES kudiba_treasury.cash_registers(id) ON DELETE RESTRICT,
+            opened_by VARCHAR(100) NOT NULL,
+            opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            closed_by VARCHAR(100),
+            closed_at TIMESTAMPTZ,
+            closing_notes TEXT,
+            status kudiba_treasury.session_status NOT NULL DEFAULT 'OPEN',
+            notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_pos_sessions_tenant ON kudiba_treasury.pos_sessions(tenant_id);
+        CREATE INDEX IF NOT EXISTS idx_pos_sessions_register ON kudiba_treasury.pos_sessions(register_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_open_pos_session_per_register ON kudiba_treasury.pos_sessions (tenant_id, register_id) WHERE status = 'OPEN';
+
+        ALTER TABLE kudiba_treasury.cash_sessions
+            ADD COLUMN IF NOT EXISTS pos_session_id UUID REFERENCES kudiba_treasury.pos_sessions(id);
+        CREATE INDEX IF NOT EXISTS idx_sessions_pos ON kudiba_treasury.cash_sessions(pos_session_id);
 
         CREATE TABLE IF NOT EXISTS kudiba_treasury.cash_movements (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

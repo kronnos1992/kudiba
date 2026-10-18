@@ -29,6 +29,7 @@ class JwtTokenService(ITokenService):
         tenant_slug: Optional[str] = None,
         branch_id: Optional[str] = None,
         expires_minutes: Optional[int] = None,
+        modules: Optional[List[str]] = None,
     ) -> Tuple[str, str, int]:
         now = datetime.now(timezone.utc)
         mins = expires_minutes or self.default_access_expiration_minutes
@@ -48,6 +49,7 @@ class JwtTokenService(ITokenService):
             exp=exp_timestamp,
             iat=iat_timestamp,
             jti=token_jti,
+            modules=modules,
         )
 
         token = jwt.encode(claims.to_dict(), self.secret, algorithm=self.algorithm)

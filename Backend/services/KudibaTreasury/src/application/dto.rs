@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::domain::entities::{
-    BankAccount, CashMovement, CashRegister, CashSession, InvoiceReceivable, ReceivableStatus,
-    TreasuryReceipt, TreasuryReceiptLine,
+    BankAccount, CashMovement, CashRegister, CashSession, InvoiceReceivable, PosSession,
+    ReceivableStatus, TreasuryReceipt, TreasuryReceiptLine,
 };
 use crate::domain::services::SessionReconciliation;
 use crate::domain::value_objects::{Currency, MovementType, PaymentMethod, SessionStatus};
@@ -45,6 +45,52 @@ impl From<CashRegister> for CashRegisterResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct OpenPosSessionRequest {
+    pub register_id: Uuid,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ClosePosSessionRequest {
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PosSessionResponse {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub register_id: Uuid,
+    pub opened_by: String,
+    pub opened_at: DateTime<Utc>,
+    pub closed_by: Option<String>,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub closing_notes: Option<String>,
+    pub status: SessionStatus,
+    pub notes: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<PosSession> for PosSessionResponse {
+    fn from(s: PosSession) -> Self {
+        Self {
+            id: s.id,
+            tenant_id: s.tenant_id,
+            register_id: s.register_id,
+            opened_by: s.opened_by,
+            opened_at: s.opened_at,
+            closed_by: s.closed_by,
+            closed_at: s.closed_at,
+            closing_notes: s.closing_notes,
+            status: s.status,
+            notes: s.notes,
+            created_at: s.created_at,
+            updated_at: s.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct OpenCashSessionRequest {
     pub register_id: Uuid,
     pub operator_user_id: String,
@@ -62,6 +108,7 @@ pub struct CashSessionResponse {
     pub id: Uuid,
     pub tenant_id: Uuid,
     pub register_id: Uuid,
+    pub pos_session_id: Option<Uuid>,
     pub operator_user_id: String,
     pub opened_at: DateTime<Utc>,
     pub closed_at: Option<DateTime<Utc>>,
@@ -81,6 +128,7 @@ impl From<CashSession> for CashSessionResponse {
             id: s.id,
             tenant_id: s.tenant_id,
             register_id: s.register_id,
+            pos_session_id: s.pos_session_id,
             operator_user_id: s.operator_user_id,
             opened_at: s.opened_at,
             closed_at: s.closed_at,

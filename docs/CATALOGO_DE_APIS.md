@@ -120,8 +120,13 @@ Roteado pelo API Gateway em `/api/v1/fiscal/*`.
 | `GET` | `/api/v1/fiscal/saft/export` | Geração e download do ficheiro XML SAF-T (AO) v1.01_01 em streaming $O(1)$. | `fiscal:saft:export` |
 | `POST` | `/api/v1/fiscal/saft/jobs` | Enfileiramento de geração assíncrona de SAF-T para grandes volumes. | `fiscal:saft:export` |
 | `GET` | `/api/v1/fiscal/reports/tax` | Exportação de mapa de apuramento de impostos (PDF ou Excel `.xlsx`). | `fiscal:reports` |
-| `GET` | `/api/v1/fiscal/pos/x-report` | Emissão de relatório de Leitura X intradiária de conferência de caixa. | `pos:x_report` |
-| `POST` | `/api/v1/fiscal/pos/z-report` | Emissão e fecho do Fecho Z diário oficial obrigatório com memória fiscal. | `pos:z_report` |
+| `GET` | `/api/v1/fiscal/pos/reports/x` | Emissão de relatório de Leitura X intradiária de conferência de caixa (JSON). | `pos:x_report` |
+| `GET` | `/api/v1/fiscal/pos/reports/x/thermal` | Renderização térmica da Leitura X (80mm PDF ou texto ESC/POS via `format=text`). | `pos:x_report` |
+| `POST` | `/api/v1/fiscal/pos/reports/z` | Emissão e fecho do Fecho Z diário oficial obrigatório com memória fiscal. | `pos:z_report` |
+| `POST` | `/api/v1/fiscal/pos/reports/z/thermal` | Renderização térmica/PDF do Fecho Z recém-processado. | `pos:z_report` |
+| `GET` | `/api/v1/fiscal/pos/reports` | Histórico imutável de Fechos Z gravados (`pos_z_reports`), com filtros por terminal e data. | `pos:x_report` |
+
+> **Nota de RBAC:** a **Leitura X** (`/reports/x`) é acessível a perfis de gestão **e** a `OPERADOR_CAIXA` (perfil restrito a POS). O **Fecho Z** permanece restrito a perfis de gestão (`ADMIN`, `GESTOR`, `CONTABILISTA`, `OPERADOR_FACTURACAO`).
 
 ### 3.2 Exemplo: Emissão de Fatura (`POST /api/v1/fiscal/invoices`)
 
@@ -284,8 +289,20 @@ Roteado pelo API Gateway em `/api/v1/treasury/*`. Implementado em Rust (Axum + S
 | `POST` | `/api/v1/treasury/receipts` | Emissão de Recibo de Quitação (RC) para liquidação de faturas a prazo com linhas discriminadas e crédito em caixa/banco. |
 | `GET` | `/api/v1/treasury/receipts` | Listagem de recibos emitidos (com filtro opcional por cliente e paginação). |
 | `GET` | `/api/v1/treasury/receipts/{id}` | Consulta detalhada do recibo com as respetivas linhas de fatura liquidada. |
+| `POST` | `/api/v1/treasury/pos-sessions/open` | Abertura da **Sessão POS** (turno do gestor) que habilita a operação do terminal no dia. Exige perfil `ADMIN` (ou `SUPER_ADMIN`). |
+| `POST` | `/api/v1/treasury/pos-sessions/{id}/close` | Fecho da **Sessão POS** do gestor. Bloqueado enquanto existirem turnos de caixa (`cash_sessions`) abertos no terminal. Exige `ADMIN`. |
+| `GET` | `/api/v1/treasury/pos-sessions/current?register_id={id}` | Consulta da Sessão POS atualmente aberta no terminal. |
+| `GET` | `/api/v1/treasury/pos/panel?date={YYYY-MM-DD}&register_id={id}` | **Painel dos POS**: KPIs do dia e desdobramento de faturação **por caixa** e **por usuário** (vendas, reforços, sangrias, despesas e numerário esperado). Operadores (`OPERADOR_CAIXA`) veem apenas o seu terminal; a gestão vê todos. |
 
-### 7.2 Formas de Pagamento Suportadas no Domínio Angolano
+### 7.2 Modelo de Sessões em Dois Níveis
+O POS opera com dois níveis hierárquicos de sessão, garantindo separação entre supervisão e operação de balcão:
+
+1. **Sessão POS (nível do gestor):** aberta em `pos-sessions/open` por um utilizador com perfil `ADMIN`. Define o turno operacional do terminal. Só pode existir **uma** Sessão POS aberta por terminal (índice parcial `uq_open_pos_session_per_register`).
+2. **Sessão de Caixa** (turno do operador): `POST /sessions/open` cria um turno de caixa **dentro** de uma Sessão POS aberta — a abertura falha com `InvalidSessionState` se não existir uma Sessão POS ativa. O `operator_user_id` pode então vender (movimentos `SALE_RECEIPT`), registar reforços/sangrias e fechar o turno.
+
+O desdobramento de faturação "por caixa" e "por usuário" é apurado a partir de `cash_movements` (Tesouraria); os agregados fiscais (IVA, documentos emitidos) permanecem no `kudiba_invoicing` (`pos_z_reports`), não havendo junções entre bases de dados.
+
+### 7.3 Formas de Pagamento Suportadas no Domínio Angolano
 
 * `NUMERARIO`: Dinheiro físico. Se associado a uma sessão de caixa aberta, gera automaticamente movimento de entrada `SALE_RECEIPT`.
 * `MULTICAIXA`: Terminal de Pagamento Automático (TPA) / Rede Multicaixa EMIS.

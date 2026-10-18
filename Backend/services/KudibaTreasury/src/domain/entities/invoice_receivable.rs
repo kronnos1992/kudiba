@@ -65,6 +65,11 @@ impl InvoiceReceivable {
         }
 
         let document_type = document_type.trim().to_uppercase();
+        let status = if matches!(document_type.as_str(), "FR" | "VD") {
+            ReceivableStatus::Settled
+        } else {
+            ReceivableStatus::Outstanding
+        };
 
         let now = Utc::now();
         Ok(Self {
@@ -75,7 +80,7 @@ impl InvoiceReceivable {
             document_type,
             payment_mechanism,
             gross_total,
-            status: ReceivableStatus::Outstanding,
+            status,
             created_at: now,
             updated_at: now,
         })

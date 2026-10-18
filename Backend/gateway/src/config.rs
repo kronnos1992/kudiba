@@ -21,6 +21,7 @@ pub struct Config {
     pub accounting_service_url: String,
     pub payroll_service_url: String,
     pub integrations_service_url: String,
+    pub backoffice_service_url: String,
 
     pub jwt_secret: String,
     pub internal_gateway_secret: String,
@@ -145,6 +146,14 @@ impl Config {
             integrations_service_url = format!("http://{}", integrations_service_url);
         }
 
+        let mut backoffice_service_url = env::var("BACKOFFICE_SERVICE_URL")
+            .unwrap_or_else(|_| "http://localhost:8088".to_string());
+        if !backoffice_service_url.starts_with("http://")
+            && !backoffice_service_url.starts_with("https://")
+        {
+            backoffice_service_url = format!("http://{}", backoffice_service_url);
+        }
+
         const DEVELOPMENT_JWT_SECRET: &str =
             "kudiba_jwt_secret_development_key_change_in_production_2026";
         let is_production =
@@ -213,6 +222,7 @@ impl Config {
             accounting_service_url,
             payroll_service_url,
             integrations_service_url,
+            backoffice_service_url,
             jwt_secret,
             internal_gateway_secret,
             agt_contingency_max_days: env::var("AGT_CONTINGENCY_MAX_DAYS")

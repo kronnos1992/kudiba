@@ -69,6 +69,29 @@ impl IssueInvoiceUseCase {
         if let Some(reference) = command.source_document_number.as_mut() {
             *reference = reference.trim().to_string();
         }
+        if command.document_type == "FR" {
+            if command
+                .customer_address
+                .as_deref()
+                .is_none_or(|v| v.trim().is_empty())
+            {
+                command.customer_address = Some("Venda ao Balcão (POS)".to_string());
+            }
+            if command
+                .customer_city
+                .as_deref()
+                .is_none_or(|v| v.trim().is_empty())
+            {
+                command.customer_city = Some("Luanda".to_string());
+            }
+            if command
+                .customer_country
+                .as_deref()
+                .is_none_or(|v| v.trim().is_empty())
+            {
+                command.customer_country = Some("AO".to_string());
+            }
+        }
         validate_issue_command(&command)?;
 
         let mut uow = self.uow_factory.begin().await.map_err(persistence_error)?;
@@ -398,18 +421,20 @@ pub(crate) fn validate_issue_command(command: &IssueInvoiceCommand) -> Result<()
             "Nome/razão social do cliente é obrigatório.",
         ));
     }
-    if command
-        .customer_address
-        .as_deref()
-        .is_none_or(|value| value.trim().is_empty())
-        || command
-            .customer_city
+    let doc_kind = command.document_type.trim().to_ascii_uppercase();
+    if doc_kind != "FR"
+        && (command
+            .customer_address
             .as_deref()
             .is_none_or(|value| value.trim().is_empty())
-        || command
-            .customer_country
-            .as_deref()
-            .is_none_or(|value| value.trim().is_empty())
+            || command
+                .customer_city
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+            || command
+                .customer_country
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty()))
     {
         return Err(DomainError::invalid(
             "Morada, município e país do cliente são obrigatórios.",

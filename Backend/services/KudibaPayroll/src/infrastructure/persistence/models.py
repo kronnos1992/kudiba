@@ -13,10 +13,19 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID, JSONB, ENUM as PgEnum
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
 
 Base = declarative_base()
+
+
+def pg_enum(name: str, *values: str) -> PgEnum:
+    """Mapeia um tipo ENUM nativo já existente no schema `kudiba_payroll`.
+
+    `create_type=False` impede o SQLAlchemy de tentar emitir `CREATE TYPE`,
+    já que os tipos são geridos pelo DDL em `Backend/deploy/07-payroll-schema.sql`.
+    """
+    return PgEnum(*values, name=name, schema="kudiba_payroll", create_type=False)
 
 
 class DepartmentModel(Base):
@@ -88,7 +97,11 @@ class EmployeeModel(Base):
     iban: Mapped[str] = mapped_column(String(34), nullable=False)
     bank_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="ACTIVE", nullable=False)
+    status: Mapped[str] = mapped_column(
+        pg_enum("employee_status", "ACTIVE", "ON_LEAVE", "SUSPENDED", "TERMINATED"),
+        default="ACTIVE",
+        nullable=False,
+    )
     hire_date: Mapped[date] = mapped_column(Date, nullable=False)
     termination_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -111,11 +124,19 @@ class ContractModel(Base):
     job_position_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("kudiba_payroll.job_positions.id"), nullable=True
     )
-    contract_type: Mapped[str] = mapped_column(String(30), default="PERMANENT", nullable=False)
+    contract_type: Mapped[str] = mapped_column(
+        pg_enum("contract_type", "PERMANENT", "FIXED_TERM", "PROBATION", "PART_TIME", "INTERNSHIP"),
+        default="PERMANENT",
+        nullable=False,
+    )
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     base_salary: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="ACTIVE", nullable=False)
+    status: Mapped[str] = mapped_column(
+        pg_enum("contract_status", "ACTIVE", "SUSPENDED", "TERMINATED"),
+        default="ACTIVE",
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
@@ -137,7 +158,24 @@ class SalaryComponentModel(Base):
     contract_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("kudiba_payroll.contracts.id"), nullable=False, index=True
     )
-    component_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    component_type: Mapped[str] = mapped_column(
+        pg_enum(
+            "component_type",
+            "BASE_SALARY",
+            "FOOD_ALLOWANCE",
+            "TRANSPORT_ALLOWANCE",
+            "HOUSING_ALLOWANCE",
+            "FUNCTION_ALLOWANCE",
+            "OVERTIME_50",
+            "OVERTIME_75",
+            "BONUS",
+            "DEDUCTION_ADVANCE",
+            "DEDUCTION_LOAN",
+            "OTHER_EARNING",
+            "OTHER_DEDUCTION",
+        ),
+        nullable=False,
+    )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     is_taxable_irt: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -164,7 +202,11 @@ class PayrollPeriodModel(Base):
     month: Mapped[int] = mapped_column(Integer, nullable=False)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="DRAFT", nullable=False)
+    status: Mapped[str] = mapped_column(
+        pg_enum("period_status", "DRAFT", "CALCULATED", "CLOSED"),
+        default="DRAFT",
+        nullable=False,
+    )
     total_gross: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"), nullable=False)
     total_net: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"), nullable=False)
     total_irt: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"), nullable=False)
@@ -209,7 +251,11 @@ class PayslipModel(Base):
     irt: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     total_deductions: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     net_salary: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="DRAFT", nullable=False)
+    status: Mapped[str] = mapped_column(
+        pg_enum("payslip_status", "DRAFT", "APPROVED", "PAID"),
+        default="DRAFT",
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
@@ -257,7 +303,11 @@ class VacationRequestModel(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     days: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="PENDING", nullable=False)
+    status: Mapped[str] = mapped_column(
+        pg_enum("vacation_status", "PENDING", "APPROVED", "REJECTED", "CANCELLED"),
+        default="PENDING",
+        nullable=False,
+    )
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     decided_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -282,7 +332,19 @@ class AbsenceRecordModel(Base):
         UUID(as_uuid=True), ForeignKey("kudiba_payroll.employees.id"), nullable=False, index=True
     )
     absence_date: Mapped[date] = mapped_column(Date, nullable=False)
-    absence_type: Mapped[str] = mapped_column(String(30), default="UNJUSTIFIED", nullable=False)
+    absence_type: Mapped[str] = mapped_column(
+        pg_enum(
+            "absence_type",
+            "UNJUSTIFIED",
+            "JUSTIFIED",
+            "SICKNESS",
+            "MATERNITY",
+            "PATERNITY",
+            "BEREAVEMENT",
+        ),
+        default="UNJUSTIFIED",
+        nullable=False,
+    )
     is_paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -309,7 +371,11 @@ class AttendanceRecordModel(Base):
     )
     employee_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     punched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    direction: Mapped[str] = mapped_column(String(10), default="UNKNOWN", nullable=False)
+    direction: Mapped[str] = mapped_column(
+        pg_enum("attendance_direction", "IN", "OUT", "UNKNOWN"),
+        default="UNKNOWN",
+        nullable=False,
+    )
     device_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     source: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     external_id: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)

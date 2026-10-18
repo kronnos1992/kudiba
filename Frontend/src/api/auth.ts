@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import { LoginResponse, User } from '../types/auth';
+import { LoginResponse, TenantBankAccount, TenantSettings, User } from '../types/auth';
 
 export interface LoginPayload {
   email: string;
@@ -44,6 +44,39 @@ export interface BranchDto {
   code: string;
   name: string;
   city?: string | null;
+  address_detail?: string | null;
+}
+
+export interface CreateBranchPayload {
+  code: string;
+  name: string;
+  city?: string | null;
+  address_detail?: string | null;
+}
+
+export interface UpdateTenantSettingsPayload {
+  company_name?: string;
+  trade_name?: string | null;
+  nif?: string;
+  address_detail?: string | null;
+  city?: string | null;
+  province?: string | null;
+  postal_code?: string | null;
+  country?: string;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  logo_data_url?: string | null;
+  commercial_registry?: string | null;
+  share_capital?: string | null;
+  currency?: string;
+  tax_regime_code?: string;
+  tax_office_code?: string | null;
+  agt_cert_number?: string | null;
+  default_withholding_rate?: number;
+  invoice_footer_notes?: string | null;
+  bank_accounts?: TenantBankAccount[];
+  onboarding_completed?: boolean;
 }
 
 export const authApi = {
@@ -75,6 +108,16 @@ export const authApi = {
     return response.data;
   },
 
+  getTenantSettings: async (): Promise<TenantSettings> => {
+    const response = await apiClient.get<TenantSettings>('/api/v1/auth/tenant/settings');
+    return response.data;
+  },
+
+  updateTenantSettings: async (payload: UpdateTenantSettingsPayload): Promise<TenantSettings> => {
+    const response = await apiClient.put<TenantSettings>('/api/v1/auth/tenant/settings', payload);
+    return response.data;
+  },
+
   listMembers: async (): Promise<TenantMember[]> => {
     const response = await apiClient.get<TenantMember[]>('/api/v1/auth/users');
     return response.data;
@@ -94,6 +137,11 @@ export const authApi = {
     return response.data;
   },
 
+  createBranch: async (payload: CreateBranchPayload): Promise<BranchDto> => {
+    const response = await apiClient.post<BranchDto>('/api/v1/auth/branches', payload);
+    return response.data;
+  },
+
   listRoles: async (): Promise<RoleCatalogItem[]> => {
     const response = await apiClient.get<RoleCatalogItem[]>('/api/v1/auth/roles');
     return response.data;
@@ -109,3 +157,4 @@ export const authApi = {
     return response.data;
   },
 };
+

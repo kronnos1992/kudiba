@@ -25,3 +25,9 @@ class AccountSecurityPolicy:
         if not user.locked_until or user.locked_until <= current_time:
             return 0
         return int((user.locked_until - current_time).total_seconds() / 60) + 1
+
+    def seconds_remaining(self, user: User, now: Optional[datetime] = None) -> int:
+        current_time = now or datetime.now(timezone.utc)
+        if not user.locked_until or user.locked_until <= current_time:
+            return 0
+        return int((user.locked_until - current_time).total_seconds())

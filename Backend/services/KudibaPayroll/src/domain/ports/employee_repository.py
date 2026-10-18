@@ -26,5 +26,9 @@ class EmployeeRepository(ABC):
         pass
 
     @abstractmethod
+    async def count_by_status(self, tenant_id: UUID) -> dict[str, int]:
+        pass
+
+    @abstractmethod
     async def save(self, employee: Employee) -> None:
         pass

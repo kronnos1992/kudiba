@@ -1,6 +1,6 @@
 from typing import List, Optional
 from uuid import UUID
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.domain.entities.employee import Employee
 from src.domain.ports.employee_repository import EmployeeRepository
@@ -91,6 +91,16 @@ class PostgresEmployeeRepository(EmployeeRepository):
             res = await session.execute(stmt)
             models = res.scalars().all()
             return [self._to_entity(m) for m in models]
+
+    async def count_by_status(self, tenant_id: UUID) -> dict[str, int]:
+        async with self.session_factory() as session:
+            stmt = (
+                select(EmployeeModel.status, func.count().label("total"))
+                .where(EmployeeModel.tenant_id == tenant_id)
+                .group_by(EmployeeModel.status)
+            )
+            res = await session.execute(stmt)
+            return {str(status): int(total) for status, total in res.all()}
 
     async def save(self, employee: Employee) -> None:
         async with self.session_factory() as session:

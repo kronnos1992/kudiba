@@ -100,6 +100,44 @@ pub struct PosDailyReportResult {
     pub payments: Vec<PosPaymentBreakdown>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ZReportListQuery {
+    pub tenant_id: Uuid,
+    pub from: Option<NaiveDate>,
+    pub to: Option<NaiveDate>,
+    pub pos_terminal_id: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PosZReportSummary {
+    pub id: Uuid,
+    pub fiscal_year: i32,
+    pub sequence_number: i64,
+    pub z_number: String,
+    pub closing_date: NaiveDate,
+    pub pos_terminal_id: Option<String>,
+    pub opened_at: DateTime<Utc>,
+    pub closed_at: DateTime<Utc>,
+    pub first_document_number: Option<String>,
+    pub last_document_number: Option<String>,
+    pub invoices_count: i64,
+    pub credit_notes_count: i64,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub gross_sales_total: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub net_sales_total: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub vat_total: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub final_total: Decimal,
+    pub actor_user_id: Option<String>,
+    pub taxes: Vec<PosTaxBreakdown>,
+    pub payments: Vec<PosPaymentBreakdown>,
+}
+
 pub struct PosReportsUseCase {
     session_factory: Arc<dyn DbSessionFactory>,
 }
@@ -255,6 +293,89 @@ impl PosReportsUseCase {
         Ok(report)
     }
 
+    /// Histórico imutável de Fechos Z gravados (memória fiscal do POS)
+    pub async fn execute_list_z_reports(
+        &self,
+        query: ZReportListQuery,
+    ) -> Result<Vec<PosZReportSummary>, DomainError> {
+        let mut session = self
+            .session_factory
+            .open()
+            .await
+            .map_err(persistence_error)?;
+
+        let limit = query.limit.unwrap_or(90).clamp(1, 366);
+
+        let rows = sqlx::query(
+            "SELECT id, fiscal_year, sequence_number, z_number, closing_date, pos_terminal_id, \
+                    opened_at, closed_at, first_document_number, last_document_number, \
+                    invoices_count, credit_notes_count, gross_sales_total, net_sales_total, \
+                    vat_total, final_total, actor_user_id, taxes_summary::text AS taxes_summary, \
+                    payment_methods_summary::text AS payment_methods_summary \
+             FROM kudiba_core.pos_z_reports \
+             WHERE tenant_id = $1 \
+               AND ($2::date IS NULL OR closing_date >= $2) \
+               AND ($3::date IS NULL OR closing_date <= $3) \
+               AND ($4::text IS NULL OR pos_terminal_id = $4) \
+             ORDER BY closing_date DESC, sequence_number DESC \
+             LIMIT $5",
+        )
+        .bind(query.tenant_id)
+        .bind(query.from)
+        .bind(query.to)
+        .bind(query.pos_terminal_id.as_deref())
+        .bind(limit)
+        .fetch_all(&mut *session.connection())
+        .await
+        .map_err(|e| DomainError::Persistence(e.to_string()))?;
+
+        let mut reports = Vec::with_capacity(rows.len());
+        for row in rows {
+            let taxes_json: String = row
+                .try_get("taxes_summary")
+                .unwrap_or_else(|_| "[]".to_string());
+            let payments_json: String = row
+                .try_get("payment_methods_summary")
+                .unwrap_or_else(|_| "[]".to_string());
+
+            let taxes: Vec<PosTaxBreakdown> = serde_json::from_str(&taxes_json).unwrap_or_default();
+            let payments: Vec<PosPaymentBreakdown> =
+                serde_json::from_str(&payments_json).unwrap_or_default();
+
+            reports.push(PosZReportSummary {
+                id: row
+                    .try_get("id")
+                    .map_err(|e| DomainError::Persistence(e.to_string()))?,
+                fiscal_year: row.try_get("fiscal_year").unwrap_or_default(),
+                sequence_number: row.try_get("sequence_number").unwrap_or_default(),
+                z_number: row.try_get("z_number").unwrap_or_default(),
+                closing_date: row
+                    .try_get("closing_date")
+                    .map_err(|e| DomainError::Persistence(e.to_string()))?,
+                pos_terminal_id: row.try_get("pos_terminal_id").ok().flatten(),
+                opened_at: row
+                    .try_get("opened_at")
+                    .map_err(|e| DomainError::Persistence(e.to_string()))?,
+                closed_at: row
+                    .try_get("closed_at")
+                    .map_err(|e| DomainError::Persistence(e.to_string()))?,
+                first_document_number: row.try_get("first_document_number").ok().flatten(),
+                last_document_number: row.try_get("last_document_number").ok().flatten(),
+                invoices_count: row.try_get("invoices_count").unwrap_or_default(),
+                credit_notes_count: row.try_get("credit_notes_count").unwrap_or_default(),
+                gross_sales_total: row.try_get("gross_sales_total").unwrap_or_default(),
+                net_sales_total: row.try_get("net_sales_total").unwrap_or_default(),
+                vat_total: row.try_get("vat_total").unwrap_or_default(),
+                final_total: row.try_get("final_total").unwrap_or_default(),
+                actor_user_id: row.try_get("actor_user_id").ok().flatten(),
+                taxes,
+                payments,
+            });
+        }
+
+        Ok(reports)
+    }
+
     /// Calcula os acumuladores e desdobramentos diários da base de dados
     async fn calculate_daily_summary(
         &self,
@@ -307,7 +428,7 @@ impl PosReportsUseCase {
                 COALESCE(SUM(CASE WHEN document_type = 'NC' THEN -tax_total ELSE tax_total END), 0) AS vat_total, \
                 COALESCE(SUM(CASE WHEN document_type = 'NC' THEN -withholding_total ELSE withholding_total END), 0) AS withholding_total, \
                 COALESCE(SUM(CASE WHEN document_type = 'NC' THEN -stamp_duty_total ELSE stamp_duty_total END), 0) AS stamp_duty_total, \
-                COALESCE(SUM(CASE WHEN document_type = 'NC' THEN -amount_due ELSE amount_due END), 0) AS final_total, \
+                COALESCE(SUM(CASE WHEN document_type = 'NC' THEN -(gross_total + stamp_duty_total - withholding_total) ELSE (gross_total + stamp_duty_total - withholding_total) END), 0) AS final_total, \
                 MIN(document_number) FILTER (WHERE document_type != 'NC') AS first_document_number, \
                 MAX(document_number) FILTER (WHERE document_type != 'NC') AS last_document_number \
              FROM kudiba_core.invoices \
@@ -378,7 +499,7 @@ impl PosReportsUseCase {
         // 5. Desdobramento de Pagamentos
         let payment_rows = sqlx::query(
             "SELECT pm, \
-                    SUM(CASE WHEN i.document_type = 'NC' THEN -i.amount_due ELSE i.amount_due END) AS total_amount, \
+                    SUM(CASE WHEN i.document_type = 'NC' THEN -(i.gross_total + i.stamp_duty_total - i.withholding_total) ELSE (i.gross_total + i.stamp_duty_total - i.withholding_total) END) AS total_amount, \
                     COUNT(i.id) AS tx_count \
              FROM kudiba_core.invoices i, \
                   UNNEST(i.payment_methods) AS pm \
@@ -918,9 +1039,10 @@ impl PosReportsUseCase {
 
 fn map_payment_method_name(code: &str) -> String {
     match code.to_uppercase().as_str() {
-        "NU" => "Numerário (Cash)".to_string(),
-        "TB" => "Transferência Bancária".to_string(),
-        "MB" | "CC" | "CD" => "TPA / Multicaixa".to_string(),
+        "NU" | "NUMERARIO" => "Numerário (Cash)".to_string(),
+        "TB" | "TRANSFERENCIA" => "Transferência Bancária".to_string(),
+        "MB" | "CC" | "CD" | "MULTICAIXA" => "TPA / Multicaixa".to_string(),
+        "GPO" | "GPO_REFERENCE" => "Referência Multicaixa (GPO)".to_string(),
         "CH" => "Cheque".to_string(),
         "OU" => "Outro Meio".to_string(),
         other => other.to_string(),
