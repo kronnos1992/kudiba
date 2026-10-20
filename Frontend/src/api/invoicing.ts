@@ -240,21 +240,40 @@ export const invoicingApi = {
     return response.data;
   },
 
-  exportSaftXml: async (startDate: string, endDate: string): Promise<Blob> => {
+  exportSaftXml: async (params: {
+    tenantId: string;
+    year: number;
+    month?: number;
+  }): Promise<Blob> => {
     const response = await apiClient.get('/api/v1/fiscal/saft', {
-      params: { startDate, endDate },
+      params,
       responseType: 'blob',
     });
     return response.data;
   },
 
-  validateSaftXml: async (xmlContent: string): Promise<{ isValid: boolean; errors?: string[] }> => {
-    const response = await apiClient.post<{ isValid: boolean; errors?: string[] }>(
-      '/api/v1/fiscal/saft/validate',
-      xmlContent,
-      { headers: { 'Content-Type': 'application/xml' } }
-    );
-    return response.data;
+  validateSaftXml: async (
+    xmlContent: string
+  ): Promise<{ isValid: boolean; errors?: string[] }> => {
+    try {
+      const response = await apiClient.post<{ valid: boolean; message?: string; error?: string }>(
+        '/api/v1/fiscal/saft/validate',
+        { xml_content: xmlContent }
+      );
+      return response.data.valid
+        ? { isValid: true }
+        : {
+            isValid: false,
+            errors: (response.data.error || 'Ficheiro fora de conformidade.')
+              .replace(/^[^:]*:\s*/, '')
+              .split('|')
+              .map((e) => e.trim())
+              .filter(Boolean),
+          };
+    } catch (err: any) {
+      const detail = err?.response?.data?.error || err?.response?.data?.detail;
+      return { isValid: false, errors: [detail || 'Erro ao validar o SAF-T.'] };
+    }
   },
 
   getInvoicePdf: async (id: string): Promise<Blob> => {
@@ -312,17 +331,25 @@ export const invoicingApi = {
     return response.data;
   },
 
-  getTaxReportPdf: async (startDate: string, endDate: string): Promise<Blob> => {
-    const response = await apiClient.get('/api/v1/fiscal/reports/tax.pdf', {
-      params: { startDate, endDate },
+  getTaxReportPdf: async (params: {
+    tenantId: string;
+    year: number;
+    month?: number;
+  }): Promise<Blob> => {
+    const response = await apiClient.get('/api/v1/fiscal/reports/tax/pdf', {
+      params,
       responseType: 'blob',
     });
     return response.data;
   },
 
-  getTaxReportExcel: async (startDate: string, endDate: string): Promise<Blob> => {
-    const response = await apiClient.get('/api/v1/fiscal/reports/tax.xlsx', {
-      params: { startDate, endDate },
+  getTaxReportExcel: async (params: {
+    tenantId: string;
+    year: number;
+    month?: number;
+  }): Promise<Blob> => {
+    const response = await apiClient.get('/api/v1/fiscal/reports/tax/excel', {
+      params,
       responseType: 'blob',
     });
     return response.data;

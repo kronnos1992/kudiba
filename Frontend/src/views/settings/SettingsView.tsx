@@ -356,7 +356,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
   const handleDownloadSaftInvoicing = async () => {
     try {
       const year = new Date().getFullYear();
-      const blob = await invoicingApi.exportSaftXml(`${year}-01-01`, `${year}-12-31`);
+      if (!activeTenant?.id) {
+        throw new Error('Empresa activa não identificada.');
+      }
+      const blob = await invoicingApi.exportSaftXml({ tenantId: activeTenant.id, year });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

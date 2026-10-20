@@ -405,12 +405,12 @@ impl PosReportsUseCase {
                 row.try_get("nif")
                     .unwrap_or_else(|_| "999999999".to_string()),
                 row.try_get("agt_cert_number")
-                    .unwrap_or_else(|_| "CERT-AGT-2026/0001".to_string()),
+                    .unwrap_or_else(|_| "42/AGT/2026".to_string()),
             ),
             None => (
                 "Kudiba ERP".to_string(),
                 "999999999".to_string(),
-                "CERT-AGT-2026/0001".to_string(),
+                "42/AGT/2026".to_string(),
             ),
         };
 
@@ -1153,7 +1153,7 @@ mod tests {
             tenant_id: Uuid::new_v4(),
             company_name: "Supermercado Kudiba Lda".to_string(),
             company_nif: "5412345678".to_string(),
-            agt_cert_number: "CERT-AGT-2026/0042".to_string(),
+            agt_cert_number: "42/AGT/2026".to_string(),
             date: NaiveDate::from_ymd_opt(2026, 10, 7).unwrap(),
             generated_at: Utc::now(),
             z_report_sequence: Some(15),

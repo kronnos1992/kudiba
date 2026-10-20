@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS kudiba_core.tenants (
     bank_accounts JSONB NOT NULL DEFAULT '[]'::jsonb,
     onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
     status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
+    contingency_started_at TIMESTAMPTZ,
     license_valid_until TIMESTAMPTZ,
     subscribed_modules TEXT[],
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -86,6 +87,7 @@ ALTER TABLE kudiba_core.tenants
     ADD COLUMN IF NOT EXISTS invoice_footer_notes TEXT,
     ADD COLUMN IF NOT EXISTS bank_accounts JSONB NOT NULL DEFAULT '[]'::jsonb,
     ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS contingency_started_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS license_valid_until TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS subscribed_modules TEXT[];
 
@@ -114,7 +116,7 @@ VALUES (
     'AOA',
     'REGIME_GERAL',
     '1.ª Repartição Fiscal de Luanda',
-    'CERT-AGT-2026/0042',
+    '42/AGT/2026',
     6.50,
     'Os bens e serviços foram colocados à disposição do adquirente na data e local do documento.',
     '[{"bank_name": "Banco Angolano de Investimentos (BAI)", "iban": "AO06.0040.0000.1234.5678.9012.3", "account_number": "123456789.10.001", "swift": "BAIPAOPL", "currency": "AOA", "is_primary": true}]'::jsonb,

@@ -258,7 +258,7 @@ impl AgtClient {
         let cert_number = tenant
             .agt_cert_number
             .as_deref()
-            .unwrap_or("CERT-AGT-2026/0042")
+            .unwrap_or("42/AGT/2026")
             .to_string();
 
         let documents: Vec<AgtDocumentItem> = invoices

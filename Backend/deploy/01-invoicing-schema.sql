@@ -479,7 +479,7 @@ VALUES (
     '2.000.000,00 Kz',
     'AOA',
     '1.ª Repartição Fiscal de Luanda',
-    'CERT-AGT-2026/0042',
+    '42/AGT/2026',
     'REGIME_GERAL',
     6.50,
     'Os bens e serviços foram colocados à disposição do adquirente na data e local do documento.',

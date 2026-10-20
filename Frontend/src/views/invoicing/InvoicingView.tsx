@@ -29,6 +29,8 @@ import {
 
 type ActiveTab = 'invoices' | 'new_invoice' | 'series' | 'saft';
 
+const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
 export const InvoicingView: React.FC = () => {
   const { activeTenant } = useAuthStore();
   const queryClient = useQueryClient();
@@ -180,18 +182,30 @@ export const InvoicingView: React.FC = () => {
   });
 
   // Ações de SAF-T
-  const [saftStart, setSaftStart] = useState('2026-01-01');
-  const [saftEnd, setSaftEnd] = useState('2026-12-31');
+  const currentYear = new Date().getFullYear();
+  const [saftYear, setSaftYear] = useState(currentYear);
+  const [saftMonth, setSaftMonth] = useState<number | ''>('');
   const [saftLoading, setSaftLoading] = useState(false);
+
+  const saftParams = () => {
+    if (!activeTenant?.id) {
+      throw new Error('Empresa activa não identificada.');
+    }
+    return {
+      tenantId: activeTenant.id,
+      year: saftYear,
+      ...(saftMonth !== '' ? { month: Number(saftMonth) } : {}),
+    };
+  };
 
   const handleDownloadSaft = async () => {
     try {
       setSaftLoading(true);
-      const blob = await invoicingApi.exportSaftXml(saftStart, saftEnd);
+      const blob = await invoicingApi.exportSaftXml(saftParams());
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `SAFT_AO_2026_${activeTenant?.taxId || 'Kudiba'}.xml`;
+      a.download = `SAFT_AO_${saftYear}${saftMonth !== '' ? `_${String(saftMonth).padStart(2, '0')}` : ''}_${activeTenant?.taxId || 'Kudiba'}.xml`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -270,7 +284,7 @@ export const InvoicingView: React.FC = () => {
     try {
       setIsValidatingSaft(true);
       setSaftValidationResult(null);
-      const blob = await invoicingApi.exportSaftXml(saftStart, saftEnd);
+      const blob = await invoicingApi.exportSaftXml(saftParams());
       const text = await blob.text();
       const res = await invoicingApi.validateSaftXml(text);
       setSaftValidationResult(res);
@@ -286,11 +300,11 @@ export const InvoicingView: React.FC = () => {
 
   const handleDownloadTaxPdf = async () => {
     try {
-      const blob = await invoicingApi.getTaxReportPdf(saftStart, saftEnd);
+      const blob = await invoicingApi.getTaxReportPdf(saftParams());
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Mapa_IVA_2026_${activeTenant?.taxId || 'Kudiba'}.pdf`;
+      a.download = `Mapa_IVA_${saftYear}${saftMonth !== '' ? `_${String(saftMonth).padStart(2, '0')}` : ''}_${activeTenant?.taxId || 'Kudiba'}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -302,11 +316,11 @@ export const InvoicingView: React.FC = () => {
 
   const handleDownloadTaxExcel = async () => {
     try {
-      const blob = await invoicingApi.getTaxReportExcel(saftStart, saftEnd);
+      const blob = await invoicingApi.getTaxReportExcel(saftParams());
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Mapa_IVA_2026_${activeTenant?.taxId || 'Kudiba'}.xlsx`;
+      a.download = `Mapa_IVA_${saftYear}${saftMonth !== '' ? `_${String(saftMonth).padStart(2, '0')}` : ''}_${activeTenant?.taxId || 'Kudiba'}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1219,25 +1233,35 @@ export const InvoicingView: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">
-                    Data Inicial
+                    Exercício Fiscal
                   </label>
                   <input
-                    type="date"
-                    value={saftStart}
-                    onChange={(e) => setSaftStart(e.target.value)}
+                    type="number"
+                    min="2000"
+                    max="2100"
+                    value={saftYear}
+                    onChange={(e) => setSaftYear(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 text-xs font-mono"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">
-                    Data Final
+                    Mês (opcional)
                   </label>
-                  <input
-                    type="date"
-                    value={saftEnd}
-                    onChange={(e) => setSaftEnd(e.target.value)}
+                  <select
+                    value={saftMonth}
+                    onChange={(e) =>
+                      setSaftMonth(e.target.value === '' ? '' : Number(e.target.value))
+                    }
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 text-xs font-mono"
-                  />
+                  >
+                    <option value="">Ano completo</option>
+                    {MONTHS.map((label, idx) => (
+                      <option key={label} value={idx + 1}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
