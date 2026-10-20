@@ -24,15 +24,19 @@ const isCashierOnly = (roles?: string[]): boolean =>
 export const App: React.FC = () => {
   const { isAuthenticated, activeTenant, updateActiveTenantSettings, user } = useAuthStore();
   const { themeMode } = useUiStore();
+
+  const userRoles = user?.roles?.length ? user.roles : (activeTenant?.roles ?? []);
+  const isCashier = isCashierOnly(userRoles);
+
   const [activeModule, setActiveModule] = useState<ModuleKey>(
-    isCashierOnly(user?.roles) ? 'pos' : 'dashboard'
+    isCashier ? 'pos' : 'dashboard'
   );
   const [onboardingModalOpen, setOnboardingModalOpen] = useState(false);
   const [dismissedOnboardingForTenant, setDismissedOnboardingForTenant] = useState<string | null>(null);
 
   useEffect(() => {
-    setActiveModule(isCashierOnly(user?.roles) ? 'pos' : 'dashboard');
-  }, [user?.id]);
+    setActiveModule(isCashier ? 'pos' : 'dashboard');
+  }, [user?.id, isCashier]);
 
   useEffect(() => {
     if (themeMode === 'dark') {
@@ -43,7 +47,7 @@ export const App: React.FC = () => {
   }, [themeMode]);
 
   useEffect(() => {
-    if (!isAuthenticated || !activeTenant?.id) return;
+    if (!isAuthenticated || !activeTenant?.id || isCashier) return;
     let mounted = true;
     authApi
       .getTenantSettings()
@@ -66,16 +70,16 @@ export const App: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [isAuthenticated, activeTenant?.id]);
+  }, [isAuthenticated, activeTenant?.id, isCashier]);
 
   if (!isAuthenticated) {
     return <LoginView />;
   }
 
-  const needsOnboarding = activeTenant?.onboarding_completed === false;
+  const needsOnboarding = !isCashier && activeTenant?.onboarding_completed === false;
 
   const renderActiveModule = () => {
-    if (isCashierOnly(user?.roles) && activeModule !== 'pos') {
+    if (isCashier) {
       return <PosView />;
     }
     switch (activeModule) {

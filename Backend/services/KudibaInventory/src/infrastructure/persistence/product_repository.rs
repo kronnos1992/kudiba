@@ -35,7 +35,7 @@ impl ProductRepository for PostgresProductRepository {
         id: Uuid,
     ) -> Result<Option<Product>, RepositoryError> {
         let opt: Option<ProductRow> = sqlx::query_as(
-            "SELECT id, tenant_id, code, barcode, name, description, \
+            "SELECT id, tenant_id, code, ref_id, barcode, name, description, \
              product_type::text, is_stockable, track_lots, unit_of_measure, \
              sale_price, cost_price, current_cmp, tax_type, tax_code, \
              tax_percentage, exemption_reason_code, exemption_reason_text, \
@@ -57,7 +57,7 @@ impl ProductRepository for PostgresProductRepository {
         code: &str,
     ) -> Result<Option<Product>, RepositoryError> {
         let opt: Option<ProductRow> = sqlx::query_as(
-            "SELECT id, tenant_id, code, barcode, name, description, \
+            "SELECT id, tenant_id, code, ref_id, barcode, name, description, \
              product_type::text, is_stockable, track_lots, unit_of_measure, \
              sale_price, cost_price, current_cmp, tax_type, tax_code, \
              tax_percentage, exemption_reason_code, exemption_reason_text, \
@@ -79,7 +79,7 @@ impl ProductRepository for PostgresProductRepository {
         id: Uuid,
     ) -> Result<Option<Product>, RepositoryError> {
         let opt: Option<ProductRow> = sqlx::query_as(
-            "SELECT id, tenant_id, code, barcode, name, description, \
+            "SELECT id, tenant_id, code, ref_id, barcode, name, description, \
              product_type::text, is_stockable, track_lots, unit_of_measure, \
              sale_price, cost_price, current_cmp, tax_type, tax_code, \
              tax_percentage, exemption_reason_code, exemption_reason_text, \
@@ -98,18 +98,19 @@ impl ProductRepository for PostgresProductRepository {
         sqlx::query(
             r#"
             INSERT INTO kudiba_inventory.products (
-                id, tenant_id, code, barcode, name, description,
+                id, tenant_id, code, ref_id, barcode, name, description,
                 product_type, is_stockable, track_lots, unit_of_measure,
                 sale_price, cost_price, current_cmp, tax_type, tax_code,
                 tax_percentage, exemption_reason_code, exemption_reason_text,
                 has_withholding_tax, is_active, created_at, updated_at
             ) VALUES (
-                $1, $2, $3, $4, $5, $6,
-                $7::kudiba_inventory.product_kind, $8, $9, $10,
-                $11, $12, $13, $14, $15,
-                $16, $17, $18, $19, $20, $21, $22
+                $1, $2, $3, $4, $5, $6, $7,
+                $8::kudiba_inventory.product_kind, $9, $10, $11,
+                $12, $13, $14, $15, $16,
+                $17, $18, $19, $20, $21, $22, $23
             )
             ON CONFLICT (tenant_id, code) DO UPDATE SET
+                ref_id = EXCLUDED.ref_id,
                 barcode = EXCLUDED.barcode,
                 name = EXCLUDED.name,
                 description = EXCLUDED.description,
@@ -130,6 +131,7 @@ impl ProductRepository for PostgresProductRepository {
         .bind(p.id)
         .bind(p.tenant_id)
         .bind(&p.code)
+        .bind(&p.ref_id)
         .bind(&p.barcode)
         .bind(&p.name)
         .bind(&p.description)
@@ -163,24 +165,26 @@ impl ProductRepository for PostgresProductRepository {
         sqlx::query(
             r#"
             UPDATE kudiba_inventory.products SET
-                barcode = $1,
-                name = $2,
-                description = $3,
-                unit_of_measure = $4,
-                sale_price = $5,
-                cost_price = $6,
-                current_cmp = $7,
-                tax_type = $8,
-                tax_code = $9,
-                tax_percentage = $10,
-                exemption_reason_code = $11,
-                exemption_reason_text = $12,
-                has_withholding_tax = $13,
-                is_active = $14,
-                updated_at = $15
-            WHERE tenant_id = $16 AND id = $17
+                ref_id = $1,
+                barcode = $2,
+                name = $3,
+                description = $4,
+                unit_of_measure = $5,
+                sale_price = $6,
+                cost_price = $7,
+                current_cmp = $8,
+                tax_type = $9,
+                tax_code = $10,
+                tax_percentage = $11,
+                exemption_reason_code = $12,
+                exemption_reason_text = $13,
+                has_withholding_tax = $14,
+                is_active = $15,
+                updated_at = $16
+            WHERE tenant_id = $17 AND id = $18
             "#,
         )
+        .bind(&p.ref_id)
         .bind(&p.barcode)
         .bind(&p.name)
         .bind(&p.description)
@@ -234,7 +238,7 @@ impl ProductRepository for PostgresProductRepository {
         offset: i64,
     ) -> Result<Vec<Product>, RepositoryError> {
         let rows: Vec<ProductRow> = sqlx::query_as(
-            "SELECT id, tenant_id, code, barcode, name, description, \
+            "SELECT id, tenant_id, code, ref_id, barcode, name, description, \
              product_type::text, is_stockable, track_lots, unit_of_measure, \
              sale_price, cost_price, current_cmp, tax_type, tax_code, \
              tax_percentage, exemption_reason_code, exemption_reason_text, \
@@ -249,5 +253,38 @@ impl ProductRepository for PostgresProductRepository {
         .await?;
 
         rows.into_iter().map(to_product).collect()
+    }
+
+    async fn next_product_code(
+        &self,
+        session: &mut dyn DbSession,
+        tenant_id: Uuid,
+        prefix: &str,
+    ) -> Result<String, RepositoryError> {
+        let pattern = format!("{}-%", prefix);
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT code FROM kudiba_inventory.products \
+             WHERE tenant_id = $1 AND code LIKE $2 \
+             ORDER BY LENGTH(code) DESC, code DESC LIMIT 100",
+        )
+        .bind(tenant_id)
+        .bind(&pattern)
+        .fetch_all(&mut *session.connection())
+        .await?;
+
+        let mut max_num = 0u64;
+        let prefix_dash = format!("{}-", prefix);
+        for (code,) in rows {
+            if let Some(suffix) = code.strip_prefix(&prefix_dash) {
+                if let Ok(num) = suffix.parse::<u64>() {
+                    if num > max_num {
+                        max_num = num;
+                    }
+                }
+            }
+        }
+
+        let next_code = format!("{}-{:03}", prefix, max_num + 1);
+        Ok(next_code)
     }
 }

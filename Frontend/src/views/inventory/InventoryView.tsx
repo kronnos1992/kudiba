@@ -16,7 +16,12 @@ import {
   History,
   Edit,
   Eye,
+  QrCode as QrCodeIcon,
+  Printer,
+  Download,
+  Sparkles,
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
@@ -46,6 +51,8 @@ export const InventoryView: React.FC = () => {
   // Modais de Artigo
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [qrModalProduct, setQrModalProduct] = useState<Product | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [priceModalProduct, setPriceModalProduct] = useState<Product | null>(null);
   const [newSalePrice, setNewSalePrice] = useState('');
   const [newCostPrice, setNewCostPrice] = useState('');
@@ -105,6 +112,7 @@ export const InventoryView: React.FC = () => {
   // Formulário de Novo Artigo
   const [productForm, setProductForm] = useState<CreateProductPayload>({
     code: '',
+    ref_id: '',
     barcode: '',
     name: '',
     description: '',
@@ -274,14 +282,28 @@ export const InventoryView: React.FC = () => {
     },
   });
 
-  const resetProductForm = () => {
+  const generateAutoCode = (type: 'P' | 'S' | 'O') => {
+    const prefix = type === 'P' ? 'PRD' : type === 'S' ? 'SERV' : 'OUT';
+    const count = products.filter((p) => p.product_type === type).length + 1;
+    let nextNum = count;
+    let candidate = `${prefix}-${String(nextNum).padStart(3, '0')}`;
+    while (products.some((p) => p.code.toUpperCase() === candidate)) {
+      nextNum += 1;
+      candidate = `${prefix}-${String(nextNum).padStart(3, '0')}`;
+    }
+    return candidate;
+  };
+
+  const resetProductForm = (type: 'P' | 'S' | 'O' = 'P') => {
+    const autoCode = generateAutoCode(type);
     setProductForm({
-      code: '',
+      code: autoCode,
+      ref_id: `REF-${autoCode}`,
       barcode: '',
       name: '',
       description: '',
-      product_type: 'P',
-      is_stockable: true,
+      product_type: type,
+      is_stockable: type === 'P',
       track_lots: false,
       unit_of_measure: 'UN',
       sale_price: '',
@@ -289,14 +311,83 @@ export const InventoryView: React.FC = () => {
       tax_percentage: '14.00',
       exemption_reason_code: '',
       exemption_reason_text: '',
-      has_withholding_tax: false,
+      has_withholding_tax: type === 'S',
     });
+  };
+
+  const openQrModal = async (product: Product) => {
+    setQrModalProduct(product);
+    try {
+      const qrPayload = JSON.stringify({
+        id: product.id,
+        code: product.code,
+        ref_id: product.ref_id || `REF-${product.code}`,
+        name: product.name,
+        price: product.sale_price,
+        barcode: product.barcode || undefined,
+      });
+      const url = await QRCode.toDataURL(qrPayload, {
+        width: 320,
+        margin: 2,
+        color: {
+          dark: '#0f172a',
+          light: '#ffffff',
+        },
+      });
+      setQrDataUrl(url);
+    } catch (err) {
+      console.error('Falha ao gerar QR Code do produto:', err);
+    }
+  };
+
+  const downloadQrCode = () => {
+    if (!qrDataUrl || !qrModalProduct) return;
+    const a = document.createElement('a');
+    a.href = qrDataUrl;
+    a.download = `qrcode-${qrModalProduct.code}.png`;
+    a.click();
+  };
+
+  const printQrLabel = () => {
+    if (!qrDataUrl || !qrModalProduct) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Etiqueta - ${qrModalProduct.name}</title>
+          <style>
+            body { font-family: monospace, sans-serif; text-align: center; padding: 20px; }
+            .label { border: 1px dashed #000; padding: 16px; width: 260px; margin: 0 auto; }
+            h2 { font-size: 14px; margin: 0 0 6px 0; word-break: break-word; }
+            p { font-size: 11px; margin: 3px 0; }
+            img { width: 180px; height: 180px; }
+            .price { font-size: 16px; font-weight: bold; margin-top: 6px; }
+          </style>
+        </head>
+        <body>
+          <div class="label">
+            <h2>${qrModalProduct.name}</h2>
+            <p>SKU: <strong>${qrModalProduct.code}</strong></p>
+            <p>Ref: <strong>${qrModalProduct.ref_id || `REF-${qrModalProduct.code}`}</strong></p>
+            ${qrModalProduct.barcode ? `<p>EAN: ${qrModalProduct.barcode}</p>` : ''}
+            <img src="${qrDataUrl}" />
+            <div class="price">${Number(qrModalProduct.sale_price).toLocaleString('pt-AO', { style: 'currency', currency: 'AOA' })}</div>
+          </div>
+          <script>
+            window.onload = function() { window.print(); window.close(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   // Filtragem de artigos
   const filteredProducts = products.filter((p) => {
     const matchesSearch =
       p.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.ref_id && p.ref_id.toLowerCase().includes(searchTerm.toLowerCase())) ||
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (p.barcode && p.barcode.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -614,12 +705,15 @@ export const InventoryView: React.FC = () => {
                       return (
                         <tr key={p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
                           <td className="px-4 py-3">
-                            <span className="font-semibold text-slate-900 dark:text-white block">
+                            <span className="font-semibold text-slate-900 dark:text-white block font-mono">
                               {p.code}
                             </span>
+                            <span className="text-xs text-emerald-600 dark:text-emerald-400 font-mono block">
+                              Ref: {p.ref_id || `REF-${p.code}`}
+                            </span>
                             {p.barcode && (
-                              <span className="text-xs text-slate-400 font-mono">
-                                {p.barcode}
+                              <span className="text-xs text-slate-400 font-mono block">
+                                EAN: {p.barcode}
                               </span>
                             )}
                           </td>
@@ -683,6 +777,13 @@ export const InventoryView: React.FC = () => {
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => openQrModal(p)}
+                                title="Ver / Imprimir QR Code do Artigo"
+                                className="p-1.5 text-slate-500 hover:text-emerald-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                              >
+                                <QrCodeIcon className="w-4 h-4" />
+                              </button>
                               {p.product_type === 'P' && (
                                 <button
                                   onClick={() => setStockDetailProduct(p)}
@@ -708,6 +809,7 @@ export const InventoryView: React.FC = () => {
                                   setEditingProduct(p);
                                   setProductForm({
                                     code: p.code,
+                                    ref_id: p.ref_id || `REF-${p.code}`,
                                     barcode: p.barcode || '',
                                     name: p.name,
                                     description: p.description || '',
@@ -1063,14 +1165,23 @@ export const InventoryView: React.FC = () => {
                 </label>
                 <select
                   value={productForm.product_type}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const newType = e.target.value as 'P' | 'S' | 'O';
+                    const newCode = (!editingProduct && (!productForm.code || productForm.code.startsWith('PRD-') || productForm.code.startsWith('SERV-') || productForm.code.startsWith('OUT-')))
+                      ? generateAutoCode(newType)
+                      : productForm.code;
+                    const newRef = (!editingProduct && (!productForm.ref_id || productForm.ref_id.startsWith('REF-')))
+                      ? (newCode ? `REF-${newCode}` : '')
+                      : productForm.ref_id;
                     setProductForm({
                       ...productForm,
-                      product_type: e.target.value as 'P' | 'S' | 'O',
-                      is_stockable: e.target.value === 'P',
-                      has_withholding_tax: e.target.value === 'S',
-                    })
-                  }
+                      product_type: newType,
+                      code: newCode,
+                      ref_id: newRef,
+                      is_stockable: newType === 'P',
+                      has_withholding_tax: newType === 'S',
+                    });
+                  }}
                   className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
                 >
                   <option value="P">Produto Físico (P)</option>
@@ -1080,16 +1191,53 @@ export const InventoryView: React.FC = () => {
               </div>
 
               <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Código do Artigo (SKU) *
+                  </label>
+                  {!editingProduct && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const auto = generateAutoCode(productForm.product_type as 'P' | 'S' | 'O');
+                        setProductForm({
+                          ...productForm,
+                          code: auto,
+                          ref_id: `REF-${auto}`,
+                        });
+                      }}
+                      className="text-[11px] font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      Gerar Auto
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  placeholder="ex: PRD-001 (Automático)"
+                  value={productForm.code}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const autoRef = (!productForm.ref_id || productForm.ref_id.startsWith('REF-'))
+                      ? (val ? `REF-${val.trim().toUpperCase()}` : '')
+                      : productForm.ref_id;
+                    setProductForm({ ...productForm, code: val, ref_id: autoRef });
+                  }}
+                  className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono"
+                />
+              </div>
+
+              <div className="md:col-span-2">
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                  Código do Artigo (SKU) *
+                  Referência do Artigo (Ref ID)
                 </label>
                 <input
                   type="text"
-                  required
-                  placeholder="ex: PROD-002 ou BEB-01"
-                  value={productForm.code}
-                  onChange={(e) => setProductForm({ ...productForm, code: e.target.value })}
-                  className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                  placeholder="ex: REF-PRD-001 (Automático se vazio)"
+                  value={productForm.ref_id || ''}
+                  onChange={(e) => setProductForm({ ...productForm, ref_id: e.target.value })}
+                  className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono"
                 />
               </div>
 
@@ -1255,7 +1403,6 @@ export const InventoryView: React.FC = () => {
               <button
                 type="button"
                 disabled={
-                  !productForm.code ||
                   !productForm.name ||
                   !productForm.sale_price ||
                   createProductMutation.isPending ||
@@ -1266,6 +1413,7 @@ export const InventoryView: React.FC = () => {
                     updateProductMutation.mutate({
                       id: editingProduct.id,
                       payload: {
+                        ref_id: productForm.ref_id ? productForm.ref_id.trim() : undefined,
                         name: productForm.name,
                         description: productForm.description || undefined,
                         barcode: productForm.barcode || undefined,
@@ -1279,7 +1427,11 @@ export const InventoryView: React.FC = () => {
                       },
                     });
                   } else {
-                    createProductMutation.mutate(productForm);
+                    createProductMutation.mutate({
+                      ...productForm,
+                      code: productForm.code ? productForm.code.trim().toUpperCase() : undefined,
+                      ref_id: productForm.ref_id ? productForm.ref_id.trim() : undefined,
+                    });
                   }
                 }}
                 className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50"
@@ -1289,6 +1441,76 @@ export const InventoryView: React.FC = () => {
                   : editingProduct
                   ? 'Atualizar Artigo'
                   : 'Gravar Artigo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: QR Code do Artigo */}
+      {qrModalProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <QrCodeIcon className="w-5 h-5 text-emerald-600" />
+                QR Code do Artigo
+              </h3>
+              <button
+                onClick={() => {
+                  setQrModalProduct(null);
+                  setQrDataUrl('');
+                }}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <h4 className="font-bold text-slate-900 dark:text-white text-base">
+                {qrModalProduct.name}
+              </h4>
+              <div className="flex items-center justify-center gap-2 text-xs text-slate-500 font-mono">
+                <span>SKU: <strong className="text-slate-700 dark:text-slate-300">{qrModalProduct.code}</strong></span>
+                <span>•</span>
+                <span>Ref: <strong className="text-emerald-600 dark:text-emerald-400">{qrModalProduct.ref_id || `REF-${qrModalProduct.code}`}</strong></span>
+              </div>
+              {qrModalProduct.barcode && (
+                <p className="text-xs text-slate-400 font-mono">EAN: {qrModalProduct.barcode}</p>
+              )}
+            </div>
+
+            <div className="flex justify-center p-4 bg-white rounded-xl border border-slate-100 shadow-inner">
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt={`QR Code ${qrModalProduct.code}`} className="w-48 h-48 rounded" />
+              ) : (
+                <div className="w-48 h-48 flex items-center justify-center text-xs text-slate-400">
+                  A gerar QR Code...
+                </div>
+              )}
+            </div>
+
+            <div className="text-sm font-black text-slate-900 dark:text-white">
+              <KzAmount value={Number(qrModalProduct.sale_price) || 0} />
+            </div>
+
+            <div className="flex items-center justify-center gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={downloadQrCode}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                Descarregar PNG
+              </button>
+              <button
+                type="button"
+                onClick={printQrLabel}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                Imprimir Etiqueta
               </button>
             </div>
           </div>

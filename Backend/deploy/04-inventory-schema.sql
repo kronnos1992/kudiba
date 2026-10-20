@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS kudiba_inventory.products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     code VARCHAR(50) NOT NULL,
+    ref_id VARCHAR(100),
     barcode VARCHAR(50),
     name VARCHAR(255) NOT NULL,
     description TEXT,
@@ -111,6 +112,7 @@ CREATE TABLE IF NOT EXISTS kudiba_inventory.products (
 
 CREATE INDEX IF NOT EXISTS idx_products_tenant ON kudiba_inventory.products(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON kudiba_inventory.products(tenant_id, barcode) WHERE barcode IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_products_ref_id ON kudiba_inventory.products(tenant_id, ref_id) WHERE ref_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_products_type ON kudiba_inventory.products(tenant_id, product_type);
 
 -- 5. SALDOS DE INVENTÁRIO (APENAS PARA BENS FÍSICOS is_stockable = TRUE)

@@ -20,6 +20,24 @@ const STORAGE_KEYS = {
   TENANTS: 'kudiba_tenants',
 };
 
+const decodeJwtPayload = (token: string | null): { roles?: string[]; permissions?: string[] } => {
+  if (!token) return {};
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return {};
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const jsonStr = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonStr);
+  } catch {
+    return {};
+  }
+};
+
 const getInitialState = (): AuthState => {
   const accessToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
   const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
@@ -28,11 +46,29 @@ const getInitialState = (): AuthState => {
   const branchJson = localStorage.getItem(STORAGE_KEYS.ACTIVE_BRANCH);
   const tenantsJson = localStorage.getItem(STORAGE_KEYS.TENANTS);
 
+  let user: User | null = userJson ? JSON.parse(userJson) : null;
+  const activeTenant: Tenant | null = tenantJson ? JSON.parse(tenantJson) : null;
+
+  if (user && (!user.roles || user.roles.length === 0)) {
+    const jwtPayload = decodeJwtPayload(accessToken);
+    const resolvedRoles = activeTenant?.roles?.length
+      ? activeTenant.roles
+      : jwtPayload.roles || [];
+    const resolvedPermissions = activeTenant?.permissions?.length
+      ? activeTenant.permissions
+      : jwtPayload.permissions || [];
+    user = {
+      ...user,
+      roles: resolvedRoles,
+      permissions: resolvedPermissions,
+    };
+  }
+
   return {
     accessToken,
     refreshToken,
-    user: userJson ? JSON.parse(userJson) : null,
-    activeTenant: tenantJson ? JSON.parse(tenantJson) : null,
+    user,
+    activeTenant,
     activeBranch: branchJson ? JSON.parse(branchJson) : null,
     tenants: tenantsJson ? JSON.parse(tenantsJson) : [],
     isAuthenticated: Boolean(accessToken),
@@ -44,10 +80,27 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
   ...getInitialState(),
 
   setSession: (res) => {
+    const jwtPayload = decodeJwtPayload(res.access_token);
+    const resolvedRoles =
+      res.active_tenant?.roles?.length
+        ? res.active_tenant.roles
+        : (res.user as User)?.roles?.length
+        ? (res.user as User).roles!
+        : jwtPayload.roles || [];
+
+    const resolvedPermissions =
+      res.active_tenant?.permissions?.length
+        ? res.active_tenant.permissions
+        : (res.user as User)?.permissions?.length
+        ? (res.user as User).permissions!
+        : jwtPayload.permissions || [];
+
     const normalizedUser: User = {
       ...res.user,
       fullName: res.user.fullName || res.user.full_name || 'Utilizador',
       isActive: res.user.isActive ?? res.user.is_active ?? true,
+      roles: resolvedRoles,
+      permissions: resolvedPermissions,
     };
 
     const normalizeTenant = (t: Tenant): Tenant => ({
@@ -62,6 +115,8 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
       default_withholding_rate: t.default_withholding_rate ?? 6.5,
       bank_accounts: t.bank_accounts || [],
       onboarding_completed: t.onboarding_completed ?? true,
+      roles: t.roles?.length ? t.roles : resolvedRoles,
+      permissions: t.permissions?.length ? t.permissions : resolvedPermissions,
       branches: t.branches && t.branches.length > 0 ? t.branches : (t.default_branch ? [t.default_branch] : []),
     });
 
@@ -108,7 +163,19 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
     } else {
       localStorage.removeItem(STORAGE_KEYS.ACTIVE_BRANCH);
     }
-    set({ activeTenant: tenant, activeBranch: selectedBranch });
+    set((state) => {
+      const updatedUser = state.user
+        ? {
+            ...state.user,
+            roles: tenant.roles?.length ? tenant.roles : state.user.roles || [],
+            permissions: tenant.permissions?.length ? tenant.permissions : state.user.permissions || [],
+          }
+        : null;
+      if (updatedUser) {
+        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updatedUser));
+      }
+      return { activeTenant: tenant, activeBranch: selectedBranch, user: updatedUser };
+    });
   },
 
   updateActiveTenantSettings: (updates) => {

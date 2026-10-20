@@ -67,7 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onSelectModule }
 
   const isSuperadmin = Boolean(user?.is_superadmin);
   const subscribedModules = activeTenant?.subscribed_modules ?? null;
-  const roles = user?.roles ?? [];
+  const roles = user?.roles?.length ? user.roles : (activeTenant?.roles ?? []);
   const isCashierOnly =
     roles.length > 0 && roles.every((r) => r.toUpperCase() === 'OPERADOR_CAIXA');
 

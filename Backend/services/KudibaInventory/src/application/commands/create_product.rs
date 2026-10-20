@@ -41,17 +41,51 @@ impl CreateProductCommand {
 
         let mut session = self.session_factory.open().await?;
 
-        if let Some(existing) = self
-            .product_repo
-            .find_by_code(session.as_mut(), tenant_id, &req.code)
-            .await?
+        let code = match req
+            .code
+            .as_deref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
         {
-            return Err(InventoryError::DuplicateProductCode(existing.code));
-        }
+            Some(c) => {
+                let code_upper = c.to_uppercase();
+                if let Some(existing) = self
+                    .product_repo
+                    .find_by_code(session.as_mut(), tenant_id, &code_upper)
+                    .await?
+                {
+                    return Err(InventoryError::DuplicateProductCode(existing.code));
+                }
+                code_upper
+            }
+            None => {
+                let prefix = match p_type {
+                    ProductType::Goods => "PRD",
+                    ProductType::Service => "SERV",
+                    ProductType::Other => "OUT",
+                    ProductType::Excise => "IEC",
+                    ProductType::Tax => "TAX",
+                };
+                let mut candidate = self
+                    .product_repo
+                    .next_product_code(session.as_mut(), tenant_id, prefix)
+                    .await?;
+                while self
+                    .product_repo
+                    .find_by_code(session.as_mut(), tenant_id, &candidate)
+                    .await?
+                    .is_some()
+                {
+                    let rand_suffix = uuid::Uuid::new_v4().simple().to_string()[..4].to_uppercase();
+                    candidate = format!("{}-{}", prefix, rand_suffix);
+                }
+                candidate
+            }
+        };
 
-        let product = Product::new(
+        let mut product = Product::new(
             tenant_id,
-            req.code,
+            code,
             req.barcode,
             req.name,
             req.description,
@@ -67,6 +101,10 @@ impl CreateProductCommand {
             req.exemption_reason_text,
             req.has_withholding_tax,
         )?;
+
+        if let Some(ref_id) = req.ref_id {
+            product = product.with_ref_id(Some(ref_id));
+        }
 
         self.product_repo.save(session.as_mut(), &product).await?;
         Ok(ProductResponse::from(product))

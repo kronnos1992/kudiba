@@ -11,8 +11,8 @@ use kudiba_treasury::application::commands::{
 };
 use kudiba_treasury::application::dto::{
     CloseCashSessionRequest, CreateBankAccountRequest, CreateCashRegisterRequest,
-    IssueTreasuryReceiptRequest, OpenCashSessionRequest, OpenPosSessionRequest,
-    ReceiptLineRequest, RecordCashMovementRequest,
+    IssueTreasuryReceiptRequest, OpenCashSessionRequest, OpenPosSessionRequest, ReceiptLineRequest,
+    RecordCashMovementRequest,
 };
 use kudiba_treasury::application::queries::TreasuryQueries;
 use kudiba_treasury::domain::entities::{
@@ -108,9 +108,14 @@ fn test_cash_session_lifecycle_and_reconciliation() {
     );
     assert!(empty_op.is_err());
 
-    let mut session =
-        CashSession::open(tenant_id, register_id, pos_session_id, "op-001".to_string(), dec!(10000))
-            .expect("Falha ao abrir sessão");
+    let mut session = CashSession::open(
+        tenant_id,
+        register_id,
+        pos_session_id,
+        "op-001".to_string(),
+        dec!(10000),
+    )
+    .expect("Falha ao abrir sessão");
 
     assert_eq!(session.status, SessionStatus::Open);
     assert_eq!(session.opening_balance, dec!(10000));
@@ -764,11 +769,8 @@ async fn test_full_application_use_case_flow() {
 
     let create_reg = CreateCashRegisterHandler::new(reg_repo.clone());
     let open_pos = OpenPosSessionHandler::new(reg_repo.clone(), pos_repo.clone());
-    let open_sess = OpenCashSessionHandler::new(
-        reg_repo.clone(),
-        sess_repo.clone(),
-        pos_repo.clone(),
-    );
+    let open_sess =
+        OpenCashSessionHandler::new(reg_repo.clone(), sess_repo.clone(), pos_repo.clone());
     let close_sess = CloseCashSessionHandler::new(sess_repo.clone(), mov_repo.clone());
     let record_mov = RecordCashMovementHandler::new(sess_repo.clone(), mov_repo.clone());
     let create_bank = CreateBankAccountHandler::new(bank_repo.clone());

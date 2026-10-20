@@ -8,6 +8,7 @@ import {
   Download,
   PlusCircle,
   ShieldCheck,
+  ShieldAlert,
   Search,
   X,
   Upload,
@@ -390,6 +391,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
     const q = userSearch.toLowerCase();
     return m.full_name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q);
   });
+
+  const roles = user?.roles?.length ? user.roles : (activeTenant?.roles ?? []);
+  const isSuperadmin = Boolean(user?.is_superadmin);
+  const isAdmin = isSuperadmin || roles.some((r) => ['ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase()));
+
+  if (!isAdmin) {
+    return (
+      <div className="p-8 max-w-lg mx-auto text-center space-y-4">
+        <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-100 dark:bg-amber-950/40 text-amber-600 flex items-center justify-center">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-black text-slate-900 dark:text-white">
+          Acesso Restrito às Configurações
+        </h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          O seu utilizador não possui privilégios de Administrador para parametrizar a empresa, gerir utilizadores ou chaves fiscais.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

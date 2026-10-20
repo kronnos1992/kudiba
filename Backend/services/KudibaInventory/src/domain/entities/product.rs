@@ -11,6 +11,7 @@ pub struct Product {
     pub id: Uuid,
     pub tenant_id: Uuid,
     pub code: String,
+    pub ref_id: Option<String>,
     pub barcode: Option<String>,
     pub name: String,
     pub description: Option<String>,
@@ -97,12 +98,15 @@ impl Product {
             "NOR".to_string()
         };
 
+        let clean_code = code.trim().to_uppercase();
+        let default_ref = format!("REF-{}", clean_code);
         let now = Utc::now();
 
         Ok(Self {
             id: Uuid::new_v4(),
             tenant_id,
-            code: code.trim().to_uppercase(),
+            code: clean_code,
+            ref_id: Some(default_ref),
             barcode: barcode.map(|b| b.trim().to_string()),
             name: name.trim().to_string(),
             description: description.map(|d| d.trim().to_string()),
@@ -123,6 +127,26 @@ impl Product {
             created_at: now,
             updated_at: now,
         })
+    }
+
+    pub fn with_ref_id(mut self, ref_id: Option<String>) -> Self {
+        if let Some(r) = ref_id {
+            let trimmed = r.trim();
+            if !trimmed.is_empty() {
+                self.ref_id = Some(trimmed.to_string());
+            }
+        }
+        self
+    }
+
+    pub fn set_ref_id(&mut self, ref_id: Option<String>) {
+        if let Some(r) = ref_id {
+            let trimmed = r.trim();
+            if !trimmed.is_empty() {
+                self.ref_id = Some(trimmed.to_string());
+                self.updated_at = Utc::now();
+            }
+        }
     }
 
     pub fn update_prices(

@@ -46,4 +46,3 @@ pub struct Tenant {
     pub tax_regime_code: String,
     pub contingency_started_at: Option<DateTime<Utc>>,
 }
-

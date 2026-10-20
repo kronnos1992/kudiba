@@ -206,15 +206,33 @@ impl SaftXmlGenerator {
             xml_escape(meta.software_version)
         );
         xml.push_str("    <HeaderComment>SAF-T (AO) Mensal gerado pelo Kudiba ERP em conformidade com o Decreto Presidencial n.º 71/25</HeaderComment>\n");
-        if let Some(phone) = meta.tenant.phone.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(phone) = meta
+            .tenant
+            .phone
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             let truncated: String = phone.chars().take(20).collect();
             let _ = writeln!(xml, "    <Telephone>{}</Telephone>", xml_escape(&truncated));
         }
-        if let Some(email) = meta.tenant.email.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(email) = meta
+            .tenant
+            .email
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             let truncated: String = email.chars().take(254).collect();
             let _ = writeln!(xml, "    <Email>{}</Email>", xml_escape(&truncated));
         }
-        if let Some(website) = meta.tenant.website.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(website) = meta
+            .tenant
+            .website
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             let truncated: String = website.chars().take(60).collect();
             let _ = writeln!(xml, "    <Website>{}</Website>", xml_escape(&truncated));
         }

@@ -10,6 +10,8 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOGS_DIR="$ROOT_DIR/.run_logs"
 mkdir -p "$LOGS_DIR"
 
+export RABBITMQ_URL="${RABBITMQ_URL:-amqp://kudiba:kudiba_rabbit_pass@127.0.0.1:5672/%2f}"
+
 wait_for_health() {
     local url="$1" name="$2" tries="${3:-30}"
     for _ in $(seq 1 "$tries"); do

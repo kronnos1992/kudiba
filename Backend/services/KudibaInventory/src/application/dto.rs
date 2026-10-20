@@ -14,7 +14,8 @@ use crate::domain::value_objects::TaxIdKind;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateProductRequest {
-    pub code: String,
+    pub code: Option<String>,
+    pub ref_id: Option<String>,
     pub barcode: Option<String>,
     pub name: String,
     pub description: Option<String>,
@@ -38,6 +39,7 @@ pub struct UpdateProductPriceRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateProductRequest {
+    pub ref_id: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,
     pub barcode: Option<String>,
@@ -56,6 +58,7 @@ pub struct ProductResponse {
     pub id: Uuid,
     pub tenant_id: Uuid,
     pub code: String,
+    pub ref_id: Option<String>,
     pub barcode: Option<String>,
     pub name: String,
     pub description: Option<String>,
@@ -83,6 +86,7 @@ impl From<Product> for ProductResponse {
             id: p.id,
             tenant_id: p.tenant_id,
             code: p.code,
+            ref_id: p.ref_id,
             barcode: p.barcode,
             name: p.name,
             description: p.description,

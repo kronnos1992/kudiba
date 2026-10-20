@@ -92,7 +92,14 @@ impl Config {
                 .unwrap_or(50),
             rabbitmq_url: env::var("RABBITMQ_URL")
                 .ok()
-                .filter(|s| !s.trim().is_empty()),
+                .filter(|s| !s.trim().is_empty())
+                .or_else(|| {
+                    if environment == "development" || environment == "dev" {
+                        Some("amqp://kudiba:kudiba_rabbit_pass@127.0.0.1:5672/%2f".to_string())
+                    } else {
+                        None
+                    }
+                }),
             kafka_brokers: env::var("KAFKA_BROKERS")
                 .ok()
                 .filter(|s| !s.trim().is_empty()),

@@ -1,9 +1,7 @@
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::application::dto::{
-    ClosePosSessionRequest, OpenPosSessionRequest, PosSessionResponse,
-};
+use crate::application::dto::{ClosePosSessionRequest, OpenPosSessionRequest, PosSessionResponse};
 use crate::domain::entities::PosSession;
 use crate::domain::error::DomainError;
 use crate::domain::ports::{CashRegisterRepository, CashSessionRepository, PosSessionRepository};
@@ -91,10 +89,7 @@ impl ClosePosSessionHandler {
             .find_by_id(tenant_id, pos_session_id)
             .await?
             .ok_or_else(|| {
-                DomainError::NotFound(format!(
-                    "Sessão POS '{}' não encontrada",
-                    pos_session_id
-                ))
+                DomainError::NotFound(format!("Sessão POS '{}' não encontrada", pos_session_id))
             })?;
 
         let open_registers = self

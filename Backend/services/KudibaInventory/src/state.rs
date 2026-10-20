@@ -157,8 +157,7 @@ impl AppState {
         ));
         let get_stock_query = Arc::new(GetStockQuery::new(session_factory.clone(), stock_repo));
         let get_batch_query = Arc::new(GetBatchQuery::new(session_factory.clone(), batch_repo));
-        let get_dashboard_summary_query =
-            Arc::new(GetDashboardSummaryQuery::new(session_factory));
+        let get_dashboard_summary_query = Arc::new(GetDashboardSummaryQuery::new(session_factory));
         Self {
             config: Arc::new(config),
             db_pool: pool,

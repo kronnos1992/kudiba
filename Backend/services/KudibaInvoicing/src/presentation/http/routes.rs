@@ -215,6 +215,8 @@ async fn issue_invoice_handler(
             "GESTOR",
             "OPERADOR_FACTURACAO",
             "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
         ],
     ) {
         Ok(actor) => actor,
@@ -266,6 +268,8 @@ async fn list_series_handler(State(state): State<AppState>, headers: HeaderMap) 
             "ACCOUNTANT",
             "OPERADOR_FACTURACAO",
             "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
         ],
     ) {
         Ok(tenant_id) => tenant_id,
@@ -330,6 +334,8 @@ async fn list_invoices_handler(
             "ACCOUNTANT",
             "OPERADOR_FACTURACAO",
             "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
         ],
     ) {
         Ok(tenant_id) => tenant_id,
@@ -378,6 +384,8 @@ async fn get_invoice_handler(
             "ACCOUNTANT",
             "OPERADOR_FACTURACAO",
             "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
         ],
     ) {
         Ok(tenant_id) => tenant_id,
@@ -464,6 +472,8 @@ async fn get_invoice_pdf_handler(
             "ACCOUNTANT",
             "OPERADOR_FACTURACAO",
             "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
         ],
     ) {
         Ok(tenant_id) => tenant_id,
@@ -543,6 +553,8 @@ async fn get_invoice_thermal_handler(
             "ACCOUNTANT",
             "OPERADOR_FACTURACAO",
             "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
         ],
     ) {
         Ok(tenant_id) => tenant_id,
@@ -1382,13 +1394,9 @@ async fn dashboard_summary_handler(
         Err(resp) => return resp.into_response(),
     };
 
-    let year = params
-        .year
-        .unwrap_or_else(|| Utc::now().year());
-    let query = crate::application::queries::dashboard_summary::DashboardSummaryQuery {
-        tenant_id,
-        year,
-    };
+    let year = params.year.unwrap_or_else(|| Utc::now().year());
+    let query =
+        crate::application::queries::dashboard_summary::DashboardSummaryQuery { tenant_id, year };
 
     match state.dashboard_summary.execute(query).await {
         Ok(summary) => Json(summary).into_response(),
@@ -1587,6 +1595,8 @@ async fn pos_fecho_z_handler(
             "ACCOUNTANT",
             "OPERADOR_FACTURACAO",
             "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
         ],
     ) {
         Ok(t) => t,
@@ -1639,6 +1649,8 @@ async fn pos_fecho_z_thermal_handler(
             "ACCOUNTANT",
             "OPERADOR_FACTURACAO",
             "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
         ],
     ) {
         Ok(t) => t,
@@ -1881,14 +1893,15 @@ async fn load_tenant_by_id(
                phone, email, website, commercial_registry, share_capital, currency, tax_office_code, \
                agt_cert_number, invoice_footer_notes, bank_accounts, status, tax_regime_code, contingency_started_at \
                FROM kudiba_core.tenants WHERE id = $1";
-    let row = sqlx::query(sql).bind(tenant_id).fetch_optional(pool).await.ok()??;
+    let row = sqlx::query(sql)
+        .bind(tenant_id)
+        .fetch_optional(pool)
+        .await
+        .ok()??;
     crate::infrastructure::persistence::tenant_repository::PgTenantRepository::map_row(&row).ok()
 }
 
-async fn get_fiscal_tenant_handler(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
+async fn get_fiscal_tenant_handler(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let tenant_id = match authorized_tenant_id(
         &headers,
         &[

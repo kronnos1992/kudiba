@@ -75,6 +75,10 @@ impl UpdateProductCommand {
             req.is_active,
         )?;
 
+        if req.ref_id.is_some() {
+            product.set_ref_id(req.ref_id);
+        }
+
         self.product_repo.update(session, &product).await?;
 
         Ok(ProductResponse::from(product))

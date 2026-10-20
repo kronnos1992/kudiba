@@ -4,6 +4,7 @@ export interface Product {
   id: string;
   tenant_id: string;
   code: string;
+  ref_id?: string | null;
   barcode: string | null;
   name: string;
   description: string | null;
@@ -26,7 +27,8 @@ export interface Product {
 }
 
 export interface CreateProductPayload {
-  code: string;
+  code?: string;
+  ref_id?: string;
   barcode?: string;
   name: string;
   description?: string;
@@ -43,6 +45,7 @@ export interface CreateProductPayload {
 }
 
 export interface UpdateProductPayload {
+  ref_id?: string;
   name?: string;
   description?: string;
   barcode?: string;

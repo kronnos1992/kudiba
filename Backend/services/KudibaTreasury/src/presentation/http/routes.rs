@@ -594,7 +594,10 @@ pub async fn list_receivables_handler(
 pub async fn dashboard_summary_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<crate::application::queries::dashboard_summary::TreasuryDashboardSummary>, (StatusCode, Json<ProblemDetail>)> {
+) -> Result<
+    Json<crate::application::queries::dashboard_summary::TreasuryDashboardSummary>,
+    (StatusCode, Json<ProblemDetail>),
+> {
     let tenant_id = extract_tenant_id(&headers)?;
     let summary = crate::application::queries::dashboard_summary::fetch(&state.db_pool, tenant_id)
         .await

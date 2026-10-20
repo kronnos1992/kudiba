@@ -27,6 +27,7 @@ import { KzAmount } from '../../components/common/KzAmount';
 import { inventoryApi, Product } from '../../api/inventory';
 import { invoicingApi, Invoice, PosDailyReportResult, PosZReportSummary } from '../../api/invoicing';
 import { treasuryApi, MovementType, PosPanelResponse } from '../../api/treasury';
+import { authApi, TenantMember } from '../../api/auth';
 
 interface CartItem {
   productId: string;
@@ -126,6 +127,25 @@ export const PosView: React.FC = () => {
     enabled: Boolean(activeTenant?.id) && posTab === 'painel',
   });
 
+  const { data: members = [] } = useQuery<TenantMember[]>({
+    queryKey: ['tenant_members', activeTenant?.id],
+    queryFn: () => authApi.listMembers(),
+    enabled: Boolean(activeTenant?.id) && Boolean(isManager),
+    retry: false,
+  });
+
+  const getOperatorDisplayName = (operatorId?: string | null) => {
+    if (!operatorId) return '—';
+    if (user && (user.id === operatorId || user.email === operatorId)) {
+      return user.fullName || user.full_name || user.email || operatorId;
+    }
+    const member = members.find((m) => m.user_id === operatorId || m.email === operatorId);
+    if (member) {
+      return member.full_name || member.email || operatorId;
+    }
+    return operatorId;
+  };
+
   // Totais do carrinho
   const subtotal = cart.reduce((acc, item) => acc + item.unitPrice * item.qty, 0);
   const totalTax = cart.reduce((acc, item) => acc + item.unitPrice * item.qty * (item.taxRate / 100), 0);
@@ -136,6 +156,7 @@ export const PosView: React.FC = () => {
     (p) =>
       p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
       p.code.toLowerCase().includes(productSearch.toLowerCase()) ||
+      (p.ref_id && p.ref_id.toLowerCase().includes(productSearch.toLowerCase())) ||
       (p.barcode && p.barcode.includes(productSearch))
   );
 
@@ -717,9 +738,12 @@ export const PosView: React.FC = () => {
                   className="p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 hover:border-emerald-500 hover:shadow-md transition-all text-left flex flex-col justify-between group cursor-pointer min-w-0"
                 >
                   <div>
-                    <span className="text-[10px] font-mono font-bold text-slate-400 group-hover:text-emerald-600 transition-colors">
-                      {prod.code}
-                    </span>
+                    <div className="flex items-center justify-between text-[10px] font-mono font-bold text-slate-400 group-hover:text-emerald-600 transition-colors">
+                      <span>{prod.code}</span>
+                      <span className="text-slate-400 font-normal">
+                        Ref: {prod.ref_id || `REF-${prod.code}`}
+                      </span>
+                    </div>
                     <h4 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 mt-0.5">
                       {prod.name}
                     </h4>
@@ -1019,8 +1043,10 @@ export const PosView: React.FC = () => {
                               </span>
                             )}
                           </td>
-                          <td className="py-2 pr-2 text-slate-600 dark:text-slate-300 font-mono truncate max-w-[160px]">
-                            {r.cash_session?.operator_user_id || '—'}
+                          <td className="py-2 pr-2 text-slate-700 dark:text-slate-300 truncate max-w-[160px]">
+                            <span className="font-medium text-slate-800 dark:text-slate-200">
+                              {getOperatorDisplayName(r.cash_session?.operator_user_id)}
+                            </span>
                           </td>
                           <td className="py-2 pr-2 text-right font-bold text-slate-900 dark:text-white">
                             {Number(r.sales_count) || 0}
@@ -1068,8 +1094,10 @@ export const PosView: React.FC = () => {
                             key={op.operator_user_id}
                             className="border-b border-slate-100 dark:border-slate-800/60"
                           >
-                            <td className="py-2 pr-2 font-mono text-slate-700 dark:text-slate-300 truncate max-w-[200px]">
-                              {op.operator_user_id}
+                            <td className="py-2 pr-2 text-slate-700 dark:text-slate-300 truncate max-w-[200px]">
+                              <span className="font-semibold text-slate-900 dark:text-white">
+                                {getOperatorDisplayName(op.operator_user_id)}
+                              </span>
                             </td>
                             <td className="py-2 pr-2 text-right font-bold text-slate-900 dark:text-white">
                               {Number(op.sales_count) || 0}

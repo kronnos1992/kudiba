@@ -54,6 +54,15 @@ pub trait ProductRepository: Send + Sync {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Product>, RepositoryError>;
+    async fn next_product_code(
+        &self,
+        _session: &mut dyn DbSession,
+        _tenant_id: Uuid,
+        prefix: &str,
+    ) -> Result<String, RepositoryError> {
+        let suffix = Uuid::new_v4().simple().to_string()[..6].to_uppercase();
+        Ok(format!("{}-{}", prefix, suffix))
+    }
 }
 
 #[async_trait]

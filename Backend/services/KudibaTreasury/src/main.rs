@@ -24,7 +24,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env();
     let pool = connect_with_retry(&config).await?;
     if let Err(err) = ensure_schema(&pool).await {
-        tracing::warn!("Aviso: não foi possível verificar schema inicial de tesouraria ({}).", err);
+        tracing::warn!(
+            "Aviso: não foi possível verificar schema inicial de tesouraria ({}).",
+            err
+        );
     }
 
     let app_state = AppState::new(config.clone(), pool);
