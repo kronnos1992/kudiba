@@ -5,7 +5,7 @@ use crate::application::commands::{
     CloseFiscalYearHandler, CreateAccountHandler, CreateJournalHandler, OpenFiscalYearHandler,
     PostManualEntryHandler, ProcessInvoiceIssuedCommand, ProcessPayrollPeriodClosedCommand,
     ProcessStockDispatchCommand, ProcessTreasuryReceiptCommand, RevalueCurrencyBalancesHandler,
-    ReverseEntryHandler, SeedStandardPgcHandler,
+    ReverseEntryHandler, SeedStandardPgcHandler, UpdateEntryHandler,
 };
 use crate::application::queries::AccountingQueries;
 use crate::config::Config;
@@ -26,6 +26,7 @@ pub struct AppState {
     pub create_journal: Arc<CreateJournalHandler>,
     pub post_manual_entry: Arc<PostManualEntryHandler>,
     pub reverse_entry: Arc<ReverseEntryHandler>,
+    pub update_entry: Arc<UpdateEntryHandler>,
     pub revalue_currency: Arc<RevalueCurrencyBalancesHandler>,
     pub queries: Arc<AccountingQueries>,
     pub event_consumer: Arc<AccountingEventConsumer>,
@@ -61,6 +62,11 @@ impl AppState {
             entry_repo.clone(),
             journal_repo.clone(),
             year_repo.clone(),
+        ));
+        let update_entry = Arc::new(UpdateEntryHandler::new(
+            entry_repo.clone(),
+            year_repo.clone(),
+            account_repo.clone(),
         ));
         let revalue_currency = Arc::new(RevalueCurrencyBalancesHandler::new(
             account_repo.clone(),
@@ -121,6 +127,7 @@ impl AppState {
             create_journal,
             post_manual_entry,
             reverse_entry,
+            update_entry,
             revalue_currency,
             queries,
             event_consumer,

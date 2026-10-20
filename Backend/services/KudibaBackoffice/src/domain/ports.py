@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, List, Optional, Sequence
 
-from src.domain.entities import Client, License
+from src.domain.entities import Client, License, TenantRecord
 
 
 class IClientRepository(ABC):
@@ -100,4 +100,10 @@ class ITenantProvisioner(ABC):
 
     @abstractmethod
     async def is_platform_admin(self, user_id: uuid.UUID) -> bool:
+        pass
+
+
+class ITenantReader(ABC):
+    @abstractmethod
+    async def list_tenants(self) -> List[TenantRecord]:
         pass

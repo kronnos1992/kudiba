@@ -95,3 +95,18 @@ export interface PlatformSummary {
   active_seats: number;
   modules: PlatformModuleAdoption[];
 }
+
+export interface CommercialMonthBucket {
+  month: string;
+  count: number;
+}
+
+export interface PlatformCommercialSummary {
+  generated_at: string;
+  total_clients: number;
+  new_this_month: number;
+  new_last_month: number;
+  growth_rate: number | null;
+  new_last_12m: number;
+  monthly: CommercialMonthBucket[];
+}

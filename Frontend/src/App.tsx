@@ -5,6 +5,7 @@ import { useUiStore } from './stores/uiStore';
 import { authApi } from './api/auth';
 import { LoginView } from './views/auth/LoginView';
 import { AppLayout } from './components/layout/AppLayout';
+import { SessionIdleWatcher } from './components/session/SessionIdleWatcher';
 import { ModuleKey } from './components/layout/Sidebar';
 import { DashboardView } from './views/dashboard/DashboardView';
 import { PosView } from './views/pos/PosView';
@@ -137,6 +138,8 @@ export const App: React.FC = () => {
       )}
 
       {renderActiveModule()}
+
+      <SessionIdleWatcher />
 
       <CompanyOnboardingModal
         isOpen={onboardingModalOpen}

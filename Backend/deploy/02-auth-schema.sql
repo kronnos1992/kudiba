@@ -167,8 +167,11 @@ CREATE TABLE IF NOT EXISTS kudiba_core.roles (
     name VARCHAR(64) NOT NULL,
     description TEXT,
     is_system BOOLEAN NOT NULL DEFAULT TRUE,
+    tenant_id UUID NULL REFERENCES kudiba_core.tenants(id) ON DELETE CASCADE, -- NULL = perfil de sistema (global)
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_roles_tenant ON kudiba_core.roles(tenant_id);
 
 CREATE TABLE IF NOT EXISTS kudiba_core.permissions (
     id VARCHAR(64) PRIMARY KEY, -- 'invoices:issue', 'invoices:cancel', 'saft:export', etc.

@@ -24,6 +24,8 @@ class TenantModel(AuthBase):
     company_name: Mapped[str] = mapped_column(String(255), nullable=False)
     nif: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     license_valid_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     subscribed_modules: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)

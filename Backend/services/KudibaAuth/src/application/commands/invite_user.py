@@ -1,15 +1,16 @@
 import uuid
+from typing import Optional
 from src.application.dto import InviteUserCommand, TenantMemberDto
 from src.domain.entities.user import User
 from src.domain.entities.user_tenant import UserTenant
 from src.domain.error import ConflictError, DomainError
 from src.domain.ports.audit_repository import IAuditRepository
 from src.domain.ports.password_hasher import IPasswordHasher
+from src.domain.ports.role_repository import IRoleRepository
 from src.domain.ports.unit_of_work import IUnitOfWorkFactory
 from src.domain.ports.user_repository import IUserRepository
 from src.domain.ports.user_tenant_repository import IUserTenantRepository
 from src.domain.value_objects.email import Email
-from src.domain.value_objects.role_type import RoleType
 
 
 class InviteUserUseCase:
@@ -21,19 +22,21 @@ class InviteUserUseCase:
         user_tenant_repo: IUserTenantRepository,
         password_hasher: IPasswordHasher,
         audit_repo: IAuditRepository,
+        role_repo: Optional[IRoleRepository] = None,
     ):
         self.uow_factory = uow_factory
         self.user_repo = user_repo
         self.user_tenant_repo = user_tenant_repo
         self.password_hasher = password_hasher
         self.audit_repo = audit_repo
+        self.role_repo = role_repo
 
     async def execute(self, cmd: InviteUserCommand) -> TenantMemberDto:
         email_vo = Email(cmd.email)
         roles = list(dict.fromkeys(r.strip().upper() for r in cmd.roles if r.strip()))
         if not roles:
             roles = ["OPERADOR_CAIXA"]
-        assignable_roles = {role.value for role in RoleType if role is not RoleType.SUPER_ADMIN}
+        assignable_roles = await self._assignable_roles(cmd.target_tenant_id)
         if not set(roles).issubset(assignable_roles):
             raise DomainError("Um ou mais papéis não são válidos.", code="INVALID_ROLE")
 
@@ -84,3 +87,10 @@ class InviteUserUseCase:
                 status="ACTIVE",
                 default_branch_id=cmd.branch_id,
             )
+
+    async def _assignable_roles(self, tenant_id) -> set:
+        if self.role_repo is not None:
+            return {r.upper() for r in await self.role_repo.list_role_ids(tenant_id)} - {"SUPER_ADMIN"}
+        from src.domain.value_objects.role_type import RoleType
+
+        return {role.value for role in RoleType if role is not RoleType.SUPER_ADMIN}

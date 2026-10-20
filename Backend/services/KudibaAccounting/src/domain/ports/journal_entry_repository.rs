@@ -27,6 +27,7 @@ pub trait JournalEntryRepository: Send + Sync {
         offset: i64,
     ) -> Result<Vec<JournalEntry>, DomainError>;
     async fn save(&self, entry: &JournalEntry) -> Result<(), DomainError>;
+    async fn update(&self, entry: &JournalEntry) -> Result<(), DomainError>;
     async fn save_with_event(
         &self,
         entry: &JournalEntry,

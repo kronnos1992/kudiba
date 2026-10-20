@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::application::dto::{
     AccountResponse, CreateAccountRequest, CreateFiscalYearRequest, CreateJournalRequest,
     CurrencyRevaluationRequest, JournalEntryResponse, JournalLineResponse, PostManualEntryRequest,
-    ReverseEntryRequest,
+    ReverseEntryRequest, UpdateEntryRequest,
 };
 use crate::domain::error::DomainError;
 use crate::infrastructure::saft::SaftAccountingGenerator;
@@ -514,6 +514,49 @@ pub async fn reverse_entry_handler(
     Ok((StatusCode::OK, Json(resp)))
 }
 
+pub async fn update_entry_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateEntryRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let entry = state
+        .update_entry
+        .execute(tenant_id, id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    let resp = JournalEntryResponse {
+        id: entry.id,
+        entry_number: entry.entry_number,
+        transaction_date: entry.transaction_date,
+        period: entry.period,
+        description: entry.description,
+        source_service: entry.source_service,
+        source_document_type: entry.source_document_type,
+        source_document_ref: entry.source_document_ref,
+        total_debit: entry.total_debit,
+        total_credit: entry.total_credit,
+        status: entry.status.as_str().to_string(),
+        lines: entry
+            .lines
+            .into_iter()
+            .map(|l| JournalLineResponse {
+                id: l.id,
+                line_number: l.line_number,
+                account_code: l.account_code,
+                description: l.description,
+                debit_amount: l.debit_amount,
+                credit_amount: l.credit_amount,
+                entity_id: l.entity_id,
+            })
+            .collect(),
+    };
+
+    Ok((StatusCode::OK, Json(resp)))
+}
+
 // -----------------------------------------------------------------------------
 // BALANCETES E RELATÓRIOS
 // -----------------------------------------------------------------------------
@@ -668,7 +711,10 @@ pub fn create_router(state: AppState) -> Router {
             "/api/v1/accounting/entries",
             get(list_entries_handler).post(post_entry_handler),
         )
-        .route("/api/v1/accounting/entries/{id}", get(get_entry_handler))
+        .route(
+            "/api/v1/accounting/entries/{id}",
+            get(get_entry_handler).put(update_entry_handler),
+        )
         .route(
             "/api/v1/accounting/entries/reverse",
             post(reverse_entry_handler),

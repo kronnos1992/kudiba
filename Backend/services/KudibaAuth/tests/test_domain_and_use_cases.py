@@ -6,33 +6,43 @@ import pytest
 from src.application.commands import (
     AuthenticateUserUseCase,
     CreateBranchUseCase,
+    CreateRoleUseCase,
+    DeleteRoleUseCase,
     InviteUserUseCase,
     LogoutUserUseCase,
     RotateRefreshTokenUseCase,
     SwitchTenantUseCase,
+    UpdateRolePermissionsUseCase,
+    UpdateRoleUseCase,
     UpdateTenantSettingsUseCase,
     UpdateUserRolesUseCase,
 )
 from src.application.dto import (
     AuthenticateUserCommand,
     CreateBranchCommand,
+    CreateRoleCommand,
     InviteUserCommand,
     LogoutUserCommand,
     RotateRefreshTokenCommand,
     SwitchTenantCommand,
+    UpdateRoleCommand,
+    UpdateRolePermissionsCommand,
     UpdateTenantSettingsCommand,
     UpdateUserRolesCommand,
 )
-from src.application.queries import GetTenantSettingsUseCase
+from src.application.queries import GetTenantSettingsUseCase, ListRolesUseCase
 from src.domain.entities.branch import Branch
 from src.domain.entities.refresh_token import RefreshToken
+from src.domain.entities.role import Permission, Role
 from src.domain.entities.tenant import Tenant
 from src.domain.entities.user import User
 from src.domain.entities.user_tenant import UserTenant
 from src.domain.error import (
     AccountLockedError,
+    AuthorizationError,
     ConflictError,
     DomainError,
+    EntityNotFoundError,
     InvalidCredentialsError,
     TenantAccessForbiddenError,
     TokenReusedError,
@@ -41,6 +51,7 @@ from src.domain.ports.audit_repository import IAuditRepository
 from src.domain.ports.cache_service import ICacheService
 from src.domain.ports.password_hasher import IPasswordHasher
 from src.domain.ports.refresh_token_repository import IRefreshTokenRepository
+from src.domain.ports.role_repository import IRoleRepository
 from src.domain.ports.tenant_repository import ITenantRepository
 from src.domain.ports.token_service import ITokenService
 from src.domain.ports.unit_of_work import IUnitOfWork, IUnitOfWorkFactory
@@ -259,6 +270,69 @@ class MockAuditRepository(IAuditRepository):
 
     async def record_event(self, action, user_id=None, tenant_id=None, email_attempted=None, ip_address=None, user_agent=None, details=None):
         self.events.append({"action": action, "user_id": user_id, "tenant_id": tenant_id})
+
+
+class MockRoleRepository(IRoleRepository):
+    def __init__(self):
+        self.roles: Dict[str, Role] = {}
+        self.permissions: Dict[str, Permission] = {}
+        self.assignments: Dict[str, int] = {}
+        for pid, module in [
+            ("invoices:read", "fiscal"),
+            ("invoices:issue", "fiscal"),
+            ("users:read", "users"),
+            ("pos:sale", "pos"),
+        ]:
+            self.permissions[pid] = Permission(id=pid, module=module, name=pid)
+
+    def _visible(self, role: Role, tenant_id) -> bool:
+        return role.tenant_id is None or role.tenant_id == tenant_id
+
+    async def list_roles(self, tenant_id) -> List[Role]:
+        return sorted(
+            [r for r in self.roles.values() if self._visible(r, tenant_id)],
+            key=lambda r: (not r.is_system, r.id),
+        )
+
+    async def find_role(self, role_id: str, tenant_id) -> Optional[Role]:
+        role = self.roles.get(role_id.strip().upper())
+        return role if role and self._visible(role, tenant_id) else None
+
+    async def find_role_owned(self, role_id: str, tenant_id) -> Optional[Role]:
+        role = self.roles.get(role_id.strip().upper())
+        return role if role and role.tenant_id == tenant_id else None
+
+    async def list_permissions(self) -> List[Permission]:
+        return sorted(self.permissions.values(), key=lambda p: p.id)
+
+    async def list_role_ids(self, tenant_id) -> List[str]:
+        return sorted(r.id for r in self.roles.values() if self._visible(r, tenant_id))
+
+    async def save_role(self, role: Role, permission_ids: List[str]) -> None:
+        self.roles[role.id] = Role(
+            id=role.id,
+            name=role.name,
+            description=role.description,
+            is_system=False,
+            tenant_id=role.tenant_id,
+            permissions=[self.permissions[p] for p in permission_ids if p in self.permissions],
+        )
+
+    async def update_role(self, role_id: str, name: str, description: Optional[str]) -> None:
+        r = self.roles[role_id]
+        r.name = name
+        r.description = description
+
+    async def replace_role_permissions(self, role_id: str, permission_ids: List[str]) -> None:
+        self.roles[role_id].permissions = [
+            self.permissions[p] for p in permission_ids if p in self.permissions
+        ]
+
+    async def delete_role(self, role_id: str) -> None:
+        self.roles.pop(role_id, None)
+
+    async def count_role_assignments(self, role_id: str, tenant_id=None) -> int:
+        return self.assignments.get(role_id, 0)
 
 
 # =============================================================================
@@ -723,3 +797,181 @@ async def test_update_and_get_tenant_settings_use_case():
     assert branch_dto.name == "Filial Talatona"
     assert branch_dto.address_detail == "Via S8, Talatona"
 
+
+
+async def test_role_catalog_crud_lifecycle():
+    tenant_id = uuid.uuid4()
+    role_repo = MockRoleRepository()
+    role_repo.roles["ADMIN"] = Role(
+        id="ADMIN", name="Administrador Geral", description="Acesso total", is_system=True
+    )
+
+    create_uc = CreateRoleUseCase(role_repo)
+    update_uc = UpdateRoleUseCase(role_repo)
+    perms_uc = UpdateRolePermissionsUseCase(role_repo)
+    delete_uc = DeleteRoleUseCase(role_repo)
+    list_uc = ListRolesUseCase(role_repo)
+
+    created = await create_uc.execute(
+        CreateRoleCommand(
+            tenant_id=tenant_id,
+            role_id="gerente_loja",
+            name="Gerente de Loja",
+            description="Gestão comercial da loja",
+            permissions=["invoices:read", "pos:sale"],
+        )
+    )
+    assert created.id == "GERENTE_LOJA"
+    assert created.is_system is False
+    assert created.permissions == ["invoices:read", "pos:sale"]
+
+    with pytest.raises(ConflictError):
+        await create_uc.execute(
+            CreateRoleCommand(tenant_id=tenant_id, role_id="GERENTE_LOJA", name="Duplicado")
+        )
+
+    with pytest.raises(DomainError):
+        await create_uc.execute(
+            CreateRoleCommand(
+                tenant_id=tenant_id, role_id="OUTRO_PERFIL", name="Outro", permissions=["nao:existe"]
+            )
+        )
+
+    with pytest.raises(DomainError):
+        await create_uc.execute(
+            CreateRoleCommand(tenant_id=tenant_id, role_id="SUPER_ADMIN", name="Reservado")
+        )
+
+    updated = await update_uc.execute(
+        UpdateRoleCommand(
+            tenant_id=tenant_id, role_id="gerente_loja", name="Gerente Comercial", description="Gestão da loja"
+        )
+    )
+    assert updated.name == "Gerente Comercial"
+
+    with pytest.raises(AuthorizationError):
+        await update_uc.execute(
+            UpdateRoleCommand(tenant_id=tenant_id, role_id="ADMIN", name="Hackeado")
+        )
+
+    republished = await perms_uc.execute(
+        UpdateRolePermissionsCommand(
+            tenant_id=tenant_id, role_id="GERENTE_LOJA", permissions=["invoices:issue"]
+        )
+    )
+    assert republished.permissions == ["invoices:issue"]
+
+    with pytest.raises(AuthorizationError):
+        await perms_uc.execute(
+            UpdateRolePermissionsCommand(tenant_id=tenant_id, role_id="ADMIN", permissions=["invoices:issue"])
+        )
+
+    catalog = await list_uc.execute(tenant_id)
+    assert [r.id for r in catalog] == ["ADMIN", "GERENTE_LOJA"]
+    assert catalog[0].is_system is True
+    assert catalog[1].users_count == 0
+
+    role_repo.assignments["GERENTE_LOJA"] = 2
+    with pytest.raises(ConflictError):
+        await delete_uc.execute("GERENTE_LOJA", tenant_id)
+
+    role_repo.assignments["GERENTE_LOJA"] = 0
+    await delete_uc.execute("GERENTE_LOJA", tenant_id)
+    assert await role_repo.find_role("GERENTE_LOJA", tenant_id) is None
+
+    with pytest.raises(EntityNotFoundError):
+        await delete_uc.execute("GERENTE_LOJA", tenant_id)
+
+
+async def test_role_catalog_is_isolated_between_tenants():
+    tenant_a = uuid.uuid4()
+    tenant_b = uuid.uuid4()
+    role_repo = MockRoleRepository()
+    role_repo.roles["ADMIN"] = Role(id="ADMIN", name="Administrador Geral", is_system=True)
+
+    create_uc = CreateRoleUseCase(role_repo)
+    list_uc = ListRolesUseCase(role_repo)
+    update_uc = UpdateRoleUseCase(role_repo)
+    delete_uc = DeleteRoleUseCase(role_repo)
+
+    await create_uc.execute(
+        CreateRoleCommand(
+            tenant_id=tenant_a,
+            role_id="SUPERVISOR",
+            name="Supervisor A",
+            permissions=["invoices:issue"],
+        )
+    )
+    await create_uc.execute(
+        CreateRoleCommand(
+            tenant_id=tenant_b,
+            role_id="CAIXEIRO",
+            name="Caixeiro B",
+            permissions=["pos:sale"],
+        )
+    )
+
+    catalog_a = {r.id: r for r in await list_uc.execute(tenant_a)}
+    catalog_b = {r.id: r for r in await list_uc.execute(tenant_b)}
+    assert set(catalog_a) == {"ADMIN", "SUPERVISOR"}
+    assert set(catalog_b) == {"ADMIN", "CAIXEIRO"}
+    assert catalog_a["SUPERVISOR"].permissions == ["invoices:issue"]
+
+    # O tenant B não pode ver nem editar o perfil personalizado do tenant A
+    with pytest.raises(EntityNotFoundError):
+        await update_uc.execute(
+            UpdateRoleCommand(tenant_id=tenant_b, role_id="SUPERVISOR", name="Hack")
+        )
+    with pytest.raises(EntityNotFoundError):
+        await delete_uc.execute("SUPERVISOR", tenant_b)
+
+    # O tenant B pode criar um perfil com outro código, com permissões diferentes
+    created_b = await create_uc.execute(
+        CreateRoleCommand(
+            tenant_id=tenant_b,
+            role_id="SUPERVISOR_B",
+            name="Supervisor B",
+            permissions=["invoices:read"],
+        )
+    )
+    assert created_b.permissions == ["invoices:read"]
+
+
+async def test_invite_accepts_custom_roles_from_catalog():
+    tenant_id = uuid.uuid4()
+    role_repo = MockRoleRepository()
+    role_repo.roles["OPERADOR_CAIXA"] = Role(id="OPERADOR_CAIXA", name="Operador", is_system=True)
+    role_repo.roles["SUPERVISOR"] = Role(
+        id="SUPERVISOR", name="Supervisor", is_system=False, tenant_id=tenant_id
+    )
+
+    uow_factory = MockUnitOfWorkFactory()
+    user_repo = MockUserRepository()
+    user_tenant_repo = MockUserTenantRepository()
+    audit_repo = MockAuditRepository()
+    hasher = MockPasswordHasher()
+
+    invite_uc = InviteUserUseCase(
+        uow_factory, user_repo, user_tenant_repo, hasher, audit_repo, role_repo=role_repo
+    )
+    dto = await invite_uc.execute(
+        InviteUserCommand(
+            target_tenant_id=tenant_id,
+            email="supervisor@kudiba.ao",
+            full_name="Supervisor Loja",
+            roles=["SUPERVISOR"],
+            password="PasswordForte2026!",
+        )
+    )
+    assert dto.roles == ["SUPERVISOR"]
+
+    with pytest.raises(DomainError):
+        await invite_uc.execute(
+            InviteUserCommand(
+                target_tenant_id=uuid.uuid4(),
+                email="invalido@kudiba.ao",
+                full_name="Inválido",
+                roles=["SUPERVISOR"],
+                password="PasswordForte2026!",
+            )
+        )

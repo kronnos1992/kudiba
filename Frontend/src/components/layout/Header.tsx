@@ -100,7 +100,7 @@ export const Header: React.FC = () => {
         </div>
 
         <button
-          onClick={logout}
+            onClick={() => logout()}
           title="Terminar Sessão"
           className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
         >

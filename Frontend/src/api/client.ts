@@ -68,7 +68,7 @@ apiClient.interceptors.response.use(
     const refreshToken = authStore.refreshToken;
 
     if (!refreshToken || originalRequest.url?.includes('/auth/login') || originalRequest.url?.includes('/auth/refresh')) {
-      authStore.logout();
+      authStore.logout(refreshToken ? 'expired' : undefined);
       return Promise.reject(error);
     }
 
@@ -91,15 +91,15 @@ apiClient.interceptors.response.use(
         refresh_token: refreshToken,
       });
 
-      const { access_token, refresh_token: newRefreshToken } = response.data;
-      authStore.updateTokens(access_token, newRefreshToken || refreshToken);
+      const { access_token, refresh_token: newRefreshToken, expires_in } = response.data;
+      authStore.updateTokens(access_token, newRefreshToken || refreshToken, expires_in);
 
       processQueue(null, access_token);
       originalRequest.headers.Authorization = `Bearer ${access_token}`;
       return apiClient(originalRequest);
     } catch (refreshErr) {
       processQueue(refreshErr as AxiosError, null);
-      authStore.logout();
+      authStore.logout('expired');
       return Promise.reject(refreshErr);
     } finally {
       isRefreshing = false;

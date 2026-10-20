@@ -60,6 +60,18 @@ def create_backoffice_router() -> APIRouter:
         return await app_state.get_platform_summary.execute()
 
     @router.get(
+        "/commercial-summary",
+        summary="Painel Comercial da Plataforma",
+        description="Novos clientes por mês, crescimento e totais comerciais para o dashboard executivo.",
+    )
+    async def get_platform_commercial_summary(
+        request: Request,
+        _: SecurityContext = Depends(require_platform_admin),
+    ):
+        app_state = get_app_state(request)
+        return await app_state.get_platform_commercial_summary.execute()
+
+    @router.get(
         "/modules",
         summary="Catálogo de Módulos Subscritíveis",
         description="Lista os módulos que cada cliente pode escolher na sua licença.",

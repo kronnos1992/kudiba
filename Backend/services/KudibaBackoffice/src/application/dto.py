@@ -113,3 +113,20 @@ class PlatformSummaryDto:
     licenses: PlatformLicenseStats
     active_seats: int
     modules: List[PlatformModuleAdoption]
+
+
+@dataclass(frozen=True)
+class CommercialMonthBucket:
+    month: str
+    count: int
+
+
+@dataclass(frozen=True)
+class PlatformCommercialSummaryDto:
+    generated_at: datetime
+    total_clients: int
+    new_this_month: int
+    new_last_month: int
+    growth_rate: Optional[float]
+    new_last_12m: int
+    monthly: List[CommercialMonthBucket]

@@ -17,6 +17,7 @@ import {
 } from 'recharts';
 import {
   TrendingUp,
+  TrendingDown,
   Landmark,
   PlusCircle,
   Store,
@@ -25,6 +26,9 @@ import {
   Wallet,
   Boxes,
   Building2,
+  UserPlus,
+  Award,
+  Activity,
   AlertTriangle,
   Loader2,
 } from 'lucide-react';
@@ -32,7 +36,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount, formatKwanza } from '../../components/common/KzAmount';
 import { dashboardApi } from '../../api/dashboard';
-import { PlatformSummary } from '../../types/backoffice';
+import { PlatformCommercialSummary } from '../../types/backoffice';
 
 interface DashboardViewProps {
   onNavigate: (module: string) => void;
@@ -141,9 +145,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   const can = (module: string): boolean =>
     isSuperadmin || !subscribed || subscribed.includes(module);
 
-  const platformQuery = useQuery<PlatformSummary>({
-    queryKey: ['dashboard_platform_summary'],
-    queryFn: () => dashboardApi.getBackofficeSummary(),
+  const platformQuery = useQuery<PlatformCommercialSummary>({
+    queryKey: ['dashboard_platform_commercial'],
+    queryFn: () => dashboardApi.getBackofficeCommercialSummary(),
     enabled: isSuperadmin,
     retry: false,
   });
@@ -176,9 +180,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
     retry: false,
   });
 
-  const title = isSuperadmin ? 'Visão Plataforma' : 'Visão Empresa';
+  const title = isSuperadmin ? 'Painel Comercial' : 'Visão Empresa';
   const subtitle = isSuperadmin
-    ? 'Backoffice B2B · Clientes subscritores, licenças e adoção de módulos'
+    ? 'Gestão comercial · carteira de clientes, novos subscritores e crescimento'
     : `${activeTenant?.name || 'Kudiba Organização'} • NIF ${activeTenant?.taxId || '—'}`;
 
   const noModules = !isSuperadmin && BILLABLE_MODULES.every((m) => !can(m));
@@ -214,7 +218,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
       </div>
 
       {isSuperadmin ? (
-        <PlatformView query={platformQuery} onNavigate={onNavigate} />
+        <CommercialView query={platformQuery} onNavigate={onNavigate} />
       ) : noModules ? (
         <GlassCard className="p-8 text-center text-slate-500 dark:text-slate-400">
           <Building2 className="w-8 h-8 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
@@ -237,26 +241,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   );
 };
 
-const PlatformView: React.FC<{
-  query: QueryLike<PlatformSummary>;
+const monthLabel = (key: string): string => {
+  const [year, month] = key.split('-');
+  const idx = Number(month) - 1;
+  return `${MONTHS[idx] ?? month}/${year.slice(2)}`;
+};
+
+const CommercialView: React.FC<{
+  query: QueryLike<PlatformCommercialSummary>;
   onNavigate: (module: string) => void;
 }> = ({ query, onNavigate }) => {
-  const platform = query.data;
+  const data = query.data;
 
   if (query.isLoading) {
     return (
       <GlassCard className="p-6">
-        <LoadingBlock message="A carregar indicadores da plataforma..." />
+        <LoadingBlock message="A carregar indicadores comerciais..." />
       </GlassCard>
     );
   }
 
-  if (query.isError || !platform) {
+  if (query.isError || !data) {
     return (
       <GlassCard className="p-6 flex items-start gap-3 text-amber-700 dark:text-amber-400">
         <AlertTriangle className="w-5 h-5 mt-0.5" />
         <div>
-          <p className="text-sm font-bold">Não foi possível carregar a visão da plataforma.</p>
+          <p className="text-sm font-bold">Não foi possível carregar o painel comercial.</p>
           <p className="text-xs mt-0.5 text-amber-600/80 dark:text-amber-400/70">
             Apenas administradores de plataforma têm acesso a estes indicadores.
           </p>
@@ -265,123 +275,98 @@ const PlatformView: React.FC<{
     );
   }
 
-  const clientStatus = [
-    { name: 'Ativos', value: platform.clients.active },
-    { name: 'Suspensos', value: platform.clients.suspended },
-    { name: 'Expirados', value: platform.clients.expired },
-    { name: 'Sem licença', value: platform.clients.none },
-  ].filter((d) => d.value > 0);
-
-  const licenseStatus = [
-    { name: 'Ativas', value: platform.licenses.active },
-    { name: 'A expirar', value: platform.licenses.expiring_soon },
-    { name: 'Expiradas', value: platform.licenses.expired },
-    { name: 'Suspensas', value: platform.licenses.suspended },
-  ].filter((d) => d.value > 0);
-
-  const moduleAdoption = platform.modules.map((m) => ({ label: m.name, clientes: m.client_count }));
+  const trend = (data.monthly || []).map((b) => ({
+    label: monthLabel(b.month),
+    clientes: b.count,
+  }));
+  const maxCount = Math.max(1, ...trend.map((t) => t.clientes));
+  const growing = data.growth_rate !== null && data.growth_rate >= 0;
+  const GrowthIcon = growing ? TrendingUp : TrendingDown;
 
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <KpiCard
-          label="Clientes Subscritores"
+          label="Carteira de Clientes"
           icon={Building2}
           iconClass="text-emerald-600 dark:text-emerald-400"
-          footer={`${platform.clients.none} sem licença`}
+          footer={`${data.new_last_12m} novos nos últimos 12 meses`}
         >
           <div className="text-2xl font-bold text-slate-900 dark:text-white">
-            {platform.clients.total}
+            {data.total_clients}
           </div>
         </KpiCard>
 
         <KpiCard
-          label="Clientes Ativos"
-          icon={TrendingUp}
-          iconClass="text-emerald-600 dark:text-emerald-400"
-          footer={`${platform.clients.suspended} suspensos · ${platform.clients.expired} expirados`}
-        >
-          <div className="text-2xl font-bold text-slate-900 dark:text-white">
-            {platform.clients.active}
-          </div>
-        </KpiCard>
-
-        <KpiCard
-          label="Licenças Ativas"
-          icon={Landmark}
+          label="Novos este Mês"
+          icon={UserPlus}
           iconClass="text-blue-600 dark:text-blue-400"
-          footer={`${platform.licenses.total} licenças registadas`}
+          footer={`${data.new_last_month} no mês anterior`}
         >
           <div className="text-2xl font-bold text-slate-900 dark:text-white">
-            {platform.licenses.active}
+            {data.new_this_month}
           </div>
         </KpiCard>
 
         <KpiCard
-          label="Lugares Ativos"
-          icon={Users}
+          label="Crescimento Mensal"
+          icon={GrowthIcon}
+          iconClass={growing ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}
+          footer="Variação face ao mês anterior"
+        >
+          <div
+            className={`text-2xl font-bold ${
+              growing ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+            }`}
+          >
+            {data.growth_rate === null
+              ? '—'
+              : `${data.growth_rate > 0 ? '+' : ''}${data.growth_rate}%`}
+          </div>
+        </KpiCard>
+
+        <KpiCard
+          label="Adquiridos em 12 Meses"
+          icon={Award}
           iconClass="text-purple-600 dark:text-purple-400"
-          footer={`${platform.modules.length} módulos em adoção`}
+          footer="Novos clientes subscritores"
         >
           <div className="text-2xl font-bold text-slate-900 dark:text-white">
-            {platform.active_seats}
+            {data.new_last_12m}
           </div>
         </KpiCard>
       </div>
 
-      {platform.licenses.expiring_soon > 0 && (
-        <GlassCard className="p-5 flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-          <span className="text-sm text-slate-700 dark:text-slate-300">
-            <span className="font-bold">{platform.licenses.expiring_soon}</span> licença
-            {platform.licenses.expiring_soon !== 1 ? 's' : ''} a expirar nos próximos 30 dias.
-          </span>
-          <button
-            onClick={() => onNavigate('clients')}
-            className="ml-auto text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
-          >
-            <span>Gerir licenças</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </GlassCard>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="Estado dos Clientes" subtitle="Distribuição por situação de licença">
-          {clientStatus.length === 0 ? (
-            <EmptyState message="Sem clientes registados." />
-          ) : (
-            <DonutChart data={clientStatus} />
-          )}
-        </ChartCard>
-
-        <ChartCard
-          title="Estado das Licenças"
-          subtitle={`${platform.licenses.total} licenças registadas`}
-        >
-          {licenseStatus.length === 0 ? (
-            <EmptyState message="Sem licenças registadas." />
-          ) : (
-            <DonutChart data={licenseStatus} />
-          )}
-        </ChartCard>
-      </div>
-
-      <ChartCard title="Adoção de Módulos" subtitle="Nº de clientes por módulo subscrito">
-        {moduleAdoption.length === 0 ? (
-          <EmptyState message="Sem módulos em adoção." />
+      <ChartCard title="Aquisição de Clientes" subtitle="Novos subscritores por mês (últimos 12 meses)">
+        {data.new_last_12m === 0 ? (
+          <EmptyState message="Sem novos clientes registados no período." />
         ) : (
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={moduleAdoption} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <BarChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" vertical={false} />
               <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
-              <YAxis allowDecimals={false} tick={axisTick} axisLine={false} tickLine={false} width={40} />
+              <YAxis allowDecimals={false} domain={[0, maxCount]} tick={axisTick} axisLine={false} tickLine={false} width={40} />
               <Tooltip contentStyle={tooltipStyle} />
-              <Bar dataKey="clientes" name="Clientes" fill="#059669" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="clientes" name="Novos clientes" fill="#059669" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         )}
       </ChartCard>
+
+      <GlassCard className="p-5 flex items-center gap-3">
+        <Activity className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+        <span className="text-sm text-slate-700 dark:text-slate-300">
+          <span className="font-bold">{data.total_clients}</span> clientes na carteira ·{' '}
+          <span className="font-bold">{data.new_this_month}</span> novos este mês.
+        </span>
+        <button
+          onClick={() => onNavigate('clients')}
+          className="ml-auto text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+        >
+          <span>Gerir clientes</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      </GlassCard>
     </>
   );
 };

@@ -114,7 +114,10 @@ export interface AuthState {
   activeBranch: Branch | null;
   accessToken: string | null;
   refreshToken: string | null;
+  sessionExpiresAt: number | null;
   isAuthenticated: boolean;
   isLoading: boolean;
 }
+
+export type LogoutReason = 'idle' | 'expired';
 

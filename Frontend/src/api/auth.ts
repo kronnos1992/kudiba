@@ -35,8 +35,29 @@ export interface UpdateRolesPayload {
 export interface RoleCatalogItem {
   id: string;
   name: string;
-  description: string;
+  description: string | null;
+  is_system: boolean;
+  users_count: number;
   permissions: string[];
+}
+
+export interface PermissionCatalogItem {
+  id: string;
+  module: string;
+  name: string;
+  description?: string | null;
+}
+
+export interface CreateRolePayload {
+  id: string;
+  name: string;
+  description?: string | null;
+  permissions: string[];
+}
+
+export interface UpdateRolePayload {
+  name: string;
+  description?: string | null;
 }
 
 export interface BranchDto {
@@ -145,6 +166,36 @@ export const authApi = {
   listRoles: async (): Promise<RoleCatalogItem[]> => {
     const response = await apiClient.get<RoleCatalogItem[]>('/api/v1/auth/roles');
     return response.data;
+  },
+
+  listPermissions: async (): Promise<PermissionCatalogItem[]> => {
+    const response = await apiClient.get<PermissionCatalogItem[]>('/api/v1/auth/permissions');
+    return response.data;
+  },
+
+  createRole: async (payload: CreateRolePayload): Promise<RoleCatalogItem> => {
+    const response = await apiClient.post<RoleCatalogItem>('/api/v1/auth/roles', payload);
+    return response.data;
+  },
+
+  updateRole: async (roleId: string, payload: UpdateRolePayload): Promise<RoleCatalogItem> => {
+    const response = await apiClient.put<RoleCatalogItem>(`/api/v1/auth/roles/${roleId}`, payload);
+    return response.data;
+  },
+
+  updateRolePermissions: async (
+    roleId: string,
+    permissions: string[]
+  ): Promise<RoleCatalogItem> => {
+    const response = await apiClient.put<RoleCatalogItem>(
+      `/api/v1/auth/roles/${roleId}/permissions`,
+      { permissions }
+    );
+    return response.data;
+  },
+
+  deleteRole: async (roleId: string): Promise<void> => {
+    await apiClient.delete(`/api/v1/auth/roles/${roleId}`);
   },
 
   checkGatewayHealth: async () => {

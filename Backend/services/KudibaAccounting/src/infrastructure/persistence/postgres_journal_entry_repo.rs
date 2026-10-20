@@ -178,6 +178,87 @@ impl JournalEntryRepository for PostgresJournalEntryRepository {
         self.save_with_event(entry, None, None, None).await
     }
 
+    async fn update(&self, entry: &JournalEntry) -> Result<(), DomainError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+        let res = sqlx::query(
+            r#"
+            UPDATE kudiba_accounting.journal_entries
+            SET transaction_date = $3, period = $4, description = $5,
+                total_debit = $6, total_credit = $7
+            WHERE tenant_id = $1 AND id = $2
+              AND status IN ('DRAFT'::kudiba_accounting.entry_status, 'POSTED'::kudiba_accounting.entry_status)
+            "#,
+        )
+        .bind(entry.tenant_id)
+        .bind(entry.id)
+        .bind(entry.transaction_date)
+        .bind(entry.period)
+        .bind(&entry.description)
+        .bind(entry.total_debit)
+        .bind(entry.total_credit)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+        if res.rows_affected() == 0 {
+            return Err(DomainError::Conflict(
+                "Lançamento não encontrado ou não editável (estornado ou inexistente)".to_string(),
+            ));
+        }
+
+        sqlx::query(
+            r#"
+            DELETE FROM kudiba_accounting.journal_lines
+            WHERE entry_id = $1 AND tenant_id = $2
+            "#,
+        )
+        .bind(entry.id)
+        .bind(entry.tenant_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+        for line in &entry.lines {
+            sqlx::query(
+                r#"
+                INSERT INTO kudiba_accounting.journal_lines (
+                    id, tenant_id, entry_id, line_number, account_code, description,
+                    debit_amount, credit_amount, entity_id, cost_center_id, currency,
+                    exchange_rate, foreign_amount, created_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                "#,
+            )
+            .bind(line.id)
+            .bind(line.tenant_id)
+            .bind(entry.id)
+            .bind(line.line_number)
+            .bind(&line.account_code)
+            .bind(&line.description)
+            .bind(line.debit_amount)
+            .bind(line.credit_amount)
+            .bind(line.entity_id)
+            .bind(line.cost_center_id)
+            .bind(line.currency.as_str())
+            .bind(line.exchange_rate)
+            .bind(line.foreign_amount)
+            .bind(line.created_at)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        }
+
+        tx.commit()
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        Ok(())
+    }
+
     async fn save_with_event(
         &self,
         entry: &JournalEntry,

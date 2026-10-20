@@ -2,7 +2,7 @@ import re
 import secrets
 import unicodedata
 import uuid
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import List, Optional, Sequence
 
 from src.application.dto import (
@@ -14,7 +14,7 @@ from src.application.dto import (
     SetLicenseStatusCommand,
     UpdateClientCommand,
 )
-from src.domain.entities import Client, License
+from src.domain.entities import Client, License, TenantRecord
 from src.domain.error import (
     ConflictError,
     DomainError,
@@ -23,7 +23,12 @@ from src.domain.error import (
     RenewalImpossibleError,
 )
 from src.domain.modules import validate_modules
-from src.domain.ports import IClientRepository, ILicenseRepository, ITenantProvisioner
+from src.domain.ports import (
+    IClientRepository,
+    ILicenseRepository,
+    ITenantProvisioner,
+    ITenantReader,
+)
 from src.infrastructure.security.password_hasher import Argon2PasswordHasher
 
 
@@ -268,6 +273,82 @@ class RenewLicenseUseCase:
 
         history = await self.license_repo.list_for_client(client.id)
         return build_client_detail(client, license_entity, history)
+
+
+class SyncTenantsUseCase:
+    """Importa tenants registados no onboarding (kudiba_core.tenants) para o
+    registo B2B do backoffice (clientes + licença espelho), de forma idempotente."""
+
+    def __init__(
+        self,
+        client_repo: IClientRepository,
+        license_repo: ILicenseRepository,
+        tenant_reader: ITenantReader,
+    ):
+        self.client_repo = client_repo
+        self.license_repo = license_repo
+        self.tenant_reader = tenant_reader
+
+    async def execute(self) -> int:
+        tenants: List[TenantRecord] = await self.tenant_reader.list_tenants()
+        if not tenants:
+            return 0
+
+        existing = await self.client_repo.list_all()
+        known_tenant_ids = {c.tenant_id for c in existing}
+        known_nifs = {c.nif for c in existing}
+
+        imported = 0
+        for t in tenants:
+            if t.id in known_tenant_ids or t.nif in known_nifs:
+                continue
+
+            client = Client(
+                id=uuid.uuid4(),
+                tenant_id=t.id,
+                company_name=t.company_name.strip(),
+                nif=t.nif.strip(),
+                contact_email=t.email,
+                contact_phone=t.phone,
+                notes=f"Importado automaticamente do tenant de onboarding '{t.slug}'.",
+            )
+
+            license_entity = self._build_license(client, t)
+
+            await self.client_repo.save(client)
+            if license_entity is not None:
+                await self.license_repo.save(license_entity)
+            known_tenant_ids.add(t.id)
+            known_nifs.add(t.nif)
+            imported += 1
+
+        return imported
+
+    @staticmethod
+    def _build_license(client: Client, tenant) -> Optional[License]:
+        if not tenant.license_valid_until:
+            return None
+
+        valid_until = tenant.license_valid_until.date()
+        valid_from = tenant.created_at.date() if tenant.created_at else date.today()
+        if valid_until <= valid_from:
+            valid_from = valid_until - timedelta(days=1)
+
+        modules = tenant.subscribed_modules or []
+        status = "SUSPENDED" if tenant.status.upper() == "SUSPENDED" else "ACTIVE"
+
+        return License(
+            id=uuid.uuid4(),
+            client_id=client.id,
+            license_key=f"KDB-{secrets.token_hex(4).upper()}",
+            plan="STANDARD",
+            seats=5,
+            modules=modules,
+            valid_from=valid_from,
+            valid_until=valid_until,
+            status=status,
+            notes="Licença espelhada do tenant de onboarding.",
+        )
 
 
 class SetLicenseStatusUseCase:

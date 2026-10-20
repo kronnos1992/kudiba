@@ -6,13 +6,20 @@ from src.application.commands import (
     CreateClientUseCase,
     RenewLicenseUseCase,
     SetLicenseStatusUseCase,
+    SyncTenantsUseCase,
     UpdateClientUseCase,
 )
-from src.application.queries import GetClientUseCase, GetPlatformSummaryUseCase, ListClientsUseCase
+from src.application.queries import (
+    GetClientUseCase,
+    GetPlatformCommercialSummaryUseCase,
+    GetPlatformSummaryUseCase,
+    ListClientsUseCase,
+)
 from src.config import Settings
 from src.infrastructure.persistence.client_repository import SqlAlchemyClientRepository
 from src.infrastructure.persistence.license_repository import SqlAlchemyLicenseRepository
 from src.infrastructure.persistence.tenant_provisioner import SqlAlchemyTenantProvisioner
+from src.infrastructure.persistence.tenant_reader import SqlAlchemyTenantReader
 from src.infrastructure.security.jwt_service import JwtTokenService
 
 
@@ -29,6 +36,7 @@ class AppState:
     list_clients: ListClientsUseCase
     get_client: GetClientUseCase
     get_platform_summary: GetPlatformSummaryUseCase
+    get_platform_commercial_summary: GetPlatformCommercialSummaryUseCase
     tenant_provisioner: SqlAlchemyTenantProvisioner
 
 
@@ -40,6 +48,8 @@ def create_app_state(
     client_repo = SqlAlchemyClientRepository(session_factory)
     license_repo = SqlAlchemyLicenseRepository(session_factory)
     provisioner = SqlAlchemyTenantProvisioner(auth_session_factory)
+    tenant_reader = SqlAlchemyTenantReader(auth_session_factory)
+    sync_tenants = SyncTenantsUseCase(client_repo, license_repo, tenant_reader)
     jwt_service = JwtTokenService(secret=config.jwt_secret, algorithm=config.jwt_algorithm)
 
     return AppState(
@@ -51,8 +61,13 @@ def create_app_state(
         update_client=UpdateClientUseCase(client_repo, license_repo),
         renew_license=RenewLicenseUseCase(client_repo, license_repo, provisioner),
         set_license_status=SetLicenseStatusUseCase(client_repo, license_repo, provisioner),
-        list_clients=ListClientsUseCase(client_repo, license_repo),
+        list_clients=ListClientsUseCase(client_repo, license_repo, sync=sync_tenants),
         get_client=GetClientUseCase(client_repo, license_repo),
-        get_platform_summary=GetPlatformSummaryUseCase(client_repo, license_repo),
+        get_platform_summary=GetPlatformSummaryUseCase(
+            client_repo, license_repo, sync=sync_tenants
+        ),
+        get_platform_commercial_summary=GetPlatformCommercialSummaryUseCase(
+            client_repo, sync=sync_tenants
+        ),
         tenant_provisioner=provisioner,
     )

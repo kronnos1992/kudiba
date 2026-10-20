@@ -209,3 +209,45 @@ class UserProfileDto:
     phone_number: Optional[str] = None
     tenants: List[TenantSummaryDto] = field(default_factory=list)
 
+
+@dataclass(frozen=True)
+class RoleDto:
+    id: str
+    name: str
+    description: Optional[str]
+    is_system: bool
+    permissions: List[str] = field(default_factory=list)
+    users_count: int = 0
+
+
+@dataclass(frozen=True)
+class PermissionDto:
+    id: str
+    module: str
+    name: str
+    description: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CreateRoleCommand:
+    tenant_id: uuid.UUID
+    role_id: str
+    name: str
+    description: Optional[str] = None
+    permissions: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class UpdateRoleCommand:
+    tenant_id: uuid.UUID
+    role_id: str
+    name: str
+    description: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class UpdateRolePermissionsCommand:
+    tenant_id: uuid.UUID
+    role_id: str
+    permissions: List[str] = field(default_factory=list)
+

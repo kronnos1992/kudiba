@@ -5,7 +5,9 @@ from src.application.commands import build_client_detail, license_to_dto
 from src.application.dto import (
     ClientDetailDto,
     ClientDto,
+    CommercialMonthBucket,
     PlatformClientStats,
+    PlatformCommercialSummaryDto,
     PlatformLicenseStats,
     PlatformModuleAdoption,
     PlatformSummaryDto,
@@ -16,11 +18,19 @@ from src.domain.ports import IClientRepository, ILicenseRepository
 
 
 class ListClientsUseCase:
-    def __init__(self, client_repo: IClientRepository, license_repo: ILicenseRepository):
+    def __init__(
+        self,
+        client_repo: IClientRepository,
+        license_repo: ILicenseRepository,
+        sync=None,
+    ):
         self.client_repo = client_repo
         self.license_repo = license_repo
+        self.sync = sync
 
     async def execute(self, search: Optional[str] = None, status: Optional[str] = None) -> List[ClientDto]:
+        if self.sync is not None:
+            await self.sync.execute()
         clients = await self.client_repo.list_all(search=search)
         current_map = await self.license_repo.find_current_map([c.id for c in clients])
         dtos = [
@@ -63,11 +73,19 @@ class GetClientUseCase:
 class GetPlatformSummaryUseCase:
     EXPIRING_SOON_DAYS = 30
 
-    def __init__(self, client_repo: IClientRepository, license_repo: ILicenseRepository):
+    def __init__(
+        self,
+        client_repo: IClientRepository,
+        license_repo: ILicenseRepository,
+        sync=None,
+    ):
         self.client_repo = client_repo
         self.license_repo = license_repo
+        self.sync = sync
 
     async def execute(self) -> PlatformSummaryDto:
+        if self.sync is not None:
+            await self.sync.execute()
         today = date.today()
         clients = await self.client_repo.list_all()
         current_map = await self.license_repo.find_current_map([c.id for c in clients])
@@ -128,4 +146,57 @@ class GetPlatformSummaryUseCase:
             ),
             active_seats=active_seats,
             modules=modules,
+        )
+
+
+class GetPlatformCommercialSummaryUseCase:
+    WINDOW_MONTHS = 12
+
+    def __init__(self, client_repo: IClientRepository, sync=None):
+        self.client_repo = client_repo
+        self.sync = sync
+
+    async def execute(self) -> PlatformCommercialSummaryDto:
+        if self.sync is not None:
+            await self.sync.execute()
+        clients = await self.client_repo.list_all()
+
+        today = date.today()
+        months: List[str] = []
+        year, month = today.year, today.month
+        for _ in range(self.WINDOW_MONTHS):
+            months.append(f"{year:04d}-{month:02d}")
+            month -= 1
+            if month == 0:
+                month = 12
+                year -= 1
+        months.reverse()
+
+        counts = {key: 0 for key in months}
+        for client in clients:
+            created = client.created_at
+            if created is None:
+                continue
+            key = f"{created.year:04d}-{created.month:02d}"
+            if key in counts:
+                counts[key] += 1
+
+        this_key = f"{today.year:04d}-{today.month:02d}"
+        if today.month == 1:
+            prev_key = f"{today.year - 1:04d}-12"
+        else:
+            prev_key = f"{today.year:04d}-{today.month - 1:02d}"
+
+        new_this = counts.get(this_key, 0)
+        new_prev = counts.get(prev_key, 0)
+        growth_rate = None if new_prev == 0 else round((new_this - new_prev) / new_prev * 100, 1)
+
+        return PlatformCommercialSummaryDto(
+            generated_at=datetime.now(timezone.utc),
+            total_clients=len(clients),
+            new_this_month=new_this,
+            new_last_month=new_prev,
+            growth_rate=growth_rate,
+            new_last_12m=sum(counts.values()),
+            monthly=[CommercialMonthBucket(month=key, count=counts[key]) for key in months],
         )

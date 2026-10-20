@@ -43,3 +43,17 @@ class License:
         if self.valid_until < today:
             return "EXPIRED"
         return "ACTIVE"
+
+
+@dataclass
+class TenantRecord:
+    id: uuid.UUID
+    slug: str
+    company_name: str
+    nif: str
+    status: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    license_valid_until: Optional[datetime] = None
+    subscribed_modules: Optional[List[str]] = None
+    created_at: Optional[datetime] = None

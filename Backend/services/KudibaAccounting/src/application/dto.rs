@@ -56,6 +56,14 @@ pub struct ReverseEntryRequest {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateEntryRequest {
+    pub transaction_date: NaiveDate,
+    pub period: i32,
+    pub description: String,
+    pub lines: Vec<ManualLineRequest>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AccountResponse {
     pub id: Uuid,

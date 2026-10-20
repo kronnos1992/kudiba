@@ -30,6 +30,7 @@ import { TenantBankAccount } from '../../types/auth';
 import { invoicingApi } from '../../api/invoicing';
 import { accountingApi } from '../../api/accounting';
 import { toast } from '../../stores/toastStore';
+import { RolesManager } from './RolesManager';
 
 type SettingsTab = 'organization' | 'users' | 'certification' | 'series' | 'saft';
 
@@ -475,7 +476,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
             }`}
           >
             <Users className="w-4 h-4" />
-            Utilizadores &amp; RBAC ({members.length})
+            Utilizadores, Perfis &amp; RBAC ({members.length})
           </button>
 
           <button
@@ -1340,40 +1341,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
             </div>
           </GlassCard>
 
-          {/* Catálogo de Papéis Card */}
-          <GlassCard className="p-6 space-y-4">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Catálogo de Papéis &amp; Permissões RBAC (Kudiba ERP)
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {rolesCatalog.map((rc: RoleCatalogItem) => (
-                <div
-                  key={rc.id}
-                  className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 space-y-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm text-slate-900 dark:text-white">
-                      {rc.name}
-                    </span>
-                    <span className="font-mono text-[10px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
-                      {rc.id}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{rc.description}</p>
-                  <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap gap-1">
-                    {rc.permissions.map((p: string) => (
-                      <span
-                        key={p}
-                        className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
-                      >
-                        {p}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </GlassCard>
+          {/* Gestão de Perfis de Acesso */}
+          <RolesManager />
         </div>
       )}
 
@@ -1655,11 +1624,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                   onChange={(e) => setInviteForm({ ...inviteForm, roles: [e.target.value] })}
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
                 >
-                  <option value="OPERADOR_CAIXA">Operador de Caixa (POS)</option>
-                  <option value="GESTOR_STOCK">Gestor de Stocks</option>
-                  <option value="CONTABILISTA">Contabilista Certificado</option>
-                  <option value="ADMIN">Administrador Geral</option>
-                  <option value="AUDITOR">Auditor Fiscal</option>
+                  {rolesCatalog
+                    .filter((rc: RoleCatalogItem) => rc.id !== 'SUPER_ADMIN')
+                    .map((rc: RoleCatalogItem) => (
+                      <option key={rc.id} value={rc.id}>
+                        {rc.name}
+                      </option>
+                    ))}
                 </select>
               </div>
             </div>
@@ -1711,30 +1682,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
             </div>
 
             <div className="space-y-2">
-              {['ADMIN', 'CONTABILISTA', 'OPERADOR_CAIXA', 'GESTOR_STOCK', 'AUDITOR'].map(
-                (role) => (
+              {rolesCatalog
+                .filter((rc: RoleCatalogItem) => rc.id !== 'SUPER_ADMIN')
+                .map((rc: RoleCatalogItem) => (
                   <label
-                    key={role}
+                    key={rc.id}
                     className="flex items-center gap-3 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer"
                   >
                     <input
                       type="checkbox"
-                      checked={selectedRoles.includes(role)}
+                      checked={selectedRoles.includes(rc.id)}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedRoles([...selectedRoles, role]);
+                          setSelectedRoles([...selectedRoles, rc.id]);
                         } else {
-                          setSelectedRoles(selectedRoles.filter((r) => r !== role));
+                          setSelectedRoles(selectedRoles.filter((r) => r !== rc.id));
                         }
                       }}
                       className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
-                    <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                      {role}
-                    </span>
+                    <div className="min-w-0">
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 block">
+                        {rc.name}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400">{rc.id}</span>
+                    </div>
                   </label>
-                )
-              )}
+                ))}
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">

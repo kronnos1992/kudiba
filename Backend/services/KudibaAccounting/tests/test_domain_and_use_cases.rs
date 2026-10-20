@@ -243,6 +243,26 @@ impl JournalEntryRepository for MockJournalEntryRepository {
         self.save_with_event(entry, None, None, None).await
     }
 
+    async fn update(&self, entry: &JournalEntry) -> Result<(), DomainError> {
+        let mut lock = self.entries.lock().unwrap();
+        let existing_status = lock
+            .get(&entry.id)
+            .filter(|e| e.tenant_id == entry.tenant_id)
+            .map(|e| e.status);
+        match existing_status {
+            Some(EntryStatus::Reversed) => Err(DomainError::Conflict(
+                "Lançamento estornado não pode ser editado".to_string(),
+            )),
+            Some(_) => {
+                lock.insert(entry.id, entry.clone());
+                Ok(())
+            }
+            None => Err(DomainError::NotFound(
+                "Lançamento não encontrado".to_string(),
+            )),
+        }
+    }
+
     async fn save_with_event(
         &self,
         entry: &JournalEntry,
@@ -1610,4 +1630,293 @@ async fn test_payroll_period_amqp_event_parsing() {
         }
         _ => panic!("Esperado AccountingEvent::PayrollPeriodClosed"),
     }
+}
+
+#[tokio::test]
+async fn test_manual_entry_edit_use_case() {
+    use kudiba_accounting::application::commands::{ReverseEntryHandler, UpdateEntryHandler};
+    use kudiba_accounting::application::dto::{ReverseEntryRequest, UpdateEntryRequest};
+
+    let tenant_id = Uuid::new_v4();
+
+    let acc_repo = Arc::new(MockAccountRepository::default());
+    let year_repo = Arc::new(MockFiscalYearRepository::default());
+    let jrn_repo = Arc::new(MockJournalRepository::default());
+    let entry_repo = Arc::new(MockJournalEntryRepository::default());
+
+    let seed_pgc = SeedStandardPgcHandler::new(acc_repo.clone());
+    let open_year = OpenFiscalYearHandler::new(year_repo.clone());
+    let post_entry = PostManualEntryHandler::new(
+        entry_repo.clone(),
+        jrn_repo.clone(),
+        year_repo.clone(),
+        acc_repo.clone(),
+    );
+    let update_entry =
+        UpdateEntryHandler::new(entry_repo.clone(), year_repo.clone(), acc_repo.clone());
+    let reverse_entry =
+        ReverseEntryHandler::new(entry_repo.clone(), jrn_repo.clone(), year_repo.clone());
+
+    seed_pgc.execute(tenant_id).await.unwrap();
+    open_year
+        .execute(tenant_id, CreateFiscalYearRequest { year_code: 2026 })
+        .await
+        .unwrap();
+
+    let jrn = Journal::new(
+        tenant_id,
+        "OD".to_string(),
+        "Operações Diversas".to_string(),
+        JournalType::Operations,
+    )
+    .unwrap();
+    jrn_repo.save(&jrn).await.unwrap();
+
+    let entry = post_entry
+        .execute(
+            tenant_id,
+            PostManualEntryRequest {
+                fiscal_year: 2026,
+                journal_code: "OD".to_string(),
+                transaction_date: NaiveDate::from_ymd_opt(2026, 3, 5).unwrap(),
+                period: 3,
+                description: "Fatura FT 2026/001 - IVA liquidado a 100%".to_string(),
+                lines: vec![
+                    ManualLineRequest {
+                        account_code: "31.1.1".to_string(),
+                        description: Some("Cliente nacional".to_string()),
+                        debit_amount: Some(dec!(114000)),
+                        credit_amount: None,
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                    ManualLineRequest {
+                        account_code: "71.1".to_string(),
+                        description: Some("Venda de mercadorias".to_string()),
+                        debit_amount: None,
+                        credit_amount: Some(dec!(100000)),
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                    ManualLineRequest {
+                        account_code: "34.5.3.1".to_string(),
+                        description: Some("IVA liquidado 14%".to_string()),
+                        debit_amount: None,
+                        credit_amount: Some(dec!(14000)),
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                ],
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+    // 1. Edição válida: empresa paga metade do IVA e cativa a outra metade em 34.5.5
+    let edited = update_entry
+        .execute(
+            tenant_id,
+            entry.id,
+            UpdateEntryRequest {
+                transaction_date: NaiveDate::from_ymd_opt(2026, 3, 6).unwrap(),
+                period: 3,
+                description: "Fatura FT 2026/001 - IVA liquidado a 50%, restante a regularizar"
+                    .to_string(),
+                lines: vec![
+                    ManualLineRequest {
+                        account_code: "31.1.1".to_string(),
+                        description: Some("Cliente nacional".to_string()),
+                        debit_amount: Some(dec!(114000)),
+                        credit_amount: None,
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                    ManualLineRequest {
+                        account_code: "71.1".to_string(),
+                        description: Some("Venda de mercadorias".to_string()),
+                        debit_amount: None,
+                        credit_amount: Some(dec!(100000)),
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                    ManualLineRequest {
+                        account_code: "34.5.3.1".to_string(),
+                        description: Some("IVA liquidado 14% (50%)".to_string()),
+                        debit_amount: None,
+                        credit_amount: Some(dec!(7000)),
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                    ManualLineRequest {
+                        account_code: "34.5.5".to_string(),
+                        description: Some("IVA a regularizar (50%)".to_string()),
+                        debit_amount: None,
+                        credit_amount: Some(dec!(7000)),
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                ],
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(edited.id, entry.id);
+    assert_eq!(edited.entry_number, entry.entry_number);
+    assert_eq!(
+        edited.transaction_date,
+        NaiveDate::from_ymd_opt(2026, 3, 6).unwrap()
+    );
+    assert_eq!(edited.total_debit, dec!(114000));
+    assert_eq!(edited.total_credit, dec!(114000));
+    assert_eq!(edited.lines.len(), 4);
+    assert!(edited.source_document_ref.is_none());
+
+    let stored = entry_repo
+        .find_by_id(tenant_id, entry.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.lines.len(), 4);
+    assert!(stored
+        .lines
+        .iter()
+        .any(|l| l.account_code == "34.5.5" && l.credit_amount == dec!(7000)));
+
+    // 2. Edição com partidas desequilibradas é rejeitada
+    let err = update_entry
+        .execute(
+            tenant_id,
+            entry.id,
+            UpdateEntryRequest {
+                transaction_date: NaiveDate::from_ymd_opt(2026, 3, 6).unwrap(),
+                period: 3,
+                description: "Desequilibrado".to_string(),
+                lines: vec![
+                    ManualLineRequest {
+                        account_code: "12.1".to_string(),
+                        description: None,
+                        debit_amount: Some(dec!(1000)),
+                        credit_amount: None,
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                    ManualLineRequest {
+                        account_code: "71.1".to_string(),
+                        description: None,
+                        debit_amount: None,
+                        credit_amount: Some(dec!(900)),
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                ],
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err, DomainError::UnbalancedEntry(_, _)));
+
+    // 3. Exercício fiscal fechado impede edição
+    let mut year = year_repo
+        .find_by_year(tenant_id, 2026)
+        .await
+        .unwrap()
+        .unwrap();
+    year.status = FiscalYearStatus::Closed;
+    year_repo.update(&year).await.unwrap();
+
+    let err = update_entry
+        .execute(
+            tenant_id,
+            entry.id,
+            UpdateEntryRequest {
+                transaction_date: NaiveDate::from_ymd_opt(2026, 3, 6).unwrap(),
+                period: 3,
+                description: "Editar com ano fechado".to_string(),
+                lines: vec![
+                    ManualLineRequest {
+                        account_code: "12.1".to_string(),
+                        description: None,
+                        debit_amount: Some(dec!(100)),
+                        credit_amount: None,
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                    ManualLineRequest {
+                        account_code: "71.1".to_string(),
+                        description: None,
+                        debit_amount: None,
+                        credit_amount: Some(dec!(100)),
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                ],
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err, DomainError::InvalidFiscalYear(_)));
+
+    // 4. Lançamento estornado não pode ser editado
+    year.status = FiscalYearStatus::Open;
+    year_repo.update(&year).await.unwrap();
+
+    reverse_entry
+        .execute(
+            tenant_id,
+            ReverseEntryRequest {
+                entry_id: entry.id,
+                reversal_date: NaiveDate::from_ymd_opt(2026, 3, 10).unwrap(),
+                period: 3,
+                reason: "Documento emitido por engano".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+    let err = update_entry
+        .execute(
+            tenant_id,
+            entry.id,
+            UpdateEntryRequest {
+                transaction_date: NaiveDate::from_ymd_opt(2026, 3, 6).unwrap(),
+                period: 3,
+                description: "Editar estornado".to_string(),
+                lines: vec![
+                    ManualLineRequest {
+                        account_code: "12.1".to_string(),
+                        description: None,
+                        debit_amount: Some(dec!(100)),
+                        credit_amount: None,
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                    ManualLineRequest {
+                        account_code: "71.1".to_string(),
+                        description: None,
+                        debit_amount: None,
+                        credit_amount: Some(dec!(100)),
+                        entity_id: None,
+                        cost_center_id: None,
+                        currency: None,
+                    },
+                ],
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err, DomainError::ValidationError(_)));
 }

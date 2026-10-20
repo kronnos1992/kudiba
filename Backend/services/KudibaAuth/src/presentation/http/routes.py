@@ -6,10 +6,13 @@ from pydantic import BaseModel, EmailStr, Field
 from src.application.dto import (
     AuthenticateUserCommand,
     CreateBranchCommand,
+    CreateRoleCommand,
     InviteUserCommand,
     LogoutUserCommand,
     RotateRefreshTokenCommand,
     SwitchTenantCommand,
+    UpdateRoleCommand,
+    UpdateRolePermissionsCommand,
     UpdateTenantSettingsCommand,
     UpdateUserRolesCommand,
 )
@@ -88,6 +91,28 @@ class CreateBranchHttpRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=128, description="Nome da filial ou estabelecimento")
     city: Optional[str] = Field(None, max_length=128, description="Município / Cidade")
     address_detail: Optional[str] = Field(None, description="Morada do estabelecimento")
+
+
+class CreateRoleHttpRequest(BaseModel):
+    id: str = Field(
+        ...,
+        min_length=2,
+        max_length=32,
+        pattern=r"^[A-Z][A-Z0-9_]*$",
+        description="Código único do perfil em maiúsculas (ex: GERENTE_LOJA)",
+    )
+    name: str = Field(..., min_length=2, max_length=64, description="Nome do perfil")
+    description: Optional[str] = Field(None, max_length=500, description="Descrição do perfil")
+    permissions: List[str] = Field(default_factory=list, description="Permissões a atribuir ao perfil")
+
+
+class UpdateRoleHttpRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=64, description="Nome do perfil")
+    description: Optional[str] = Field(None, max_length=500, description="Descrição do perfil")
+
+
+class UpdateRolePermissionsHttpRequest(BaseModel):
+    permissions: List[str] = Field(default_factory=list, description="Permissões atribuídas ao perfil")
 
 
 def create_auth_router() -> APIRouter:
@@ -263,8 +288,8 @@ def create_auth_router() -> APIRouter:
         request: Request,
         ctx: SecurityContext = Depends(require_permission("users:invite")),
     ):
-        ensure_role_grant_is_allowed(ctx, req.roles)
         app_state = get_app_state(request)
+        ensure_role_grant_is_allowed(ctx, req.roles, await app_state.role_repo.list_role_ids(ctx.tenant_id))
         cmd = InviteUserCommand(
             target_tenant_id=ctx.tenant_id,
             email=req.email,
@@ -288,8 +313,8 @@ def create_auth_router() -> APIRouter:
         request: Request,
         ctx: SecurityContext = Depends(require_permission("users:manage_roles")),
     ):
-        ensure_role_grant_is_allowed(ctx, req.roles)
         app_state = get_app_state(request)
+        ensure_role_grant_is_allowed(ctx, req.roles, await app_state.role_repo.list_role_ids(ctx.tenant_id))
         cmd = UpdateUserRolesCommand(
             tenant_id=ctx.tenant_id,
             target_user_id=target_user_id,
@@ -335,11 +360,88 @@ def create_auth_router() -> APIRouter:
     @router.get(
         "/roles",
         summary="Catálogo de Papéis e Permissões",
-        description="Executa o caso de uso ListRolesUseCase.",
+        description="Perfis de sistema globais + perfis personalizados da empresa activa.",
     )
     async def list_roles(request: Request, ctx: SecurityContext = Depends(get_security_context)):
         app_state = get_app_state(request)
-        return await app_state.list_roles.execute()
+        return await app_state.list_roles.execute(ctx.tenant_id)
+
+    @router.get(
+        "/permissions",
+        summary="Catálogo de Permissões Disponíveis",
+        description="Lista todas as permissões do sistema agrupadas por módulo.",
+    )
+    async def list_permissions(
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("users:read")),
+    ):
+        app_state = get_app_state(request)
+        return await app_state.list_permissions.execute()
+
+    @router.post(
+        "/roles",
+        status_code=status.HTTP_201_CREATED,
+        summary="Criar Perfil de Acesso Personalizado",
+        description="Cria um novo perfil RBAC no âmbito da empresa activa com o conjunto de permissões indicado.",
+    )
+    async def create_role(
+        req: CreateRoleHttpRequest,
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("users:manage_roles")),
+    ):
+        app_state = get_app_state(request)
+        cmd = CreateRoleCommand(
+            tenant_id=ctx.tenant_id,
+            role_id=req.id,
+            name=req.name,
+            description=req.description,
+            permissions=req.permissions,
+        )
+        return await app_state.create_role.execute(cmd)
+
+    @router.put(
+        "/roles/{role_id}",
+        summary="Editar Dados de um Perfil de Acesso",
+        description="Actualiza o nome e a descrição de um perfil personalizado da empresa activa.",
+    )
+    async def update_role(
+        role_id: str,
+        req: UpdateRoleHttpRequest,
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("users:manage_roles")),
+    ):
+        app_state = get_app_state(request)
+        cmd = UpdateRoleCommand(tenant_id=ctx.tenant_id, role_id=role_id, name=req.name, description=req.description)
+        return await app_state.update_role.execute(cmd)
+
+    @router.put(
+        "/roles/{role_id}/permissions",
+        summary="Definir Permissões de um Perfil de Acesso",
+        description="Substitui o conjunto de permissões de um perfil personalizado da empresa activa.",
+    )
+    async def update_role_permissions(
+        role_id: str,
+        req: UpdateRolePermissionsHttpRequest,
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("users:manage_roles")),
+    ):
+        app_state = get_app_state(request)
+        cmd = UpdateRolePermissionsCommand(tenant_id=ctx.tenant_id, role_id=role_id, permissions=req.permissions)
+        return await app_state.update_role_permissions.execute(cmd)
+
+    @router.delete(
+        "/roles/{role_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        summary="Eliminar Perfil de Acesso",
+        description="Remove um perfil personalizado da empresa activa sem utilizadores atribuídos.",
+    )
+    async def delete_role(
+        role_id: str,
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("users:manage_roles")),
+    ):
+        app_state = get_app_state(request)
+        await app_state.delete_role.execute(role_id, ctx.tenant_id)
 
     return router
 

@@ -5,7 +5,7 @@ import {
   TreasuryDashboardSummary,
   InvoicingDashboardSummary,
 } from '../types/dashboard';
-import { PlatformSummary } from '../types/backoffice';
+import { PlatformCommercialSummary, PlatformSummary } from '../types/backoffice';
 
 export const dashboardApi = {
   getPayrollSummary: async (year?: number): Promise<PayrollDashboardSummary> => {
@@ -30,6 +30,12 @@ export const dashboardApi = {
   },
   getBackofficeSummary: async (): Promise<PlatformSummary> => {
     const res = await apiClient.get<PlatformSummary>('/api/v1/backoffice/summary');
+    return res.data;
+  },
+  getBackofficeCommercialSummary: async (): Promise<PlatformCommercialSummary> => {
+    const res = await apiClient.get<PlatformCommercialSummary>(
+      '/api/v1/backoffice/commercial-summary',
+    );
     return res.data;
   },
 };

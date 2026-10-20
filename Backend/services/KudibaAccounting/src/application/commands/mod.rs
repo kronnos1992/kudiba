@@ -11,6 +11,6 @@ pub use event_integration_commands::{
 };
 pub use fiscal_year_commands::{CloseFiscalYearHandler, OpenFiscalYearHandler};
 pub use journal_entry_commands::{
-    CreateJournalHandler, PostManualEntryHandler, ReverseEntryHandler,
+    CreateJournalHandler, PostManualEntryHandler, ReverseEntryHandler, UpdateEntryHandler,
 };
 pub use revaluation_commands::RevalueCurrencyBalancesHandler;

@@ -1,13 +1,14 @@
 import { create } from 'zustand';
-import { AuthState, User, Tenant, Branch, LoginResponse } from '../types/auth';
+import { AuthState, LogoutReason, User, Tenant, Branch, LoginResponse } from '../types/auth';
+import { toast } from './toastStore';
 
 interface AuthActions {
   setSession: (response: LoginResponse) => void;
-  updateTokens: (accessToken: string, refreshToken: string) => void;
+  updateTokens: (accessToken: string, refreshToken: string, expiresIn?: number) => void;
   setActiveTenant: (tenant: Tenant, branch?: Branch) => void;
   updateActiveTenantSettings: (updates: Partial<Tenant>) => void;
   setUser: (user: User) => void;
-  logout: () => void;
+  logout: (reason?: LogoutReason) => void;
   setLoading: (loading: boolean) => void;
 }
 
@@ -18,9 +19,12 @@ const STORAGE_KEYS = {
   ACTIVE_TENANT: 'kudiba_active_tenant',
   ACTIVE_BRANCH: 'kudiba_active_branch',
   TENANTS: 'kudiba_tenants',
+  SESSION_EXPIRES_AT: 'kudiba_session_expires_at',
 };
 
-const decodeJwtPayload = (token: string | null): { roles?: string[]; permissions?: string[] } => {
+const decodeJwtPayload = (
+  token: string | null
+): { roles?: string[]; permissions?: string[]; exp?: number } => {
   if (!token) return {};
   try {
     const parts = token.split('.');
@@ -38,6 +42,17 @@ const decodeJwtPayload = (token: string | null): { roles?: string[]; permissions
   }
 };
 
+const resolveSessionExpiresAt = (accessToken: string | null, expiresIn?: number): number | null => {
+  const payload = decodeJwtPayload(accessToken);
+  if (typeof payload.exp === 'number' && payload.exp > 0) {
+    return payload.exp * 1000;
+  }
+  if (typeof expiresIn === 'number' && expiresIn > 0) {
+    return Date.now() + expiresIn * 1000;
+  }
+  return null;
+};
+
 const getInitialState = (): AuthState => {
   const accessToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
   const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
@@ -45,6 +60,7 @@ const getInitialState = (): AuthState => {
   const tenantJson = localStorage.getItem(STORAGE_KEYS.ACTIVE_TENANT);
   const branchJson = localStorage.getItem(STORAGE_KEYS.ACTIVE_BRANCH);
   const tenantsJson = localStorage.getItem(STORAGE_KEYS.TENANTS);
+  const storedExpiry = localStorage.getItem(STORAGE_KEYS.SESSION_EXPIRES_AT);
 
   let user: User | null = userJson ? JSON.parse(userJson) : null;
   const activeTenant: Tenant | null = tenantJson ? JSON.parse(tenantJson) : null;
@@ -64,6 +80,9 @@ const getInitialState = (): AuthState => {
     };
   }
 
+  const sessionExpiresAt =
+    resolveSessionExpiresAt(accessToken) ?? (storedExpiry ? Number(storedExpiry) : null);
+
   return {
     accessToken,
     refreshToken,
@@ -71,6 +90,7 @@ const getInitialState = (): AuthState => {
     activeTenant,
     activeBranch: branchJson ? JSON.parse(branchJson) : null,
     tenants: tenantsJson ? JSON.parse(tenantsJson) : [],
+    sessionExpiresAt: sessionExpiresAt && sessionExpiresAt > 0 ? sessionExpiresAt : null,
     isAuthenticated: Boolean(accessToken),
     isLoading: false,
   };
@@ -125,10 +145,17 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
     const tenants = (res.tenants || (activeTenant ? [activeTenant] : [])).map(normalizeTenant);
     const activeBranch = res.active_branch || (activeTenant?.default_branch) || (activeTenant?.branches[0]) || null;
 
+    const sessionExpiresAt = resolveSessionExpiresAt(res.access_token, res.expires_in);
+
     localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, res.access_token);
     localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, res.refresh_token);
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
     localStorage.setItem(STORAGE_KEYS.TENANTS, JSON.stringify(tenants));
+    if (sessionExpiresAt) {
+      localStorage.setItem(STORAGE_KEYS.SESSION_EXPIRES_AT, String(sessionExpiresAt));
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.SESSION_EXPIRES_AT);
+    }
 
     if (activeTenant) {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_TENANT, JSON.stringify(activeTenant));
@@ -144,15 +171,22 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
       tenants,
       activeTenant,
       activeBranch,
+      sessionExpiresAt,
       isAuthenticated: true,
       isLoading: false,
     });
   },
 
-  updateTokens: (accessToken, refreshToken) => {
+  updateTokens: (accessToken, refreshToken, expiresIn) => {
+    const sessionExpiresAt = resolveSessionExpiresAt(accessToken, expiresIn);
     localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, accessToken);
     localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, refreshToken);
-    set({ accessToken, refreshToken });
+    if (sessionExpiresAt) {
+      localStorage.setItem(STORAGE_KEYS.SESSION_EXPIRES_AT, String(sessionExpiresAt));
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.SESSION_EXPIRES_AT);
+    }
+    set({ accessToken, refreshToken, sessionExpiresAt });
   },
 
   setActiveTenant: (tenant, branch) => {
@@ -212,13 +246,14 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
     set({ user });
   },
 
-  logout: () => {
+  logout: (reason) => {
     localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
     localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
     localStorage.removeItem(STORAGE_KEYS.USER);
     localStorage.removeItem(STORAGE_KEYS.ACTIVE_TENANT);
     localStorage.removeItem(STORAGE_KEYS.ACTIVE_BRANCH);
     localStorage.removeItem(STORAGE_KEYS.TENANTS);
+    localStorage.removeItem(STORAGE_KEYS.SESSION_EXPIRES_AT);
     set({
       user: null,
       tenants: [],
@@ -226,9 +261,15 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
       activeBranch: null,
       accessToken: null,
       refreshToken: null,
+      sessionExpiresAt: null,
       isAuthenticated: false,
       isLoading: false,
     });
+    if (reason === 'idle') {
+      toast.warning('Sessão terminada por inactividade. Volte a entrar para continuar.');
+    } else if (reason === 'expired') {
+      toast.warning('A sua sessão expirou. Volte a entrar para continuar.');
+    }
   },
 
   setLoading: (isLoading) => set({ isLoading }),

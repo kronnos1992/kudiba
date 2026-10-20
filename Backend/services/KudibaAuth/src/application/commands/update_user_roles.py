@@ -4,9 +4,9 @@ from src.application.dto import UpdateUserRolesCommand
 from src.domain.error import ConflictError, DomainError, EntityNotFoundError
 from src.domain.ports.cache_service import ICacheService
 from src.domain.ports.refresh_token_repository import IRefreshTokenRepository
+from src.domain.ports.role_repository import IRoleRepository
 from src.domain.ports.unit_of_work import IUnitOfWorkFactory
 from src.domain.ports.user_tenant_repository import IUserTenantRepository
-from src.domain.value_objects.role_type import RoleType
 
 
 class UpdateUserRolesUseCase:
@@ -18,12 +18,14 @@ class UpdateUserRolesUseCase:
         refresh_token_repo: Optional[IRefreshTokenRepository] = None,
         cache_service: Optional[ICacheService] = None,
         session_revocation_ttl_seconds: int = 3600,
+        role_repo: Optional[IRoleRepository] = None,
     ):
         self.uow_factory = uow_factory
         self.user_tenant_repo = user_tenant_repo
         self.refresh_token_repo = refresh_token_repo
         self.cache_service = cache_service
         self.session_revocation_ttl_seconds = session_revocation_ttl_seconds
+        self.role_repo = role_repo
 
     async def execute(self, cmd: UpdateUserRolesCommand) -> None:
         roles_changed = False
@@ -36,7 +38,7 @@ class UpdateUserRolesUseCase:
             clean_roles = list(dict.fromkeys(r.strip().upper() for r in cmd.roles if r.strip()))
             if not clean_roles:
                 clean_roles = ["OPERADOR_CAIXA"]
-            assignable_roles = {role.value for role in RoleType if role is not RoleType.SUPER_ADMIN}
+            assignable_roles = await self._assignable_roles(cmd.tenant_id)
             if not set(clean_roles).issubset(assignable_roles):
                 raise DomainError("Um ou mais papéis não são válidos.", code="INVALID_ROLE")
             current_roles = await self.user_tenant_repo.get_user_roles_in_tenant(
@@ -67,3 +69,10 @@ class UpdateUserRolesUseCase:
                 epoch,
                 self.session_revocation_ttl_seconds,
             )
+
+    async def _assignable_roles(self, tenant_id) -> set:
+        if self.role_repo is not None:
+            return {r.upper() for r in await self.role_repo.list_role_ids(tenant_id)} - {"SUPER_ADMIN"}
+        from src.domain.value_objects.role_type import RoleType
+
+        return {role.value for role in RoleType if role is not RoleType.SUPER_ADMIN}

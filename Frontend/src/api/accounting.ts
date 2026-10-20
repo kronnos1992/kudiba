@@ -116,6 +116,13 @@ export interface ReverseEntryPayload {
   reason: string;
 }
 
+export interface UpdateEntryPayload {
+  transaction_date: string;
+  period: number;
+  description: string;
+  lines: ManualLinePayload[];
+}
+
 export interface TrialBalanceRow {
   account_code: string;
   account_name: string;
@@ -233,6 +240,17 @@ export const accountingApi = {
   reverseEntry: async (payload: ReverseEntryPayload): Promise<JournalEntryResponse> => {
     const res = await apiClient.post<JournalEntryResponse>(
       '/api/v1/accounting/entries/reverse',
+      payload
+    );
+    return res.data;
+  },
+
+  updateEntry: async (
+    id: string,
+    payload: UpdateEntryPayload
+  ): Promise<JournalEntryResponse> => {
+    const res = await apiClient.put<JournalEntryResponse>(
+      `/api/v1/accounting/entries/${id}`,
       payload
     );
     return res.data;

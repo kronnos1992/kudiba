@@ -82,9 +82,14 @@ class SecurityContext:
         return perm in self.permissions or "ADMIN" in self.roles or "SUPER_ADMIN" in self.roles
 
 
-def ensure_role_grant_is_allowed(ctx: SecurityContext, roles: List[str]) -> None:
+def ensure_role_grant_is_allowed(
+    ctx: SecurityContext, roles: List[str], valid_roles: Optional[List[str]] = None
+) -> None:
     requested_roles = {role.strip().upper() for role in roles}
-    assignable_roles = {role.value for role in RoleType if role is not RoleType.SUPER_ADMIN}
+    if valid_roles is None:
+        assignable_roles = {role.value for role in RoleType if role is not RoleType.SUPER_ADMIN}
+    else:
+        assignable_roles = {role.strip().upper() for role in valid_roles} - {"SUPER_ADMIN"}
     if not requested_roles.issubset(assignable_roles):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Um ou mais papéis não são válidos.")
     if "ADMIN" in requested_roles and not ctx.has_role("ADMIN"):

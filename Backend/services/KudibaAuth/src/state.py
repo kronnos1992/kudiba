@@ -5,10 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.application.commands import (
     AuthenticateUserUseCase,
     CreateBranchUseCase,
+    CreateRoleUseCase,
+    DeleteRoleUseCase,
     InviteUserUseCase,
     LogoutUserUseCase,
     RotateRefreshTokenUseCase,
     SwitchTenantUseCase,
+    UpdateRolePermissionsUseCase,
+    UpdateRoleUseCase,
     UpdateTenantSettingsUseCase,
     UpdateUserRolesUseCase,
 )
@@ -16,6 +20,7 @@ from src.application.queries import (
     GetTenantSettingsUseCase,
     GetUserProfileUseCase,
     ListBranchesUseCase,
+    ListPermissionsUseCase,
     ListRolesUseCase,
     ListTenantMembersUseCase,
 )
@@ -24,6 +29,7 @@ from src.domain.services.security_policy import AccountSecurityPolicy
 from src.infrastructure.cache.redis_cache import RedisCacheService
 from src.infrastructure.persistence.audit_repository import SqlAlchemyAuditRepository
 from src.infrastructure.persistence.refresh_token_repository import SqlAlchemyRefreshTokenRepository
+from src.infrastructure.persistence.role_repository import SqlAlchemyRoleRepository
 from src.infrastructure.persistence.tenant_repository import SqlAlchemyTenantRepository
 from src.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWorkFactory
 from src.infrastructure.persistence.user_repository import SqlAlchemyUserRepository
@@ -39,7 +45,8 @@ class AppState:
     hasher: Argon2PasswordHasher
     token_service: JwtTokenService
     cache: RedisCacheService
-    
+    role_repo: SqlAlchemyRoleRepository
+
     # Casos de Uso (Commands)
     authenticate_user: AuthenticateUserUseCase
     rotate_refresh_token: RotateRefreshTokenUseCase
@@ -49,6 +56,10 @@ class AppState:
     update_user_roles: UpdateUserRolesUseCase
     update_tenant_settings: UpdateTenantSettingsUseCase
     create_branch: CreateBranchUseCase
+    create_role: CreateRoleUseCase
+    update_role: UpdateRoleUseCase
+    update_role_permissions: UpdateRolePermissionsUseCase
+    delete_role: DeleteRoleUseCase
 
     # Casos de Uso (Queries)
     get_user_profile: GetUserProfileUseCase
@@ -56,6 +67,7 @@ class AppState:
     list_tenant_members: ListTenantMembersUseCase
     list_branches: ListBranchesUseCase
     list_roles: ListRolesUseCase
+    list_permissions: ListPermissionsUseCase
 
 
 def create_app_state(config: Settings, session_factory: async_sessionmaker[AsyncSession]) -> AppState:
@@ -66,6 +78,7 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
     user_tenant_repo = SqlAlchemyUserTenantRepository(session_factory)
     refresh_token_repo = SqlAlchemyRefreshTokenRepository(session_factory)
     audit_repo = SqlAlchemyAuditRepository(session_factory)
+    role_repo = SqlAlchemyRoleRepository(session_factory)
     hasher = Argon2PasswordHasher()
     token_service = JwtTokenService(
         secret=config.jwt_secret,
@@ -128,6 +141,7 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         user_tenant_repo=user_tenant_repo,
         password_hasher=hasher,
         audit_repo=audit_repo,
+        role_repo=role_repo,
     )
 
     update_user_roles = UpdateUserRolesUseCase(
@@ -136,6 +150,7 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         refresh_token_repo=refresh_token_repo,
         cache_service=cache,
         session_revocation_ttl_seconds=config.jwt_access_expiration_minutes * 60 + 60,
+        role_repo=role_repo,
     )
 
     update_tenant_settings = UpdateTenantSettingsUseCase(
@@ -149,6 +164,11 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         tenant_repo=tenant_repo,
         audit_repo=audit_repo,
     )
+
+    create_role = CreateRoleUseCase(role_repo=role_repo)
+    update_role = UpdateRoleUseCase(role_repo=role_repo)
+    update_role_permissions = UpdateRolePermissionsUseCase(role_repo=role_repo)
+    delete_role = DeleteRoleUseCase(role_repo=role_repo)
 
     # 3. Casos de Uso (Queries)
     get_user_profile = GetUserProfileUseCase(
@@ -170,7 +190,11 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
     )
 
     list_roles = ListRolesUseCase(
-        user_tenant_repo=user_tenant_repo,
+        role_repo=role_repo,
+    )
+
+    list_permissions = ListPermissionsUseCase(
+        role_repo=role_repo,
     )
 
     return AppState(
@@ -179,6 +203,7 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         hasher=hasher,
         token_service=token_service,
         cache=cache,
+        role_repo=role_repo,
         authenticate_user=authenticate_user,
         rotate_refresh_token=rotate_refresh_token,
         logout_user=logout_user,
@@ -187,10 +212,15 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         update_user_roles=update_user_roles,
         update_tenant_settings=update_tenant_settings,
         create_branch=create_branch,
+        create_role=create_role,
+        update_role=update_role,
+        update_role_permissions=update_role_permissions,
+        delete_role=delete_role,
         get_user_profile=get_user_profile,
         get_tenant_settings=get_tenant_settings,
         list_tenant_members=list_tenant_members,
         list_branches=list_branches,
         list_roles=list_roles,
+        list_permissions=list_permissions,
     )
 

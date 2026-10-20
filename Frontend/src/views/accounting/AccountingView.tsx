@@ -15,6 +15,7 @@ import {
   ArrowRightLeft,
   X,
   FileText,
+  Pencil,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
@@ -26,6 +27,7 @@ import {
   CreateAccountPayload,
   CreateJournalPayload,
   CurrencyRevaluationPayload,
+  UpdateEntryPayload,
 } from '../../api/accounting';
 
 type AccountingTab = 'trial_balance' | 'entries' | 'chart' | 'journals_years' | 'revaluation';
@@ -68,6 +70,7 @@ export const AccountingView: React.FC = () => {
   const [isCreateJournalModalOpen, setIsCreateJournalModalOpen] = useState(false);
   const [isReverseModalOpen, setIsReverseModalOpen] = useState(false);
   const [reverseReason, setReverseReason] = useState('');
+  const [isEditEntryModalOpen, setIsEditEntryModalOpen] = useState(false);
 
   // Queries
   const { data: chart = [], isLoading: isLoadingChart } = useQuery({
@@ -164,6 +167,70 @@ export const AccountingView: React.FC = () => {
       });
     },
   });
+
+  // Edição de Lançamento Form State
+  const [editEntryForm, setEditEntryForm] = useState<{
+    transaction_date: string;
+    period: number;
+    description: string;
+    lines: Array<{
+      account_code: string;
+      description: string;
+      debit_amount: string;
+      credit_amount: string;
+    }>;
+  }>({
+    transaction_date: new Date().toISOString().split('T')[0],
+    period: new Date().getMonth() + 1,
+    description: '',
+    lines: [
+      { account_code: '', description: '', debit_amount: '', credit_amount: '' },
+      { account_code: '', description: '', debit_amount: '', credit_amount: '' },
+    ],
+  });
+
+  const updateEntryMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: UpdateEntryPayload }) =>
+      accountingApi.updateEntry(id, payload),
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['accounting_entries'] });
+      queryClient.invalidateQueries({ queryKey: ['accounting_trial_balance'] });
+      setIsEditEntryModalOpen(false);
+      setSelectedEntry(updated);
+    },
+  });
+
+  const openEntryEdit = (entry: JournalEntryResponse) => {
+    setEditEntryForm({
+      transaction_date: entry.transaction_date,
+      period: entry.period,
+      description: entry.description,
+      lines: entry.lines.map((l) => ({
+        account_code: l.account_code,
+        description: l.description || '',
+        debit_amount:
+          parseFloat(String(l.debit_amount)) > 0 ? String(l.debit_amount) : '',
+        credit_amount:
+          parseFloat(String(l.credit_amount)) > 0 ? String(l.credit_amount) : '',
+      })),
+    });
+    setSelectedEntry(entry);
+    setIsEditEntryModalOpen(true);
+  };
+
+  const calculatedEditTotals = useMemo(() => {
+    let deb = 0;
+    let cred = 0;
+    editEntryForm.lines.forEach((l) => {
+      const d = parseFloat(l.debit_amount) || 0;
+      const c = parseFloat(l.credit_amount) || 0;
+      deb += d;
+      cred += c;
+    });
+    const diff = Math.abs(deb - cred);
+    const isBalanced = deb > 0 && diff < 0.0001;
+    return { deb, cred, diff, isBalanced };
+  }, [editEntryForm.lines]);
 
   // Nova Conta Form State
   const [newAccountForm, setNewAccountForm] = useState<CreateAccountPayload>({
@@ -852,6 +919,16 @@ export const AccountingView: React.FC = () => {
                           </span>
                         </td>
                         <td className="p-3 text-center" onClick={(ev) => ev.stopPropagation()}>
+                          {e.status !== 'REVERSED' && (
+                            <button
+                              type="button"
+                              onClick={() => openEntryEdit(e)}
+                              className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-blue-600"
+                              title="Editar Lançamento"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => setSelectedEntry(e)}
@@ -1848,15 +1925,27 @@ export const AccountingView: React.FC = () => {
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
-              {selectedEntry.status === 'POSTED' ? (
-                <button
-                  type="button"
-                  onClick={() => setIsReverseModalOpen(true)}
-                  className="px-3 py-1.5 rounded-lg border border-red-300 dark:border-red-800 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs font-bold transition flex items-center gap-1.5"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  Estornar Lançamento (Reverse)
-                </button>
+              {selectedEntry.status !== 'REVERSED' ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openEntryEdit(selectedEntry)}
+                    className="px-3 py-1.5 rounded-lg border border-blue-300 dark:border-blue-800 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-xs font-bold transition flex items-center gap-1.5"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Editar Lançamento
+                  </button>
+                  {selectedEntry.status === 'POSTED' && (
+                    <button
+                      type="button"
+                      onClick={() => setIsReverseModalOpen(true)}
+                      className="px-3 py-1.5 rounded-lg border border-red-300 dark:border-red-800 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs font-bold transition flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Estornar Lançamento (Reverse)
+                    </button>
+                  )}
+                </div>
               ) : (
                 <span className="text-xs text-red-600 font-semibold">
                   Este lançamento já foi estornado.
@@ -1869,6 +1958,298 @@ export const AccountingView: React.FC = () => {
                 className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold text-sm transition"
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDITAR LANÇAMENTO (PARTIDAS DOBRADAS) */}
+      {isEditEntryModalOpen && selectedEntry && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  Editar Lançamento #{selectedEntry.entry_number}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Ajuste de valores ou classificação contabilística (ex.: IVA liquidado a 100% →
+                  50% pago / 50% a regularizar). As partidas dobradas têm de permanecer
+                  equilibradas.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsEditEntryModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Data Transação
+                </label>
+                <input
+                  type="date"
+                  value={editEntryForm.transaction_date}
+                  onChange={(e) =>
+                    setEditEntryForm({ ...editEntryForm, transaction_date: e.target.value })
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Período (Mês)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="14"
+                  value={editEntryForm.period}
+                  onChange={(e) =>
+                    setEditEntryForm({
+                      ...editEntryForm,
+                      period: parseInt(e.target.value) || 1,
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Origem / Documento
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  value={
+                    selectedEntry.source_document_ref ||
+                    selectedEntry.source_service ||
+                    'MANUAL'
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-sm text-slate-500 cursor-not-allowed"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                Descrição Geral / Histórico da Operação
+              </label>
+              <input
+                type="text"
+                placeholder="Ex.: Fatura FT... - IVA liquidado a 50%, restante a regularizar"
+                value={editEntryForm.description}
+                onChange={(e) =>
+                  setEditEntryForm({ ...editEntryForm, description: e.target.value })
+                }
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
+              />
+            </div>
+
+            {/* Lines Table */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Linhas do Lançamento
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditEntryForm({
+                      ...editEntryForm,
+                      lines: [
+                        ...editEntryForm.lines,
+                        { account_code: '', description: '', debit_amount: '', credit_amount: '' },
+                      ],
+                    })
+                  }
+                  className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" /> Adicionar Linha
+                </button>
+              </div>
+
+              <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800/60 font-bold text-slate-600 dark:text-slate-300">
+                    <tr>
+                      <th className="p-2.5 w-72">Conta Analítica PGC</th>
+                      <th className="p-2.5">Histórico da Linha</th>
+                      <th className="p-2.5 w-36 text-right">Débito (Kz)</th>
+                      <th className="p-2.5 w-36 text-right">Crédito (Kz)</th>
+                      <th className="p-2.5 w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {editEntryForm.lines.map((l, idx) => (
+                      <tr key={idx}>
+                        <td className="p-2">
+                          <select
+                            value={l.account_code}
+                            onChange={(e) => {
+                              const newLines = [...editEntryForm.lines];
+                              newLines[idx].account_code = e.target.value;
+                              setEditEntryForm({ ...editEntryForm, lines: newLines });
+                            }}
+                            className="w-full px-2 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono"
+                          >
+                            <option value="">Selecione a conta analítica...</option>
+                            {analyticalAccounts.map((acc) => (
+                              <option key={acc.id} value={acc.account_code}>
+                                {acc.account_code} - {acc.account_name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2">
+                          <input
+                            type="text"
+                            placeholder="Histórico opcional..."
+                            value={l.description}
+                            onChange={(e) => {
+                              const newLines = [...editEntryForm.lines];
+                              newLines[idx].description = e.target.value;
+                              setEditEntryForm({ ...editEntryForm, lines: newLines });
+                            }}
+                            className="w-full px-2 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
+                          />
+                        </td>
+                        <td className="p-2">
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={l.debit_amount}
+                            onChange={(e) => {
+                              const newLines = [...editEntryForm.lines];
+                              newLines[idx].debit_amount = e.target.value;
+                              if (e.target.value) newLines[idx].credit_amount = '';
+                              setEditEntryForm({ ...editEntryForm, lines: newLines });
+                            }}
+                            className="w-full px-2 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono text-right"
+                          />
+                        </td>
+                        <td className="p-2">
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={l.credit_amount}
+                            onChange={(e) => {
+                              const newLines = [...editEntryForm.lines];
+                              newLines[idx].credit_amount = e.target.value;
+                              if (e.target.value) newLines[idx].debit_amount = '';
+                              setEditEntryForm({ ...editEntryForm, lines: newLines });
+                            }}
+                            className="w-full px-2 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono text-right"
+                          />
+                        </td>
+                        <td className="p-2 text-center">
+                          {editEntryForm.lines.length > 2 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newLines = editEntryForm.lines.filter((_, i) => i !== idx);
+                                setEditEntryForm({ ...editEntryForm, lines: newLines });
+                              }}
+                              className="text-red-500 hover:text-red-700 p-1"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-100 dark:bg-slate-900 font-mono font-bold text-xs">
+                      <td colSpan={2} className="p-2.5 text-right font-sans">
+                        Totais:
+                      </td>
+                      <td className="p-2.5 text-right text-blue-600">
+                        <KzAmount value={calculatedEditTotals.deb} />
+                      </td>
+                      <td className="p-2.5 text-right text-indigo-600">
+                        <KzAmount value={calculatedEditTotals.cred} />
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            {/* Balancing validation alert */}
+            <div
+              className={`p-3 rounded-xl flex items-center justify-between text-xs font-bold ${
+                calculatedEditTotals.isBalanced
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                  : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {calculatedEditTotals.isBalanced ? (
+                  <CheckCircle className="w-4 h-4" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4" />
+                )}
+                <span>
+                  {calculatedEditTotals.isBalanced
+                    ? 'Partidas dobradas perfeitamente equilibradas!'
+                    : `Lançamento Desequilibrado: Diferença de ${calculatedEditTotals.diff.toFixed(
+                        2
+                      )} Kz entre Débitos e Créditos`}
+                </span>
+              </div>
+              <span className="font-mono">Δ = {calculatedEditTotals.diff.toFixed(2)} Kz</span>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsEditEntryModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm font-semibold transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={
+                  !calculatedEditTotals.isBalanced ||
+                  !editEntryForm.description.trim() ||
+                  editEntryForm.lines.filter((l) => l.account_code).length < 2 ||
+                  updateEntryMutation.isPending
+                }
+                onClick={() => {
+                  const payload: UpdateEntryPayload = {
+                    transaction_date: editEntryForm.transaction_date,
+                    period: editEntryForm.period,
+                    description: editEntryForm.description,
+                    lines: editEntryForm.lines
+                      .filter((l) => l.account_code)
+                      .map((l) => ({
+                        account_code: l.account_code,
+                        description: l.description || editEntryForm.description,
+                        debit_amount: l.debit_amount ? parseFloat(l.debit_amount) : 0,
+                        credit_amount: l.credit_amount ? parseFloat(l.credit_amount) : 0,
+                      })),
+                  };
+                  updateEntryMutation.mutate({ id: selectedEntry.id, payload });
+                }}
+                className={`px-5 py-2 rounded-xl text-sm font-bold text-white shadow-md transition ${
+                  calculatedEditTotals.isBalanced &&
+                  editEntryForm.description.trim() &&
+                  editEntryForm.lines.filter((l) => l.account_code).length >= 2
+                    ? 'bg-blue-600 hover:bg-blue-700'
+                    : 'bg-slate-400 cursor-not-allowed opacity-60'
+                }`}
+              >
+                {updateEntryMutation.isPending ? 'A gravar...' : 'Guardar Alterações'}
               </button>
             </div>
           </div>

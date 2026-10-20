@@ -135,6 +135,9 @@ class RoleModel(Base):
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_core.tenants.id", ondelete="CASCADE"), nullable=True
+    )
 
 
 class PermissionModel(Base):
