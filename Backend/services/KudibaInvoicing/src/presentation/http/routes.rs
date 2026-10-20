@@ -224,6 +224,23 @@ async fn issue_invoice_handler(
     };
     command.actor_user_id = Some(actor);
 
+    if let Err(security_err) = check_cashier_and_session_security(&headers, &mut command) {
+        return security_err.into_response();
+    }
+
+    if let Some(session_id) = command.cash_session_id {
+        if let Err(session_err) = validate_cash_session(
+            &state.pool,
+            state.config.treasury_service_url.as_deref(),
+            command.tenant_id,
+            session_id,
+        )
+        .await
+        {
+            return session_err.into_response();
+        }
+    }
+
     match state.issue_invoice.execute(command).await {
         Ok(result) => (StatusCode::CREATED, Json(result)).into_response(),
         Err(err) => domain_error(err),
@@ -1865,6 +1882,137 @@ fn forbidden_tenant() -> ApiError {
     )
 }
 
+fn check_cashier_and_session_security(
+    headers: &HeaderMap,
+    command: &mut IssueInvoiceCommand,
+) -> Result<(), ApiError> {
+    if command.cash_session_id.is_none() {
+        if let Some(header_val) = headers.get("X-Cash-Session-ID").and_then(|v| v.to_str().ok()) {
+            if let Ok(parsed_id) = Uuid::parse_str(header_val.trim()) {
+                command.cash_session_id = Some(parsed_id);
+            }
+        }
+    }
+
+    let roles = headers
+        .get("X-Resolved-Roles")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .map(str::to_ascii_uppercase)
+        .collect::<Vec<_>>();
+
+    let has_cashier_role = roles.iter().any(|r| r == "OPERADOR_CAIXA" || r == "CASHIER");
+    let has_elevated_role = roles.iter().any(|r| {
+        r == "ADMIN"
+            || r == "ADMINISTRADOR"
+            || r == "GESTOR"
+            || r == "OPERADOR_FACTURACAO"
+            || r == "BILLING_OPERATOR"
+    });
+    let is_cashier_only = has_cashier_role && !has_elevated_role;
+
+    if is_cashier_only {
+        let doc_kind = command.document_type.trim().to_ascii_uppercase();
+        if doc_kind != "FR" && doc_kind != "VD" {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "Operadores de caixa só têm permissão para emitir faturas-recibo (FR) ou vendas a dinheiro (VD) no POS.",
+            ));
+        }
+
+        if command.cash_session_id.is_none() {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "Operação recusada pela API: O operador de caixa deve ter um turno/sessão de caixa aberta para registar vendas no POS.",
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+async fn validate_cash_session(
+    pool: &sqlx::PgPool,
+    treasury_service_url: Option<&str>,
+    tenant_id: Uuid,
+    session_id: Uuid,
+) -> Result<(), ApiError> {
+    if let Some(url) = treasury_service_url {
+        let endpoint = format!(
+            "{}/api/v1/treasury/sessions/{}",
+            url.trim_end_matches('/'),
+            session_id
+        );
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(3))
+            .build()
+            .unwrap_or_default();
+
+        if let Ok(resp) = client
+            .get(&endpoint)
+            .header("X-Resolved-Tenant-ID", tenant_id.to_string())
+            .send()
+            .await
+        {
+            if resp.status() == reqwest::StatusCode::NOT_FOUND {
+                return Err(ApiError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "A sessão de caixa informada não existe nesta organização.",
+                ));
+            }
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    let status = json
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if status.eq_ignore_ascii_case("CLOSED") {
+                        return Err(ApiError::new(
+                            StatusCode::UNPROCESSABLE_ENTITY,
+                            "A sessão de caixa informada encontra-se encerrada. É necessário abrir uma nova sessão para emitir vendas.",
+                        ));
+                    }
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    let query_res = sqlx::query_scalar::<_, String>(
+        "SELECT status::text FROM kudiba_treasury.cash_sessions WHERE tenant_id = $1 AND id = $2",
+    )
+    .bind(tenant_id)
+    .bind(session_id)
+    .fetch_optional(pool)
+    .await;
+
+    match query_res {
+        Ok(Some(status)) => {
+            if status.eq_ignore_ascii_case("CLOSED") {
+                return Err(ApiError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "A sessão de caixa informada encontra-se encerrada. É necessário abrir uma nova sessão para emitir vendas.",
+                ));
+            }
+            Ok(())
+        }
+        Ok(None) => {
+            Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "A sessão de caixa informada não existe nesta organização.",
+            ))
+        }
+        Err(err) => {
+            tracing::warn!(
+                "Não foi possível verificar sessão de caixa na base local ({err}); autorizando emissão."
+            );
+            Ok(())
+        }
+    }
+}
+
 async fn generate_keys_handler(headers: HeaderMap) -> Response {
     if let Err(response) = authorize_role(&headers, &["ADMIN", "ADMINISTRADOR"]) {
         return response.into_response();
@@ -2243,5 +2391,175 @@ mod authorization_tests {
         let err_exp = verify_internal_gateway_signature(&exp_headers, method, path, secret, true)
             .unwrap_err();
         assert_eq!(err_exp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn rejeita_emissao_por_operador_de_caixa_sem_sessao_de_caixa() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Resolved-Tenant-ID",
+            "a0000000-0000-0000-0000-000000000001".parse().unwrap(),
+        );
+        headers.insert("X-Resolved-User-ID", "cashier-1".parse().unwrap());
+        headers.insert("X-Resolved-Roles", "OPERADOR_CAIXA".parse().unwrap());
+
+        let mut cmd = IssueInvoiceCommand {
+            actor_user_id: None,
+            tenant_id: Uuid::parse_str("a0000000-0000-0000-0000-000000000001").unwrap(),
+            document_type: "FR".to_string(),
+            series_code: "2026A".to_string(),
+            fiscal_year: 2026,
+            customer_name: "Consumidor Final".to_string(),
+            customer_address: None,
+            customer_city: None,
+            customer_country: None,
+            customer_nif: None,
+            source_document_number: None,
+            payment_methods: vec!["NUMERARIO".to_string()],
+            withholding_total: None,
+            apply_withholding: None,
+            withholding_rate: None,
+            stamp_duty_total: None,
+            apply_stamp_duty: None,
+            stamp_duty_rate: None,
+            currency: "AOA".to_string(),
+            lines: vec![],
+            is_contingency: false,
+            key_version: "1".to_string(),
+            transport: None,
+            cash_session_id: None,
+        };
+
+        let res = check_cashier_and_session_security(&headers, &mut cmd);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn permite_emissao_por_operador_de_caixa_com_sessao_em_fr() {
+        let session_id = Uuid::new_v4();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Resolved-Tenant-ID",
+            "a0000000-0000-0000-0000-000000000001".parse().unwrap(),
+        );
+        headers.insert("X-Resolved-User-ID", "cashier-1".parse().unwrap());
+        headers.insert("X-Resolved-Roles", "OPERADOR_CAIXA".parse().unwrap());
+        headers.insert("X-Cash-Session-ID", session_id.to_string().parse().unwrap());
+
+        let mut cmd = IssueInvoiceCommand {
+            actor_user_id: None,
+            tenant_id: Uuid::parse_str("a0000000-0000-0000-0000-000000000001").unwrap(),
+            document_type: "FR".to_string(),
+            series_code: "2026A".to_string(),
+            fiscal_year: 2026,
+            customer_name: "Consumidor Final".to_string(),
+            customer_address: None,
+            customer_city: None,
+            customer_country: None,
+            customer_nif: None,
+            source_document_number: None,
+            payment_methods: vec!["NUMERARIO".to_string()],
+            withholding_total: None,
+            apply_withholding: None,
+            withholding_rate: None,
+            stamp_duty_total: None,
+            apply_stamp_duty: None,
+            stamp_duty_rate: None,
+            currency: "AOA".to_string(),
+            lines: vec![],
+            is_contingency: false,
+            key_version: "1".to_string(),
+            transport: None,
+            cash_session_id: None,
+        };
+
+        let res = check_cashier_and_session_security(&headers, &mut cmd);
+        assert!(res.is_ok());
+        assert_eq!(cmd.cash_session_id, Some(session_id));
+    }
+
+    #[test]
+    fn rejeita_emissao_de_ft_por_operador_de_caixa_estrito() {
+        let session_id = Uuid::new_v4();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Resolved-Tenant-ID",
+            "a0000000-0000-0000-0000-000000000001".parse().unwrap(),
+        );
+        headers.insert("X-Resolved-User-ID", "cashier-1".parse().unwrap());
+        headers.insert("X-Resolved-Roles", "CASHIER".parse().unwrap());
+
+        let mut cmd = IssueInvoiceCommand {
+            actor_user_id: None,
+            tenant_id: Uuid::parse_str("a0000000-0000-0000-0000-000000000001").unwrap(),
+            document_type: "FT".to_string(),
+            series_code: "2026A".to_string(),
+            fiscal_year: 2026,
+            customer_name: "Cliente Empresa".to_string(),
+            customer_address: None,
+            customer_city: None,
+            customer_country: None,
+            customer_nif: None,
+            source_document_number: None,
+            payment_methods: vec!["A CRÉDITO".to_string()],
+            withholding_total: None,
+            apply_withholding: None,
+            withholding_rate: None,
+            stamp_duty_total: None,
+            apply_stamp_duty: None,
+            stamp_duty_rate: None,
+            currency: "AOA".to_string(),
+            lines: vec![],
+            is_contingency: false,
+            key_version: "1".to_string(),
+            transport: None,
+            cash_session_id: Some(session_id),
+        };
+
+        let res = check_cashier_and_session_security(&headers, &mut cmd);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn permite_emissao_por_admin_ou_gestor_sem_sessao() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Resolved-Tenant-ID",
+            "a0000000-0000-0000-0000-000000000001".parse().unwrap(),
+        );
+        headers.insert("X-Resolved-User-ID", "admin-1".parse().unwrap());
+        headers.insert("X-Resolved-Roles", "ADMIN,GESTOR".parse().unwrap());
+
+        let mut cmd = IssueInvoiceCommand {
+            actor_user_id: None,
+            tenant_id: Uuid::parse_str("a0000000-0000-0000-0000-000000000001").unwrap(),
+            document_type: "FT".to_string(),
+            series_code: "2026A".to_string(),
+            fiscal_year: 2026,
+            customer_name: "Cliente Empresa".to_string(),
+            customer_address: None,
+            customer_city: None,
+            customer_country: None,
+            customer_nif: None,
+            source_document_number: None,
+            payment_methods: vec!["A CRÉDITO".to_string()],
+            withholding_total: None,
+            apply_withholding: None,
+            withholding_rate: None,
+            stamp_duty_total: None,
+            apply_stamp_duty: None,
+            stamp_duty_rate: None,
+            currency: "AOA".to_string(),
+            lines: vec![],
+            is_contingency: false,
+            key_version: "1".to_string(),
+            transport: None,
+            cash_session_id: None,
+        };
+
+        let res = check_cashier_and_session_security(&headers, &mut cmd);
+        assert!(res.is_ok());
     }
 }

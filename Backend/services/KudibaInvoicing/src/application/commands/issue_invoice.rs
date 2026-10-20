@@ -350,7 +350,8 @@ impl IssueInvoiceUseCase {
             system_entry_date,
             invoice_lines,
         )
-        .with_transport(command.transport.clone());
+        .with_transport(command.transport.clone())
+        .with_cash_session_id(command.cash_session_id);
 
         // Invariante do agregado antes da gravação: totais e coerência com o regime
         invoice.verify_totals()?;
@@ -393,6 +394,7 @@ impl IssueInvoiceUseCase {
             system_entry_date: invoice.system_entry_date,
             is_contingency: invoice.is_contingency,
             transport: invoice.transport.clone(),
+            cash_session_id: invoice.cash_session_id,
         })
     }
 }
@@ -763,6 +765,7 @@ mod tests {
             is_contingency: false,
             key_version: "1".into(),
             transport: Some(transport),
+            cash_session_id: None,
             lines: vec![InvoiceLineInput {
                 product_code: "SERV01".into(),
                 description: "Consultoria de Transporte".into(),

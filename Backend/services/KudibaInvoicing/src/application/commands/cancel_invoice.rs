@@ -146,6 +146,7 @@ impl CancelInvoiceWithCreditNoteUseCase {
             is_contingency: original_invoice.is_contingency,
             key_version: original_invoice.key_version.clone(),
             transport: None,
+            cash_session_id: None,
         };
 
         let nc_result = self.issue_invoice.execute(issue_command).await?;

@@ -16,6 +16,7 @@ import {
   Trash2,
   Search,
   RefreshCw,
+  Calendar,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
@@ -35,6 +36,8 @@ export const InvoicingView: React.FC = () => {
   const { activeTenant } = useAuthStore();
   const queryClient = useQueryClient();
 
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [activeTab, setActiveTab] = useState<ActiveTab>('invoices');
   const [filterType, setFilterType] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -50,8 +53,8 @@ export const InvoicingView: React.FC = () => {
     isLoading: invoicesLoading,
     refetch: refetchInvoices,
   } = useQuery({
-    queryKey: ['invoices', activeTenant?.id],
-    queryFn: () => invoicingApi.listInvoices({ fiscalYear: 2026, limit: 100 }),
+    queryKey: ['invoices', activeTenant?.id, selectedYear],
+    queryFn: () => invoicingApi.listInvoices({ fiscalYear: selectedYear, limit: 150 }),
     enabled: Boolean(activeTenant?.id),
   });
 
@@ -153,16 +156,28 @@ export const InvoicingView: React.FC = () => {
   });
 
   const cancelMutation = useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
-      invoicingApi.cancelInvoice(id, {
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => {
+      const activeNcSeries =
+        seriesList.find((s) => s.documentType === 'NC' && s.isActive)?.seriesCode ||
+        cancelModalInvoice?.documentNumber.split(' ')[1]?.split('/')[0] ||
+        '2026A';
+      return invoicingApi.cancelInvoice(id, {
         tenantId: activeTenant!.id,
         reason,
-        seriesCode: '2026A',
-      }),
+        seriesCode: activeNcSeries,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       setCancelModalInvoice(null);
       setCancelReason('');
+    },
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.error ||
+        'Erro ao emitir Nota de Crédito para estornar o documento.';
+      alert(msg);
     },
   });
 
@@ -182,7 +197,6 @@ export const InvoicingView: React.FC = () => {
   });
 
   // Ações de SAF-T
-  const currentYear = new Date().getFullYear();
   const [saftYear, setSaftYear] = useState(currentYear);
   const [saftMonth, setSaftMonth] = useState<number | ''>('');
   const [saftLoading, setSaftLoading] = useState(false);
@@ -389,6 +403,36 @@ export const InvoicingView: React.FC = () => {
     return matchesType && matchesSearch;
   });
 
+  const summaryTotals = filteredInvoices.reduce(
+    (acc, inv) => {
+      const isNC = inv.documentType === 'NC';
+      const gross = Number(inv.grossTotal) || 0;
+      const net = Number(inv.netTotal) || 0;
+      const tax = Number(inv.taxTotal) || 0;
+
+      if (isNC) {
+        acc.creditNotesGross += gross;
+        acc.creditNotesCount += 1;
+        acc.netEffective -= net;
+        acc.taxEffective -= tax;
+      } else {
+        acc.grossInvoiced += gross;
+        acc.invoicesCount += 1;
+        acc.netEffective += net;
+        acc.taxEffective += tax;
+      }
+      return acc;
+    },
+    {
+      grossInvoiced: 0,
+      creditNotesGross: 0,
+      netEffective: 0,
+      taxEffective: 0,
+      invoicesCount: 0,
+      creditNotesCount: 0,
+    }
+  );
+
   return (
     <div className="space-y-6">
       {/* Header com Abas */}
@@ -456,6 +500,58 @@ export const InvoicingView: React.FC = () => {
       {/* ABA 1: LISTA DE DOCUMENTOS */}
       {activeTab === 'invoices' && (
         <div className="space-y-4 no-print">
+          {/* Barra de Resumo Fiscal da Listagem Filtrada */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <GlassCard className="p-3.5">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                Faturação Bruta
+              </span>
+              <div className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white mt-1">
+                <KzAmount value={summaryTotals.grossInvoiced} />
+              </div>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                {summaryTotals.invoicesCount} documento{summaryTotals.invoicesCount !== 1 ? 's' : ''} emitido{summaryTotals.invoicesCount !== 1 ? 's' : ''}
+              </span>
+            </GlassCard>
+
+            <GlassCard className="p-3.5">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                Notas de Crédito (NC)
+              </span>
+              <div className="text-base sm:text-lg font-extrabold text-rose-600 dark:text-rose-400 mt-1">
+                {summaryTotals.creditNotesGross > 0 ? '-' : ''}
+                <KzAmount value={summaryTotals.creditNotesGross} />
+              </div>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                {summaryTotals.creditNotesCount} estorno{summaryTotals.creditNotesCount !== 1 ? 's' : ''} abatido{summaryTotals.creditNotesCount !== 1 ? 's' : ''}
+              </span>
+            </GlassCard>
+
+            <GlassCard className="p-3.5">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                Receita Líquida Efetiva
+              </span>
+              <div className="text-base sm:text-lg font-extrabold text-emerald-700 dark:text-emerald-400 mt-1">
+                <KzAmount value={summaryTotals.netEffective} />
+              </div>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                Receita apurada após devoluções
+              </span>
+            </GlassCard>
+
+            <GlassCard className="p-3.5">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                IVA Total Liquidado
+              </span>
+              <div className="text-base sm:text-lg font-extrabold text-amber-600 dark:text-amber-400 mt-1">
+                <KzAmount value={summaryTotals.taxEffective} />
+              </div>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                Imposto devido ao Estado (AGT)
+              </span>
+            </GlassCard>
+          </div>
+
           <GlassCard className="p-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2 flex-1 max-w-md">
@@ -471,7 +567,22 @@ export const InvoicingView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800 text-xs font-semibold">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Ano:</span>
+                  <select
+                    aria-label="Ano Fiscal"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                    className="bg-transparent font-bold text-emerald-700 dark:text-emerald-400 focus:outline-hidden cursor-pointer"
+                  >
+                    <option value={currentYear}>{currentYear}</option>
+                    <option value={currentYear - 1}>{currentYear - 1}</option>
+                    <option value={currentYear - 2}>{currentYear - 2}</option>
+                  </select>
+                </div>
+
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value)}
@@ -487,7 +598,7 @@ export const InvoicingView: React.FC = () => {
                 <button
                   onClick={() => refetchInvoices()}
                   title="Atualizar"
-                  className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
+                  className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 cursor-pointer"
                 >
                   <RefreshCw className="w-4 h-4" />
                 </button>
@@ -521,93 +632,159 @@ export const InvoicingView: React.FC = () => {
                       <th className="py-2.5 px-3">Cliente</th>
                       <th className="py-2.5 px-3">Data</th>
                       <th className="py-2.5 px-3 text-right">Incidência</th>
-                      <th className="py-2.5 px-3 text-right">IVA (14%)</th>
+                      <th
+                        className="py-2.5 px-3 text-right"
+                        title="Imposto liquidado (taxas 14%, 5% ou isenção 0%)"
+                      >
+                        IVA Liquidado
+                      </th>
                       <th className="py-2.5 px-3 text-right">Total (Kz)</th>
-                      <th className="py-2.5 px-3 text-center">Hash AGT</th>
+                      <th className="py-2.5 px-3 text-center">Estado</th>
+                      <th
+                        className="py-2.5 px-3 text-center"
+                        title="4 Caracteres de Validação do Hash J-1 (Decreto Executivo 385/20)"
+                      >
+                        Validação J-1
+                      </th>
                       <th className="py-2.5 px-3 text-center">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                    {filteredInvoices.map((inv) => (
-                      <tr
-                        key={inv.id}
-                        className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40"
-                      >
-                        <td className="py-3 px-3">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded-md text-xs font-extrabold ${
-                              inv.documentType === 'NC'
-                                ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
-                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
+                    {filteredInvoices.map((inv) => {
+                      const isNC = inv.documentType === 'NC';
+                      const isRectified =
+                        inv.documentType === 'FT' &&
+                        invoices.some(
+                          (n) => n.documentType === 'NC' && n.sourceDocumentNumber === inv.documentNumber
+                        );
+
+                      return (
+                        <tr
+                          key={inv.id}
+                          className={`hover:bg-slate-50/60 dark:hover:bg-slate-800/40 ${
+                            isNC ? 'bg-rose-50/20 dark:bg-rose-950/10' : ''
+                          }`}
+                        >
+                          <td className="py-3 px-3">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-md text-xs font-extrabold ${
+                                isNC
+                                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                                  : inv.documentType === 'FR'
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                  : 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400'
+                              }`}
+                            >
+                              {inv.documentType}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                            <div>{inv.documentNumber}</div>
+                            {inv.sourceDocumentNumber && (
+                              <span className="text-[10px] text-rose-600 dark:text-rose-400 font-mono block">
+                                Retifica: {inv.sourceDocumentNumber}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3">
+                            <p className="font-semibold text-slate-800 dark:text-slate-200">
+                              {inv.customerName}
+                            </p>
+                            <p className="text-xs font-mono text-slate-500 dark:text-slate-400">
+                              NIF: {inv.customerNif || 'Consumidor Final'}
+                            </p>
+                          </td>
+                          <td className="py-3 px-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                            {inv.issuedAt ? new Date(inv.issuedAt).toLocaleDateString('pt-AO') : '—'}
+                          </td>
+                          <td
+                            className={`py-3 px-3 text-right whitespace-nowrap ${
+                              isNC ? 'text-rose-600 dark:text-rose-400 font-semibold' : ''
                             }`}
                           >
-                            {inv.documentType}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
-                          {inv.documentNumber}
-                        </td>
-                        <td className="py-3 px-3">
-                          <p className="font-semibold text-slate-800 dark:text-slate-200">
-                            {inv.customerName}
-                          </p>
-                          <p className="text-xs font-mono text-slate-500 dark:text-slate-400">
-                            NIF: {inv.customerNif || 'Consumidor Final'}
-                          </p>
-                        </td>
-                        <td className="py-3 px-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                          {inv.issuedAt ? new Date(inv.issuedAt).toLocaleDateString('pt-AO') : '—'}
-                        </td>
-                        <td className="py-3 px-3 text-right whitespace-nowrap">
-                          <KzAmount value={inv.netTotal} />
-                        </td>
-                        <td className="py-3 px-3 text-right whitespace-nowrap">
-                          <KzAmount value={inv.taxTotal} />
-                        </td>
-                        <td className="py-3 px-3 text-right font-bold whitespace-nowrap">
-                          <KzAmount value={inv.grossTotal} />
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <span className="font-mono text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold">
-                            {inv.validationChars || '—'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => setSelectedInvoice(inv)}
-                              title="Visualizar A4"
-                              className="p-1.5 rounded-lg text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleViewThermal(inv)}
-                              title="Talão Térmico 80mm"
-                              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                            >
-                              <Printer className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDownloadPdf(inv)}
-                              title="Download PDF AGT"
-                              className="p-1.5 rounded-lg text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30"
-                            >
-                              <Download className="w-4 h-4" />
-                            </button>
-                            {inv.documentType !== 'NC' && (
-                              <button
-                                onClick={() => setCancelModalInvoice(inv)}
-                                title="Anular com Nota de Crédito (NC)"
-                                className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                              >
-                                <Ban className="w-4 h-4" />
-                              </button>
+                            {isNC ? '-' : ''}
+                            <KzAmount value={inv.netTotal} />
+                          </td>
+                          <td
+                            className={`py-3 px-3 text-right whitespace-nowrap ${
+                              isNC ? 'text-rose-600 dark:text-rose-400 font-semibold' : ''
+                            }`}
+                          >
+                            {isNC ? '-' : ''}
+                            <KzAmount value={inv.taxTotal} />
+                          </td>
+                          <td
+                            className={`py-3 px-3 text-right font-bold whitespace-nowrap ${
+                              isNC ? 'text-rose-600 dark:text-rose-400' : ''
+                            }`}
+                          >
+                            {isNC ? '-' : ''}
+                            <KzAmount value={inv.grossTotal} />
+                          </td>
+                          <td className="py-3 px-3 text-center whitespace-nowrap">
+                            {isNC ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-500/20">
+                                Estorno NC
+                              </span>
+                            ) : inv.documentType === 'FR' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-500/20">
+                                Liquidada
+                              </span>
+                            ) : isRectified ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-300 line-through">
+                                Retificada por NC
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-500/20">
+                                Crédito C/C
+                              </span>
                             )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <span
+                              className="font-mono text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-emerald-800 dark:text-emerald-300 font-bold border border-emerald-500/20"
+                              title={`Caracteres de Validação J-1: ${inv.validationChars}`}
+                            >
+                              {inv.validationChars || '—'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => setSelectedInvoice(inv)}
+                                title="Visualizar A4"
+                                className="p-1.5 rounded-lg text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleViewThermal(inv)}
+                                title="Talão Térmico 80mm"
+                                className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              >
+                                <Printer className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDownloadPdf(inv)}
+                                title="Download PDF AGT"
+                                className="p-1.5 rounded-lg text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                              {!isNC && !isRectified && (
+                                <button
+                                  onClick={() => setCancelModalInvoice(inv)}
+                                  title="Anular com Nota de Crédito (NC)"
+                                  className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                >
+                                  <Ban className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

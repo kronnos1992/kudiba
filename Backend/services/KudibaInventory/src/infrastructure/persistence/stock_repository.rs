@@ -185,6 +185,24 @@ impl StockRepository for PostgresStockRepository {
         Ok(rows.into_iter().map(StockBalance::from).collect())
     }
 
+    async fn list_all_balances(
+        &self,
+        session: &mut dyn DbSession,
+        tenant_id: Uuid,
+    ) -> Result<Vec<StockBalance>, RepositoryError> {
+        let rows: Vec<StockBalanceRow> = sqlx::query_as(
+            "SELECT id, tenant_id, warehouse_id, product_id, \
+             quantity_on_hand, quantity_reserved, reorder_point, updated_at \
+             FROM kudiba_inventory.stock_balances \
+             WHERE tenant_id = $1 ORDER BY product_id, warehouse_id ASC",
+        )
+        .bind(tenant_id)
+        .fetch_all(&mut *session.connection())
+        .await?;
+
+        Ok(rows.into_iter().map(StockBalance::from).collect())
+    }
+
     async fn list_movements(
         &self,
         session: &mut dyn DbSession,

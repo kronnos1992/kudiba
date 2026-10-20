@@ -16,6 +16,11 @@ import {
   X,
   FileText,
   Pencil,
+  Printer,
+  TrendingUp,
+  Receipt,
+  FileSpreadsheet,
+  Lock,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
@@ -30,7 +35,15 @@ import {
   UpdateEntryPayload,
 } from '../../api/accounting';
 
-type AccountingTab = 'trial_balance' | 'entries' | 'chart' | 'journals_years' | 'revaluation';
+type AccountingTab =
+  | 'trial_balance'
+  | 'entries'
+  | 'ledger'
+  | 'financial_statements'
+  | 'vat_settlement'
+  | 'chart'
+  | 'journals_years'
+  | 'revaluation';
 
 const PGC_CLASSES: { id: string; name: string; prefix: string; desc: string }[] = [
   { id: 'all', name: 'Todas as Classes', prefix: '', desc: 'Todas as contas' },
@@ -59,6 +72,13 @@ export const AccountingView: React.FC = () => {
   const [entriesSearch, setEntriesSearch] = useState('');
   const [selectedEntry, setSelectedEntry] = useState<JournalEntryResponse | null>(null);
 
+  // Livro Razão filters
+  const [selectedLedgerAccountCode, setSelectedLedgerAccountCode] = useState<string>('11.2');
+  const [ledgerSearch, setLedgerSearch] = useState('');
+
+  // Demonstrações Financeiras filters
+  const [financialSubTab, setFinancialSubTab] = useState<'balance_sheet' | 'income_statement'>('balance_sheet');
+
   // PGC Chart filters
   const [chartClassFilter, setChartClassFilter] = useState<string>('all');
   const [chartSearch, setChartSearch] = useState('');
@@ -71,6 +91,10 @@ export const AccountingView: React.FC = () => {
   const [isReverseModalOpen, setIsReverseModalOpen] = useState(false);
   const [reverseReason, setReverseReason] = useState('');
   const [isEditEntryModalOpen, setIsEditEntryModalOpen] = useState(false);
+  const [isNewFiscalYearModalOpen, setIsNewFiscalYearModalOpen] = useState(false);
+  const [newFiscalYearCode, setNewFiscalYearCode] = useState<number>(new Date().getFullYear() + 1);
+  const [isCloseFiscalYearModalOpen, setIsCloseFiscalYearModalOpen] = useState(false);
+  const [yearToClose, setYearToClose] = useState<number | null>(null);
 
   // Queries
   const { data: chart = [], isLoading: isLoadingChart } = useQuery({
@@ -88,7 +112,7 @@ export const AccountingView: React.FC = () => {
     queryFn: () =>
       accountingApi.listEntries({
         journal_id: entriesJournalFilter === 'all' ? undefined : entriesJournalFilter,
-        limit: 100,
+        limit: 250,
       }),
   });
 
@@ -120,6 +144,25 @@ export const AccountingView: React.FC = () => {
       setIsReverseModalOpen(false);
       setSelectedEntry(null);
       setReverseReason('');
+    },
+  });
+
+  const openFiscalYearMutation = useMutation({
+    mutationFn: (year: number) => accountingApi.openFiscalYear({ year_code: year }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounting_fiscal_years'] });
+      setIsNewFiscalYearModalOpen(false);
+    },
+  });
+
+  const closeFiscalYearMutation = useMutation({
+    mutationFn: (year: number) => accountingApi.closeFiscalYear(year),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounting_fiscal_years'] });
+      queryClient.invalidateQueries({ queryKey: ['accounting_entries'] });
+      queryClient.invalidateQueries({ queryKey: ['accounting_trial_balance'] });
+      setIsCloseFiscalYearModalOpen(false);
+      setYearToClose(null);
     },
   });
 
@@ -295,6 +338,19 @@ export const AccountingView: React.FC = () => {
     },
   });
 
+  // Helper de download CSV UTF-8 com BOM
+  const downloadCsv = (filename: string, content: string) => {
+    const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  };
+
   // Download SAF-T Accounting XML
   const handleDownloadSaft = async () => {
     try {
@@ -310,6 +366,11 @@ export const AccountingView: React.FC = () => {
     } catch (err) {
       console.error('Falha ao exportar SAF-T de contabilidade', err);
     }
+  };
+
+  // Imprimir
+  const handlePrint = () => {
+    window.print();
   };
 
   // Calculations for manual entry validation
@@ -394,6 +455,405 @@ export const AccountingView: React.FC = () => {
 
   const activeYear = fiscalYears.find((y) => y.status === 'OPEN') || fiscalYears[0];
 
+  // Navegar para o Livro Razão com uma conta específica
+  const openAccountLedger = (accountCode: string) => {
+    setSelectedLedgerAccountCode(accountCode);
+    setActiveTab('ledger');
+  };
+
+  // Exportação CSV do Balancete
+  const handleExportTrialBalanceCsv = () => {
+    if (!trialBalance?.rows) return;
+    const is6Col = trialBalanceColumns === 6;
+    const header = is6Col
+      ? 'Código;Designação da Conta;Tipo;S. Inicial Débito (Kz);S. Inicial Crédito (Kz);Mov. Débito (Kz);Mov. Crédito (Kz);Saldo Final Devedor (Kz);Saldo Final Credor (Kz)'
+      : 'Código;Designação da Conta;Tipo;Mov. Débito (Kz);Mov. Crédito (Kz);Saldo Final Devedor (Kz);Saldo Final Credor (Kz)';
+
+    const lines = filteredTrialBalanceRows.map((r) => {
+      const isAnalytical = r.is_analytical ? 'Analítica' : 'Sintética';
+      const cleanName = `"${r.account_name.replace(/"/g, '""')}"`;
+      if (is6Col) {
+        return `${r.account_code};${cleanName};${isAnalytical};${r.opening_debit};${r.opening_credit};${r.period_debit};${r.period_credit};${r.closing_debit};${r.closing_credit}`;
+      }
+      return `${r.account_code};${cleanName};${isAnalytical};${r.period_debit};${r.period_credit};${r.closing_debit};${r.closing_credit}`;
+    });
+
+    const totalLine = is6Col
+      ? `TOTAIS;Totais Gerais do Balancete;;${trialBalance.total_opening_debit};${trialBalance.total_opening_credit};${trialBalance.total_period_debit};${trialBalance.total_period_credit};${trialBalance.total_closing_debit};${trialBalance.total_closing_credit}`
+      : `TOTAIS;Totais Gerais do Balancete;;${trialBalance.total_period_debit};${trialBalance.total_period_credit};${trialBalance.total_closing_debit};${trialBalance.total_closing_credit}`;
+
+    const csv = [header, ...lines, totalLine].join('\r\n');
+    downloadCsv(`balancete_verificacao_${activeYear?.year_code || new Date().getFullYear()}.csv`, csv);
+  };
+
+  // Exportação CSV do Diário
+  const handleExportEntriesCsv = () => {
+    const header = 'Nº Lançamento;Data;Período;Origem;Documento Ref;Histórico;Total Débito (Kz);Total Crédito (Kz);Estado';
+    const lines = filteredEntries.map((e) => {
+      const cleanDesc = `"${e.description.replace(/"/g, '""')}"`;
+      return `${e.entry_number};${e.transaction_date};${e.period};${e.source_service || 'MANUAL'};${e.source_document_ref || '-'};${cleanDesc};${e.total_debit};${e.total_credit};${e.status}`;
+    });
+    const csv = [header, ...lines].join('\r\n');
+    downloadCsv(`livro_diario_${activeYear?.year_code || new Date().getFullYear()}.csv`, csv);
+  };
+
+  // Conta selecionada no Razão
+  const selectedLedgerAccount = useMemo(() => {
+    const foundInChart = chart.find((a) => a.account_code === selectedLedgerAccountCode);
+    const foundInTB = trialBalance?.rows.find((r) => r.account_code === selectedLedgerAccountCode);
+    return {
+      code: selectedLedgerAccountCode,
+      name: foundInChart?.account_name || foundInTB?.account_name || `Conta ${selectedLedgerAccountCode}`,
+      nature: foundInChart?.account_nature || 'DEBIT',
+      is_analytical: foundInChart ? foundInChart.is_analytical : true,
+      opening_debit: parseFloat(String(foundInTB?.opening_debit || 0)),
+      opening_credit: parseFloat(String(foundInTB?.opening_credit || 0)),
+      period_debit: parseFloat(String(foundInTB?.period_debit || 0)),
+      period_credit: parseFloat(String(foundInTB?.period_credit || 0)),
+      closing_debit: parseFloat(String(foundInTB?.closing_debit || 0)),
+      closing_credit: parseFloat(String(foundInTB?.closing_credit || 0)),
+    };
+  }, [chart, trialBalance, selectedLedgerAccountCode]);
+
+  // Linhas cronológicas do Razão da conta selecionada
+  const ledgerEntries = useMemo(() => {
+    if (!selectedLedgerAccountCode) return [];
+    const isDebitNature = selectedLedgerAccount.nature === 'DEBIT';
+
+    let initialBalance = isDebitNature
+      ? selectedLedgerAccount.opening_debit - selectedLedgerAccount.opening_credit
+      : selectedLedgerAccount.opening_credit - selectedLedgerAccount.opening_debit;
+
+    const sorted = [...entries].sort((a, b) => {
+      const c = a.transaction_date.localeCompare(b.transaction_date);
+      if (c !== 0) return c;
+      return a.entry_number - b.entry_number;
+    });
+
+    let currentBalance = initialBalance;
+    const lines: Array<{
+      id: string;
+      entryId: string;
+      entry_number: number;
+      date: string;
+      period: number;
+      journal: string;
+      description: string;
+      debit: number;
+      credit: number;
+      runningBalance: number;
+      rawEntry: JournalEntryResponse;
+    }> = [];
+
+    for (const ent of sorted) {
+      for (const line of ent.lines) {
+        if (
+          line.account_code === selectedLedgerAccountCode ||
+          line.account_code.startsWith(selectedLedgerAccountCode + '.')
+        ) {
+          const deb = parseFloat(String(line.debit_amount || 0));
+          const cred = parseFloat(String(line.credit_amount || 0));
+
+          if (isDebitNature) {
+            currentBalance += deb - cred;
+          } else {
+            currentBalance += cred - deb;
+          }
+
+          lines.push({
+            id: line.id,
+            entryId: ent.id,
+            entry_number: ent.entry_number,
+            date: ent.transaction_date,
+            period: ent.period,
+            journal: ent.source_service || 'MANUAL',
+            description: line.description || ent.description,
+            debit: deb,
+            credit: cred,
+            runningBalance: currentBalance,
+            rawEntry: ent,
+          });
+        }
+      }
+    }
+
+    if (ledgerSearch) {
+      const q = ledgerSearch.toLowerCase();
+      return lines.filter(
+        (l) =>
+          l.description.toLowerCase().includes(q) ||
+          String(l.entry_number).includes(q) ||
+          l.journal.toLowerCase().includes(q)
+      );
+    }
+
+    return lines;
+  }, [entries, selectedLedgerAccountCode, selectedLedgerAccount, ledgerSearch]);
+
+  // Exportação CSV do Razão
+  const handleExportLedgerCsv = () => {
+    const header = `Extrato de Conta PGC: ${selectedLedgerAccount.code} - ${selectedLedgerAccount.name}\r\nData;Nº Lançamento;Diário;Histórico;Débito (Kz);Crédito (Kz);Saldo Acumulado (Kz);Sentido`;
+    const lines = ledgerEntries.map((r) => {
+      const cleanDesc = `"${r.description.replace(/"/g, '""')}"`;
+      const sentido = r.runningBalance >= 0 ? 'Devedor' : 'Credor';
+      return `${r.date};#${r.entry_number};${r.journal};${cleanDesc};${r.debit};${r.credit};${Math.abs(r.runningBalance)};${sentido}`;
+    });
+    const csv = [header, ...lines].join('\r\n');
+    downloadCsv(`extrato_conta_${selectedLedgerAccount.code}.csv`, csv);
+  };
+
+  // Demonstrações Financeiras PGC (Balanço & DRE)
+  const financialStatements = useMemo(() => {
+    const rows = trialBalance?.rows || [];
+
+    const sumNet = (prefix: string, defaultNature: 'DEBIT' | 'CREDIT') => {
+      let total = 0;
+      rows.forEach((r) => {
+        if (r.account_code === prefix || r.account_code.startsWith(prefix + '.')) {
+          if (r.is_analytical) {
+            const deb = parseFloat(String(r.closing_debit || 0));
+            const cred = parseFloat(String(r.closing_credit || 0));
+            if (defaultNature === 'DEBIT') {
+              total += deb - cred;
+            } else {
+              total += cred - deb;
+            }
+          }
+        }
+      });
+      return total;
+    };
+
+    const sumPeriod = (prefix: string, nature: 'DEBIT' | 'CREDIT') => {
+      let total = 0;
+      rows.forEach((r) => {
+        if (r.account_code === prefix || r.account_code.startsWith(prefix + '.')) {
+          if (r.is_analytical) {
+            const deb = parseFloat(String(r.period_debit || 0));
+            const cred = parseFloat(String(r.period_credit || 0));
+            if (nature === 'DEBIT') {
+              total += deb - cred;
+            } else {
+              total += cred - deb;
+            }
+          }
+        }
+      });
+      return Math.max(0, total);
+    };
+
+    // --- DRE (Demonstração de Resultados por Natureza) ---
+    const vendas = sumPeriod('71', 'CREDIT');
+    const servicos = sumPeriod('72', 'CREDIT');
+    const outrosProveitos = sumPeriod('73', 'CREDIT') + sumPeriod('74', 'CREDIT');
+    const totalProveitosOperacionais = vendas + servicos + outrosProveitos;
+
+    const cmvmc = sumPeriod('61', 'DEBIT');
+    const margemBruta = totalProveitosOperacionais - cmvmc;
+
+    const fse = sumPeriod('62', 'DEBIT');
+    const pessoal = sumPeriod('63', 'DEBIT');
+    const amortizacoes = sumPeriod('64', 'DEBIT');
+    const outrosCustosOperacionais = sumPeriod('65', 'DEBIT');
+    const totalCustosOperacionais = cmvmc + fse + pessoal + amortizacoes + outrosCustosOperacionais;
+
+    const resultadoOperacional = totalProveitosOperacionais - totalCustosOperacionais;
+
+    const proveitosFinanceiros = sumPeriod('75', 'CREDIT');
+    const custosFinanceiros = sumPeriod('66', 'DEBIT');
+    const resultadoFinanceiro = proveitosFinanceiros - custosFinanceiros;
+
+    const rai = resultadoOperacional + resultadoFinanceiro;
+    const impostoEstimado = sumPeriod('87', 'DEBIT') > 0 ? sumPeriod('87', 'DEBIT') : Math.max(0, rai * 0.25);
+    const resultadoLiquido = rai - impostoEstimado;
+
+    // --- Balanço Patrimonial PGC ---
+    const imobCorporeas = sumNet('41', 'DEBIT');
+    const imobIncorporeas = sumNet('42', 'DEBIT');
+    const amortAcumuladas = Math.abs(sumNet('43', 'CREDIT'));
+    const totalAtivoNaoCorrente = Math.max(0, imobCorporeas + imobIncorporeas - amortAcumuladas);
+
+    const existencias = Math.max(0, sumNet('2', 'DEBIT'));
+    const clientes = Math.max(0, sumNet('31', 'DEBIT'));
+    const estadoDevedor = Math.max(
+      0,
+      sumNet('34.2.1', 'DEBIT') + sumNet('34.5.1', 'DEBIT') + sumNet('34.5.2', 'DEBIT')
+    );
+    const outrosDevedores = Math.max(0, sumNet('37', 'DEBIT'));
+    const meiosFinanceiros = Math.max(
+      0,
+      sumNet('11', 'DEBIT') + sumNet('12', 'DEBIT') + sumNet('13', 'DEBIT') + sumNet('14', 'DEBIT')
+    );
+    const totalAtivoCorrente = existencias + clientes + estadoDevedor + outrosDevedores + meiosFinanceiros;
+    const totalAtivo = totalAtivoNaoCorrente + totalAtivoCorrente;
+
+    const capitalSocial = Math.max(0, sumNet('51', 'CREDIT'));
+    const reservas = Math.max(0, sumNet('55', 'CREDIT'));
+    const resultadosTransitados = sumNet('56', 'CREDIT');
+    const resultadoPeriodo = resultadoLiquido;
+    const totalCapitalProprio = capitalSocial + reservas + resultadosTransitados + resultadoPeriodo;
+
+    const fornecedores = Math.max(0, sumNet('32', 'CREDIT'));
+    const estadoCredor = Math.max(
+      0,
+      sumNet('34.1', 'CREDIT') +
+        sumNet('34.2.2', 'CREDIT') +
+        sumNet('34.3', 'CREDIT') +
+        sumNet('34.5.3', 'CREDIT') +
+        sumNet('34.5.7', 'CREDIT') +
+        sumNet('34.6', 'CREDIT')
+    );
+    const remuneracoesPagar = Math.max(0, sumNet('36', 'CREDIT'));
+    const outrosCredores = Math.max(0, sumNet('37', 'CREDIT'));
+    const totalPassivo = fornecedores + estadoCredor + remuneracoesPagar + outrosCredores;
+
+    const totalPassivoCapitalProprio = totalCapitalProprio + totalPassivo;
+    const balancoDiff = Math.abs(totalAtivo - totalPassivoCapitalProprio);
+
+    return {
+      dre: {
+        vendas,
+        servicos,
+        outrosProveitos,
+        totalProveitosOperacionais,
+        cmvmc,
+        margemBruta,
+        fse,
+        pessoal,
+        amortizacoes,
+        outrosCustosOperacionais,
+        totalCustosOperacionais,
+        resultadoOperacional,
+        proveitosFinanceiros,
+        custosFinanceiros,
+        resultadoFinanceiro,
+        rai,
+        impostoEstimado,
+        resultadoLiquido,
+      },
+      balanco: {
+        imobCorporeas,
+        imobIncorporeas,
+        amortAcumuladas,
+        totalAtivoNaoCorrente,
+        existencias,
+        clientes,
+        estadoDevedor,
+        outrosDevedores,
+        meiosFinanceiros,
+        totalAtivoCorrente,
+        totalAtivo,
+        capitalSocial,
+        reservas,
+        resultadosTransitados,
+        resultadoPeriodo,
+        totalCapitalProprio,
+        fornecedores,
+        estadoCredor,
+        remuneracoesPagar,
+        outrosCredores,
+        totalPassivo,
+        totalPassivoCapitalProprio,
+        balancoDiff,
+        isBalanced: balancoDiff < 1.0,
+      },
+    };
+  }, [trialBalance]);
+
+  // Apuramento Periódico de IVA (Modelo 7 AGT)
+  const vatSettlement = useMemo(() => {
+    const rows = trialBalance?.rows || [];
+    const getCred = (code: string) => {
+      const r = rows.find((x) => x.account_code === code);
+      return parseFloat(String(r?.period_credit || 0));
+    };
+    const getDeb = (code: string) => {
+      const r = rows.find((x) => x.account_code === code);
+      return parseFloat(String(r?.period_debit || 0));
+    };
+
+    const ivaLiquidado14 = getCred('34.5.3.1');
+    const ivaLiquidado5 = getCred('34.5.3.2');
+    const totalIvaLiquidado = ivaLiquidado14 + ivaLiquidado5;
+
+    const ivaSuportado = getDeb('34.5.1');
+    const ivaDedutivel = getDeb('34.5.2');
+    const totalIvaDedutivel = ivaSuportado + ivaDedutivel;
+
+    const ivaRegularizarDeb = getDeb('34.5.5');
+    const ivaRegularizarCred = getCred('34.5.5');
+    const ivaRegularizarNet = ivaRegularizarDeb - ivaRegularizarCred;
+
+    const saldoIva = totalIvaLiquidado - totalIvaDedutivel + ivaRegularizarNet;
+    const isPayable = saldoIva >= 0;
+
+    return {
+      ivaLiquidado14,
+      ivaLiquidado5,
+      totalIvaLiquidado,
+      ivaSuportado,
+      ivaDedutivel,
+      totalIvaDedutivel,
+      ivaRegularizarNet,
+      saldoIva: Math.abs(saldoIva),
+      isPayable,
+    };
+  }, [trialBalance]);
+
+  // Abertura do lançamento pré-configurado de Apuramento de IVA
+  const handleOpenVatSettlementEntry = () => {
+    const lines: Array<{
+      account_code: string;
+      description: string;
+      debit_amount: string;
+      credit_amount: string;
+    }> = [];
+
+    if (vatSettlement.totalIvaLiquidado > 0) {
+      lines.push({
+        account_code: vatSettlement.ivaLiquidado14 > 0 ? '34.5.3.1' : '34.5.3',
+        description: 'Zeração IVA Liquidado no Período para Apuramento',
+        debit_amount: vatSettlement.totalIvaLiquidado.toFixed(2),
+        credit_amount: '',
+      });
+    }
+
+    if (vatSettlement.totalIvaDedutivel > 0) {
+      lines.push({
+        account_code: '34.5.2',
+        description: 'Zeração IVA Dedutível no Período para Apuramento',
+        debit_amount: '',
+        credit_amount: vatSettlement.totalIvaDedutivel.toFixed(2),
+      });
+    }
+
+    if (vatSettlement.isPayable) {
+      lines.push({
+        account_code: '34.5.7',
+        description: 'Registo de IVA a Pagar à AGT (Modelo 7)',
+        debit_amount: '',
+        credit_amount: vatSettlement.saldoIva.toFixed(2),
+      });
+    } else {
+      lines.push({
+        account_code: '34.5.8',
+        description: 'Registo de Crédito de IVA a Recuperar (Modelo 7)',
+        debit_amount: vatSettlement.saldoIva.toFixed(2),
+        credit_amount: '',
+      });
+    }
+
+    setManualEntryForm({
+      fiscal_year: activeYear?.year_code || new Date().getFullYear(),
+      journal_code: 'OD',
+      transaction_date: new Date().toISOString().split('T')[0],
+      period: new Date().getMonth() + 1,
+      description: `Apuramento Periódico de IVA - Mês ${new Date().getMonth() + 1}/${activeYear?.year_code || new Date().getFullYear()} (Modelo 7 AGT)`,
+      lines,
+    });
+    setIsPostEntryModalOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Bar */}
@@ -428,6 +888,15 @@ export const AccountingView: React.FC = () => {
           >
             <Download className="w-4 h-4" />
             SAF-T AO (XML)
+          </button>
+
+          <button
+            onClick={handlePrint}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-sm transition"
+            title="Imprimir relatório contabilístico"
+          >
+            <Printer className="w-4 h-4" />
+            Imprimir
           </button>
 
           {chart.length === 0 && (
@@ -539,6 +1008,42 @@ export const AccountingView: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('ledger')}
+            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
+              activeTab === 'ledger'
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            Livro Razão (Extrato de Conta)
+          </button>
+
+          <button
+            onClick={() => setActiveTab('financial_statements')}
+            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
+              activeTab === 'financial_statements'
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
+            }`}
+          >
+            <TrendingUp className="w-4 h-4" />
+            Demonstrações Financeiras (Balanço &amp; DRE)
+          </button>
+
+          <button
+            onClick={() => setActiveTab('vat_settlement')}
+            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
+              activeTab === 'vat_settlement'
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
+            }`}
+          >
+            <Receipt className="w-4 h-4" />
+            Apuramento de IVA (Modelo 7)
+          </button>
+
+          <button
             onClick={() => setActiveTab('chart')}
             className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
               activeTab === 'chart'
@@ -616,32 +1121,43 @@ export const AccountingView: React.FC = () => {
               </label>
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Modelo:</span>
-              <div className="inline-flex rounded-lg border border-slate-300 dark:border-slate-700 p-0.5 bg-slate-100 dark:bg-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setTrialBalanceColumns(4)}
-                  className={`px-3 py-1 rounded-md text-xs font-bold transition ${
-                    trialBalanceColumns === 4
-                      ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400'
-                  }`}
-                >
-                  4 Colunas
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTrialBalanceColumns(6)}
-                  className={`px-3 py-1 rounded-md text-xs font-bold transition ${
-                    trialBalanceColumns === 6
-                      ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400'
-                  }`}
-                >
-                  6 Colunas (Completo)
-                </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Modelo:</span>
+                <div className="inline-flex rounded-lg border border-slate-300 dark:border-slate-700 p-0.5 bg-slate-100 dark:bg-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setTrialBalanceColumns(4)}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition ${
+                      trialBalanceColumns === 4
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    4 Colunas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTrialBalanceColumns(6)}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition ${
+                      trialBalanceColumns === 6
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    6 Colunas (Completo)
+                  </button>
+                </div>
               </div>
+
+              <button
+                onClick={handleExportTrialBalanceCsv}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition"
+                title="Exportar balancete em CSV compatível com Excel"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                Exportar CSV
+              </button>
             </div>
           </GlassCard>
 
@@ -675,13 +1191,14 @@ export const AccountingView: React.FC = () => {
                     <th className="p-3 text-right bg-amber-50/50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 font-extrabold">
                       Saldo Credor
                     </th>
+                    <th className="p-3 text-center w-20">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono text-xs">
                   {isLoadingTrialBalance ? (
                     <tr>
                       <td
-                        colSpan={trialBalanceColumns === 6 ? 8 : 6}
+                        colSpan={trialBalanceColumns === 6 ? 9 : 7}
                         className="p-8 text-center text-slate-400 font-sans"
                       >
                         A carregar balancete de verificação...
@@ -690,7 +1207,7 @@ export const AccountingView: React.FC = () => {
                   ) : filteredTrialBalanceRows.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={trialBalanceColumns === 6 ? 8 : 6}
+                        colSpan={trialBalanceColumns === 6 ? 9 : 7}
                         className="p-8 text-center text-slate-400 font-sans"
                       >
                         Nenhuma conta encontrada para os filtros selecionados.
@@ -708,8 +1225,26 @@ export const AccountingView: React.FC = () => {
                               : 'text-slate-700 dark:text-slate-300'
                           }`}
                         >
-                          <td className="p-2.5 font-bold">{r.account_code}</td>
-                          <td className="p-2.5 font-sans font-medium">{r.account_name}</td>
+                          <td className="p-2.5 font-bold">
+                            <button
+                              type="button"
+                              onClick={() => openAccountLedger(r.account_code)}
+                              className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-mono"
+                              title="Ver movimentos no Livro Razão"
+                            >
+                              {r.account_code}
+                            </button>
+                          </td>
+                          <td className="p-2.5 font-sans font-medium">
+                            <div className="flex items-center gap-2">
+                              <span>{r.account_name}</span>
+                              {!r.is_analytical && (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                                  Mãe
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           {trialBalanceColumns === 6 && (
                             <>
                               <td className="p-2.5 text-right text-slate-500">
@@ -756,6 +1291,17 @@ export const AccountingView: React.FC = () => {
                               '-'
                             )}
                           </td>
+                          <td className="p-2.5 text-center font-sans">
+                            <button
+                              type="button"
+                              onClick={() => openAccountLedger(r.account_code)}
+                              className="px-2 py-1 rounded-md text-[11px] font-bold text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition inline-flex items-center gap-1"
+                              title="Consultar Livro Razão desta conta"
+                            >
+                              <BookOpen className="w-3 h-3" />
+                              Razão
+                            </button>
+                          </td>
                         </tr>
                       );
                     })
@@ -800,6 +1346,7 @@ export const AccountingView: React.FC = () => {
                         value={parseFloat(String(trialBalance?.total_closing_credit || 0))}
                       />
                     </td>
+                    <td></td>
                   </tr>
                 </tfoot>
               </table>
@@ -838,8 +1385,18 @@ export const AccountingView: React.FC = () => {
               </select>
             </div>
 
-            <div className="text-xs text-slate-500 dark:text-slate-400">
-              Mostrando <span className="font-bold">{filteredEntries.length}</span> lançamentos
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                Mostrando <span className="font-bold">{filteredEntries.length}</span> lançamentos
+              </span>
+              <button
+                onClick={handleExportEntriesCsv}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition"
+                title="Exportar livro diário em CSV"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                Exportar CSV
+              </button>
             </div>
           </GlassCard>
 
@@ -948,7 +1505,755 @@ export const AccountingView: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 3: PLANO GERAL DE CONTAS (PGC) */}
+      {/* TAB 3: LIVRO RAZÃO (EXTRATO DE CONTA) */}
+      {activeTab === 'ledger' && (
+        <div className="space-y-4">
+          <GlassCard className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-3 flex-1">
+              <div className="w-full sm:w-80">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Selecionar Conta PGC:
+                </label>
+                <select
+                  value={selectedLedgerAccountCode}
+                  onChange={(e) => setSelectedLedgerAccountCode(e.target.value)}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-mono font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {chart.map((a) => (
+                    <option key={a.id} value={a.account_code}>
+                      {a.account_code} - {a.account_name} ({a.is_analytical ? 'Analítica' : 'Sintética'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="relative flex-1 sm:max-w-xs mt-auto">
+                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar neste extrato..."
+                  value={ledgerSearch}
+                  onChange={(e) => setLedgerSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportLedgerCsv}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition"
+                title="Exportar extrato da conta em CSV"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                Exportar Extrato (CSV)
+              </button>
+            </div>
+          </GlassCard>
+
+          {/* Account Header Summary Card */}
+          <GlassCard className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-slate-900 dark:to-slate-900 border-blue-200 dark:border-slate-800">
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 uppercase">Conta Analítica</span>
+              <div className="text-base font-black text-slate-900 dark:text-white font-mono mt-0.5">
+                {selectedLedgerAccount.code}
+              </div>
+              <div className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">
+                {selectedLedgerAccount.name}
+              </div>
+            </div>
+
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 uppercase">Natureza / Tipo</span>
+              <div className="flex items-center gap-1.5 mt-1">
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    selectedLedgerAccount.nature === 'DEBIT'
+                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
+                      : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300'
+                  }`}
+                >
+                  {selectedLedgerAccount.nature === 'DEBIT' ? 'DEVEDORA' : 'CREDORA'}
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  {selectedLedgerAccount.is_analytical ? 'Analítica' : 'Sintética'}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 uppercase">Débito do Período</span>
+              <div className="text-sm font-mono font-bold text-blue-600 dark:text-blue-400 mt-1">
+                <KzAmount value={selectedLedgerAccount.period_debit} />
+              </div>
+            </div>
+
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 uppercase">Crédito do Período</span>
+              <div className="text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+                <KzAmount value={selectedLedgerAccount.period_credit} />
+              </div>
+            </div>
+
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 uppercase">Saldo Final da Conta</span>
+              <div className="text-sm font-mono font-black mt-1">
+                {selectedLedgerAccount.closing_debit > 0 ? (
+                  <span className="text-emerald-700 dark:text-emerald-400">
+                    <KzAmount value={selectedLedgerAccount.closing_debit} /> (Devedor)
+                  </span>
+                ) : selectedLedgerAccount.closing_credit > 0 ? (
+                  <span className="text-amber-700 dark:text-amber-400">
+                    <KzAmount value={selectedLedgerAccount.closing_credit} /> (Credor)
+                  </span>
+                ) : (
+                  <span className="text-slate-500">0,00 Kz (Saldo Nulo)</span>
+                )}
+              </div>
+            </div>
+          </GlassCard>
+
+          {/* Table of Ledger Entries */}
+          <GlassCard className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/75 text-xs font-bold text-slate-600 dark:text-slate-300">
+                    <th className="p-3 w-28">Data</th>
+                    <th className="p-3 w-20">Lanç.</th>
+                    <th className="p-3 w-32">Diário</th>
+                    <th className="p-3">Histórico / Descrição</th>
+                    <th className="p-3 text-right text-blue-700 dark:text-blue-400 w-36">
+                      Débito (Kz)
+                    </th>
+                    <th className="p-3 text-right text-indigo-700 dark:text-indigo-400 w-36">
+                      Crédito (Kz)
+                    </th>
+                    <th className="p-3 text-right text-slate-900 dark:text-white font-extrabold w-44">
+                      Saldo Progressivo
+                    </th>
+                    <th className="p-3 text-center w-16">Ação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono text-xs">
+                  {ledgerEntries.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-8 text-center text-slate-400 font-sans">
+                        Nenhum movimento contabilístico registado para a conta{' '}
+                        <span className="font-bold">{selectedLedgerAccount.code}</span> no período selecionado.
+                      </td>
+                    </tr>
+                  ) : (
+                    ledgerEntries.map((l) => (
+                      <tr
+                        key={l.id}
+                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition"
+                      >
+                        <td className="p-3 text-slate-600 dark:text-slate-300 font-sans">
+                          {l.date}
+                        </td>
+                        <td className="p-3 font-bold text-blue-600 dark:text-blue-400">
+                          #{l.entry_number}
+                        </td>
+                        <td className="p-3 font-sans">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                            {l.journal}
+                          </span>
+                        </td>
+                        <td className="p-3 font-sans font-medium text-slate-800 dark:text-slate-200">
+                          {l.description}
+                        </td>
+                        <td className="p-3 text-right font-semibold text-blue-600 dark:text-blue-400">
+                          {l.debit > 0 ? <KzAmount value={l.debit} /> : '-'}
+                        </td>
+                        <td className="p-3 text-right font-semibold text-indigo-600 dark:text-indigo-400">
+                          {l.credit > 0 ? <KzAmount value={l.credit} /> : '-'}
+                        </td>
+                        <td className="p-3 text-right font-bold">
+                          <span
+                            className={
+                              l.runningBalance >= 0
+                                ? 'text-emerald-700 dark:text-emerald-400'
+                                : 'text-amber-700 dark:text-amber-400'
+                            }
+                          >
+                            <KzAmount value={Math.abs(l.runningBalance)} />{' '}
+                            <span className="text-[10px] font-normal">
+                              ({l.runningBalance >= 0 ? 'D' : 'C'})
+                            </span>
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedEntry(l.rawEntry)}
+                            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-blue-600"
+                            title="Ver lançamento em partidas dobradas"
+                          >
+                            <FileText className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* TAB 4: DEMONSTRAÇÕES FINANCEIRAS PGC (BALANÇO & DRE) */}
+      {activeTab === 'financial_statements' && (
+        <div className="space-y-4">
+          <GlassCard className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="inline-flex rounded-xl border border-slate-300 dark:border-slate-700 p-1 bg-slate-100 dark:bg-slate-800">
+              <button
+                type="button"
+                onClick={() => setFinancialSubTab('balance_sheet')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
+                  financialSubTab === 'balance_sheet'
+                    ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                Balanço Patrimonial PGC
+              </button>
+              <button
+                type="button"
+                onClick={() => setFinancialSubTab('income_statement')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
+                  financialSubTab === 'income_statement'
+                    ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                Demonstração de Resultados por Natureza (DRE)
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-500">
+              Exercício Fiscal: <span className="font-bold text-slate-800 dark:text-slate-200">{activeYear?.year_code || 2026}</span> (Angola - PGC Classes 1 a 8)
+            </div>
+          </GlassCard>
+
+          {/* Subtab 4.1: Balanço Patrimonial */}
+          {financialSubTab === 'balance_sheet' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Ativo */}
+                <GlassCard className="p-5 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+                    <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                      ATIVO (Classes 1, 2, 3, 4)
+                    </h3>
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 font-mono">
+                      <KzAmount value={financialStatements.balanco.totalAtivo} />
+                    </span>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <span className="font-bold text-slate-500 uppercase tracking-wide block mb-1">
+                        Ativo Não Corrente (Classe 4)
+                      </span>
+                      <div className="space-y-1.5 pl-2 border-l-2 border-blue-200 dark:border-blue-900">
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-600 dark:text-slate-300">41. Imobilizações Corpóreas</span>
+                          <span className="font-mono font-semibold">
+                            <KzAmount value={financialStatements.balanco.imobCorporeas} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-600 dark:text-slate-300">42. Imobilizações Incorpóreas</span>
+                          <span className="font-mono font-semibold">
+                            <KzAmount value={financialStatements.balanco.imobIncorporeas} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1 text-slate-500">
+                          <span>(-) 43. Amortizações Acumuladas</span>
+                          <span className="font-mono font-semibold">
+                            (<KzAmount value={financialStatements.balanco.amortAcumuladas} />)
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1 font-bold border-t border-slate-200 dark:border-slate-800">
+                          <span>Subtotal Ativo Não Corrente</span>
+                          <span className="font-mono text-blue-600">
+                            <KzAmount value={financialStatements.balanco.totalAtivoNaoCorrente} />
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2">
+                      <span className="font-bold text-slate-500 uppercase tracking-wide block mb-1">
+                        Ativo Corrente (Classes 1, 2, 3)
+                      </span>
+                      <div className="space-y-1.5 pl-2 border-l-2 border-emerald-200 dark:border-emerald-900">
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-600 dark:text-slate-300">Classe 2. Existências (Armazém / Mercadorias)</span>
+                          <span className="font-mono font-semibold">
+                            <KzAmount value={financialStatements.balanco.existencias} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-600 dark:text-slate-300">31. Clientes (Nacionais e Estrangeiros)</span>
+                          <span className="font-mono font-semibold">
+                            <KzAmount value={financialStatements.balanco.clientes} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-600 dark:text-slate-300">34. Estado Devedor (IVA Dedutível, Retenções 6,5%)</span>
+                          <span className="font-mono font-semibold">
+                            <KzAmount value={financialStatements.balanco.estadoDevedor} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-600 dark:text-slate-300">37. Outros Devedores</span>
+                          <span className="font-mono font-semibold">
+                            <KzAmount value={financialStatements.balanco.outrosDevedores} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1 font-bold text-slate-900 dark:text-white">
+                          <span>Classe 1. Meios Financeiros Líquidos (Caixa e Bancos)</span>
+                          <span className="font-mono font-bold text-emerald-600">
+                            <KzAmount value={financialStatements.balanco.meiosFinanceiros} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1 font-bold border-t border-slate-200 dark:border-slate-800">
+                          <span>Subtotal Ativo Corrente</span>
+                          <span className="font-mono text-emerald-600">
+                            <KzAmount value={financialStatements.balanco.totalAtivoCorrente} />
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t-2 border-slate-300 dark:border-slate-700 flex justify-between items-center text-sm font-black">
+                    <span className="uppercase">TOTAL DO ATIVO</span>
+                    <span className="font-mono text-blue-600 dark:text-blue-400 text-base">
+                      <KzAmount value={financialStatements.balanco.totalAtivo} />
+                    </span>
+                  </div>
+                </GlassCard>
+
+                {/* Passivo e Capital Próprio */}
+                <GlassCard className="p-5 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+                    <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                      CAPITAL PRÓPRIO E PASSIVO (Classes 3, 5, 8)
+                    </h3>
+                    <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 font-mono">
+                      <KzAmount value={financialStatements.balanco.totalPassivoCapitalProprio} />
+                    </span>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <span className="font-bold text-slate-500 uppercase tracking-wide block mb-1">
+                        Capital Próprio (Classes 5 e 8)
+                      </span>
+                      <div className="space-y-1.5 pl-2 border-l-2 border-indigo-200 dark:border-indigo-900">
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-600 dark:text-slate-300">51. Capital Social</span>
+                          <span className="font-mono font-semibold">
+                            <KzAmount value={financialStatements.balanco.capitalSocial} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-600 dark:text-slate-300">55. Reservas</span>
+                          <span className="font-mono font-semibold">
+                            <KzAmount value={financialStatements.balanco.reservas} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-600 dark:text-slate-300">56. Resultados Transitados</span>
+                          <span className="font-mono font-semibold">
+                            <KzAmount value={financialStatements.balanco.resultadosTransitados} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1 font-bold text-indigo-600 dark:text-indigo-400">
+                          <span>88. Resultado Líquido do Exercício (Apurado)</span>
+                          <span className="font-mono font-bold">
+                            <KzAmount value={financialStatements.balanco.resultadoPeriodo} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1 font-bold border-t border-slate-200 dark:border-slate-800">
+                          <span>Subtotal Capital Próprio</span>
+                          <span className="font-mono text-indigo-600">
+                            <KzAmount value={financialStatements.balanco.totalCapitalProprio} />
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2">
+                      <span className="font-bold text-slate-500 uppercase tracking-wide block mb-1">
+                        Passivo Corrente &amp; Não Corrente (Classe 3)
+                      </span>
+                      <div className="space-y-1.5 pl-2 border-l-2 border-amber-200 dark:border-amber-900">
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-600 dark:text-slate-300">32. Fornecedores Nacionais e Estrangeiros</span>
+                          <span className="font-mono font-semibold">
+                            <KzAmount value={financialStatements.balanco.fornecedores} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-600 dark:text-slate-300">34. Estado Credor (IVA Liquidado/a Pagar, Retenções, INSS)</span>
+                          <span className="font-mono font-semibold">
+                            <KzAmount value={financialStatements.balanco.estadoCredor} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-600 dark:text-slate-300">36. Remunerações a Pagar ao Pessoal</span>
+                          <span className="font-mono font-semibold">
+                            <KzAmount value={financialStatements.balanco.remuneracoesPagar} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-600 dark:text-slate-300">37. Outros Credores</span>
+                          <span className="font-mono font-semibold">
+                            <KzAmount value={financialStatements.balanco.outrosCredores} />
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1 font-bold border-t border-slate-200 dark:border-slate-800">
+                          <span>Subtotal Passivo</span>
+                          <span className="font-mono text-amber-600">
+                            <KzAmount value={financialStatements.balanco.totalPassivo} />
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t-2 border-slate-300 dark:border-slate-700 flex justify-between items-center text-sm font-black">
+                    <span className="uppercase">TOTAL PASSIVO + CAPITAL PRÓPRIO</span>
+                    <span className="font-mono text-indigo-600 dark:text-indigo-400 text-base">
+                      <KzAmount value={financialStatements.balanco.totalPassivoCapitalProprio} />
+                    </span>
+                  </div>
+                </GlassCard>
+              </div>
+
+              {/* Equilíbrio Patrimonial Alert Card */}
+              <GlassCard
+                className={`p-4 flex items-center justify-between text-xs font-bold ${
+                  financialStatements.balanco.isBalanced
+                    ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300 border-emerald-200'
+                    : 'bg-amber-50 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300 border-amber-200'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {financialStatements.balanco.isBalanced ? (
+                    <CheckCircle className="w-5 h-5 text-emerald-600" />
+                  ) : (
+                    <AlertTriangle className="w-5 h-5 text-amber-600" />
+                  )}
+                  <span>
+                    {financialStatements.balanco.isBalanced
+                      ? 'Equação Fundamental do Balanço Equilibrada: Ativo = Capital Próprio + Passivo'
+                      : `Ajuste Transitório de Fecho: Diferença de ${financialStatements.balanco.balancoDiff.toFixed(
+                          2
+                        )} Kz até apuramento final de fim de ano`}
+                  </span>
+                </div>
+                <span className="font-mono">
+                  Δ = {financialStatements.balanco.balancoDiff.toFixed(2)} Kz
+                </span>
+              </GlassCard>
+            </div>
+          )}
+
+          {/* Subtab 4.2: DRE (Demonstração de Resultados por Natureza) */}
+          {financialSubTab === 'income_statement' && (
+            <GlassCard className="p-6 max-w-4xl mx-auto space-y-4">
+              <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
+                <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                  Demonstração de Resultados por Natureza (PGC Angola - Classes 6, 7 e 8)
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Apuramento económico dos proveitos e custos operacionais, financeiros e determinação do Resultado Líquido
+                </p>
+              </div>
+
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-mono">
+                {/* 1. Proveitos Operacionais */}
+                <div className="py-2.5 flex justify-between font-sans font-bold text-slate-800 dark:text-slate-200">
+                  <span>1. Vendas de Mercadorias (Conta 71)</span>
+                  <span className="font-mono font-semibold text-emerald-600">
+                    <KzAmount value={financialStatements.dre.vendas} />
+                  </span>
+                </div>
+                <div className="py-2.5 flex justify-between font-sans font-bold text-slate-800 dark:text-slate-200">
+                  <span>2. Prestação de Serviços (Conta 72)</span>
+                  <span className="font-mono font-semibold text-emerald-600">
+                    <KzAmount value={financialStatements.dre.servicos} />
+                  </span>
+                </div>
+                <div className="py-2.5 flex justify-between font-sans text-slate-600 dark:text-slate-400">
+                  <span>3. Outros Proveitos Operacionais (Contas 73 / 74)</span>
+                  <span className="font-mono font-semibold">
+                    <KzAmount value={financialStatements.dre.outrosProveitos} />
+                  </span>
+                </div>
+                <div className="py-2.5 flex justify-between font-sans font-black bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 px-2 rounded-lg">
+                  <span>TOTAL DOS PROVEITOS OPERACIONAIS</span>
+                  <span className="font-mono">
+                    <KzAmount value={financialStatements.dre.totalProveitosOperacionais} />
+                  </span>
+                </div>
+
+                {/* 2. Custos Operacionais */}
+                <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
+                  <span>4. Custo das Mercadorias Vendidas e Matérias Consumidas - CMVMC (Conta 61)</span>
+                  <span className="font-mono font-semibold text-red-600">
+                    (<KzAmount value={financialStatements.dre.cmvmc} />)
+                  </span>
+                </div>
+                <div className="py-2.5 flex justify-between font-sans font-black bg-blue-50/50 dark:bg-blue-950/20 text-blue-800 dark:text-blue-300 px-2 rounded-lg">
+                  <span>MARGEM BRUTA DAS VENDAS</span>
+                  <span className="font-mono">
+                    <KzAmount value={financialStatements.dre.margemBruta} />
+                  </span>
+                </div>
+
+                <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
+                  <span>5. Fornecimentos e Serviços Externos - FSE (Conta 62: Água, Luz, Rendas, Internet)</span>
+                  <span className="font-mono font-semibold text-red-600">
+                    (<KzAmount value={financialStatements.dre.fse} />)
+                  </span>
+                </div>
+                <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
+                  <span>6. Custos com o Pessoal (Conta 63: Remunerações e INSS Patronal)</span>
+                  <span className="font-mono font-semibold text-red-600">
+                    (<KzAmount value={financialStatements.dre.pessoal} />)
+                  </span>
+                </div>
+                <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
+                  <span>7. Amortizações do Exercício (Conta 64)</span>
+                  <span className="font-mono font-semibold text-red-600">
+                    (<KzAmount value={financialStatements.dre.amortizacoes} />)
+                  </span>
+                </div>
+                <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
+                  <span>8. Outros Custos e Perdas Operacionais / Tributos (Conta 65)</span>
+                  <span className="font-mono font-semibold text-red-600">
+                    (<KzAmount value={financialStatements.dre.outrosCustosOperacionais} />)
+                  </span>
+                </div>
+
+                {/* Resultado Operacional */}
+                <div className="py-3 flex justify-between font-sans font-black bg-indigo-50 dark:bg-indigo-950/30 text-indigo-900 dark:text-indigo-200 px-3 rounded-xl text-sm">
+                  <span>= RESULTADO OPERACIONAL (EBIT)</span>
+                  <span className="font-mono">
+                    <KzAmount value={financialStatements.dre.resultadoOperacional} />
+                  </span>
+                </div>
+
+                {/* 3. Resultados Financeiros */}
+                <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
+                  <span>(+) Proveitos e Ganhos Financeiros (Conta 75: Juros e Ganhos Cambiais 75.3)</span>
+                  <span className="font-mono font-semibold text-emerald-600">
+                    <KzAmount value={financialStatements.dre.proveitosFinanceiros} />
+                  </span>
+                </div>
+                <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
+                  <span>(-) Custos e Perdas Financeiras (Conta 66: Juros, Perdas Cambiais 66.3, Despesas Bancárias)</span>
+                  <span className="font-mono font-semibold text-red-600">
+                    (<KzAmount value={financialStatements.dre.custosFinanceiros} />)
+                  </span>
+                </div>
+                <div className="py-2.5 flex justify-between font-sans font-bold text-slate-800 dark:text-slate-200">
+                  <span>= RESULTADO FINANCEIRO (Conta 82)</span>
+                  <span className="font-mono">
+                    <KzAmount value={financialStatements.dre.resultadoFinanceiro} />
+                  </span>
+                </div>
+
+                {/* RAI */}
+                <div className="py-2.5 flex justify-between font-sans font-bold text-slate-900 dark:text-white">
+                  <span>= RESULTADO ANTES DE IMPOSTOS (RAI / EBT)</span>
+                  <span className="font-mono font-bold">
+                    <KzAmount value={financialStatements.dre.rai} />
+                  </span>
+                </div>
+
+                {/* Imposto */}
+                <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
+                  <span>(-) Imposto Industrial Estimado (Conta 87)</span>
+                  <span className="font-mono font-semibold text-red-600">
+                    (<KzAmount value={financialStatements.dre.impostoEstimado} />)
+                  </span>
+                </div>
+
+                {/* Resultado Líquido */}
+                <div
+                  className={`py-3.5 flex justify-between font-sans font-black px-3 rounded-xl text-base ${
+                    financialStatements.dre.resultadoLiquido >= 0
+                      ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200'
+                      : 'bg-red-100 text-red-900 dark:bg-red-950/60 dark:text-red-200'
+                  }`}
+                >
+                  <span>= RESULTADO LÍQUIDO DO EXERCÍCIO (Conta 88)</span>
+                  <span className="font-mono">
+                    <KzAmount value={financialStatements.dre.resultadoLiquido} />
+                  </span>
+                </div>
+              </div>
+            </GlassCard>
+          )}
+        </div>
+      )}
+
+      {/* TAB 5: APURAMENTO DE IVA (MODELO 7 AGT) */}
+      {activeTab === 'vat_settlement' && (
+        <div className="space-y-6">
+          <GlassCard className="p-6 max-w-4xl mx-auto space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-blue-600" />
+                  Quadro Sinóptico de Apuramento Periódico de IVA
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Em cumprimento do Código do IVA de Angola (AGT) e Declaração Periódica Modelo 7
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleOpenVatSettlementEntry}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition"
+              >
+                <PlusCircle className="w-4 h-4" />
+                Gerar Lançamento de Apuramento (Conta 34.5.6)
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200 dark:bg-blue-950/20 dark:border-blue-900">
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase">
+                  IVA Liquidado (Vendas)
+                </span>
+                <div className="text-lg font-black text-blue-700 dark:text-blue-400 font-mono mt-1">
+                  <KzAmount value={vatSettlement.totalIvaLiquidado} />
+                </div>
+                <div className="mt-2 text-[11px] text-slate-500 space-y-0.5">
+                  <div className="flex justify-between">
+                    <span>Taxa Geral 14% (34.5.3.1):</span>
+                    <span className="font-mono font-bold">
+                      <KzAmount value={vatSettlement.ivaLiquidado14} />
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Taxa Reduzida 5% (34.5.3.2):</span>
+                    <span className="font-mono font-bold">
+                      <KzAmount value={vatSettlement.ivaLiquidado5} />
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-200 dark:bg-indigo-950/20 dark:border-indigo-900">
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase">
+                  IVA Dedutível (Compras)
+                </span>
+                <div className="text-lg font-black text-indigo-700 dark:text-indigo-400 font-mono mt-1">
+                  <KzAmount value={vatSettlement.totalIvaDedutivel} />
+                </div>
+                <div className="mt-2 text-[11px] text-slate-500 space-y-0.5">
+                  <div className="flex justify-between">
+                    <span>IVA Suportado (34.5.1):</span>
+                    <span className="font-mono font-bold">
+                      <KzAmount value={vatSettlement.ivaSuportado} />
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>IVA Dedutível (34.5.2):</span>
+                    <span className="font-mono font-bold">
+                      <KzAmount value={vatSettlement.ivaDedutivel} />
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                className={`p-4 rounded-xl border ${
+                  vatSettlement.isPayable
+                    ? 'bg-amber-50/70 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900'
+                    : 'bg-emerald-50/70 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-900'
+                }`}
+              >
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase">
+                  {vatSettlement.isPayable ? 'IVA a Pagar à AGT' : 'Crédito de IVA a Recuperar'}
+                </span>
+                <div
+                  className={`text-lg font-black font-mono mt-1 ${
+                    vatSettlement.isPayable ? 'text-amber-700' : 'text-emerald-700'
+                  }`}
+                >
+                  <KzAmount value={vatSettlement.saldoIva} />
+                </div>
+                <div className="mt-2 text-[11px] text-slate-500">
+                  {vatSettlement.isPayable
+                    ? 'Conta PGC: 34.5.7 (IVA a Pagar)'
+                    : 'Conta PGC: 34.5.8 (IVA a Recuperar)'}
+                </div>
+              </div>
+            </div>
+
+            {/* Reconciliation table */}
+            <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-slate-100 dark:bg-slate-800 font-bold font-sans">
+                  <tr>
+                    <th className="p-3">Campo do Modelo 7</th>
+                    <th className="p-3">Conta PGC</th>
+                    <th className="p-3 text-right">Valor Apurado (Kz)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-sans">
+                  <tr>
+                    <td className="p-3">Total do IVA Liquidado às taxas de 14% e 5%</td>
+                    <td className="p-3 font-mono font-bold text-blue-600">34.5.3</td>
+                    <td className="p-3 text-right font-mono font-bold">
+                      <KzAmount value={vatSettlement.totalIvaLiquidado} />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="p-3">Total do IVA Dedutível (Existências, Imobilizado e FSE)</td>
+                    <td className="p-3 font-mono font-bold text-indigo-600">34.5.2</td>
+                    <td className="p-3 text-right font-mono font-bold">
+                      (<KzAmount value={vatSettlement.totalIvaDedutivel} />)
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="p-3">Regularizações de IVA a favor do Estado / Sujeito Passivo</td>
+                    <td className="p-3 font-mono font-bold text-slate-600">34.5.5</td>
+                    <td className="p-3 text-right font-mono font-bold">
+                      <KzAmount value={vatSettlement.ivaRegularizarNet} />
+                    </td>
+                  </tr>
+                  <tr className="bg-slate-50 dark:bg-slate-900 font-bold">
+                    <td className="p-3 uppercase">
+                      Posição Líquida Final do Período ({vatSettlement.isPayable ? 'A Pagar' : 'A Recuperar'})
+                    </td>
+                    <td className="p-3 font-mono">
+                      {vatSettlement.isPayable ? '34.5.7' : '34.5.8'}
+                    </td>
+                    <td className="p-3 text-right font-mono text-sm text-blue-600 dark:text-blue-400">
+                      <KzAmount value={vatSettlement.saldoIva} />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* TAB 6: PLANO GERAL DE CONTAS (PGC) */}
       {activeTab === 'chart' && (
         <div className="space-y-4">
           <GlassCard className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1007,18 +2312,19 @@ export const AccountingView: React.FC = () => {
                     <th className="p-3 w-36">Tipo</th>
                     <th className="p-3 w-32">SAF-T Grupo</th>
                     <th className="p-3 w-32 text-center">Reservada</th>
+                    <th className="p-3 w-24 text-center">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
                   {isLoadingChart ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-400">
+                      <td colSpan={7} className="p-8 text-center text-slate-400">
                         A carregar Plano Geral de Contabilidade...
                       </td>
                     </tr>
                   ) : filteredChartAccounts.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-400">
+                      <td colSpan={7} className="p-8 text-center text-slate-400">
                         Nenhuma conta encontrada.
                       </td>
                     </tr>
@@ -1031,7 +2337,14 @@ export const AccountingView: React.FC = () => {
                         }`}
                       >
                         <td className="p-3 font-mono font-bold text-slate-900 dark:text-white">
-                          {a.account_code}
+                          <button
+                            type="button"
+                            onClick={() => openAccountLedger(a.account_code)}
+                            className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                            title="Ver no Livro Razão"
+                          >
+                            {a.account_code}
+                          </button>
                         </td>
                         <td className="p-3 font-medium text-slate-800 dark:text-slate-200">
                           {a.account_name}
@@ -1068,6 +2381,17 @@ export const AccountingView: React.FC = () => {
                             <span className="text-[10px] text-slate-400">Personalizada</span>
                           )}
                         </td>
+                        <td className="p-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => openAccountLedger(a.account_code)}
+                            className="px-2 py-1 rounded text-[11px] font-bold text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/20 transition inline-flex items-center gap-1"
+                            title="Ver movimentos no Razão"
+                          >
+                            <BookOpen className="w-3 h-3" />
+                            Razão
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -1078,7 +2402,7 @@ export const AccountingView: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 4: DIÁRIOS & EXERCÍCIOS FISCAIS */}
+      {/* TAB 7: DIÁRIOS & EXERCÍCIOS FISCAIS */}
       {activeTab === 'journals_years' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Diários Card */}
@@ -1134,6 +2458,13 @@ export const AccountingView: React.FC = () => {
                   Anos fiscais de tributação e prestação de contas à AGT
                 </p>
               </div>
+              <button
+                onClick={() => setIsNewFiscalYearModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                Novo Exercício
+              </button>
             </div>
 
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1152,15 +2483,31 @@ export const AccountingView: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                  <span
-                    className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                      fy.status === 'OPEN'
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
-                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                    }`}
-                  >
-                    {fy.status === 'OPEN' ? 'ABERTO' : 'ENCERRADO'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                        fy.status === 'OPEN'
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                          : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                      }`}
+                    >
+                      {fy.status === 'OPEN' ? 'ABERTO' : 'ENCERRADO'}
+                    </span>
+                    {fy.status === 'OPEN' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setYearToClose(fy.year_code);
+                          setIsCloseFiscalYearModalOpen(true);
+                        }}
+                        className="px-2.5 py-1 rounded-lg border border-red-300 dark:border-red-800 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs font-bold transition flex items-center gap-1"
+                        title="Encerrar exercício fiscal e gerar lançamento de fecho na Classe 8"
+                      >
+                        <Lock className="w-3 h-3" />
+                        Encerrar
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1168,7 +2515,7 @@ export const AccountingView: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 5: REAVALIAÇÃO CAMBIAL */}
+      {/* TAB 8: REAVALIAÇÃO CAMBIAL */}
       {activeTab === 'revaluation' && (
         <div className="space-y-4">
           <GlassCard className="p-6 max-w-2xl">
@@ -1826,8 +3173,112 @@ export const AccountingView: React.FC = () => {
         </div>
       )}
 
+      {/* MODAL: NOVO EXERCÍCIO FISCAL */}
+      {isNewFiscalYearModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-blue-600" />
+                Novo Exercício Fiscal
+              </h3>
+              <button
+                onClick={() => setIsNewFiscalYearModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Ano Fiscal (Ex.: {new Date().getFullYear() + 1})
+                </label>
+                <input
+                  type="number"
+                  min="2020"
+                  max="2050"
+                  value={newFiscalYearCode}
+                  onChange={(e) => setNewFiscalYearCode(parseInt(e.target.value) || 2027)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-mono font-bold"
+                />
+              </div>
+              <p className="text-xs text-slate-500">
+                O exercício fiscal será criado com início a 1 de Janeiro e término a 31 de Dezembro, pronto para acolher lançamentos contabilísticos e apuramentos.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsNewFiscalYearModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 text-sm font-semibold"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={openFiscalYearMutation.isPending || !newFiscalYearCode}
+                onClick={() => openFiscalYearMutation.mutate(newFiscalYearCode)}
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md transition"
+              >
+                {openFiscalYearMutation.isPending ? 'A criar...' : 'Abrir Exercício'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR FECHO DE EXERCÍCIO FISCAL */}
+      {isCloseFiscalYearModalOpen && yearToClose && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-3 text-amber-600">
+              <Lock className="w-6 h-6" />
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Encerrar Exercício Fiscal {yearToClose}
+              </h3>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              O encerramento do exercício fiscal {yearToClose} irá executar automaticamente o apuramento de contas de fim de ano:
+            </p>
+
+            <ul className="text-xs text-slate-500 space-y-1 list-disc pl-5">
+              <li>Zera todos os saldos devedores de Custos (Classe 6) contra a Conta 81 (Resultados Operacionais)</li>
+              <li>Zera todos os saldos credores de Proveitos (Classe 7) contra a Conta 81 (Resultados Operacionais)</li>
+              <li>Transfere os Resultados Financeiros (Conta 82) e apura o Resultado Líquido do Exercício na Conta 88</li>
+              <li>Gera o lote no Diário oficial de <span className="font-mono font-bold">FECHO</span></li>
+              <li>Tranca o exercício contra alterações retroativas não auditadas</li>
+            </ul>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCloseFiscalYearModalOpen(false);
+                  setYearToClose(null);
+                }}
+                className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 text-sm font-semibold"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={closeFiscalYearMutation.isPending}
+                onClick={() => closeFiscalYearMutation.mutate(yearToClose)}
+                className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-md transition"
+              >
+                {closeFiscalYearMutation.isPending ? 'A processar fecho...' : 'Confirmar Encerramento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: DETALHES DE LANÇAMENTO E PARTIDAS DOBRADAS */}
-      {selectedEntry && (
+      {selectedEntry && !isEditEntryModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-3xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
@@ -1886,7 +3337,17 @@ export const AccountingView: React.FC = () => {
                     <tr key={l.id}>
                       <td className="p-2.5 text-slate-500 font-sans">#{l.line_number}</td>
                       <td className="p-2.5 font-bold text-slate-900 dark:text-white">
-                        {l.account_code}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedEntry(null);
+                            openAccountLedger(l.account_code);
+                          }}
+                          className="text-blue-600 hover:underline"
+                          title="Ver Extrato no Razão"
+                        >
+                          {l.account_code}
+                        </button>
                       </td>
                       <td className="p-2.5 font-sans text-slate-700 dark:text-slate-300">
                         {l.description || '-'}

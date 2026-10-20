@@ -56,6 +56,7 @@ export interface IssueInvoicePayload {
   documentType: string;
   seriesCode: string;
   fiscalYear: number;
+  cashSessionId?: string;
   customerName: string;
   customerNif?: string;
   customerAddress?: string;
@@ -204,7 +205,15 @@ export const invoicingApi = {
   },
 
   issueInvoice: async (payload: IssueInvoicePayload): Promise<IssueInvoiceResult & Partial<Invoice>> => {
-    const response = await apiClient.post<IssueInvoiceResult & Partial<Invoice>>('/api/v1/fiscal/invoices', payload);
+    const headers: Record<string, string> = {};
+    if (payload.cashSessionId) {
+      headers['X-Cash-Session-ID'] = payload.cashSessionId;
+    }
+    const response = await apiClient.post<IssueInvoiceResult & Partial<Invoice>>(
+      '/api/v1/fiscal/invoices',
+      payload,
+      { headers }
+    );
     const data = response.data;
     if (data.invoiceId && !data.id) {
       data.id = data.invoiceId;

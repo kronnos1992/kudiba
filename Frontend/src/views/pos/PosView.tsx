@@ -10,6 +10,7 @@ import {
   Plus,
   Minus,
   AlertCircle,
+  AlertTriangle,
   Clock,
   Loader2,
   Unlock,
@@ -20,6 +21,8 @@ import {
   Store,
   RefreshCw,
   Users,
+  Coins,
+  Banknote,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
@@ -47,6 +50,12 @@ export const PosView: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('NUMERARIO');
+  const [amountTendered, setAmountTendered] = useState<string>('');
+  const [lastPaymentSummary, setLastPaymentSummary] = useState<{
+    method: string;
+    tendered: number;
+    change: number;
+  } | null>(null);
   const [customerName, setCustomerName] = useState<string>('Consumidor Final');
   const [customerNif, setCustomerNif] = useState<string>('999999999');
   const [seriesCode, setSeriesCode] = useState<string>('2026A');
@@ -117,6 +126,8 @@ export const PosView: React.FC = () => {
     enabled: Boolean(activeRegister?.id),
   });
 
+  const isCashSessionOpen = currentSession?.status === 'OPEN';
+
   const { data: posPanel, isLoading: isLoadingPanel, refetch: refetchPanel } = useQuery<PosPanelResponse>({
     queryKey: ['pos_panel', activeTenant?.id, activeRegister?.id, panelDate],
     queryFn: () =>
@@ -151,6 +162,12 @@ export const PosView: React.FC = () => {
   const totalTax = cart.reduce((acc, item) => acc + item.unitPrice * item.qty * (item.taxRate / 100), 0);
   const totalGross = subtotal + totalTax;
 
+  const tenderedNum = Number(amountTendered) || 0;
+  const changeDue =
+    selectedPaymentMethod === 'NUMERARIO' && tenderedNum >= totalGross
+      ? tenderedNum - totalGross
+      : 0;
+
   // Filtragem de catálogo
   const filteredProducts = products.filter(
     (p) =>
@@ -159,6 +176,26 @@ export const PosView: React.FC = () => {
       (p.ref_id && p.ref_id.toLowerCase().includes(productSearch.toLowerCase())) ||
       (p.barcode && p.barcode.includes(productSearch))
   );
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      const query = productSearch.trim().toLowerCase();
+      if (!query) return;
+
+      const exactMatch =
+        products.find(
+          (p) =>
+            (p.barcode && p.barcode.toLowerCase() === query) ||
+            p.code.toLowerCase() === query ||
+            (p.ref_id && p.ref_id.toLowerCase() === query)
+        ) || (filteredProducts.length === 1 ? filteredProducts[0] : null);
+
+      if (exactMatch) {
+        handleAddToCart(exactMatch);
+        setProductSearch('');
+      }
+    }
+  };
 
   const handleAddToCart = (product: Product) => {
     setCart((prev) => {
@@ -298,6 +335,11 @@ export const PosView: React.FC = () => {
   const issueFrMutation = useMutation({
     mutationFn: async () => {
       setErrorMessage(null);
+      if (!isCashSessionOpen) {
+        const msg = 'Não é possível emitir faturas com o turno de caixa fechado. Abra o turno de caixa primeiro.';
+        setErrorMessage(msg);
+        throw new Error(msg);
+      }
       const currentYear = new Date().getFullYear();
       const activeSeries =
         seriesList.find((s) => s.documentType === 'FR' && s.isActive)?.seriesCode ||
@@ -313,6 +355,7 @@ export const PosView: React.FC = () => {
         documentType: 'FR',
         seriesCode: activeSeries,
         fiscalYear: currentYear,
+        cashSessionId: currentSession?.id,
         customerName: customerNameVal,
         customerNif: customerNifVal,
         customerAddress: activeTenant?.address_detail || 'Venda ao Balcão (POS)',
@@ -418,8 +461,23 @@ export const PosView: React.FC = () => {
     },
     onSuccess: (data) => {
       setIssuedInvoice(data);
+      const gross = Number(data.grossTotal || totalGross);
+      const tenderedForSummary =
+        selectedPaymentMethod === 'NUMERARIO'
+          ? (tenderedNum >= gross ? tenderedNum : gross)
+          : gross;
+      const changeForSummary =
+        selectedPaymentMethod === 'NUMERARIO' && tenderedNum > gross
+          ? tenderedNum - gross
+          : 0;
+      setLastPaymentSummary({
+        method: selectedPaymentMethod,
+        tendered: tenderedForSummary,
+        change: changeForSummary,
+      });
       setTicketModalOpen(true);
       setCart([]);
+      setAmountTendered('');
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: ['pos_products'] });
       queryClient.invalidateQueries({ queryKey: ['pos_current_session'] });
@@ -565,34 +623,46 @@ export const PosView: React.FC = () => {
             </select>
           )}
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300">
-            <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          {/* Estado do Turno de Caixa */}
+          <div
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold ${
+              currentSession?.status === 'OPEN'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-500/20'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+            }`}
+          >
+            {currentSession?.status === 'OPEN' ? (
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+            ) : (
+              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            )}
             <span className="truncate">
-              {user?.fullName || user?.full_name || 'Operador'} •{' '}
+              Turno de Caixa:{' '}
               {currentSession?.status === 'OPEN' ? (
-                <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-                  Sessão Aberta
+                <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                  Aberto ({user?.fullName || user?.full_name || 'Operador'})
                 </span>
               ) : (
-                <span className="text-amber-600 font-bold">Sem Sessão Ativa</span>
+                <span className="text-amber-600 font-bold">Fechado</span>
               )}
             </span>
           </div>
 
+          {/* Estado da Sessão Mestre do Terminal POS */}
           <div
             className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold ${
               currentPosSession?.status === 'OPEN'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border border-blue-500/20'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <Store className="w-3.5 h-3.5 shrink-0" />
+            <Store className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
             <span className="truncate">
-              Sessão POS:{' '}
+              Terminal POS:{' '}
               {currentPosSession?.status === 'OPEN' ? (
-                <span className="font-bold">Aberta</span>
+                <span className="font-bold text-blue-700 dark:text-blue-400">Habilitado</span>
               ) : (
-                <span className="text-amber-600 font-bold">Fechada</span>
+                <span className="text-slate-500 font-medium">Aguardando Gestor</span>
               )}
             </span>
           </div>
@@ -712,11 +782,15 @@ export const PosView: React.FC = () => {
               <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Pesquisar por nome, código ou código de barras..."
+                placeholder="Pesquisar por nome, código ou código de barras... (Enter para bipar)"
                 value={productSearch}
                 onChange={(e) => setProductSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                onKeyDown={handleSearchKeyDown}
+                className="w-full pl-10 pr-24 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
               />
+              <span className="absolute right-3 top-3 text-[10px] font-mono text-slate-400 pointer-events-none hidden sm:inline">
+                [Enter] Leitor Barcode
+              </span>
             </div>
           </GlassCard>
 
@@ -747,6 +821,17 @@ export const PosView: React.FC = () => {
                     <h4 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 mt-0.5">
                       {prod.name}
                     </h4>
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider ${
+                          prod.product_type === 'S' || !prod.is_stockable
+                            ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-500/20'
+                            : 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-500/20'
+                        }`}
+                      >
+                        {prod.product_type === 'S' || !prod.is_stockable ? 'Serviço' : 'Físico / Stock'}
+                      </span>
+                    </div>
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <span className="text-xs font-extrabold text-emerald-700 dark:text-emerald-400 truncate">
@@ -888,6 +973,74 @@ export const PosView: React.FC = () => {
                     ))}
                   </div>
                 </div>
+
+                {/* Cálculo de Troco em Numerário */}
+                {selectedPaymentMethod === 'NUMERARIO' && totalGross > 0 && (
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <label className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <Banknote className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span>Valor Entregue (Kz)</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setAmountTendered(totalGross.toFixed(2))}
+                        className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+                      >
+                        Valor Exato
+                      </button>
+                    </div>
+
+                    <input
+                      type="number"
+                      step="100"
+                      placeholder={totalGross.toFixed(2)}
+                      value={amountTendered}
+                      onChange={(e) => setAmountTendered(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-mono font-bold text-slate-900 dark:text-white"
+                    />
+
+                    {/* Botões de notas rápidas Kz */}
+                    <div className="grid grid-cols-5 gap-1 text-[10px] font-bold font-mono">
+                      {[500, 1000, 2000, 5000, 10000].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => {
+                            const cur = Number(amountTendered) || 0;
+                            setAmountTendered((cur + val).toString());
+                          }}
+                          className="py-1 rounded-md bg-slate-200/70 dark:bg-slate-700/70 hover:bg-emerald-100 dark:hover:bg-emerald-950 text-slate-700 dark:text-slate-200 cursor-pointer text-center"
+                        >
+                          +{val >= 1000 ? `${val / 1000}k` : val}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Mostrador de Troco */}
+                    {tenderedNum > 0 && (
+                      <div
+                        className={`p-2 rounded-lg flex items-center justify-between text-xs font-bold ${
+                          tenderedNum >= totalGross
+                            ? 'bg-emerald-100/70 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 border border-emerald-500/30'
+                            : 'bg-amber-100/70 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border border-amber-500/30'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1">
+                          <Coins className="w-3.5 h-3.5" />
+                          {tenderedNum >= totalGross ? 'Troco a Devolver:' : 'Falta Receber:'}
+                        </span>
+                        <span className="font-mono text-sm">
+                          {tenderedNum >= totalGross ? (
+                            <KzAmount value={changeDue} />
+                          ) : (
+                            <KzAmount value={totalGross - tenderedNum} />
+                          )}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -910,8 +1063,41 @@ export const PosView: React.FC = () => {
                 </div>
               </div>
 
+              {!isCashSessionOpen && (
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-300 space-y-2">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Turno de Caixa Fechado</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-amber-900/80 dark:text-amber-300/80">
+                    Para assegurar a reconciliação financeira do dinheiro e a integridade de auditoria, é obrigatório abrir o turno com o fundo de troco antes de finalizar vendas.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!currentPosSession || currentPosSession.status !== 'OPEN') {
+                        setErrorMessage('Peça ao gestor para abrir a Sessão POS antes de abrir o turno de caixa.');
+                        return;
+                      }
+                      setOpenSessionModal(true);
+                    }}
+                    className="w-full py-1.5 px-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm shadow-amber-600/20"
+                  >
+                    <Unlock className="w-3.5 h-3.5" />
+                    <span>Abrir Turno de Caixa</span>
+                  </button>
+                </div>
+              )}
+
               <button
-                disabled={cart.length === 0 || issueFrMutation.isPending}
+                disabled={
+                  cart.length === 0 ||
+                  issueFrMutation.isPending ||
+                  !isCashSessionOpen ||
+                  (selectedPaymentMethod === 'NUMERARIO' &&
+                    tenderedNum > 0 &&
+                    tenderedNum < totalGross)
+                }
                 onClick={() => issueFrMutation.mutate()}
                 className="w-full py-3 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-md shadow-emerald-700/20 disabled:opacity-50 transition-all cursor-pointer"
               >
@@ -919,6 +1105,11 @@ export const PosView: React.FC = () => {
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span>A Certificar junto da AGT...</span>
+                  </>
+                ) : !isCashSessionOpen ? (
+                  <>
+                    <Lock className="w-4 h-4" />
+                    <span>Abra o Turno para Vender</span>
                   </>
                 ) : (
                   <>
@@ -1590,6 +1781,36 @@ export const PosView: React.FC = () => {
                     {Number(issuedInvoice.grossTotal).toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz
                   </span>
                 </div>
+                {lastPaymentSummary && (
+                  <div className="pt-1.5 border-t border-dashed border-slate-400 text-[11px] space-y-0.5 text-slate-800">
+                    <div className="flex justify-between">
+                      <span>Meio Pagamento:</span>
+                      <span className="font-bold">{lastPaymentSummary.method}</span>
+                    </div>
+                    {lastPaymentSummary.method === 'NUMERARIO' && (
+                      <>
+                        <div className="flex justify-between">
+                          <span>Valor Entregue:</span>
+                          <span>
+                            {lastPaymentSummary.tendered.toLocaleString('pt-AO', {
+                              minimumFractionDigits: 2,
+                            })}{' '}
+                            Kz
+                          </span>
+                        </div>
+                        <div className="flex justify-between font-extrabold text-black">
+                          <span>Troco Devolvido:</span>
+                          <span>
+                            {lastPaymentSummary.change.toLocaleString('pt-AO', {
+                              minimumFractionDigits: 2,
+                            })}{' '}
+                            Kz
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="border-t border-dashed border-black my-2" />

@@ -63,6 +63,8 @@ pub struct Invoice {
     pub lines: Vec<InvoiceLine>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport: Option<crate::domain::value_objects::transport::TransportMovement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cash_session_id: Option<Uuid>,
 }
 
 impl Invoice {
@@ -143,6 +145,7 @@ impl Invoice {
             created_at: Utc::now(),
             lines,
             transport: None,
+            cash_session_id: None,
         }
     }
 
@@ -152,6 +155,12 @@ impl Invoice {
         transport: Option<crate::domain::value_objects::transport::TransportMovement>,
     ) -> Self {
         self.transport = transport;
+        self
+    }
+
+    /// Associa a sessão de caixa do POS ao documento fiscal
+    pub fn with_cash_session_id(mut self, cash_session_id: Option<Uuid>) -> Self {
+        self.cash_session_id = cash_session_id;
         self
     }
 

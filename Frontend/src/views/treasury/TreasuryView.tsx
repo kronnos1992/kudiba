@@ -12,6 +12,8 @@ import {
   Building2,
   X,
   Search,
+  Printer,
+  ExternalLink,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
@@ -35,7 +37,11 @@ import { inventoryApi } from '../../api/inventory';
 
 type TreasuryTab = 'registers' | 'receipts' | 'bank_accounts' | 'receivables';
 
-export const TreasuryView: React.FC = () => {
+interface TreasuryViewProps {
+  onNavigate?: (module: string) => void;
+}
+
+export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
   const { activeTenant, activeBranch, user } = useAuthStore();
   const queryClient = useQueryClient();
 
@@ -246,11 +252,109 @@ export const TreasuryView: React.FC = () => {
     },
   });
 
+  // Impressão Térmica de Fecho / Relatório de Sessão
+  const printSessionReport = () => {
+    if (!sessionReport) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const opening = Number(sessionReport.reconciliation.opening_balance) || 0;
+    const totalIn = Number(sessionReport.reconciliation.total_in) || 0;
+    const totalOut = Number(sessionReport.reconciliation.total_out) || 0;
+    const expected = Number(sessionReport.reconciliation.expected_balance) || 0;
+
+    const movementsHtml = sessionReport.movements
+      .map(
+        (m) => `
+        <tr>
+          <td style="padding: 4px 0;">${new Date(m.created_at).toLocaleTimeString('pt-AO')}</td>
+          <td style="padding: 4px 0; font-weight: bold;">${m.movement_type}</td>
+          <td style="padding: 4px 0;">${m.reason}</td>
+          <td style="padding: 4px 0; text-align: right; font-weight: bold;">${Number(m.amount).toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</td>
+        </tr>`
+      )
+      .join('');
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Relatório de Sessão - ${sessionReport.register_code}</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif; font-size: 11px; margin: 0; padding: 16px; color: #000; width: 300px; }
+            .header { text-align: center; border-bottom: 1px dashed #444; padding-bottom: 8px; margin-bottom: 10px; }
+            .title { font-size: 13px; font-weight: 800; margin: 0 0 4px 0; }
+            .meta { font-size: 10px; color: #444; margin: 2px 0; }
+            .section { margin: 10px 0; }
+            .row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 11px; }
+            .bold { font-weight: bold; }
+            .total-row { font-size: 12px; font-weight: bold; margin-top: 6px; border-top: 1px dashed #444; padding-top: 4px; }
+            table { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 6px; }
+            th { text-align: left; border-bottom: 1px solid #444; padding: 3px 0; }
+            .footer { border-top: 1px dashed #444; margin-top: 14px; padding-top: 8px; text-align: center; font-size: 9px; color: #555; }
+            .sign { margin-top: 24px; border-top: 1px solid #444; padding-top: 4px; text-align: center; font-size: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <p class="title">KUDIBA ERP — TESOURARIA</p>
+            <p class="meta">RELATÓRIO DE SESSÃO / FECHO X</p>
+            <p class="meta">Posto: <strong>${sessionReport.register_code} — ${sessionReport.register_name}</strong></p>
+            <p class="meta">Filial: ${activeBranch?.name || 'Sede Principal'}</p>
+            <p class="meta">Data/Hora: ${new Date().toLocaleString('pt-AO')}</p>
+          </div>
+
+          <div class="section">
+            <div class="row"><span>Fundo de Abertura:</span><span class="bold">${opening.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</span></div>
+            <div class="row"><span>Total de Entradas:</span><span class="bold">+${totalIn.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</span></div>
+            <div class="row"><span>Total de Saídas:</span><span class="bold">-${totalOut.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</span></div>
+            <div class="row total-row">
+              <span>Saldo Esperado em Caixa:</span><span>${expected.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</span>
+            </div>
+          </div>
+
+          <div class="section">
+            <p style="font-weight: bold; margin-bottom: 2px;">Movimentos da Sessão:</p>
+            ${
+              sessionReport.movements.length === 0
+                ? '<p style="font-size: 10px; color: #555;">Sem movimentos avulsos registados.</p>'
+                : `<table>
+                    <thead>
+                      <tr><th>Hora</th><th>Tipo</th><th>Motivo</th><th style="text-align: right;">Valor</th></tr>
+                    </thead>
+                    <tbody>${movementsHtml}</tbody>
+                  </table>`
+            }
+          </div>
+
+          <div class="sign">
+            Assinatura do Operador / Encarregado
+          </div>
+
+          <div class="footer">
+            Documento de auditoria interna • Kudiba ERP
+          </div>
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   // Totais
   const totalBankBalance = bankAccounts.reduce(
     (acc, b) => acc + (b.is_active ? Number(b.current_balance) || 0 : 0),
     0
   );
+  const totalCashInRegisters = Object.values(registerSessionsMap).reduce((acc, s) => {
+    if (s && s.status === 'OPEN') {
+      return acc + (Number(s.opening_balance) || 0);
+    }
+    return acc;
+  }, 0);
+  const totalGlobalTreasury = totalBankBalance + totalCashInRegisters;
+
   const totalReceivables = receivables
     .filter((r) => r.status === 'Outstanding')
     .reduce((acc, r) => acc + (Number(r.gross_total) || 0), 0);
@@ -310,16 +414,16 @@ export const TreasuryView: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         <GlassCard className="p-4 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-slate-500 uppercase truncate">Liquidez Bancária</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase truncate">Disponibilidades Globais</span>
             <div className="p-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 rounded-lg shrink-0">
               <Building2 className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-2 text-lg sm:text-xl 2xl:text-2xl font-bold text-slate-900 dark:text-white truncate">
-            <KzAmount value={totalBankBalance} />
+            <KzAmount value={totalGlobalTreasury} />
           </div>
-          <span className="text-xs text-slate-400">
-            {bankAccounts.length} Contas Bancárias Ativas (AO06)
+          <span className="text-xs text-slate-400 truncate block">
+            {bankAccounts.length} Banco(s) ({Number(totalBankBalance).toLocaleString('pt-AO')} Kz) • Gavetas ({Number(totalCashInRegisters).toLocaleString('pt-AO')} Kz)
           </span>
         </GlassCard>
 
@@ -441,25 +545,25 @@ export const TreasuryView: React.FC = () => {
                   <GlassCard key={r.id} className="p-4 sm:p-5 flex flex-col justify-between min-w-0">
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded">
+                        <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-md border border-emerald-500/20">
                           {r.code}
                         </span>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-2">
                           <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
                               isSessionOpen
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-500/20'
                                 : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                             }`}
                           >
                             {isSessionOpen ? (
                               <>
-                                <Unlock className="w-3 h-3" />
-                                Caixa Aberto
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                Sessão Aberta
                               </>
                             ) : (
                               <>
-                                <Lock className="w-3 h-3" />
+                                <Lock className="w-3 h-3 text-slate-400" />
                                 Caixa Fechado
                               </>
                             )}
@@ -478,99 +582,113 @@ export const TreasuryView: React.FC = () => {
                       </p>
 
                       {isSessionOpen && currentSession && (
-                        <div className="mt-3 p-2.5 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/60 flex items-center justify-between text-xs">
-                          <span className="text-emerald-800 dark:text-emerald-300 font-medium">
-                            Fundo Inicial:
-                          </span>
-                          <span className="font-bold text-emerald-900 dark:text-emerald-200">
-                            <KzAmount value={Number(currentSession.opening_balance)} />
-                          </span>
+                        <div className="mt-3 p-2.5 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/60 space-y-1 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-emerald-800 dark:text-emerald-300 font-medium">
+                              Fundo Inicial:
+                            </span>
+                            <span className="font-bold text-emerald-900 dark:text-emerald-200">
+                              <KzAmount value={Number(currentSession.opening_balance)} />
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-1 border-t border-emerald-200/50 dark:border-emerald-800/40">
+                            <span>Operador: <strong className="text-slate-700 dark:text-slate-300">{currentSession.operator_user_id || 'Operador'}</strong></span>
+                            <span>Desde: {new Date(currentSession.opened_at).toLocaleTimeString('pt-AO', { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
                         </div>
                       )}
                     </div>
 
                     <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                      <div className="flex flex-wrap items-center justify-between gap-1.5">
-                        <button
-                          type="button"
-                          disabled={isSessionOpen || sessionsMapLoading}
-                          onClick={async () => {
-                            const existing = await treasuryApi.getCurrentSession(r.id);
-                            if (existing && existing.status === 'OPEN') {
-                              queryClient.invalidateQueries({ queryKey: ['treasury_register_sessions'] });
-                              toast.error('Este caixa já está aberto. Efetue o fecho antes de abrir uma nova sessão.');
-                              return;
-                            }
-                            setOpenSessionRegister(r);
-                          }}
-                          title={
-                            isSessionOpen
-                              ? 'Este caixa já está aberto. Feche a sessão atual antes de abrir novamente.'
-                              : 'Abrir nova sessão de caixa'
-                          }
-                          className="flex-1 justify-center inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
-                        >
-                          <Unlock className="w-3.5 h-3.5 shrink-0" />
-                          <span>{isSessionOpen ? 'Aberto' : 'Abrir'}</span>
-                        </button>
+                      {isSessionOpen ? (
+                        <>
+                          <div className="flex items-center gap-2">
+                            {onNavigate && (
+                              <button
+                                type="button"
+                                onClick={() => onNavigate('pos')}
+                                className="flex-1 justify-center inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors cursor-pointer shadow-sm shadow-emerald-700/20"
+                                title="Ir para o Terminal de Vendas POS deste Caixa"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                                <span>Terminal POS</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              disabled={sessionsMapLoading}
+                              onClick={() => {
+                                if (currentSession) {
+                                  setMovementSessionTarget(currentSession);
+                                }
+                              }}
+                              className="flex-1 justify-center inline-flex items-center gap-1.5 px-2.5 py-2 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors cursor-pointer"
+                              title="Registar Sangria para Cofre ou Reforço de Trocos"
+                            >
+                              <ArrowDownCircle className="w-3.5 h-3.5 shrink-0" />
+                              <span>Sangria / Reforço</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={sessionsMapLoading}
+                              onClick={() => {
+                                if (currentSession) {
+                                  setCloseSessionTarget(currentSession);
+                                }
+                              }}
+                              className="justify-center inline-flex items-center gap-1.5 px-2.5 py-2 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors cursor-pointer"
+                              title="Encerrar Turno e Efetuar Fecho Cego de Caixa"
+                            >
+                              <Lock className="w-3.5 h-3.5 shrink-0" />
+                              <span>Fecho</span>
+                            </button>
+                          </div>
 
-                        <button
-                          type="button"
-                          disabled={!isSessionOpen || sessionsMapLoading}
-                          onClick={() => {
-                            if (currentSession) {
-                              setCloseSessionTarget(currentSession);
-                            } else {
-                              toast.error('Não existe sessão aberta para este caixa.');
-                            }
-                          }}
-                          title={
-                            !isSessionOpen
-                              ? 'O caixa está fechado. Abra uma sessão primeiro.'
-                              : 'Efetuar fecho cego de caixa'
-                          }
-                          className="flex-1 justify-center inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
-                        >
-                          <Lock className="w-3.5 h-3.5 shrink-0" />
-                          <span>Fecho</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={!isSessionOpen || sessionsMapLoading}
-                          onClick={() => {
-                            if (currentSession) {
-                              setMovementSessionTarget(currentSession);
-                            } else {
-                              toast.error('É necessário ter uma sessão aberta para registar movimentos.');
-                            }
-                          }}
-                          title={
-                            !isSessionOpen
-                              ? 'Abra uma sessão de caixa para registar entradas/sangrias.'
-                              : 'Registar reforço, sangria ou despesa'
-                          }
-                          className="flex-1 justify-center inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
-                        >
-                          <ArrowDownCircle className="w-3.5 h-3.5 shrink-0" />
-                          <span>Movimento</span>
-                        </button>
-                      </div>
-
-                      <div className="pt-2">
-                        <button
-                          type="button"
-                          disabled={!isSessionOpen || sessionsMapLoading}
-                          onClick={() => {
-                            if (currentSession) {
-                              setReportModalSessionId(currentSession.id);
-                            }
-                          }}
-                          className="w-full text-center text-xs font-medium text-slate-500 hover:text-emerald-600 py-1 disabled:opacity-40 disabled:pointer-events-none"
-                        >
-                          Ver Relatório da Sessão Atual
-                        </button>
-                      </div>
+                          <button
+                            type="button"
+                            disabled={sessionsMapLoading}
+                            onClick={() => {
+                              if (currentSession) {
+                                setReportModalSessionId(currentSession.id);
+                              }
+                            }}
+                            className="w-full text-center text-xs font-medium text-slate-500 hover:text-emerald-600 py-1 cursor-pointer transition-colors"
+                          >
+                            Ver Relatório da Sessão Atual (Fecho X)
+                          </button>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={sessionsMapLoading}
+                            onClick={async () => {
+                              const existing = await treasuryApi.getCurrentSession(r.id);
+                              if (existing && existing.status === 'OPEN') {
+                                queryClient.invalidateQueries({ queryKey: ['treasury_register_sessions'] });
+                                toast.error('Este caixa já está aberto.');
+                                return;
+                              }
+                              setOpenSessionRegister(r);
+                            }}
+                            className="flex-1 justify-center inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Unlock className="w-3.5 h-3.5 shrink-0" />
+                            <span>Abrir Sessão de Caixa</span>
+                          </button>
+                          {onNavigate && (
+                            <button
+                              type="button"
+                              onClick={() => onNavigate('pos')}
+                              className="justify-center inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                              title="Ir para o POS"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                              <span>POS</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </GlassCard>
                 );
@@ -794,10 +912,11 @@ export const TreasuryView: React.FC = () => {
                           {rec.status === 'Outstanding' && (
                             <button
                               onClick={() => {
+                                const defaultEntity = entities.length > 0 ? entities[0] : null;
                                 setReceiptForm({
-                                  customer_id: '',
-                                  customer_name: 'Cliente da Fatura',
-                                  customer_nif: '',
+                                  customer_id: defaultEntity?.id || '',
+                                  customer_name: defaultEntity?.name || 'Cliente Adquirente',
+                                  customer_nif: defaultEntity?.tax_id || '999999999',
                                   bank_account_id: bankAccounts[0]?.id || '',
                                   session_id: '',
                                   payment_method: 'TRANSFERENCIA',
@@ -1235,11 +1354,19 @@ export const TreasuryView: React.FC = () => {
               </div>
             ) : null}
 
-            <div className="flex justify-end pt-3 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={printSessionReport}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5 shrink-0" />
+                <span>Imprimir Relatório (80mm)</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setReportModalSessionId(null)}
-                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 rounded-lg"
+                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
               >
                 Fechar
               </button>

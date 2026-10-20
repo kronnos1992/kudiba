@@ -190,6 +190,9 @@ pub struct IssueInvoiceCommand {
     /// Dados de transporte e movimentação de mercadorias (obrigatórios em GT e GR pelo Decreto 71/25)
     #[serde(default)]
     pub transport: Option<TransportMovementInput>,
+    /// Identificador opcional da sessão de caixa (obrigatório para operadores de caixa no POS)
+    #[serde(default)]
+    pub cash_session_id: Option<Uuid>,
 }
 
 pub type TransportMovementInput = crate::domain::value_objects::transport::TransportMovement;
@@ -221,6 +224,8 @@ pub struct IssueInvoiceResult {
     pub is_contingency: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport: Option<TransportMovementInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cash_session_id: Option<Uuid>,
 }
 
 /// Comando de anulação / estorno de documento fiscal com emissão de Nota de Crédito
@@ -378,6 +383,7 @@ mod tests {
             system_entry_date: Utc::now(),
             is_contingency: false,
             transport: None,
+            cash_session_id: None,
         };
 
         let json = serde_json::to_value(&result).expect("serialização do comprovativo");

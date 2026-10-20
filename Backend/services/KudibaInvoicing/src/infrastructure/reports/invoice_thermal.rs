@@ -699,6 +699,7 @@ mod tests {
                 Decimal::new(285000, 2),
             )],
             transport: None,
+            cash_session_id: None,
         }
     }
 

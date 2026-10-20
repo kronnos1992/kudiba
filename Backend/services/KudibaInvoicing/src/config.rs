@@ -46,6 +46,8 @@ pub struct Config {
     /// Se ativado, rejeita requisições sem assinatura perimétrica válida do Gateway
     #[allow(dead_code)]
     pub enforce_gateway_signature: bool,
+    /// URL base do serviço de Tesouraria (para validação de sessões de caixa do POS)
+    pub treasury_service_url: Option<String>,
 }
 
 impl Config {
@@ -103,7 +105,7 @@ impl Config {
             kafka_brokers: env::var("KAFKA_BROKERS")
                 .ok()
                 .filter(|s| !s.trim().is_empty()),
-            environment,
+            environment: environment.clone(),
             service_version: env!("CARGO_PKG_VERSION"),
             internal_gateway_secret: env::var("INTERNAL_GATEWAY_SECRET").unwrap_or_else(|_| {
                 "kudiba_internal_gateway_secret_development_key_change_in_production_2026"
@@ -112,6 +114,16 @@ impl Config {
             enforce_gateway_signature: env::var("ENFORCE_GATEWAY_SIGNATURE")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
+            treasury_service_url: env::var("TREASURY_SERVICE_URL")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .or_else(|| {
+                    if environment == "development" || environment == "dev" {
+                        Some("http://127.0.0.1:8084".to_string())
+                    } else {
+                        None
+                    }
+                }),
         }
     }
 

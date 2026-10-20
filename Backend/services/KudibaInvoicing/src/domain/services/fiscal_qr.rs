@@ -170,6 +170,7 @@ mod tests {
             created_at: Utc.with_ymd_and_hms(2026, 10, 7, 14, 30, 0).unwrap(),
             lines: vec![],
             transport: None,
+            cash_session_id: None,
         }
     }
 

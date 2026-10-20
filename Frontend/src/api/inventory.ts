@@ -275,6 +275,11 @@ export const inventoryApi = {
   },
 
   // Saldos e Movimentos
+  listAllStockBalances: async (): Promise<StockBalance[]> => {
+    const res = await apiClient.get<StockBalance[]>('/api/v1/inventory/stock');
+    return res.data;
+  },
+
   getStockBalance: async (productId: string): Promise<StockBalance[]> => {
     const res = await apiClient.get<StockBalance[]>(`/api/v1/inventory/stock/${productId}`);
     return res.data;

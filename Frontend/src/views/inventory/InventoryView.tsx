@@ -97,6 +97,12 @@ export const InventoryView: React.FC = () => {
     enabled: Boolean(activeTenant?.id),
   });
 
+  const { data: stockBalances = [] } = useQuery({
+    queryKey: ['inventory_all_stock_balances', activeTenant?.id],
+    queryFn: () => inventoryApi.listAllStockBalances(),
+    enabled: Boolean(activeTenant?.id),
+  });
+
   const { data: selectedProductStock = [] } = useQuery({
     queryKey: ['inventory_stock', stockDetailProduct?.id],
     queryFn: () => (stockDetailProduct ? inventoryApi.getStockBalance(stockDetailProduct.id) : []),
@@ -235,6 +241,7 @@ export const InventoryView: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_movements'] });
       queryClient.invalidateQueries({ queryKey: ['inventory_products'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory_all_stock_balances'] });
       setShowPurchaseModal(false);
       setPurchaseForm({
         warehouse_id: '',
@@ -252,6 +259,7 @@ export const InventoryView: React.FC = () => {
     mutationFn: (payload: TransferStockPayload) => inventoryApi.transferStock(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_movements'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory_all_stock_balances'] });
       setShowTransferModal(false);
     },
   });
@@ -261,6 +269,7 @@ export const InventoryView: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_movements'] });
       queryClient.invalidateQueries({ queryKey: ['inventory_products'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory_all_stock_balances'] });
       setShowAdjustModal(false);
     },
   });
@@ -402,11 +411,38 @@ export const InventoryView: React.FC = () => {
   const totalProducts = products.length;
   const physicalItems = products.filter((p) => p.product_type === 'P').length;
   const serviceItems = products.filter((p) => p.product_type === 'S').length;
-  const totalValuation = movements.reduce((acc, m) => {
-    const qty = Number(m.quantity) || 0;
-    const cmp = Number(m.resulting_cmp) || 0;
-    return m.movement_type === 'InPurchase' ? acc + qty * cmp : acc;
-  }, 0);
+
+  const stockByProduct = React.useMemo(() => {
+    const map = new Map<string, { onHand: number; reserved: number; reorderPoint: number }>();
+    for (const b of stockBalances) {
+      const current = map.get(b.product_id) || { onHand: 0, reserved: 0, reorderPoint: 0 };
+      current.onHand += Number(b.quantity_on_hand) || 0;
+      current.reserved += Number(b.quantity_reserved) || 0;
+      current.reorderPoint = Math.max(current.reorderPoint, Number(b.reorder_point) || 0);
+      map.set(b.product_id, current);
+    }
+    return map;
+  }, [stockBalances]);
+
+  const totalValuation = React.useMemo(() => {
+    if (stockBalances.length > 0) {
+      const productCostMap = new Map<string, number>();
+      for (const p of products) {
+        productCostMap.set(p.id, Number(p.current_cmp || p.cost_price) || 0);
+      }
+      let sum = 0;
+      for (const b of stockBalances) {
+        const cost = productCostMap.get(b.product_id) || 0;
+        sum += (Number(b.quantity_on_hand) || 0) * cost;
+      }
+      return sum;
+    }
+    return movements.reduce((acc, m) => {
+      const qty = Number(m.quantity) || 0;
+      const cmp = Number(m.resulting_cmp) || 0;
+      return m.movement_type === 'InPurchase' ? acc + qty * cmp : acc;
+    }, 0);
+  }, [stockBalances, products, movements]);
 
   return (
     <div className="space-y-5 sm:space-y-6">
@@ -549,7 +585,7 @@ export const InventoryView: React.FC = () => {
             </div>
           </div>
           <div className="mt-2 text-lg sm:text-xl 2xl:text-2xl font-bold text-slate-900 dark:text-white truncate">
-            <KzAmount value={totalValuation || 2600000} />
+            <KzAmount value={totalValuation} />
           </div>
           <span className="text-xs text-emerald-600 font-medium">
             Avaliado por Custo Médio (CMP)
@@ -679,6 +715,8 @@ export const InventoryView: React.FC = () => {
                     <th className="px-4 py-3">Tipo</th>
                     <th className="px-4 py-3 text-right">Preço Venda</th>
                     <th className="px-4 py-3 text-right">Custo CMP</th>
+                    <th className="px-4 py-3 text-center">Margem</th>
+                    <th className="px-4 py-3 text-center">Stock Atual</th>
                     <th className="px-4 py-3 text-center">IVA</th>
                     <th className="px-4 py-3 text-center">Lotes</th>
                     <th className="px-4 py-3 text-center">Estado</th>
@@ -688,13 +726,13 @@ export const InventoryView: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {productsLoading ? (
                     <tr>
-                      <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
                         A carregar catálogo de artigos...
                       </td>
                     </tr>
                   ) : filteredProducts.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
                         Nenhum artigo encontrado. Clique em "Novo Artigo / Serviço" para registar.
                       </td>
                     </tr>
@@ -721,7 +759,7 @@ export const InventoryView: React.FC = () => {
                             <span className="font-medium text-slate-900 dark:text-white block">
                               {p.name}
                             </span>
-                            {p.description && (
+                            {p.description && p.description.trim().toLowerCase() !== p.name.trim().toLowerCase() && (
                               <span className="text-xs text-slate-400 truncate block max-w-xs">
                                 {p.description}
                               </span>
@@ -750,6 +788,87 @@ export const InventoryView: React.FC = () => {
                               <KzAmount value={cmpPrice} />
                             ) : (
                               <span className="text-xs text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {p.product_type === 'P' && salePrice > 0 && cmpPrice > 0 ? (
+                              (() => {
+                                const margin = ((salePrice - cmpPrice) / salePrice) * 100;
+                                return (
+                                  <span
+                                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
+                                      margin > 0
+                                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                        : margin === 0
+                                        ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                        : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                                    }`}
+                                    title={`Margem bruta: ${(salePrice - cmpPrice).toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz`}
+                                  >
+                                    {margin > 0 ? `+${margin.toFixed(1)}%` : `${margin.toFixed(1)}%`}
+                                  </span>
+                                );
+                              })()
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {p.product_type === 'P' ? (
+                              (() => {
+                                const stockInfo = stockByProduct.get(p.id);
+                                const onHand = stockInfo?.onHand ?? 0;
+                                const reserved = stockInfo?.reserved ?? 0;
+                                const reorderPoint = stockInfo?.reorderPoint ?? 0;
+
+                                if (onHand <= 0) {
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => setStockDetailProduct(p)}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200/50 dark:border-rose-800/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 cursor-pointer transition-colors"
+                                      title="Stock Esgotado — Ver armazéns"
+                                    >
+                                      <AlertTriangle className="w-3 h-3 text-rose-500" />
+                                      <span>0 {p.unit_of_measure || 'UN'}</span>
+                                    </button>
+                                  );
+                                }
+
+                                if (reorderPoint > 0 && onHand <= reorderPoint) {
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => setStockDetailProduct(p)}
+                                      className="inline-flex flex-col items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200/50 dark:border-amber-800/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 cursor-pointer transition-colors"
+                                      title={`Stock Baixo (Abaixo do ponto de encomenda ${reorderPoint}) — Ver armazéns`}
+                                    >
+                                      <span className="inline-flex items-center gap-1">
+                                        <AlertTriangle className="w-3 h-3 text-amber-500" />
+                                        {onHand.toLocaleString('pt-AO')} {p.unit_of_measure || 'UN'}
+                                      </span>
+                                    </button>
+                                  );
+                                }
+
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => setStockDetailProduct(p)}
+                                    className="inline-flex flex-col items-center px-2 py-0.5 rounded text-xs font-bold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-800/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 cursor-pointer transition-colors"
+                                    title={`Total: ${onHand} • Reservado: ${reserved} • Disponível: ${onHand - reserved}`}
+                                  >
+                                    <span>{onHand.toLocaleString('pt-AO')} {p.unit_of_measure || 'UN'}</span>
+                                    {reserved > 0 && (
+                                      <span className="text-[10px] text-slate-400 font-normal">
+                                        ({(onHand - reserved).toLocaleString('pt-AO')} disp.)
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })()
+                            ) : (
+                              <span className="text-xs text-slate-400">N/A</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-center">

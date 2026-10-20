@@ -198,6 +198,7 @@ impl PgInvoiceRepository {
             created_at: row.try_get("created_at")?,
             lines,
             transport,
+            cash_session_id: row.try_get("cash_session_id").ok(),
         };
 
         // Invariantes do agregado: totais coerentes e linhas conformes ao regime
@@ -339,6 +340,7 @@ impl InvoiceRepository for PgInvoiceRepository {
             "withholdingTotal": invoice.withholding_total.to_string(),
             "stampDutyTotal": invoice.stamp_duty_total.to_string(),
             "amountDue": invoice.amount_due.to_string(),
+            "cashSessionId": invoice.cash_session_id,
             "lines": invoice.lines.iter().map(|line| serde_json::json!({
                 "lineNumber": line.line_number,
                 "productCode": line.product_code,

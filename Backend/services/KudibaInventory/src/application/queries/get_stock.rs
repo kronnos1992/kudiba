@@ -49,6 +49,18 @@ impl GetStockQuery {
         Ok(list.into_iter().map(StockBalanceResponse::from).collect())
     }
 
+    pub async fn list_all_balances(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<StockBalanceResponse>, InventoryError> {
+        let mut session = self.session_factory.open().await?;
+        let list = self
+            .stock_repo
+            .list_all_balances(session.as_mut(), tenant_id)
+            .await?;
+        Ok(list.into_iter().map(StockBalanceResponse::from).collect())
+    }
+
     pub async fn list_movements(
         &self,
         tenant_id: Uuid,

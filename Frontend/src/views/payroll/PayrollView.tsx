@@ -16,6 +16,8 @@ import {
   UserX,
   Check,
   Clock,
+  Printer,
+  AlertTriangle,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
@@ -46,6 +48,8 @@ export const PayrollView: React.FC = () => {
 
   // Modais de Período
   const [showPeriodModal, setShowPeriodModal] = useState(false);
+  const [confirmClosePeriod, setConfirmClosePeriod] = useState<PayrollPeriod | null>(null);
+  const [payslipsSubTab, setPayslipsSubTab] = useState<'payslips' | 'taxes'>('payslips');
   const [selectedPeriodPayslips, setSelectedPeriodPayslips] = useState<{
     period: PayrollPeriod;
     payslips: Payslip[];
@@ -332,8 +336,232 @@ export const PayrollView: React.FC = () => {
     }
   };
 
+  const handleExportPayrollCsv = (period: PayrollPeriod, payslips: Payslip[]) => {
+    const headers = [
+      'N.º',
+      'Código',
+      'Colaborador',
+      'NIF',
+      'N.º INSS',
+      'IBAN',
+      'Vencimento Base (Kz)',
+      'Subsídios (Kz)',
+      'Total Bruto (Kz)',
+      'INSS Trabalhador 3% (Kz)',
+      'IRT Retido (Kz)',
+      'Total Descontos (Kz)',
+      'Salário Líquido (Kz)',
+      'INSS Patronal 8% (Kz)',
+      'Custo Total Empresa (Kz)',
+    ];
+
+    const rows = payslips.map((ps, idx) => {
+      const emp = employees.find((e) => e.id === ps.employee_id);
+      const baseSalary = Number(ps.base_salary) || 0;
+      const allowances = Number(ps.total_allowances) || 0;
+      const gross = Number(ps.total_gross) || 0;
+      const inssEmp = Number(ps.inss_employee) || 0;
+      const irt = Number(ps.irt) || 0;
+      const deductions = inssEmp + irt;
+      const net = Number(ps.net_salary) || 0;
+      const inssPatronal = Number(ps.inss_employer) || 0;
+      const totalCost = gross + inssPatronal;
+
+      return [
+        idx + 1,
+        `"${emp?.code || ''}"`,
+        `"${emp?.full_name || 'Colaborador'}"`,
+        `"${emp?.nif || ''}"`,
+        `"${emp?.inss_number || ''}"`,
+        `"${emp?.iban || ''}"`,
+        baseSalary.toFixed(2),
+        allowances.toFixed(2),
+        gross.toFixed(2),
+        inssEmp.toFixed(2),
+        irt.toFixed(2),
+        deductions.toFixed(2),
+        net.toFixed(2),
+        inssPatronal.toFixed(2),
+        totalCost.toFixed(2),
+      ].join(';');
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Mapa_Salarios_${period.year}_${period.month.toString().padStart(2, '0')}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handlePrintPayrollSheet = (period: PayrollPeriod, payslips: Payslip[]) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Permita janelas de pop-up no navegador para imprimir o Mapa de Salários.');
+      return;
+    }
+    const tenantName = activeTenant?.company_name || activeTenant?.name || 'Kudiba Tecnologia Lda';
+    const tenantNif = activeTenant?.taxId || activeTenant?.nif || '5401122334';
+    const tenantAddress = activeTenant?.address_detail
+      ? `${activeTenant.address_detail}, ${activeTenant.city || 'Luanda'}`
+      : 'Luanda, Angola';
+
+    const totalGross = Number(period.total_gross) || 0;
+    const totalInssEmp = Number(period.total_inss_employee) || 0;
+    const totalInssPat = Number(period.total_inss_employer) || 0;
+    const totalIrt = Number(period.total_irt) || 0;
+    const totalNet = Number(period.total_net) || 0;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Mapa Geral de Salários - ${period.title}</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 20px; font-size: 11px; color: #1e293b; }
+          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f766e; padding-bottom: 12px; margin-bottom: 15px; }
+          .company-info h1 { margin: 0 0 4px 0; font-size: 16px; color: #0f766e; }
+          .company-info p { margin: 2px 0; color: #64748b; font-size: 11px; }
+          .doc-title { text-align: right; }
+          .doc-title h2 { margin: 0 0 4px 0; font-size: 14px; text-transform: uppercase; color: #0f172a; }
+          .doc-title p { margin: 2px 0; font-size: 11px; color: #64748b; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th { background-color: #f1f5f9; color: #475569; font-weight: 700; text-transform: uppercase; font-size: 9px; padding: 6px 4px; border: 1px solid #cbd5e1; text-align: right; }
+          th.left, td.left { text-align: left; }
+          td { padding: 5px 4px; border: 1px solid #e2e8f0; font-size: 10px; text-align: right; }
+          tr:nth-child(even) { background-color: #f8fafc; }
+          .totals-row td { background-color: #e2e8f0; font-weight: 800; border-top: 2px solid #0f766e; }
+          .kpis { display: flex; gap: 15px; margin: 15px 0; }
+          .kpi-box { flex: 1; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; background: #fafafa; }
+          .kpi-title { font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: bold; }
+          .kpi-val { font-size: 13px; font-weight: bold; color: #0f172a; margin-top: 3px; }
+          .signatures { display: flex; justify-content: space-between; margin-top: 40px; page-break-inside: avoid; }
+          .sign-col { width: 30%; text-align: center; }
+          .sign-line { border-top: 1px solid #000; margin-top: 45px; padding-top: 4px; font-size: 10px; font-weight: bold; }
+          @media print {
+            body { margin: 10mm; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="company-info">
+            <h1>${tenantName}</h1>
+            <p><strong>NIF:</strong> ${tenantNif} • <strong>Sede:</strong> ${tenantAddress}</p>
+            <p>Conforme Lei Geral do Trabalho (LGT 12/23) • IRT (Lei 28/20) • INSS (DP 227/18)</p>
+          </div>
+          <div class="doc-title">
+            <h2>Mapa Geral de Salários</h2>
+            <p><strong>Período:</strong> ${period.title}</p>
+            <p><strong>Referência:</strong> ${period.month.toString().padStart(2, '0')}/${period.year}</p>
+            <p><strong>Emitido em:</strong> ${new Date().toLocaleDateString('pt-AO')}</p>
+          </div>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi-box">
+            <div class="kpi-title">Massa Salarial Bruta</div>
+            <div class="kpi-val">${totalGross.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-title">INSS Trabalhador (3%)</div>
+            <div class="kpi-val">${totalInssEmp.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-title">Retenção IRT (Lei 28/20)</div>
+            <div class="kpi-val">${totalIrt.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-title">Total Líquido a Transferir</div>
+            <div class="kpi-val" style="color: #0f766e;">${totalNet.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-title">INSS Patronal (8%)</div>
+            <div class="kpi-val">${totalInssPat.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th class="left" style="width: 25px;">#</th>
+              <th class="left">Colaborador</th>
+              <th class="left">NIF</th>
+              <th class="left">IBAN</th>
+              <th>Venc. Base</th>
+              <th>Subsídios</th>
+              <th>Total Bruto</th>
+              <th>INSS (3%)</th>
+              <th>IRT Retido</th>
+              <th style="color: #0f766e;">Salário Líquido</th>
+              <th>INSS Pat. (8%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${payslips.map((ps, i) => {
+              const emp = employees.find((e) => e.id === ps.employee_id);
+              return `
+                <tr>
+                  <td class="left">${i + 1}</td>
+                  <td class="left"><strong>${emp?.full_name || 'Colaborador'}</strong></td>
+                  <td class="left">${emp?.nif || '—'}</td>
+                  <td class="left" style="font-family: monospace; font-size: 9px;">${emp?.iban || '—'}</td>
+                  <td>${Number(ps.base_salary).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
+                  <td>${Number(ps.total_allowances).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
+                  <td><strong>${Number(ps.total_gross).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</strong></td>
+                  <td style="color: #b91c1c;">-${Number(ps.inss_employee).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
+                  <td style="color: #7e22ce;">-${Number(ps.irt).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
+                  <td style="font-weight: bold; color: #0f766e;">${Number(ps.net_salary).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
+                  <td style="color: #64748b;">${Number(ps.inss_employer).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
+                </tr>
+              `;
+            }).join('')}
+            <tr class="totals-row">
+              <td colspan="4" class="left">TOTAIS GERAIS (${payslips.length} Colaboradores)</td>
+              <td>${payslips.reduce((acc, p) => acc + Number(p.base_salary), 0).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
+              <td>${payslips.reduce((acc, p) => acc + Number(p.total_allowances), 0).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
+              <td>${totalGross.toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
+              <td style="color: #b91c1c;">-${totalInssEmp.toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
+              <td style="color: #7e22ce;">-${totalIrt.toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
+              <td style="color: #0f766e;">${totalNet.toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
+              <td>${totalInssPat.toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="signatures">
+          <div class="sign-col">
+            <div class="sign-line">Recursos Humanos<br><span style="font-size: 8px; font-weight: normal; color: #64748b;">Processamento e Assiduidade</span></div>
+          </div>
+          <div class="sign-col">
+            <div class="sign-line">Contabilidade & Fiscalidade<br><span style="font-size: 8px; font-weight: normal; color: #64748b;">Apuramento IRT / INSS</span></div>
+          </div>
+          <div class="sign-col">
+            <div class="sign-line">Direção Financeira / Gerência<br><span style="font-size: 8px; font-weight: normal; color: #64748b;">Autorização de Pagamento</span></div>
+          </div>
+        </div>
+
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
   // Totais agregados do último período
   const latestPeriod = periods[0];
+  const activeEmployeesCount =
+    employees.filter((e) => e.status === 'ACTIVE').length ||
+    employees.length ||
+    contracts.filter((c) => c.status === 'ACTIVE').length ||
+    contracts.length;
   const totalGrossPayroll = latestPeriod ? Number(latestPeriod.total_gross) : 0;
   const totalIrtPayroll = latestPeriod ? Number(latestPeriod.total_irt) : 0;
   const totalInssPayroll = latestPeriod
@@ -436,10 +664,10 @@ export const PayrollView: React.FC = () => {
             </div>
           </div>
           <div className="mt-2 text-lg sm:text-xl 2xl:text-2xl font-bold text-slate-900 dark:text-white truncate">
-            {employees.length}
+            {activeEmployeesCount}
           </div>
           <span className="text-xs text-slate-400">
-            {contracts.length} Contratos Registados
+            {contracts.length} Contrato{contracts.length === 1 ? '' : 's'} Registado{contracts.length === 1 ? '' : 's'}
           </span>
         </GlassCard>
 
@@ -653,25 +881,36 @@ export const PayrollView: React.FC = () => {
                                   const payslips = await payrollApi.listPeriodPayslips(p.id);
                                   setSelectedPeriodPayslips({ period: p, payslips });
                                 }}
-                                title="Ver Recibos de Vencimento"
-                                className="p-1.5 text-slate-600 hover:text-blue-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                                title="Ver Recibos & Apuramento Fiscal"
+                                className="p-1.5 text-slate-600 hover:text-blue-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                               >
                                 <FileText className="w-4 h-4" />
                               </button>
 
                               <button
+                                onClick={async () => {
+                                  const payslips = await payrollApi.listPeriodPayslips(p.id);
+                                  handlePrintPayrollSheet(p, payslips);
+                                }}
+                                title="Imprimir Mapa Geral de Salários"
+                                className="p-1.5 text-slate-600 hover:text-amber-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                              >
+                                <Printer className="w-4 h-4" />
+                              </button>
+
+                              <button
                                 onClick={() => handleExportPs2(p.id)}
                                 title="Exportar Remessa Bancária PS2"
-                                className="p-1.5 text-slate-600 hover:text-purple-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                                className="p-1.5 text-slate-600 hover:text-purple-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                               >
                                 <Download className="w-4 h-4" />
                               </button>
 
                               {p.status === 'CALCULATED' && (
                                 <button
-                                  onClick={() => closePeriodMutation.mutate(p.id)}
+                                  onClick={() => setConfirmClosePeriod(p)}
                                   title="Fechar Folha Salarial"
-                                  className="p-1.5 text-slate-600 hover:text-rose-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                                  className="p-1.5 text-slate-600 hover:text-rose-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                                 >
                                   <Lock className="w-4 h-4" />
                                 </button>
@@ -1181,11 +1420,11 @@ export const PayrollView: React.FC = () => {
         </div>
       )}
 
-      {/* Modal: Recibos do Período Salarial */}
+      {/* Modal: Recibos do Período Salarial & Apuramento Fiscal */}
       {selectedPeriodPayslips && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl max-w-4xl w-full p-6 space-y-4">
-            <div className="flex items-start justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-3">
               <div className="flex items-start gap-3">
                 {activeTenant?.logo_data_url && (
                   <img
@@ -1197,11 +1436,11 @@ export const PayrollView: React.FC = () => {
                 <div>
                   <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                     <FileText className="w-5 h-5 text-emerald-600" />
-                    Recibos de Vencimento: {selectedPeriodPayslips.period.title}
+                    {selectedPeriodPayslips.period.title}
                   </h3>
                   <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mt-0.5">
-                    {activeTenant?.name || 'Kudiba Comércio Geral, Lda'} • NIF:{' '}
-                    <span className="font-mono">{activeTenant?.nif || '5401122334'}</span>
+                    {activeTenant?.company_name || activeTenant?.name || 'Kudiba Comércio Geral, Lda'} • NIF:{' '}
+                    <span className="font-mono">{activeTenant?.taxId || activeTenant?.nif || '5401122334'}</span>
                     {activeTenant?.address_detail
                       ? ` • ${activeTenant.address_detail}, ${activeTenant.city || 'Luanda'}`
                       : ''}
@@ -1211,75 +1450,349 @@ export const PayrollView: React.FC = () => {
                   </span>
                 </div>
               </div>
-              <button onClick={() => setSelectedPeriodPayslips(null)}>
-                <X className="w-5 h-5 text-slate-400" />
+
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleExportPayrollCsv(
+                      selectedPeriodPayslips.period,
+                      selectedPeriodPayslips.payslips
+                    )
+                  }
+                  title="Exportar Mapa de Salários em CSV/Excel"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>CSV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handlePrintPayrollSheet(
+                      selectedPeriodPayslips.period,
+                      selectedPeriodPayslips.payslips
+                    )
+                  }
+                  title="Imprimir Mapa Geral de Salários"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Imprimir</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportPs2(selectedPeriodPayslips.period.id)}
+                  title="Exportar Remessa Bancária PS2"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors cursor-pointer shadow-sm shadow-purple-600/20"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>PS2</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPeriodPayslips(null)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Alternador de Vistas: Recibos vs Guias Fiscais */}
+            <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setPayslipsSubTab('payslips')}
+                className={`pb-2 px-3 font-semibold border-b-2 transition-colors cursor-pointer ${
+                  payslipsSubTab === 'payslips'
+                    ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                Recibos de Vencimento ({selectedPeriodPayslips.payslips.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setPayslipsSubTab('taxes')}
+                className={`pb-2 px-3 font-semibold border-b-2 transition-colors cursor-pointer ${
+                  payslipsSubTab === 'taxes'
+                    ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                Guias Fiscais &amp; INSS (Apuramento Modelo 2)
               </button>
             </div>
 
-            <div className="overflow-x-auto max-h-[60vh]">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase sticky top-0">
-                  <tr>
-                    <th className="px-3 py-2">Colaborador</th>
-                    <th className="px-3 py-2 text-right">Vencimento Base</th>
-                    <th className="px-3 py-2 text-right">Subsídios</th>
-                    <th className="px-3 py-2 text-right">Total Bruto</th>
-                    <th className="px-3 py-2 text-right">INSS (3%)</th>
-                    <th className="px-3 py-2 text-right">IRT Retido</th>
-                    <th className="px-3 py-2 text-right font-bold text-emerald-600">Salário Líquido</th>
-                    <th className="px-3 py-2 text-center">PDF</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {selectedPeriodPayslips.payslips.map((ps) => {
-                    const emp = employees.find((e) => e.id === ps.employee_id);
-                    const empName = emp ? emp.full_name : 'Colaborador';
-                    return (
-                      <tr key={ps.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                        <td className="px-3 py-2 font-semibold text-slate-900 dark:text-white">
-                          {empName}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <KzAmount value={Number(ps.base_salary)} />
-                        </td>
-                        <td className="px-3 py-2 text-right text-slate-500">
-                          <KzAmount value={Number(ps.total_allowances)} />
-                        </td>
-                        <td className="px-3 py-2 text-right font-bold text-slate-900 dark:text-white">
-                          <KzAmount value={Number(ps.total_gross)} />
-                        </td>
-                        <td className="px-3 py-2 text-right text-rose-600">
-                          -<KzAmount value={Number(ps.inss_employee)} />
-                        </td>
-                        <td className="px-3 py-2 text-right text-purple-600 font-semibold">
-                          -<KzAmount value={Number(ps.irt)} />
-                        </td>
-                        <td className="px-3 py-2 text-right font-extrabold text-emerald-600 text-sm">
-                          <KzAmount value={Number(ps.net_salary)} />
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <button
-                            onClick={() => handleDownloadPayslipPdf(ps.id, empName)}
-                            className="p-1 text-slate-500 hover:text-emerald-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
-                            title="Descarregar Recibo em PDF"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            {payslipsSubTab === 'payslips' ? (
+              <div className="overflow-x-auto max-h-[60vh]">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2">Colaborador</th>
+                      <th className="px-3 py-2 text-right">Vencimento Base</th>
+                      <th className="px-3 py-2 text-right">Subsídios</th>
+                      <th className="px-3 py-2 text-right">Total Bruto</th>
+                      <th className="px-3 py-2 text-right">INSS (3%)</th>
+                      <th className="px-3 py-2 text-right">IRT Retido</th>
+                      <th className="px-3 py-2 text-right font-bold text-emerald-600">Salário Líquido</th>
+                      <th className="px-3 py-2 text-center">PDF</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {selectedPeriodPayslips.payslips.map((ps) => {
+                      const emp = employees.find((e) => e.id === ps.employee_id);
+                      const empName = emp ? emp.full_name : 'Colaborador';
+                      return (
+                        <tr key={ps.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                          <td className="px-3 py-2 font-semibold text-slate-900 dark:text-white">
+                            {empName}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <KzAmount value={Number(ps.base_salary)} />
+                          </td>
+                          <td className="px-3 py-2 text-right text-slate-500">
+                            <KzAmount value={Number(ps.total_allowances)} />
+                          </td>
+                          <td className="px-3 py-2 text-right font-bold text-slate-900 dark:text-white">
+                            <KzAmount value={Number(ps.total_gross)} />
+                          </td>
+                          <td className="px-3 py-2 text-right text-rose-600">
+                            -<KzAmount value={Number(ps.inss_employee)} />
+                          </td>
+                          <td className="px-3 py-2 text-right text-purple-600 font-semibold">
+                            -<KzAmount value={Number(ps.irt)} />
+                          </td>
+                          <td className="px-3 py-2 text-right font-extrabold text-emerald-600 text-sm">
+                            <KzAmount value={Number(ps.net_salary)} />
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <button
+                              onClick={() => handleDownloadPayslipPdf(ps.id, empName)}
+                              className="p-1 text-slate-500 hover:text-emerald-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                              title="Descarregar Recibo em PDF"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Guia Modelo 2 IRT */}
+                  <div className="p-4 rounded-xl border border-purple-200 dark:border-purple-900/60 bg-purple-50/40 dark:bg-purple-950/20 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-5 h-5 text-purple-600" />
+                        <h4 className="font-bold text-sm text-purple-900 dark:text-purple-200">
+                          Guia de IRT — Modelo 2 (AGT)
+                        </h4>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-200 text-purple-800 dark:bg-purple-900 dark:text-purple-300">
+                        Lei 28/20
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-purple-800/80 dark:text-purple-300/80 leading-relaxed">
+                      Retenção na fonte efetuada sobre rendimentos do trabalho por conta de outrem (Grupo A).
+                    </p>
+
+                    <div className="p-3 bg-white dark:bg-slate-900 rounded-lg space-y-2 text-xs border border-purple-100 dark:border-purple-900/40">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Massa Salarial Ilíquida Sujeita:</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200">
+                          <KzAmount value={Number(selectedPeriodPayslips.period.total_gross)} />
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Dedução Legal de INSS (3%):</span>
+                        <span className="text-rose-600">
+                          -<KzAmount value={Number(selectedPeriodPayslips.period.total_inss_employee)} />
+                        </span>
+                      </div>
+                      <div className="flex justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+                        <span className="font-semibold text-slate-600 dark:text-slate-300">Total IRT a Entregar à AGT:</span>
+                        <span className="font-extrabold text-purple-600 text-sm">
+                          <KzAmount value={Number(selectedPeriodPayslips.period.total_irt)} />
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] text-purple-900/70 dark:text-purple-300/70 flex items-center justify-between">
+                      <span>Prazo legal de liquidação:</span>
+                      <strong className="text-purple-900 dark:text-purple-200">Até ao último dia útil do mês seguinte</strong>
+                    </div>
+                  </div>
+
+                  {/* Guia de Pagamento INSS */}
+                  <div className="p-4 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Calculator className="w-5 h-5 text-amber-600" />
+                        <h4 className="font-bold text-sm text-amber-900 dark:text-amber-200">
+                          Guia de Pagamento INSS (11%)
+                        </h4>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200 text-amber-800 dark:bg-amber-900 dark:text-amber-300">
+                        DP 227/18
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-amber-800/80 dark:text-amber-300/80 leading-relaxed">
+                      Contribuição obrigatória para a Segurança Social (3% trabalhador + 8% entidade patronal).
+                    </p>
+
+                    <div className="p-3 bg-white dark:bg-slate-900 rounded-lg space-y-2 text-xs border border-amber-100 dark:border-amber-900/40">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Quota Trabalhador (3%):</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          <KzAmount value={Number(selectedPeriodPayslips.period.total_inss_employee)} />
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Quota Entidade Patronal (8%):</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          <KzAmount value={Number(selectedPeriodPayslips.period.total_inss_employer)} />
+                        </span>
+                      </div>
+                      <div className="flex justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+                        <span className="font-semibold text-slate-600 dark:text-slate-300">Total a Transferir ao INSS:</span>
+                        <span className="font-extrabold text-amber-600 text-sm">
+                          <KzAmount
+                            value={
+                              Number(selectedPeriodPayslips.period.total_inss_employee) +
+                              Number(selectedPeriodPayslips.period.total_inss_employer)
+                            }
+                          />
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] text-amber-900/70 dark:text-amber-300/70 flex items-center justify-between">
+                      <span>Prazo legal de liquidação:</span>
+                      <strong className="text-amber-900 dark:text-amber-200">Até ao dia 10 do mês seguinte</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Resumo de Custos da Organização */}
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex flex-col sm:flex-row justify-between items-center gap-3">
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                      Custo Total da Empresa com Esta Folha
+                    </h5>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Massa Salarial Ilíquida + Encargos Patronais de Segurança Social (8%)
+                    </p>
+                  </div>
+                  <div className="text-lg font-black text-emerald-700 dark:text-emerald-400">
+                    <KzAmount
+                      value={
+                        Number(selectedPeriodPayslips.period.total_gross) +
+                        Number(selectedPeriodPayslips.period.total_inss_employer)
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-end pt-3 border-t border-slate-200 dark:border-slate-800">
               <button
                 type="button"
                 onClick={() => setSelectedPeriodPayslips(null)}
-                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 rounded-lg"
+                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação: Fechar Folha Salarial */}
+      {confirmClosePeriod && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-rose-50 dark:bg-rose-950/50 text-rose-600 rounded-xl shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Fechar Folha Salarial
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Tem a certeza de que deseja encerrar a folha{' '}
+                  <strong className="text-slate-800 dark:text-slate-200">
+                    {confirmClosePeriod.title}
+                  </strong>{' '}
+                  ({confirmClosePeriod.month.toString().padStart(2, '0')}/{confirmClosePeriod.year})?
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg text-xs space-y-1.5 border border-slate-200/60 dark:border-slate-700/60">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Massa Salarial Ilíquida:</span>
+                <span className="font-bold text-slate-900 dark:text-white">
+                  <KzAmount value={Number(confirmClosePeriod.total_gross)} />
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">INSS Total (11%):</span>
+                <span className="font-semibold text-amber-600">
+                  <KzAmount
+                    value={
+                      Number(confirmClosePeriod.total_inss_employee) +
+                      Number(confirmClosePeriod.total_inss_employer)
+                    }
+                  />
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Retenção de IRT:</span>
+                <span className="font-semibold text-purple-600">
+                  <KzAmount value={Number(confirmClosePeriod.total_irt)} />
+                </span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-slate-200 dark:border-slate-700">
+                <span className="font-bold text-slate-700 dark:text-slate-300">Total Líquido:</span>
+                <span className="font-extrabold text-emerald-600">
+                  <KzAmount value={Number(confirmClosePeriod.total_net)} />
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800/40 leading-relaxed">
+              ⚠️ Esta operação torna os cálculos e recibos de vencimento <strong>imutáveis</strong> para efeitos legais e fiscais. Não será possível recalcular a folha após o encerramento.
+            </p>
+
+            <div className="flex justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmClosePeriod(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={closePeriodMutation.isPending}
+                onClick={() => {
+                  closePeriodMutation.mutate(confirmClosePeriod.id);
+                  setConfirmClosePeriod(null);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-50 shadow-sm shadow-rose-600/20"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Confirmar e Encerrar Folha</span>
               </button>
             </div>
           </div>

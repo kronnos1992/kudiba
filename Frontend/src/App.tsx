@@ -93,7 +93,7 @@ export const App: React.FC = () => {
       case 'inventory':
         return <InventoryView />;
       case 'treasury':
-        return <TreasuryView />;
+        return <TreasuryView onNavigate={(mod) => setActiveModule(mod as ModuleKey)} />;
       case 'payroll':
         return <PayrollView />;
       case 'accounting':

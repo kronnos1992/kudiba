@@ -1196,6 +1196,7 @@ mod tests {
             created_at: Utc.with_ymd_and_hms(2026, 10, 7, 10, 0, 0).unwrap(),
             lines,
             transport: None,
+            cash_session_id: None,
         };
 
         let pdf_bytes =

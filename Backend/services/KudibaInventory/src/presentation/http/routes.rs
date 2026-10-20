@@ -633,6 +633,20 @@ async fn adjust_stock_handler(
     Ok((StatusCode::CREATED, Json(movement)))
 }
 
+async fn list_all_stock_balances_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let balances = state
+        .get_stock_query
+        .list_all_balances(tenant_id)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok(Json(balances))
+}
+
 async fn get_stock_balance_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -790,6 +804,10 @@ pub fn create_router(state: AppState) -> Router {
             post(transfer_stock_handler),
         )
         .route("/api/v1/inventory/movements", get(list_movements_handler))
+        .route(
+            "/api/v1/inventory/stock",
+            get(list_all_stock_balances_handler),
+        )
         .route(
             "/api/v1/inventory/stock/{product_id}",
             get(get_stock_balance_handler),

@@ -179,6 +179,14 @@ pub trait StockRepository: Send + Sync {
         product_id: Uuid,
     ) -> Result<Vec<StockBalance>, RepositoryError>;
 
+    async fn list_all_balances(
+        &self,
+        _session: &mut dyn DbSession,
+        _tenant_id: Uuid,
+    ) -> Result<Vec<StockBalance>, RepositoryError> {
+        Ok(vec![])
+    }
+
     async fn list_movements(
         &self,
         session: &mut dyn DbSession,
