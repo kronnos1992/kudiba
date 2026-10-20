@@ -145,6 +145,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   const can = (module: string): boolean =>
     isSuperadmin || !subscribed || subscribed.includes(module);
 
+  const hasOperation = Boolean(activeTenant?.id);
+
   const platformQuery = useQuery<PlatformCommercialSummary>({
     queryKey: ['dashboard_platform_commercial'],
     queryFn: () => dashboardApi.getBackofficeCommercialSummary(),
@@ -155,34 +157,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   const invoicingQuery = useQuery({
     queryKey: ['dashboard_invoicing_summary', activeTenant?.id, year],
     queryFn: () => dashboardApi.getInvoicingSummary(year),
-    enabled: !isSuperadmin && can('invoicing') && Boolean(activeTenant?.id),
+    enabled: can('invoicing') && hasOperation,
     retry: false,
   });
 
   const treasuryQuery = useQuery({
     queryKey: ['dashboard_treasury_summary', activeTenant?.id],
     queryFn: () => dashboardApi.getTreasurySummary(),
-    enabled: !isSuperadmin && can('treasury') && Boolean(activeTenant?.id),
+    enabled: can('treasury') && hasOperation,
     retry: false,
   });
 
   const payrollQuery = useQuery({
     queryKey: ['dashboard_payroll_summary', activeTenant?.id, year],
     queryFn: () => dashboardApi.getPayrollSummary(year),
-    enabled: !isSuperadmin && can('payroll') && Boolean(activeTenant?.id),
+    enabled: can('payroll') && hasOperation,
     retry: false,
   });
 
   const inventoryQuery = useQuery({
     queryKey: ['dashboard_inventory_summary', activeTenant?.id],
     queryFn: () => dashboardApi.getInventorySummary(),
-    enabled: !isSuperadmin && can('inventory') && Boolean(activeTenant?.id),
+    enabled: can('inventory') && hasOperation,
     retry: false,
   });
 
   const title = isSuperadmin ? 'Painel Comercial' : 'Visão Empresa';
   const subtitle = isSuperadmin
-    ? 'Gestão comercial · carteira de clientes, novos subscritores e crescimento'
+    ? `Gestão comercial e saúde financeira · ${activeTenant?.name || 'Empresa activa'}`
     : `${activeTenant?.name || 'Kudiba Organização'} • NIF ${activeTenant?.taxId || '—'}`;
 
   const noModules = !isSuperadmin && BILLABLE_MODULES.every((m) => !can(m));
@@ -197,7 +199,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5 truncate">{subtitle}</p>
         </div>
 
-        {!isSuperadmin && (
+        {isSuperadmin ? (
+          <button
+            onClick={() => onNavigate('clients')}
+            className="flex-1 sm:flex-initial justify-center inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs sm:text-sm font-bold shadow-md shadow-emerald-700/20 transition-all cursor-pointer"
+          >
+            <Building2 className="w-4 h-4 shrink-0" />
+            <span>Gerir Clientes</span>
+          </button>
+        ) : (
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <button
               onClick={() => onNavigate('pos')}
@@ -218,7 +228,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
       </div>
 
       {isSuperadmin ? (
-        <CommercialView query={platformQuery} onNavigate={onNavigate} />
+        <div className="space-y-5 sm:space-y-6">
+          <CommercialView query={platformQuery} onNavigate={onNavigate} />
+          {hasOperation && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pt-2">
+                <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  Operação de {activeTenant?.name || 'empresa activa'}
+                </span>
+                <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+              </div>
+              <CompanyView
+                invoicingQuery={invoicingQuery}
+                treasuryQuery={treasuryQuery}
+                payrollQuery={payrollQuery}
+                inventoryQuery={inventoryQuery}
+                can={can}
+                year={year}
+              />
+            </div>
+          )}
+        </div>
       ) : noModules ? (
         <GlassCard className="p-8 text-center text-slate-500 dark:text-slate-400">
           <Building2 className="w-8 h-8 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
