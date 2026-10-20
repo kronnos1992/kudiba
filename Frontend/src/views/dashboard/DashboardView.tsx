@@ -17,26 +17,19 @@ import {
 } from 'recharts';
 import {
   TrendingUp,
-  TrendingDown,
   Landmark,
   PlusCircle,
   Store,
-  ArrowRight,
   Users,
   Wallet,
   Boxes,
   Building2,
-  UserPlus,
-  Award,
-  Activity,
-  AlertTriangle,
   Loader2,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount, formatKwanza } from '../../components/common/KzAmount';
 import { dashboardApi } from '../../api/dashboard';
-import { PlatformCommercialSummary } from '../../types/backoffice';
 
 interface DashboardViewProps {
   onNavigate: (module: string) => void;
@@ -147,13 +140,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
 
   const hasOperation = Boolean(activeTenant?.id);
 
-  const platformQuery = useQuery<PlatformCommercialSummary>({
-    queryKey: ['dashboard_platform_commercial'],
-    queryFn: () => dashboardApi.getBackofficeCommercialSummary(),
-    enabled: isSuperadmin,
-    retry: false,
-  });
-
   const invoicingQuery = useQuery({
     queryKey: ['dashboard_invoicing_summary', activeTenant?.id, year],
     queryFn: () => dashboardApi.getInvoicingSummary(year),
@@ -182,9 +168,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
     retry: false,
   });
 
-  const title = isSuperadmin ? 'Painel Comercial' : 'Visão Empresa';
+  const title = isSuperadmin ? 'Visão Plataforma' : 'Visão Empresa';
   const subtitle = isSuperadmin
-    ? `Gestão comercial e saúde financeira · ${activeTenant?.name || 'Empresa activa'}`
+    ? `Saúde financeira e operação · ${activeTenant?.name || 'Empresa activa'}`
     : `${activeTenant?.name || 'Kudiba Organização'} • NIF ${activeTenant?.taxId || '—'}`;
 
   const noModules = !isSuperadmin && BILLABLE_MODULES.every((m) => !can(m));
@@ -227,30 +213,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         )}
       </div>
 
-      {isSuperadmin ? (
-        <div className="space-y-5 sm:space-y-6">
-          <CommercialView query={platformQuery} onNavigate={onNavigate} />
-          {hasOperation && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 pt-2">
-                <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                  Operação de {activeTenant?.name || 'empresa activa'}
-                </span>
-                <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-              </div>
-              <CompanyView
-                invoicingQuery={invoicingQuery}
-                treasuryQuery={treasuryQuery}
-                payrollQuery={payrollQuery}
-                inventoryQuery={inventoryQuery}
-                can={can}
-                year={year}
-              />
-            </div>
-          )}
-        </div>
-      ) : noModules ? (
+      {noModules ? (
         <GlassCard className="p-8 text-center text-slate-500 dark:text-slate-400">
           <Building2 className="w-8 h-8 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
           <p className="text-sm font-semibold">Nenhum módulo subscrito.</p>
@@ -269,136 +232,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         />
       )}
     </div>
-  );
-};
-
-const monthLabel = (key: string): string => {
-  const [year, month] = key.split('-');
-  const idx = Number(month) - 1;
-  return `${MONTHS[idx] ?? month}/${year.slice(2)}`;
-};
-
-const CommercialView: React.FC<{
-  query: QueryLike<PlatformCommercialSummary>;
-  onNavigate: (module: string) => void;
-}> = ({ query, onNavigate }) => {
-  const data = query.data;
-
-  if (query.isLoading) {
-    return (
-      <GlassCard className="p-6">
-        <LoadingBlock message="A carregar indicadores comerciais..." />
-      </GlassCard>
-    );
-  }
-
-  if (query.isError || !data) {
-    return (
-      <GlassCard className="p-6 flex items-start gap-3 text-amber-700 dark:text-amber-400">
-        <AlertTriangle className="w-5 h-5 mt-0.5" />
-        <div>
-          <p className="text-sm font-bold">Não foi possível carregar o painel comercial.</p>
-          <p className="text-xs mt-0.5 text-amber-600/80 dark:text-amber-400/70">
-            Apenas administradores de plataforma têm acesso a estes indicadores.
-          </p>
-        </div>
-      </GlassCard>
-    );
-  }
-
-  const trend = (data.monthly || []).map((b) => ({
-    label: monthLabel(b.month),
-    clientes: b.count,
-  }));
-  const maxCount = Math.max(1, ...trend.map((t) => t.clientes));
-  const growing = data.growth_rate !== null && data.growth_rate >= 0;
-  const GrowthIcon = growing ? TrendingUp : TrendingDown;
-
-  return (
-    <>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <KpiCard
-          label="Carteira de Clientes"
-          icon={Building2}
-          iconClass="text-emerald-600 dark:text-emerald-400"
-          footer={`${data.new_last_12m} novos nos últimos 12 meses`}
-        >
-          <div className="text-2xl font-bold text-slate-900 dark:text-white">
-            {data.total_clients}
-          </div>
-        </KpiCard>
-
-        <KpiCard
-          label="Novos este Mês"
-          icon={UserPlus}
-          iconClass="text-blue-600 dark:text-blue-400"
-          footer={`${data.new_last_month} no mês anterior`}
-        >
-          <div className="text-2xl font-bold text-slate-900 dark:text-white">
-            {data.new_this_month}
-          </div>
-        </KpiCard>
-
-        <KpiCard
-          label="Crescimento Mensal"
-          icon={GrowthIcon}
-          iconClass={growing ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}
-          footer="Variação face ao mês anterior"
-        >
-          <div
-            className={`text-2xl font-bold ${
-              growing ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-            }`}
-          >
-            {data.growth_rate === null
-              ? '—'
-              : `${data.growth_rate > 0 ? '+' : ''}${data.growth_rate}%`}
-          </div>
-        </KpiCard>
-
-        <KpiCard
-          label="Adquiridos em 12 Meses"
-          icon={Award}
-          iconClass="text-purple-600 dark:text-purple-400"
-          footer="Novos clientes subscritores"
-        >
-          <div className="text-2xl font-bold text-slate-900 dark:text-white">
-            {data.new_last_12m}
-          </div>
-        </KpiCard>
-      </div>
-
-      <ChartCard title="Aquisição de Clientes" subtitle="Novos subscritores por mês (últimos 12 meses)">
-        {data.new_last_12m === 0 ? (
-          <EmptyState message="Sem novos clientes registados no período." />
-        ) : (
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" vertical={false} />
-              <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
-              <YAxis allowDecimals={false} domain={[0, maxCount]} tick={axisTick} axisLine={false} tickLine={false} width={40} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Bar dataKey="clientes" name="Novos clientes" fill="#059669" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </ChartCard>
-
-      <GlassCard className="p-5 flex items-center gap-3">
-        <Activity className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-        <span className="text-sm text-slate-700 dark:text-slate-300">
-          <span className="font-bold">{data.total_clients}</span> clientes na carteira ·{' '}
-          <span className="font-bold">{data.new_this_month}</span> novos este mês.
-        </span>
-        <button
-          onClick={() => onNavigate('clients')}
-          className="ml-auto text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
-        >
-          <span>Gerir clientes</span>
-          <ArrowRight className="w-3.5 h-3.5" />
-        </button>
-      </GlassCard>
-    </>
   );
 };
 
