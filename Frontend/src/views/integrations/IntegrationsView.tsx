@@ -244,7 +244,7 @@ export const IntegrationsView: React.FC = () => {
     reader.readAsText(file, 'utf-8');
   };
 
-  const loadFieldPreset = (type: 'PRODUCT' | 'CUSTOMER' | 'INVOICE' | 'PAYMENT') => {
+  const loadFieldPreset = (type: 'PRODUCT' | 'CUSTOMER' | 'INVOICE' | 'PAYMENT' | 'ATTENDANCE') => {
     if (type === 'PRODUCT') {
       setMappingForm({
         ...mappingForm,
@@ -289,6 +289,21 @@ export const IntegrationsView: React.FC = () => {
           { source: 'cliente_nif', target: 'customer_tax_id', type: 'string', default: '999999999' },
           { source: 'total_liquido', target: 'total_amount', type: 'decimal', required: true },
           { source: 'total_imposto', target: 'tax_amount', type: 'decimal', default: 0 },
+        ],
+      });
+    } else if (type === 'ATTENDANCE') {
+      setMappingForm({
+        ...mappingForm,
+        name: 'Mapeamento de Picagens / Relógio de Ponto',
+        entity_type: 'ATTENDANCE',
+        target_event_type: 'attendance.recorded',
+        target_routing_key: 'payroll.event.attendance.recorded',
+        field_mappings: [
+          { source: 'codigo_funcionario', target: 'employee_code', type: 'string', transform: 'trim', required: true },
+          { source: 'data_hora', target: 'punched_at', type: 'datetime', required: true },
+          { source: 'sentido', target: 'direction', type: 'string', default: 'IN' },
+          { source: 'id_relogio', target: 'device_id', type: 'string', default: 'RELOGIO-01' },
+          { source: 'id_registo', target: 'external_id', type: 'string' },
         ],
       });
     }
@@ -1499,6 +1514,13 @@ export const IntegrationsView: React.FC = () => {
                   >
                     🧾 Vendas / Faturas
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => loadFieldPreset('ATTENDANCE')}
+                    className="px-2.5 py-1 rounded-lg border border-teal-200 dark:border-teal-700/60 bg-teal-50/50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/40 text-xs font-semibold text-teal-700 dark:text-teal-300"
+                  >
+                    ⏰ Assiduidade / Relógio de Ponto
+                  </button>
                 </div>
               </div>
 
@@ -1516,6 +1538,7 @@ export const IntegrationsView: React.FC = () => {
                     <option value="CUSTOMER">Clientes</option>
                     <option value="INVOICE">Faturas / Documentos</option>
                     <option value="PAYMENT">Pagamentos / Caixa</option>
+                    <option value="ATTENDANCE">Assiduidade / Ponto Biométrico</option>
                   </select>
                 </div>
 
