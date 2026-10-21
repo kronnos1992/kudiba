@@ -12,6 +12,9 @@ import {
   ShieldCheck,
   CalendarClock,
   Layers,
+  Award,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge, StatusType } from '../../components/common/StatusBadge';
@@ -29,6 +32,67 @@ const STATUS_META: Record<string, { status: StatusType; label: string }> = {
   SUSPENDED: { status: 'medio', label: 'Suspensa' },
   NONE: { status: 'acompanhar', label: 'Sem Licença' },
   CANCELLED: { status: 'acompanhar', label: 'Cancelada' },
+};
+
+const MODULE_CONFIG: Record<string, { label: string; short: string; color: string; border: string }> = {
+  invoicing: {
+    label: 'Faturação AGT',
+    short: 'Faturação',
+    color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+    border: 'border-emerald-200 dark:border-emerald-800/60',
+  },
+  inventory: {
+    label: 'Stocks & Catálogo',
+    short: 'Stocks',
+    color: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+    border: 'border-amber-200 dark:border-amber-800/60',
+  },
+  treasury: {
+    label: 'Tesouraria & Caixa',
+    short: 'Tesouraria',
+    color: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
+    border: 'border-blue-200 dark:border-blue-800/60',
+  },
+  payroll: {
+    label: 'Recursos Humanos & Salários',
+    short: 'Salários',
+    color: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300',
+    border: 'border-purple-200 dark:border-purple-800/60',
+  },
+  accounting: {
+    label: 'Contabilidade Geral PGC',
+    short: 'Contabilidade',
+    color: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300',
+    border: 'border-indigo-200 dark:border-indigo-800/60',
+  },
+  integrations: {
+    label: 'Hub de Integrações & ETL',
+    short: 'Integrações',
+    color: 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300',
+    border: 'border-teal-200 dark:border-teal-800/60',
+  },
+};
+
+const PLAN_CONFIG: Record<string, { label: string; badge: string }> = {
+  STANDARD: {
+    label: 'STANDARD',
+    badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+  },
+  PROFESSIONAL: {
+    label: 'PROFESSIONAL',
+    badge: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+  },
+  ENTERPRISE: {
+    label: 'ENTERPRISE',
+    badge: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+  },
+};
+
+const getDaysRemaining = (validUntil?: string | null) => {
+  if (!validUntil) return null;
+  const target = new Date(validUntil).getTime();
+  const now = new Date().getTime();
+  return Math.ceil((target - now) / (1000 * 60 * 60 * 24));
 };
 
 const statusMeta = (value: string) => STATUS_META[value] || STATUS_META.NONE;
@@ -61,6 +125,8 @@ export const ClientesView: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [detailClient, setDetailClient] = useState<BackofficeClient | null>(null);
   const [renewClient, setRenewClient] = useState<BackofficeClient | null>(null);
+  const [certificateClient, setCertificateClient] = useState<BackofficeClient | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [createAdmin, setCreateAdmin] = useState(false);
 
   const [form, setForm] = useState<CreateClientPayload>(emptyForm);
@@ -70,6 +136,11 @@ export const ClientesView: React.FC = () => {
   const { data: modules = [] } = useQuery({
     queryKey: ['backoffice_modules'],
     queryFn: () => backofficeApi.listModules(),
+  });
+
+  const { data: summary } = useQuery({
+    queryKey: ['backoffice_summary'],
+    queryFn: () => backofficeApi.getSummary(),
   });
 
   const { data: clients = [], isLoading } = useQuery({
@@ -152,6 +223,40 @@ export const ClientesView: React.FC = () => {
     });
   };
 
+  const applyBundle = (bundle: 'FULL' | 'COMMERCIAL' | 'ACCOUNTING_HR') => {
+    const allKeys = modules.map((m) => m.key);
+    if (bundle === 'FULL') {
+      setForm((prev) => ({ ...prev, modules: allKeys }));
+    } else if (bundle === 'COMMERCIAL') {
+      setForm((prev) => ({
+        ...prev,
+        modules: allKeys.filter((k) => ['invoicing', 'inventory', 'treasury'].includes(k)),
+      }));
+    } else if (bundle === 'ACCOUNTING_HR') {
+      setForm((prev) => ({
+        ...prev,
+        modules: allKeys.filter((k) => ['payroll', 'accounting', 'invoicing'].includes(k)),
+      }));
+    }
+  };
+
+  const applyRenewBundle = (bundle: 'FULL' | 'COMMERCIAL' | 'ACCOUNTING_HR') => {
+    const allKeys = modules.map((m) => m.key);
+    if (bundle === 'FULL') {
+      setRenewForm((prev) => ({ ...prev, modules: allKeys }));
+    } else if (bundle === 'COMMERCIAL') {
+      setRenewForm((prev) => ({
+        ...prev,
+        modules: allKeys.filter((k) => ['invoicing', 'inventory', 'treasury'].includes(k)),
+      }));
+    } else if (bundle === 'ACCOUNTING_HR') {
+      setRenewForm((prev) => ({
+        ...prev,
+        modules: allKeys.filter((k) => ['payroll', 'accounting', 'invoicing'].includes(k)),
+      }));
+    }
+  };
+
   const total = clients.length;
   const activeCount = clients.filter((c) => c.license_status === 'ACTIVE').length;
   const expiredCount = clients.filter((c) => c.license_status === 'EXPIRED').length;
@@ -169,6 +274,7 @@ export const ClientesView: React.FC = () => {
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
             Gestão de clientes subscritores, licenças anuais e módulos contratados
+            {summary ? ` • ${summary.active_seats} utilizadores autorizados na plataforma` : ''}
           </p>
         </div>
 
@@ -281,57 +387,126 @@ export const ClientesView: React.FC = () => {
                 clients.map((client) => {
                   const meta = statusMeta(client.license_status);
                   return (
-                    <tr key={client.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                      <td className="px-4 py-3">
-                        <span className="block font-semibold text-slate-900 dark:text-white">
-                          {client.company_name}
-                        </span>
-                        <span className="text-xs text-slate-400 block">{client.contact_email || '—'}</span>
+                    <tr key={client.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500/20 to-blue-500/20 text-emerald-700 dark:text-emerald-300 font-black text-sm flex items-center justify-center shrink-0 border border-emerald-500/30">
+                            {client.company_name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="block font-bold text-slate-900 dark:text-white truncate">
+                              {client.company_name}
+                            </span>
+                            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                              {client.contact_email ? (
+                                <span className="truncate">{client.contact_email}</span>
+                              ) : null}
+                              {client.contact_phone ? (
+                                <span className="text-[11px] text-slate-400">({client.contact_phone})</span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">
+                      <td className="px-4 py-3.5 font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
                         {client.nif}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1 max-w-[220px]">
-                          {(client.license?.modules || []).map((m) => (
-                            <span
-                              key={m}
-                              className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                            >
-                              {m}
-                            </span>
-                          ))}
+                      <td className="px-4 py-3.5">
+                        <div className="flex flex-wrap gap-1.5 max-w-[280px]">
+                          {(client.license?.modules || []).map((m) => {
+                            const cfg = MODULE_CONFIG[m] || {
+                              label: m,
+                              short: m,
+                              color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+                              border: 'border-slate-200 dark:border-slate-700',
+                            };
+                            return (
+                              <span
+                                key={m}
+                                title={cfg.label}
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-colors ${cfg.color} ${cfg.border}`}
+                              >
+                                {cfg.short}
+                              </span>
+                            );
+                          })}
                           {(client.license?.modules || []).length === 0 && (
-                            <span className="text-xs text-slate-400">—</span>
+                            <span className="text-xs text-slate-400 italic">Nenhum módulo ativo</span>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-xs text-slate-500">
+                      <td className="px-4 py-3.5 text-xs">
                         {client.license ? (
-                          <>
-                            <span className="block">{formatDate(client.license.valid_until)}</span>
-                            <span className="text-[10px] text-slate-400">{client.license.plan}</span>
-                          </>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-800 dark:text-slate-200">
+                                {formatDate(client.license.valid_until)}
+                              </span>
+                              {(() => {
+                                const days = getDaysRemaining(client.license.valid_until);
+                                if (days === null) return null;
+                                if (days > 30) {
+                                  return (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                      {days}d restantes
+                                    </span>
+                                  );
+                                }
+                                if (days > 0) {
+                                  return (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 animate-pulse">
+                                      {days}d restantes
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                                    Expirada
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${
+                                  PLAN_CONFIG[client.license.plan]?.badge ||
+                                  'bg-slate-100 text-slate-600 border-slate-200'
+                                }`}
+                              >
+                                {client.license.plan}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {client.license.seats} utilizador{client.license.seats > 1 ? 'es' : ''}
+                              </span>
+                            </div>
+                          </div>
                         ) : (
-                          '—'
+                          <span className="text-slate-400">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-4 py-3.5 text-center">
                         <StatusBadge status={meta.status} label={meta.label} />
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3.5">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
-                            title="Detalhe"
+                            title="Certificado Oficial de Licença"
+                            onClick={() => setCertificateClient(client)}
+                            className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"
+                          >
+                            <Award className="w-4 h-4" />
+                          </button>
+                          <button
+                            title="Detalhe do Cliente"
                             onClick={() => setDetailClient(client)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
                             title="Renovar licença"
                             onClick={() => openRenew(client)}
-                            className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                            className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors"
                           >
                             <RefreshCw className="w-4 h-4" />
                           </button>
@@ -339,7 +514,7 @@ export const ClientesView: React.FC = () => {
                             <button
                               title="Reactivar"
                               onClick={() => activateMutation.mutate(client.id)}
-                              className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                              className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors"
                             >
                               <PlayCircle className="w-4 h-4" />
                             </button>
@@ -347,7 +522,7 @@ export const ClientesView: React.FC = () => {
                             <button
                               title="Suspender"
                               onClick={() => suspendMutation.mutate(client.id)}
-                              className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                              className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors"
                             >
                               <Ban className="w-4 h-4" />
                             </button>
@@ -440,9 +615,34 @@ export const ClientesView: React.FC = () => {
             </div>
 
             <div>
-              <span className="block text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase mb-2 flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5" /> Módulos Subscritos
-              </span>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5" /> Módulos Subscritos
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => applyBundle('FULL')}
+                    className="px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[10px] font-bold hover:bg-emerald-100 cursor-pointer"
+                  >
+                    + Todos (Full ERP)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyBundle('COMMERCIAL')}
+                    className="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[10px] font-bold hover:bg-blue-100 cursor-pointer"
+                  >
+                    + Comercial
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyBundle('ACCOUNTING_HR')}
+                    className="px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-[10px] font-bold hover:bg-purple-100 cursor-pointer"
+                  >
+                    + RH &amp; Contabilidade
+                  </button>
+                </div>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {modules.map((mod) => (
                   <label
@@ -564,9 +764,34 @@ export const ClientesView: React.FC = () => {
               </Field>
             </div>
             <div>
-              <span className="block text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase mb-2">
-                Módulos Subscritos
-              </span>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5" /> Módulos Subscritos
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => applyRenewBundle('FULL')}
+                    className="px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[10px] font-bold hover:bg-emerald-100 cursor-pointer"
+                  >
+                    + Todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyRenewBundle('COMMERCIAL')}
+                    className="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[10px] font-bold hover:bg-blue-100 cursor-pointer"
+                  >
+                    + Comercial
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyRenewBundle('ACCOUNTING_HR')}
+                    className="px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-[10px] font-bold hover:bg-purple-100 cursor-pointer"
+                  >
+                    + RH &amp; Contabilidade
+                  </button>
+                </div>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {modules.map((mod) => (
                   <label
@@ -651,6 +876,109 @@ export const ClientesView: React.FC = () => {
                 {!(detail?.license_history || detailClient.license_history || []).length && (
                   <p className="text-sm text-slate-400">Sem histórico de licenças.</p>
                 )}
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal: Certificado Oficial de Licença */}
+      {certificateClient && (
+        <Modal
+          onClose={() => setCertificateClient(null)}
+          title="Certificado Oficial de Licença — Kudiba B2B"
+          icon={<Award className="w-5 h-5 text-emerald-600" />}
+          wide
+        >
+          <div className="space-y-6">
+            <div className="p-6 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950 text-white border border-emerald-500/40 shadow-xl relative overflow-hidden">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 font-black text-xl">
+                    {certificateClient.company_name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black tracking-tight text-white">
+                      {certificateClient.company_name}
+                    </h3>
+                    <p className="text-xs text-white/70 font-mono">
+                      NIF: {certificateClient.nif}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                    Plano {certificateClient.license?.plan || 'STANDARD'}
+                  </span>
+                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-white/10 text-white/90">
+                    {certificateClient.license?.seats || 5} Utilizadores
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-5 text-xs">
+                <div>
+                  <span className="text-[11px] font-bold text-white/60 uppercase block mb-1">
+                    Chave de Ativação / Licença Criptográfica:
+                  </span>
+                  <div className="flex items-center gap-2 bg-white/5 border border-white/15 rounded-xl p-2.5 font-mono text-[11px] text-emerald-300">
+                    <span className="truncate flex-1">
+                      {certificateClient.license?.license_key || 'KUDIBA-B2B-LIC-2026-ACTIVE'}
+                    </span>
+                    <button
+                      type="button"
+                      title="Copiar Chave"
+                      onClick={() => {
+                        const key = certificateClient.license?.license_key || 'KUDIBA-B2B-LIC-2026-ACTIVE';
+                        navigator.clipboard.writeText(key);
+                        setCopiedKey(key);
+                        setTimeout(() => setCopiedKey(null), 2000);
+                      }}
+                      className="p-1 rounded bg-white/10 hover:bg-white/20 text-white shrink-0 cursor-pointer"
+                    >
+                      {copiedKey ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[11px] font-bold text-white/60 uppercase block mb-1">
+                    Período de Validade:
+                  </span>
+                  <div className="bg-white/5 border border-white/15 rounded-xl p-2.5 flex items-center justify-between text-xs">
+                    <span className="text-white/80">
+                      Início: {formatDate(certificateClient.license?.valid_from || certificateClient.created_at)}
+                    </span>
+                    <span className="font-bold text-emerald-400">
+                      Término: {formatDate(certificateClient.license?.valid_until)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[11px] font-bold text-white/60 uppercase block mb-2">
+                  Módulos Contratados &amp; Autorizados no Ecossistema:
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {(certificateClient.license?.modules || []).map((m) => {
+                    const cfg = MODULE_CONFIG[m] || { label: m, short: m };
+                    return (
+                      <div
+                        key={m}
+                        className="flex items-center gap-2 p-2 rounded-lg bg-white/5 border border-white/10 text-xs"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span className="font-semibold text-white/90 truncate">{cfg.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="border-t border-white/10 pt-4 mt-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[11px] text-white/60">
+                <span>Software de Gestão Comercial Certificado conforme Decreto Presidencial n.º 71/25 (AGT/2026/0042)</span>
+                <span className="font-mono text-emerald-400 font-bold">Autenticado Kudiba Cloud B2B</span>
               </div>
             </div>
           </div>
