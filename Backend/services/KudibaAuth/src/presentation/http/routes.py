@@ -79,7 +79,7 @@ class UpdateTenantSettingsHttpRequest(BaseModel):
     currency: Optional[str] = Field(None, max_length=3, description="Moeda operacional (AOA, USD, EUR)")
     tax_regime_code: Optional[str] = Field(None, max_length=32, description="Regime de IVA (REGIME_GERAL, REGIME_SIMPLIFICADO, REGIME_EXCLUSAO)")
     tax_office_code: Optional[str] = Field(None, max_length=128, description="Repartição Fiscal")
-    agt_cert_number: Optional[str] = Field(None, max_length=64, description="Número de Certificação AGT")
+    agt_cert_number: Optional[str] = Field(None, max_length=64, description="Número de Certificação de Software")
     default_withholding_rate: Optional[float] = Field(None, ge=0, le=100, description="Taxa de retenção na fonte padrão (%)")
     invoice_footer_notes: Optional[str] = Field(None, description="Menções ou observações no rodapé dos documentos")
     bank_accounts: Optional[List[BankAccountHttpItem]] = Field(None, description="Coordenadas bancárias constantes nos documentos oficiais")

@@ -106,7 +106,7 @@ const getNifValidation = (nif: string) => {
   if (clean.length < 10) {
     return { valid: false, type: 'INCOMPLETO', label: `Incompleto (${clean.length}/10 dígitos)` };
   }
-  return { valid: false, type: 'INVALIDO', label: 'Formato de NIF não padrão AGT' };
+  return { valid: false, type: 'INVALIDO', label: 'Formato de NIF não padrão' };
 };
 
 const getIbanValidation = (iban: string) => {
@@ -406,7 +406,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
 
     const items = [
       { label: 'Denominação Social', ok: hasLegalName, hint: 'Nome societário oficial' },
-      { label: 'NIF de Empresa Válido', ok: hasNif, hint: '10 dígitos AGT' },
+      { label: 'NIF de Empresa Válido', ok: hasNif, hint: '10 dígitos' },
       { label: 'Sede e Município', ok: hasAddress, hint: 'Endereço fiscal impresso' },
       { label: 'Regime de IVA & Repartição', ok: hasTaxRegime && hasTaxOffice, hint: 'Enquadramento tributário' },
       { label: 'IBAN para Pagamento', ok: hasBank, hint: 'Liquidação comercial' },
@@ -599,7 +599,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white">
-              Parametrização da Empresa &amp; Conformidade AGT
+              Parametrização da Empresa &amp; Conformidade Fiscal
             </h2>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
               Conforme Decreto 71/25
@@ -623,7 +623,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
           )}
           <div className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2 border border-slate-200 dark:border-slate-700">
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-            Certificado AGT:{' '}
+            Certificado:{' '}
             <span className="font-mono text-emerald-600">
               {companyForm.agt_cert_number || 'AGT/2026/0042'}
             </span>
@@ -667,7 +667,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
             }`}
           >
             <Key className="w-4 h-4" />
-            Certificação AGT &amp; Chaves RSA
+            Certificação &amp; Chaves RSA
           </button>
 
           <button
@@ -712,7 +712,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                     Dados societários e fiscais obrigatórios nas Faturas, Notas de Crédito, Recibos e SAF-T (AO)
                   </p>
                 </div>
-                <StatusBadge status="ok" label="Sujeito Passivo AGT" />
+                <StatusBadge status="ok" label="Sujeito Passivo" />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
@@ -1039,7 +1039,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
               <div className="border-b border-slate-200 dark:border-slate-800 pb-4">
                 <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-brand-600" />
-                  3. Parâmetros Fiscais AGT &amp; Menções nos Documentos
+                  3. Parâmetros Fiscais &amp; Menções nos Documentos
                 </h3>
                 <p className="text-xs text-slate-500">
                   Regime de IVA, Repartição Fiscal de domicílio, retenção na fonte padrão e rodapé legal
@@ -1049,7 +1049,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                 <div>
                   <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block mb-1">
-                    Regime Fiscal de IVA (AGT)
+                    Regime Fiscal de IVA
                   </label>
                   <select
                     value={companyForm.tax_regime_code}
@@ -1081,7 +1081,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
 
                 <div>
                   <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block mb-1">
-                    N.º de Certificação AGT do Software
+                    N.º de Certificação do Software
                   </label>
                   <input
                     type="text"
@@ -1733,16 +1733,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-300">
-              Conforme exigido pelo regime de certificação de programas de faturação da AGT em Angola, cada documento emitido (Facturas, Facturas-Recibo, Notas de Crédito) é assinado com chave privada RSA-2048 usando o algoritmo SHA1withRSA, gerando o hash de 172 caracteres.
+              Conforme exigido pelo regime de certificação de programas de faturação em Angola, cada documento emitido (Facturas, Facturas-Recibo, Notas de Crédito) é assinado com chave privada RSA-2048 usando o algoritmo SHA1withRSA, gerando o hash de 172 caracteres.
             </p>
 
             <div className="space-y-3 font-mono text-xs">
               <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300">
                 <span className="font-bold block text-slate-900 dark:text-white mb-1">
-                  Chave Pública Registada na AGT:
+                  Chave Pública Registada:
                 </span>
                 <p className="break-all font-mono text-[11px] text-slate-600 dark:text-slate-400">
-                  MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0f9kudibaAGT2026rsa2048publickeyhash
+                  MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0f9kudiba2026rsa2048publickeyhash
                   5412345678AO...wIDAQAB
                 </p>
               </div>
@@ -1765,7 +1765,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
               <div className="flex items-center gap-2.5">
                 <ShieldCheck className="w-5 h-5 text-blue-600" />
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  Regime de Contingência AGT
+                  Regime de Contingência
                 </h3>
               </div>
               <StatusBadge status="ok" label="Dentro do Prazo Legal" />
@@ -1790,7 +1790,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-600 dark:text-slate-300 font-semibold">
-                  Estado do Canal AGT:
+                  Estado do Canal:
                 </span>
                 <span className="font-bold font-mono text-emerald-600">OPERACIONAL</span>
               </div>
@@ -1894,7 +1894,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                 }`}
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
-                Trilha Fiscal AGT ({fiscalAuditData?.total ?? 0})
+                Trilha Fiscal ({fiscalAuditData?.total ?? 0})
               </button>
               <button
                 type="button"
@@ -2406,7 +2406,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                       <span className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 font-black flex items-center justify-center text-sm">
                         XML
                       </span>
-                      <StatusBadge status="ok" label="Conforme AGT" />
+                      <StatusBadge status="ok" label="Conforme" />
                     </div>
                     <h3 className="text-base font-bold text-slate-900 dark:text-white">
                       Ficheiro SAF-T AO de Facturação Comercial
@@ -2637,7 +2637,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
           <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Nova Série Fiscal (AGT)
+                Nova Série Fiscal
               </h3>
               <button
                 onClick={() => setIsSeriesModalOpen(false)}

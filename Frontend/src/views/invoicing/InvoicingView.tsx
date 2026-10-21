@@ -189,7 +189,7 @@ export const InvoicingView: React.FC = () => {
       const isService = l.isService || prod?.product_type === 'S' || prod?.is_stockable === false;
       if (isService) {
         errors.push(
-          `O artigo "${l.description}" é um serviço. A AGT proíbe a inclusão de serviços em Guias de Transporte ou Remessa.`
+          `O artigo "${l.description}" é um serviço. A legislação fiscal proíbe a inclusão de serviços em Guias de Transporte ou Remessa.`
         );
       }
     }
@@ -377,7 +377,7 @@ export const InvoicingView: React.FC = () => {
     } catch (err: any) {
       setSaftValidationResult({
         isValid: false,
-        errors: [err?.response?.data?.detail || 'Erro ao comunicar com validador XSD da AGT.'],
+        errors: [err?.response?.data?.detail || 'Erro ao comunicar com validador XSD oficial.'],
       });
     } finally {
       setIsValidatingSaft(false);
@@ -426,7 +426,7 @@ export const InvoicingView: React.FC = () => {
     }
 
     if (serviceTransportErrors.length > 0) {
-      alert(`Emissão bloqueada: Regras da AGT para documentos de transporte.\n\n${serviceTransportErrors.join('\n')}`);
+      alert(`Emissão bloqueada: Regras fiscais para documentos de transporte.\n\n${serviceTransportErrors.join('\n')}`);
       return;
     }
 
@@ -436,7 +436,7 @@ export const InvoicingView: React.FC = () => {
     }
 
     if ((docType === 'GT' || docType === 'GR') && !vehiclePlateNumber.trim()) {
-      alert('Guias de Transporte e Remessa exigem a matrícula da viatura conforme regras da AGT.');
+      alert('Guias de Transporte e Remessa exigem a matrícula da viatura conforme regras fiscais.');
       return;
     }
 
@@ -629,7 +629,7 @@ export const InvoicingView: React.FC = () => {
                 <KzAmount value={summaryTotals.taxEffective} />
               </div>
               <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                Imposto devido ao Estado (AGT)
+                Imposto devido ao Estado
               </span>
             </GlassCard>
           </div>
@@ -861,7 +861,7 @@ export const InvoicingView: React.FC = () => {
                                   e.stopPropagation();
                                   handleDownloadPdf(inv);
                                 }}
-                                title="Download PDF AGT"
+                                title="Download PDF"
                                 className="p-1.5 rounded-lg text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30"
                               >
                                 <Download className="w-4 h-4" />
@@ -901,7 +901,7 @@ export const InvoicingView: React.FC = () => {
                   <FileText className="w-4 h-4 text-emerald-600" />
                   Dados do Documento Fiscal
                 </h3>
-                <StatusBadge status="ok" label="Motor AGT Conforme" />
+                <StatusBadge status="ok" label="Motor Fiscal Conforme" />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1060,7 +1060,7 @@ export const InvoicingView: React.FC = () => {
               {(docType === 'NC' || docType === 'ND') && (
                 <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
                   <label className="block text-xs font-bold text-amber-800 dark:text-amber-300 mb-1">
-                    Documento de Origem Retificado (Obrigatório pela AGT)
+                    Documento de Origem Retificado (Obrigatório por lei)
                   </label>
                   <input
                     type="text"
@@ -1336,7 +1336,7 @@ export const InvoicingView: React.FC = () => {
             <div className="space-y-4">
               <GlassCard className="p-6 space-y-4">
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  Apuramento Tributário (AGT)
+                  Apuramento Tributário
                 </h3>
 
                 <div className="space-y-2.5 text-xs">
@@ -1403,7 +1403,7 @@ export const InvoicingView: React.FC = () => {
                       <span>Serviços em Documentos de Transporte</span>
                     </div>
                     <p className="text-[11px]">
-                      A AGT proíbe estritamente a emissão de Guias de Transporte (GT) ou Remessa (GR) para serviços.
+                      A legislação fiscal proíbe estritamente a emissão de Guias de Transporte (GT) ou Remessa (GR) para serviços.
                     </p>
                   </div>
                 )}
@@ -1569,7 +1569,7 @@ export const InvoicingView: React.FC = () => {
               </div>
               <p className="text-xs text-slate-500">
                 Gere o ficheiro XML oficial de auditoria fiscal em conformidade com as regras da
-                Administração Geral Tributária (AGT).
+                Administração Geral Tributária.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
@@ -1623,7 +1623,7 @@ export const InvoicingView: React.FC = () => {
                   className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs"
                 >
                   <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  <span>{isValidatingSaft ? 'A validar...' : 'Validar Schema AGT'}</span>
+                  <span>{isValidatingSaft ? 'A validar...' : 'Validar Schema'}</span>
                 </button>
               </div>
 
@@ -1662,7 +1662,7 @@ export const InvoicingView: React.FC = () => {
                     {saftValidationResult.isValid ? (
                       <>
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        <span>Ficheiro SAF-T válido contra o Schema XSD da AGT.</span>
+                        <span>Ficheiro SAF-T válido contra o Schema XSD oficial.</span>
                       </>
                     ) : (
                       <>
@@ -1976,7 +1976,7 @@ export const InvoicingView: React.FC = () => {
               </h3>
             </div>
             <p className="text-xs text-slate-500 mb-4">
-              A AGT exige que documentos fiscais assinados sejam retificados via emissão de uma{' '}
+              A regulamentação fiscal exige que documentos fiscais assinados sejam retificados via emissão de uma{' '}
               <strong>Nota de Crédito (NC)</strong> associada.
             </p>
 

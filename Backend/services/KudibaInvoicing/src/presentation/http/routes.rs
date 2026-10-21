@@ -200,7 +200,7 @@ async fn root_handler(State(state): State<AppState>) -> Json<serde_json::Value> 
         "rest": format!("REST on port {}", state.config.http_port),
         "grpc": format!("FiscalEngineService (kudiba.fiscal.v1) on port {}", state.config.grpc_port),
         "docs": "/swagger",
-        "regulation": "Decreto Presidencial n.º 71/25 (AGT Angola)",
+        "regulation": "Decreto Presidencial n.º 71/25 (Angola)",
     }))
 }
 
@@ -210,7 +210,7 @@ async fn health_handler(State(state): State<AppState>) -> Json<serde_json::Value
         "service": "KudibaInvoicing",
         "version": state.config.service_version,
         "framework": "Rust",
-        "regulation": "Decreto Presidencial n.º 71/25 (AGT Angola)",
+        "regulation": "Decreto Presidencial n.º 71/25 (Angola)",
         "timestamp": Utc::now(),
     }))
 }
@@ -270,7 +270,7 @@ async fn issue_invoice_handler(
             tracing::info!(
                 document_number = %result.document_number,
                 gross_total = %result.gross_total,
-                "Documento fiscal emitido com sucesso e registado na trilha de auditoria AGT"
+                "Documento fiscal emitido com sucesso e registado na trilha de auditoria fiscal"
             );
             (StatusCode::CREATED, Json(result)).into_response()
         }
@@ -1107,7 +1107,7 @@ async fn validate_saft_handler(
             Json(json!({
                 "valid": true,
                 "schema": "AO_1.01_01",
-                "message": "Ficheiro SAF-T (AO) estritamente válido segundo o schema oficial XSD da AGT."
+                "message": "Ficheiro SAF-T (AO) estritamente válido segundo o schema oficial XSD."
             })),
         )
             .into_response(),
@@ -2283,7 +2283,7 @@ async fn validate_stock_and_service_integrity(
                 return Err(ApiError::new(
                     StatusCode::UNPROCESSABLE_ENTITY,
                     format!(
-                        "A AGT não permite a inclusão de serviços em Guias de Transporte ou Remessa. Linha: '{}'.",
+                        "A legislação fiscal não permite a inclusão de serviços em Guias de Transporte ou Remessa. Linha: '{}'.",
                         line.description
                     ),
                 ));
@@ -2448,7 +2448,7 @@ async fn generate_keys_handler(headers: HeaderMap) -> Response {
                 "keySizeBits": keypair.key_size_bits,
                 "privateKeyPem": keypair.private_key_pem,
                 "publicKeyPem": keypair.public_key_pem,
-                "instructions": "Guarde a chave privada no servidor em AGT_RSA_PRIVATE_KEY_PATH e submeta a chave pública no portal da AGT para certificação de software fiscal."
+                "instructions": "Guarde a chave privada no servidor em AGT_RSA_PRIVATE_KEY_PATH e submeta a chave pública no portal da Administração Tributária para certificação de software fiscal."
             })),
         )
             .into_response(),

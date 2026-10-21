@@ -74,6 +74,10 @@ impl SyncAgtUseCase {
         self.agt_client
             .submit_invoice_batch(&tenant, &invoices)
             .await
-            .map_err(|err| DomainError::invalid(format!("Falha na sincronização com a AGT: {err}")))
+            .map_err(|err| {
+                DomainError::invalid(format!(
+                    "Falha na sincronização com o serviço fiscal: {err}"
+                ))
+            })
     }
 }

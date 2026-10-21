@@ -55,7 +55,7 @@ impl SaftValidator {
                 .collect();
 
             return Err(DomainError::invalid(format!(
-                "SAF-T (AO) viola o schema oficial XSD da AGT ({} erros detectados): {}",
+                "SAF-T (AO) viola o schema oficial XSD ({} erros detectados): {}",
                 error_details.len(),
                 error_details.join(" | ")
             )));
@@ -108,7 +108,7 @@ mod tests {
         let schema = SaftValidator::get_schema();
         assert!(
             schema.is_ok(),
-            "O schema oficial XSD da AGT deve compilar sem erro: {:?}",
+            "O schema oficial XSD deve compilar sem erro: {:?}",
             schema.err()
         );
     }

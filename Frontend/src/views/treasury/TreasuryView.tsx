@@ -1105,7 +1105,7 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
             </div>
 
             <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300">
-              <span className="font-bold">Regra de Auditoria AGT:</span> Conte as cédulas e moedas físicas na gaveta e introduza o total apurado sem consultar o saldo teórico do sistema.
+              <span className="font-bold">Regra de Auditoria:</span> Conte as cédulas e moedas físicas na gaveta e introduza o total apurado sem consultar o saldo teórico do sistema.
             </div>
 
             <div className="space-y-3">

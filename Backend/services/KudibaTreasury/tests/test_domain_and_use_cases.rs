@@ -519,7 +519,7 @@ impl PosSessionRepository for MockPosSessionRepository {
             .filter(|s| s.tenant_id == tenant_id)
             .cloned()
             .collect();
-        list.sort_by(|a, b| b.opened_at.cmp(&a.opened_at));
+        list.sort_by_key(|b| std::cmp::Reverse(b.opened_at));
         Ok(list)
     }
 

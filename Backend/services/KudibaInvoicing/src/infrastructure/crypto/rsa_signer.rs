@@ -74,9 +74,9 @@ impl RsaCryptoSigner {
             None => {
                 if config.is_production() {
                     Err(DomainError::Crypto(
-                        "ERRO CRÍTICO DE CONFORMIDADE FISCAL (AGT n.º 71/25): \
+                        "ERRO CRÍTICO DE CONFORMIDADE FISCAL (Decreto Presidencial n.º 71/25): \
                          Ambiente de PRODUÇÃO proíbe o uso de chaves efémeras. \
-                         Configure a chave privada RSA-2048 certificada pela AGT através de \
+                         Configure a chave privada RSA-2048 certificada pela Administração Tributária através de \
                          AGT_RSA_PRIVATE_KEY_PEM ou AGT_RSA_PRIVATE_KEY_PATH."
                             .to_string(),
                     ))

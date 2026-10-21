@@ -36,7 +36,7 @@ mod tests {
             Uuid::new_v4(),
             "SRV-001".to_string(),
             None,
-            "Consultoria Fiscal AGT".to_string(),
+            "Consultoria Fiscal".to_string(),
             None,
             ProductType::Service,
             None, // is_stockable padrão false

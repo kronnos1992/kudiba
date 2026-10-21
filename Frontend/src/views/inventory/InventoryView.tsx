@@ -790,7 +790,7 @@ export const InventoryView: React.FC = () => {
             <span>Gestão de Stock</span>
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Catálogo certificado AGT, valorização por Custo Médio Ponderado (CMP), lotes e armazéns via KudibaInventory
+            Catálogo certificado, valorização por Custo Médio Ponderado (CMP), lotes e armazéns via KudibaInventory
           </p>
         </div>
 
@@ -933,7 +933,7 @@ export const InventoryView: React.FC = () => {
             {entities.length}
           </div>
           <span className="text-xs text-slate-400">
-            Clientes e Fornecedores AGT
+            Clientes e Fornecedores
           </span>
         </GlassCard>
 
@@ -1531,7 +1531,7 @@ export const InventoryView: React.FC = () => {
                   Controlo de Lotes &amp; Validades (FIFO / FEFO)
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Garantia de rastreabilidade de mercadorias perecíveis e controlo de validade para a AGT
+                  Garantia de rastreabilidade de mercadorias perecíveis e controlo de validade para efeitos fiscais
                 </p>
               </div>
               <button
@@ -1876,7 +1876,7 @@ export const InventoryView: React.FC = () => {
               {productForm.tax_percentage === '0.00' && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                    Motivo de Isenção (Código AGT) *
+                    Motivo de Isenção (Código) *
                   </label>
                   <select
                     value={productForm.exemption_reason_code}
@@ -2447,7 +2447,7 @@ export const InventoryView: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
                         <CalendarDays className="w-4 h-4 text-amber-600" />
-                        Gestão de Lote Obrigatória (AGT) *
+                        Gestão de Lote Obrigatória *
                       </label>
                       <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
                         <button
@@ -3399,7 +3399,7 @@ export const InventoryView: React.FC = () => {
                     }
                     className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                   />
-                  Agente de Retenção de IVA Cativo (Grandes Contribuintes AGT)
+                  Agente de Retenção de IVA Cativo (Grandes Contribuintes)
                 </label>
               </div>
             </div>

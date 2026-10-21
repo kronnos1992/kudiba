@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("==================================================================");
     tracing::info!("Iniciando Kudiba ERP - API Gateway Entrypoint em RUST (v1.0.0)");
-    tracing::info!("Conformidade AGT: Decreto Presidencial n.º 71/25 de Angola");
+    tracing::info!("Conformidade Fiscal: Decreto Presidencial n.º 71/25 de Angola");
     tracing::info!("==================================================================");
 
     // =========================================================================

@@ -673,7 +673,7 @@ export const PosView: React.FC = () => {
             Terminal de Ponto de Venda (POS Balcão)
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Emissão direta de Fatura-Recibo (FR) com certificação AGT em tempo real e integração de caixa
+            Emissão direta de Fatura-Recibo (FR) com certificação fiscal em tempo real e integração de caixa
           </p>
         </div>
 
@@ -1203,7 +1203,7 @@ export const PosView: React.FC = () => {
                 {issueFrMutation.isPending ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>A Certificar junto da AGT...</span>
+                    <span>A Certificar...</span>
                   </>
                 ) : !isCashSessionOpen ? (
                   <>
@@ -1595,7 +1595,7 @@ export const PosView: React.FC = () => {
               Declare o valor físico contado em gaveta para reconciliação automática.
             </p>
             <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-              <span className="font-bold">Controlo de Auditoria AGT:</span> Por segurança (Fecho Cego), o sistema não pré-preenche o saldo teórico para exigir a contagem física real do dinheiro em gaveta. O cálculo de quebras ou sobras é processado automaticamente após a confirmação.
+              <span className="font-bold">Controlo de Auditoria:</span> Por segurança (Fecho Cego), o sistema não pré-preenche o saldo teórico para exigir a contagem física real do dinheiro em gaveta. O cálculo de quebras ou sobras é processado automaticamente após a confirmação.
             </div>
             <div className="space-y-3">
               <div>
@@ -1923,7 +1923,7 @@ export const PosView: React.FC = () => {
               <div className="border-t border-dashed border-black my-2" />
 
               <div className="text-center text-[10px] space-y-0.5">
-                <p className="font-bold">Validação AGT: {issuedInvoice.validationChars}-Processado por</p>
+                <p className="font-bold">Validação: {issuedInvoice.validationChars}-Processado por</p>
                 <p>Software Certificado nº 000/AGT/2026 Kudiba</p>
                 <p className="font-mono text-[9px] text-slate-500 break-all">
                   Hash: {issuedInvoice.hashSha256?.substring(0, 32)}...

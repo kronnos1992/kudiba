@@ -830,7 +830,7 @@ export const AccountingView: React.FC = () => {
     if (vatSettlement.isPayable) {
       lines.push({
         account_code: '34.5.7',
-        description: 'Registo de IVA a Pagar à AGT (Modelo 7)',
+        description: 'Registo de IVA a Pagar à Administração Tributária (Modelo 7)',
         debit_amount: '',
         credit_amount: vatSettlement.saldoIva.toFixed(2),
       });
@@ -848,7 +848,7 @@ export const AccountingView: React.FC = () => {
       journal_code: 'OD',
       transaction_date: new Date().toISOString().split('T')[0],
       period: new Date().getMonth() + 1,
-      description: `Apuramento Periódico de IVA - Mês ${new Date().getMonth() + 1}/${activeYear?.year_code || new Date().getFullYear()} (Modelo 7 AGT)`,
+      description: `Apuramento Periódico de IVA - Mês ${new Date().getMonth() + 1}/${activeYear?.year_code || new Date().getFullYear()} (Modelo 7)`,
       lines,
     });
     setIsPostEntryModalOpen(true);
@@ -2117,7 +2117,7 @@ export const AccountingView: React.FC = () => {
                   Quadro Sinóptico de Apuramento Periódico de IVA
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Em cumprimento do Código do IVA de Angola (AGT) e Declaração Periódica Modelo 7
+                  Em cumprimento do Código do IVA de Angola e Declaração Periódica Modelo 7
                 </p>
               </div>
 
@@ -2186,7 +2186,7 @@ export const AccountingView: React.FC = () => {
                 }`}
               >
                 <span className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase">
-                  {vatSettlement.isPayable ? 'IVA a Pagar à AGT' : 'Crédito de IVA a Recuperar'}
+                  {vatSettlement.isPayable ? 'IVA a Pagar à Administração Tributária' : 'Crédito de IVA a Recuperar'}
                 </span>
                 <div
                   className={`text-lg font-black font-mono mt-1 ${
@@ -2455,7 +2455,7 @@ export const AccountingView: React.FC = () => {
                   Exercícios Fiscais
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Anos fiscais de tributação e prestação de contas à AGT
+                  Anos fiscais de tributação e prestação de contas oficiais
                 </p>
               </div>
               <button
@@ -2525,7 +2525,7 @@ export const AccountingView: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  Reavaliação Cambial Automática (Decreto AGT)
+                  Reavaliação Cambial Automática (Decreto Presidencial)
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   Atualização de saldos de contas em divisas (USD / EUR) face ao Kwanza com registo automático nas contas 75.3 (Ganhos) ou 66.3 (Perdas)

@@ -1591,7 +1591,7 @@ export const PayrollView: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <FileText className="w-5 h-5 text-purple-600" />
                         <h4 className="font-bold text-sm text-purple-900 dark:text-purple-200">
-                          Guia de IRT — Modelo 2 (AGT)
+                          Guia de IRT — Modelo 2
                         </h4>
                       </div>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-200 text-purple-800 dark:bg-purple-900 dark:text-purple-300">
@@ -1617,7 +1617,7 @@ export const PayrollView: React.FC = () => {
                         </span>
                       </div>
                       <div className="flex justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
-                        <span className="font-semibold text-slate-600 dark:text-slate-300">Total IRT a Entregar à AGT:</span>
+                        <span className="font-semibold text-slate-600 dark:text-slate-300">Total IRT a Entregar à Administração Tributária:</span>
                         <span className="font-extrabold text-purple-600 text-sm">
                           <KzAmount value={Number(selectedPeriodPayslips.period.total_irt)} />
                         </span>

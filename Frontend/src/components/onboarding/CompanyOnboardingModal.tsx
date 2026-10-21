@@ -284,7 +284,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
   const steps = [
     { id: 1, title: 'Identificação Legal', subtitle: 'NIF, Razão Social & Registo', icon: Building2 },
     { id: 2, title: 'Marca & Contactos', subtitle: 'Logótipo, Sede & Canais', icon: MapPin },
-    { id: 3, title: 'Enquadramento Fiscal', subtitle: 'IVA, Repartição & AGT', icon: ShieldCheck },
+    { id: 3, title: 'Enquadramento Fiscal', subtitle: 'IVA, Repartição & Fiscal', icon: ShieldCheck },
     { id: 4, title: 'Bancos & Documentos', subtitle: 'IBANs & Timbre Oficial', icon: Landmark },
   ];
 
@@ -307,7 +307,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
                 Parametrização Oficial da Empresa para Documentos Fiscais
               </h2>
               <p className="text-xs text-slate-600 dark:text-slate-400">
-                Configure os dados cadastrais, logótipo, parâmetros AGT e coordenadas bancárias que constarão nas Faturas, Recibos, SAF-T (AO) e Folha Salarial.
+                Configure os dados cadastrais, logótipo, parâmetros fiscais e coordenadas bancárias que constarão nas Faturas, Recibos, SAF-T (AO) e Folha Salarial.
               </p>
             </div>
           </div>
@@ -378,7 +378,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
                   1. Identificação Legal e Registo Comercial
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Estes dados identificam juridicamente o sujeito passivo perante a AGT e constam obrigatoriamente em todos os documentos oficiais.
+                  Estes dados identificam juridicamente o sujeito passivo perante a Administração Tributária e constam obrigatoriamente em todos os documentos oficiais.
                 </p>
               </div>
 
@@ -663,7 +663,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
             <div className="space-y-5">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  3. Enquadramento Fiscal AGT &amp; Regras de Faturação
+                  3. Enquadramento Fiscal &amp; Regras de Faturação
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   Parametrize o regime de IVA aplicável ao sujeito passivo, a repartição fiscal e as menções obrigatórias do Decreto Presidencial n.º 71/25.
@@ -729,7 +729,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                    N.º de Certificação Software AGT
+                    N.º de Certificação do Software
                   </label>
                   <input
                     type="text"
@@ -867,7 +867,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
                     Pré-visualização do Timbre nos Documentos Oficiais (Fatura A4 / Recibo)
                   </span>
                   <span className="text-[10px] text-slate-300 font-mono">
-                    Decreto Presidencial n.º 71/25 (AGT)
+                    Decreto Presidencial n.º 71/25
                   </span>
                 </div>
                 <div className="p-5 space-y-4 bg-white text-slate-900">

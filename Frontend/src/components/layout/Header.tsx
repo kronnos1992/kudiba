@@ -72,9 +72,9 @@ export const Header: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-        <div className="hidden md:flex items-center gap-1.5" title="Motor Fiscal AGT Conforme (RSA-SHA1)">
+        <div className="hidden md:flex items-center gap-1.5" title="Motor Fiscal Conforme (RSA-SHA1)">
           <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-          <StatusBadge status="ok" label="AGT Conforme" size="small" />
+          <StatusBadge status="ok" label="Fiscal Conforme" size="small" />
         </div>
 
         <button

@@ -25,17 +25,17 @@ use crate::domain::entities::tenant::Tenant;
 /// Erros decorrentes da comunicação directa com os webservices da AGT
 #[derive(Debug, Error)]
 pub enum AgtClientError {
-    #[error("Falha de rede ao contactar webservice da AGT: {0}")]
+    #[error("Falha de rede ao contactar o webservice fiscal: {0}")]
     Network(String),
 
-    #[error("Canal da AGT indisponível (HTTP {status}). Recomendado modo de contingência fiscal.")]
+    #[error("Canal fiscal indisponível (HTTP {status}). Recomendado modo de contingência fiscal.")]
     ContingencyRequired { status: u16, message: String },
 
-    #[error("Falha de autenticação com a AGT (credencial/certificado rejeitado): {0}")]
+    #[error("Falha de autenticação com o serviço fiscal (credencial/certificado rejeitado): {0}")]
     AuthenticationFailed(String),
 
     #[allow(dead_code)]
-    #[error("Resposta inválida dos webservices da AGT: {0}")]
+    #[error("Resposta inválida dos webservices fiscais: {0}")]
     InvalidResponse(String),
 }
 
@@ -206,7 +206,7 @@ impl AgtClient {
                         latency_ms,
                         checked_at: Utc::now(),
                         contingency_active: false,
-                        message: "Comunicação com a AGT operacional.".to_string(),
+                        message: "Comunicação com o serviço fiscal operacional.".to_string(),
                     }
                 } else {
                     AgtHeartbeatStatus {
@@ -215,7 +215,7 @@ impl AgtClient {
                         latency_ms,
                         checked_at: Utc::now(),
                         contingency_active: true,
-                        message: format!("AGT respondeu com HTTP {status_code}. Modo de contingência recomendado."),
+                        message: format!("O serviço fiscal respondeu com HTTP {status_code}. Modo de contingência recomendado."),
                     }
                 }
             }
@@ -228,7 +228,7 @@ impl AgtClient {
                     checked_at: Utc::now(),
                     contingency_active: true,
                     message: format!(
-                        "Falha de ligação à AGT ({err}). Motor em modo de contingência fiscal."
+                        "Falha de ligação ao serviço fiscal ({err}). Motor em modo de contingência fiscal."
                     ),
                 }
             }
@@ -299,7 +299,7 @@ impl AgtClient {
                 tracing::warn!(
                     batch_id = %batch_id,
                     error = %err,
-                    "Falha ao enviar lote à AGT. Documentos mantidos na fila de contingência."
+                    "Falha ao enviar lote ao serviço fiscal. Documentos mantidos na fila de contingência."
                 );
                 return Err(AgtClientError::ContingencyRequired {
                     status: 503,
@@ -311,7 +311,7 @@ impl AgtClient {
         let status = response.status();
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             return Err(AgtClientError::AuthenticationFailed(
-                "Credencial ou token AGT inválido ou expirado.".to_string(),
+                "Credencial ou token fiscal inválido ou expirado.".to_string(),
             ));
         }
 
@@ -335,7 +335,7 @@ impl AgtClient {
             rejected_count: 0,
             processed_at: Utc::now(),
             details: Some(
-                "Lote submetido e aceite pela plataforma da AGT com sucesso.".to_string(),
+                "Lote submetido e aceite pela plataforma fiscal com sucesso.".to_string(),
             ),
         })
     }

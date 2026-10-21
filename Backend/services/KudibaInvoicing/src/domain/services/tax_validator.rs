@@ -58,7 +58,7 @@ impl TaxRateValidator {
             let Some(code) = code else {
                 return Err(DomainError::invalid(
                     "Linha iserta de IVA (taxa 0.00) exige o código de isenção \
-                     oficial da AGT (M00 a M99).",
+                     oficial (M00 a M99).",
                 ));
             };
 

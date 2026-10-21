@@ -98,7 +98,7 @@ impl AppState {
         let crypto_signer: Arc<dyn CryptoSigner> = signer.clone();
 
         let agt_client = Arc::new(AgtClient::from_config(&config).map_err(|err| {
-            DomainError::invalid(format!("Falha ao inicializar conector AGT: {err}"))
+            DomainError::invalid(format!("Falha ao inicializar conector fiscal: {err}"))
         })?);
 
         let issue_invoice = Arc::new(IssueInvoiceUseCase::new(

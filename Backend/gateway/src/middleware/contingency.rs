@@ -46,10 +46,10 @@ pub async fn agt_contingency_middleware(
                         if days_offline > state.config.agt_contingency_max_days {
                             return ProblemDetail::new(
                                 "https://api.kudiba.ao/errors/agt-communication-timeout",
-                                "Limite Legal de Contingência Excedido (Bloqueio AGT)",
+                                "Limite Legal de Contingência Excedido (Bloqueio Fiscal)",
                                 StatusCode::LOCKED, // 423 Locked
                                 format!(
-                                    "Emissão fiscal suspensa. O sistema excedeu o limite máximo legal de {} dias sem comunicação com a Plataforma Electrónica da AGT (Decreto Presidencial n.º 71/25 de Angola). Restabeleça a ligação para desbloquear.",
+                                    "Emissão fiscal suspensa. O sistema excedeu o limite máximo legal de {} dias sem comunicação com a Plataforma Electrónica (Decreto Presidencial n.º 71/25 de Angola). Restabeleça a ligação para desbloquear.",
                                     state.config.agt_contingency_max_days
                                 ),
                                 path,
@@ -58,7 +58,7 @@ pub async fn agt_contingency_middleware(
                         }
                     }
                 } else {
-                    tracing::debug!(tenant_id = %t_id, "Tenant sem timestamp prévio de sincronização AGT em cache.");
+                    tracing::debug!(tenant_id = %t_id, "Tenant sem timestamp prévio de sincronização fiscal em cache.");
                 }
             }
         }

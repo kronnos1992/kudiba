@@ -127,7 +127,7 @@ impl SaftXmlGenerator {
         let (start_date, end_date) = compute_period_dates(meta.fiscal_year, meta.fiscal_month)?;
         let date_created = Utc::now().format("%Y-%m-%d").to_string();
         let cert_number = meta.tenant.agt_cert_number.as_deref().ok_or_else(|| {
-            DomainError::invalid("Número de validação/certificação AGT não cadastrado.")
+            DomainError::invalid("Número de validação/certificação não cadastrado.")
         })?;
         let address_detail = meta
             .tenant

@@ -101,7 +101,7 @@ export const LoginView: React.FC = () => {
             Kudiba <span className="text-amber-600 dark:text-amber-400">ERP</span>
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Acesso ao Backoffice &amp; Terminal Fiscal AGT
+            Acesso ao Backoffice &amp; Terminal Fiscal
           </p>
         </div>
 
@@ -191,7 +191,7 @@ export const LoginView: React.FC = () => {
             <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             <span>Gateway :8080</span>
           </div>
-          <StatusBadge status="ok" label="AGT Certificado" size="small" />
+          <StatusBadge status="ok" label="Certificado Fiscal" size="small" />
         </div>
       </div>
     </div>

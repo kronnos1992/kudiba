@@ -585,7 +585,7 @@ async fn check_agt_webservices(state: &AppState) -> ServiceHealth {
     let endpoint = state.config.agt_platform_url.clone();
 
     let unavailable = |message: &str| ServiceHealth {
-        name: "AGT Webservices (Facturação Electrónica)".to_string(),
+        name: "Webservices Fiscais (Facturação Electrónica)".to_string(),
         service_type: "EXTERNAL_GOV".to_string(),
         status: "DEGRADED".to_string(),
         endpoint: endpoint.clone(),
@@ -594,23 +594,24 @@ async fn check_agt_webservices(state: &AppState) -> ServiceHealth {
         details: None,
     };
 
-    let res = match state
-        .http_client
-        .get(&status_url)
-        .timeout(Duration::from_secs(3))
-        .send()
-        .await
-    {
-        Ok(res) => res,
-        Err(_) => {
-            return unavailable(
-                "Motor fiscal inacessível: estado do canal AGT desconhecido (Decreto 71/25).",
-            )
-        }
-    };
+    let res =
+        match state
+            .http_client
+            .get(&status_url)
+            .timeout(Duration::from_secs(3))
+            .send()
+            .await
+        {
+            Ok(res) => res,
+            Err(_) => return unavailable(
+                "Motor fiscal inacessível: estado do canal fiscal desconhecido (Decreto 71/25).",
+            ),
+        };
 
     let Ok(body) = res.json::<serde_json::Value>().await else {
-        return unavailable("Motor fiscal devolveu uma resposta inválida para o estado da AGT.");
+        return unavailable(
+            "Motor fiscal devolveu uma resposta inválida para o estado do canal fiscal.",
+        );
     };
 
     let is_online = body
@@ -630,7 +631,7 @@ async fn check_agt_webservices(state: &AppState) -> ServiceHealth {
         .map(|v| serde_json::json!({ "contingencyActive": v, "heartbeat": body.get("checkedAt") }));
 
     ServiceHealth {
-        name: "AGT Webservices (Facturação Electrónica)".to_string(),
+        name: "Webservices Fiscais (Facturação Electrónica)".to_string(),
         service_type: "EXTERNAL_GOV".to_string(),
         status: if is_online { "HEALTHY" } else { "DEGRADED" }.to_string(),
         endpoint,

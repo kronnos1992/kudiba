@@ -570,7 +570,7 @@ impl IssueInvoiceUseCase {
             {
                 return Err(DomainError::invalid(format!(
                     "Linha {}: código de isenção '{normalised}' não consta do catálogo oficial \
-                     da AGT.",
+                     fiscal.",
                     index + 1
                 )));
             }

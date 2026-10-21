@@ -712,7 +712,7 @@ impl PosReportsUseCase {
             out.push('\n');
         }
 
-        let cert_info = format!("Validado AGT: {}", report.agt_cert_number);
+        let cert_info = format!("Validado: {}", report.agt_cert_number);
         out.push_str(&center_text(&cert_info, width));
         out.push('\n');
         let footer = if report.report_type == "FECHO_Z" {
@@ -994,7 +994,7 @@ impl PosReportsUseCase {
             "F1",
             6.5,
             y,
-            &format!("Software Certificado AGT: {}", report.agt_cert_number),
+            &format!("Software Certificado: {}", report.agt_cert_number),
             page_width,
             (0.4, 0.4, 0.4),
         );
