@@ -189,6 +189,30 @@ CREATE TABLE IF NOT EXISTS kudiba_core.role_permissions (
     PRIMARY KEY (role_id, permission_id)
 );
 
+-- Overrides das permissões dos perfis de Sistema.
+--   tenant_id IS NULL -> âmbito global (SYSADMIN; afecta todos os tenants)
+--   tenant_id = <id>  -> âmbito da empresa (ADMIN da empresa)
+-- Cada linha guarda o conjunto completo de permissões no respectivo âmbito.
+-- kudiba_core.role_permissions mantém as predefinições do Kudiba ERP.
+CREATE TABLE IF NOT EXISTS kudiba_core.role_permission_overrides (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id UUID NULL REFERENCES kudiba_core.tenants(id) ON DELETE CASCADE,
+    role_id VARCHAR(32) NOT NULL REFERENCES kudiba_core.roles(id) ON DELETE CASCADE,
+    permissions VARCHAR(64)[] NOT NULL DEFAULT '{}',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_role_permission_overrides_tenant
+    ON kudiba_core.role_permission_overrides(tenant_id, role_id)
+    WHERE tenant_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_role_permission_overrides_global
+    ON kudiba_core.role_permission_overrides(role_id)
+    WHERE tenant_id IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_role_permission_overrides_role
+    ON kudiba_core.role_permission_overrides(role_id);
+
 CREATE TABLE IF NOT EXISTS kudiba_core.user_roles (
     user_id UUID NOT NULL,
     tenant_id UUID NOT NULL,
@@ -243,6 +267,7 @@ CREATE INDEX IF NOT EXISTS idx_auth_audit_action ON kudiba_audit.auth_audit_log(
 -- -----------------------------------------------------------------------------
 INSERT INTO kudiba_core.roles (id, name, description, is_system) VALUES
     ('ADMIN', 'Administrador Geral', 'Acesso total à administração da empresa, utilizadores e configurações fiscais', TRUE),
+    ('SYSADMIN', 'Administrador do Sistema', 'Gestão integral do sistema ERP: empresas, licenças, configurações globais e suporte técnico', TRUE),
     ('CONTABILISTA', 'Contabilista Certificado', 'Acesso à faturação, fechos de contas, exportação SAF-T e mapas fiscais', TRUE),
     ('OPERADOR_CAIXA', 'Operador de Caixa (POS)', 'Emissão de faturas no ponto de venda, leitura X e operações diárias', TRUE),
     ('GESTOR_STOCK', 'Gestor de Stocks', 'Controle de inventário, transferências de armazém e guias de transporte', TRUE),
@@ -278,7 +303,12 @@ INSERT INTO kudiba_core.permissions (id, module, name, description) VALUES
     ('payroll:calculate', 'payroll', 'Processar Salários', 'Cálculo da folha salarial do período (IRT e INSS)'),
     ('payroll:approve', 'payroll', 'Aprovar e Encerrar Períodos', 'Aprovação e encerramento oficial do período salarial'),
     ('payroll:export', 'payroll', 'Exportar Remessa Bancária', 'Geração do ficheiro PS2 de transferências em lote'),
-    ('payroll:hr', 'payroll', 'Gerir Férias e Assiduidade', 'Pedidos de férias, aprovações e registos de assiduidade')
+    ('payroll:hr', 'payroll', 'Gerir Férias e Assiduidade', 'Pedidos de férias, aprovações e registos de assiduidade'),
+
+    -- Permissões de Inventário (KudibaInventory)
+    ('inventory:read', 'inventory', 'Consultar Inventário', 'Consulta de produtos, existências por armazém e histórico de movimentos'),
+    ('inventory:manage', 'inventory', 'Gerir Produtos e Existências', 'Criação e actualização de produtos, unidades de medida e níveis mínimos de stock'),
+    ('inventory:transfer', 'inventory', 'Transferir Stock entre Armazéns', 'Criação e processamento de transferências de mercadorias entre armazéns')
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     description = EXCLUDED.description;
@@ -287,6 +317,11 @@ ON CONFLICT (id) DO UPDATE SET
 -- ADMIN: Todas as permissões
 INSERT INTO kudiba_core.role_permissions (role_id, permission_id)
 SELECT 'ADMIN', id FROM kudiba_core.permissions
+ON CONFLICT DO NOTHING;
+
+-- SYSADMIN: Todas as permissões (gestão do sistema em geral)
+INSERT INTO kudiba_core.role_permissions (role_id, permission_id)
+SELECT 'SYSADMIN', id FROM kudiba_core.permissions
 ON CONFLICT DO NOTHING;
 
 -- CONTABILISTA: Permissões Fiscais + Relatórios + Leitura
@@ -316,6 +351,14 @@ INSERT INTO kudiba_core.role_permissions (role_id, permission_id) VALUES
     ('AUDITOR', 'fiscal:reports:read'),
     ('AUDITOR', 'fiscal:saft:export'),
     ('AUDITOR', 'users:read')
+ON CONFLICT DO NOTHING;
+
+-- GESTOR_STOCK: Inventário, transferências de armazém e leitura de documentos
+INSERT INTO kudiba_core.role_permissions (role_id, permission_id) VALUES
+    ('GESTOR_STOCK', 'inventory:read'),
+    ('GESTOR_STOCK', 'inventory:manage'),
+    ('GESTOR_STOCK', 'inventory:transfer'),
+    ('GESTOR_STOCK', 'invoices:read')
 ON CONFLICT DO NOTHING;
 
 -- GESTOR_RH: Permissões de Recursos Humanos & Payroll

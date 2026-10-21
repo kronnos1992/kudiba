@@ -9,6 +9,7 @@ from src.application.commands import (
     DeleteRoleUseCase,
     InviteUserUseCase,
     LogoutUserUseCase,
+    ResetRolePermissionsUseCase,
     RotateRefreshTokenUseCase,
     SwitchTenantUseCase,
     UpdateRolePermissionsUseCase,
@@ -60,6 +61,7 @@ class AppState:
     create_role: CreateRoleUseCase
     update_role: UpdateRoleUseCase
     update_role_permissions: UpdateRolePermissionsUseCase
+    reset_role_permissions: ResetRolePermissionsUseCase
     delete_role: DeleteRoleUseCase
 
     # Casos de Uso (Queries)
@@ -169,6 +171,7 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
     create_role = CreateRoleUseCase(role_repo=role_repo)
     update_role = UpdateRoleUseCase(role_repo=role_repo)
     update_role_permissions = UpdateRolePermissionsUseCase(role_repo=role_repo)
+    reset_role_permissions = ResetRolePermissionsUseCase(role_repo=role_repo)
     delete_role = DeleteRoleUseCase(role_repo=role_repo)
 
     # 3. Casos de Uso (Queries)
@@ -217,6 +220,7 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         create_role=create_role,
         update_role=update_role,
         update_role_permissions=update_role_permissions,
+        reset_role_permissions=reset_role_permissions,
         delete_role=delete_role,
         get_user_profile=get_user_profile,
         get_tenant_settings=get_tenant_settings,

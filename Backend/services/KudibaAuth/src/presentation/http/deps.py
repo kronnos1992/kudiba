@@ -79,7 +79,12 @@ class SecurityContext:
         return role.upper() in self.roles or "SUPER_ADMIN" in self.roles
 
     def has_permission(self, perm: str) -> bool:
-        return perm in self.permissions or "ADMIN" in self.roles or "SUPER_ADMIN" in self.roles
+        return (
+            perm in self.permissions
+            or "ADMIN" in self.roles
+            or "SYSADMIN" in self.roles
+            or "SUPER_ADMIN" in self.roles
+        )
 
 
 def ensure_role_grant_is_allowed(
@@ -92,8 +97,8 @@ def ensure_role_grant_is_allowed(
         assignable_roles = {role.strip().upper() for role in valid_roles} - {"SUPER_ADMIN"}
     if not requested_roles.issubset(assignable_roles):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Um ou mais papéis não são válidos.")
-    if "ADMIN" in requested_roles and not ctx.has_role("ADMIN"):
-        raise AuthorizationError("Apenas um administrador pode atribuir o papel ADMIN.")
+    if requested_roles & {"ADMIN", "SYSADMIN"} and not ctx.has_role("ADMIN"):
+        raise AuthorizationError("Apenas um administrador pode atribuir o papel ADMIN ou SYSADMIN.")
 
 
 async def get_security_context(

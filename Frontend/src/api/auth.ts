@@ -39,6 +39,9 @@ export interface RoleCatalogItem {
   is_system: boolean;
   users_count: number;
   permissions: string[];
+  is_editable: boolean;
+  has_override: boolean;
+  can_reset_override: boolean;
 }
 
 export interface PermissionCatalogItem {
@@ -207,6 +210,13 @@ export const authApi = {
     const response = await apiClient.put<RoleCatalogItem>(
       `/api/v1/auth/roles/${roleId}/permissions`,
       { permissions }
+    );
+    return response.data;
+  },
+
+  resetRolePermissions: async (roleId: string): Promise<RoleCatalogItem> => {
+    const response = await apiClient.delete<RoleCatalogItem>(
+      `/api/v1/auth/roles/${roleId}/permissions/override`
     );
     return response.data;
   },

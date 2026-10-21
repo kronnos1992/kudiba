@@ -1,5 +1,5 @@
 import uuid
-from typing import List
+from typing import List, Optional
 
 from src.application.dto import (
     CreateRoleCommand,
@@ -10,12 +10,25 @@ from src.application.dto import (
 from src.domain.entities.role import Role
 from src.domain.error import AuthorizationError, ConflictError, DomainError, EntityNotFoundError
 from src.domain.ports.role_repository import IRoleRepository
+from src.domain.value_objects.role_type import ADMINISTRATOR_ROLE_IDS, RoleType
 
-RESERVED_ROLE_IDS = {"SUPER_ADMIN"}
+RESERVED_ROLE_IDS = set(ADMINISTRATOR_ROLE_IDS)
+SYSTEM_SCOPE_ROLE_IDS = {"SUPER_ADMIN", "SYSADMIN"}
 
 
 def _normalize_role_id(role_id: str) -> str:
     return role_id.strip().upper()
+
+
+def _is_editable(role_id: str) -> bool:
+    """Perfis de administrador são imutáveis; os restantes podem ser ajustados."""
+    return not RoleType.is_administrator(role_id)
+
+
+def _is_system_manager(actor_roles: Optional[List[str]]) -> bool:
+    """O SYSADMIN gere o sistema em geral: as suas alterações alcançam todos os tenants."""
+    roles = {r.strip().upper() for r in (actor_roles or [])}
+    return bool(roles & SYSTEM_SCOPE_ROLE_IDS)
 
 
 async def _ensure_permissions_exist(role_repo: IRoleRepository, permission_ids: List[str]) -> List[str]:
@@ -34,8 +47,24 @@ async def _load_owned_role(role_repo: IRoleRepository, role_id: str, tenant_id: 
     if not role:
         exists_globally = await role_repo.find_role(role_id, tenant_id)
         if exists_globally:
-            raise AuthorizationError("Os papéis do sistema não podem ser alterados.")
+            raise AuthorizationError(
+                "Os perfis de Sistema não podem ser renomeados nem eliminados. "
+                "Apenas as permissões podem ser ajustadas."
+            )
         raise EntityNotFoundError("Perfil", role_id)
+    return role
+
+
+async def _load_editable_role(role_repo: IRoleRepository, role_id: str, tenant_id: uuid.UUID) -> Role:
+    """Perfil visível para o tenant e cujas permissões podem ser alteradas."""
+    role = await role_repo.find_role(role_id, tenant_id)
+    if not role:
+        raise EntityNotFoundError("Perfil", role_id)
+    if not _is_editable(role.id):
+        raise AuthorizationError(
+            "Os perfis de administrador (ADMIN, SYSADMIN, SUPER_ADMIN) têm acesso total "
+            "e as suas permissões são imutáveis."
+        )
     return role
 
 
@@ -74,6 +103,9 @@ class CreateRoleUseCase:
             is_system=False,
             permissions=permission_ids,
             users_count=0,
+            is_editable=True,
+            has_override=False,
+            can_reset_override=False,
         )
 
 
@@ -100,29 +132,73 @@ class UpdateRoleUseCase:
             is_system=False,
             permissions=[p.id for p in role.permissions],
             users_count=users_count,
+            is_editable=_is_editable(role_id),
+            has_override=False,
+            can_reset_override=False,
         )
 
 
 class UpdateRolePermissionsUseCase:
-    """Caso de uso de substituição das permissões de um perfil personalizado do tenant."""
+    """Caso de uso de substituição das permissões de um perfil.
+
+    Âmbito da alteração:
+      * SYSADMIN -> global, afecta todos os tenants;
+      * ADMIN da empresa -> apenas a empresa em que está autenticado.
+    """
 
     def __init__(self, role_repo: IRoleRepository):
         self.role_repo = role_repo
 
     async def execute(self, cmd: UpdateRolePermissionsCommand) -> RoleDto:
         role_id = _normalize_role_id(cmd.role_id)
-        role = await _load_owned_role(self.role_repo, role_id, cmd.tenant_id)
+        role = await _load_editable_role(self.role_repo, role_id, cmd.tenant_id)
 
         permission_ids = await _ensure_permissions_exist(self.role_repo, cmd.permissions)
-        await self.role_repo.replace_role_permissions(role_id, permission_ids)
+        global_scope = _is_system_manager(cmd.actor_roles)
+        scope = None if global_scope else cmd.tenant_id
+        await self.role_repo.replace_role_permissions(role_id, permission_ids, cmd.tenant_id, scope)
         users_count = await self.role_repo.count_role_assignments(role_id, cmd.tenant_id)
+        refreshed = await self.role_repo.find_role(role_id, cmd.tenant_id)
+        override_scope = await self.role_repo.role_override_scope(role_id, cmd.tenant_id)
         return RoleDto(
             id=role_id,
             name=role.name,
             description=role.description,
-            is_system=False,
+            is_system=role.is_system,
             permissions=permission_ids,
             users_count=users_count,
+            is_editable=True,
+            has_override=bool(refreshed and refreshed.has_override),
+            can_reset_override=override_scope is not None,
+        )
+
+
+class ResetRolePermissionsUseCase:
+    """Caso de uso de reposição das permissões predefinidas de um perfil."""
+
+    def __init__(self, role_repo: IRoleRepository):
+        self.role_repo = role_repo
+
+    async def execute(
+        self, role_id: str, tenant_id: uuid.UUID, actor_roles: Optional[List[str]] = None
+    ) -> RoleDto:
+        normalized = _normalize_role_id(role_id)
+        role = await _load_editable_role(self.role_repo, normalized, tenant_id)
+        include_global = _is_system_manager(actor_roles)
+        await self.role_repo.reset_role_permissions(normalized, tenant_id, include_global)
+        users_count = await self.role_repo.count_role_assignments(normalized, tenant_id)
+        refreshed = await self.role_repo.find_role(normalized, tenant_id)
+        override_scope = await self.role_repo.role_override_scope(normalized, tenant_id)
+        return RoleDto(
+            id=normalized,
+            name=role.name,
+            description=role.description,
+            is_system=role.is_system,
+            permissions=[p.id for p in (refreshed.permissions if refreshed else role.permissions)],
+            users_count=users_count,
+            is_editable=True,
+            has_override=bool(refreshed and refreshed.has_override),
+            can_reset_override=override_scope is not None,
         )
 
 

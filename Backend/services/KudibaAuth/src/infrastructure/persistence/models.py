@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, ForeignKeyConstraint, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, ForeignKey, ForeignKeyConstraint, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
 
@@ -159,6 +159,32 @@ class RolePermissionModel(Base):
     )
     permission_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("kudiba_core.permissions.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class RolePermissionOverrideModel(Base):
+    """Personalização das permissões de um perfil.
+
+    tenant_id IS NULL -> âmbito global (definido pelo SYSADMIN; afecta todos os tenants).
+    tenant_id preenchido -> âmbito da empresa (definido pelo ADMIN da empresa).
+    permissions guarda o conjunto completo de permissões do perfil nesse âmbito.
+    """
+
+    __tablename__ = "role_permission_overrides"
+    __table_args__ = {"schema": "kudiba_core"}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_core.tenants.id", ondelete="CASCADE"), nullable=True
+    )
+    role_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("kudiba_core.roles.id", ondelete="CASCADE"), nullable=False
+    )
+    permissions: Mapped[List[str]] = mapped_column(
+        ARRAY(String(64)), nullable=False, default=list
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
 

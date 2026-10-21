@@ -6,6 +6,7 @@ from src.application.commands.invite_user import InviteUserUseCase
 from src.application.commands.manage_roles import (
     CreateRoleUseCase,
     DeleteRoleUseCase,
+    ResetRolePermissionsUseCase,
     UpdateRolePermissionsUseCase,
     UpdateRoleUseCase,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "CreateRoleUseCase",
     "UpdateRoleUseCase",
     "UpdateRolePermissionsUseCase",
+    "ResetRolePermissionsUseCase",
     "DeleteRoleUseCase",
     "UpdateUserRolesUseCase",
     "UpdateTenantSettingsUseCase",

@@ -10,6 +10,7 @@ from src.application.commands import (
     DeleteRoleUseCase,
     InviteUserUseCase,
     LogoutUserUseCase,
+    ResetRolePermissionsUseCase,
     RotateRefreshTokenUseCase,
     SwitchTenantUseCase,
     UpdateRolePermissionsUseCase,
@@ -157,7 +158,7 @@ class MockUserTenantRepository(IUserTenantRepository):
     async def get_user_roles_in_tenant(self, user_id: uuid.UUID, tenant_id: uuid.UUID) -> List[str]:
         return self.roles.get(f"{user_id}:{tenant_id}", ["OPERADOR_CAIXA"])
 
-    async def get_roles_permissions(self, role_ids: List[str]) -> List[str]:
+    async def get_roles_permissions(self, role_ids: List[str], tenant_id: uuid.UUID = None) -> List[str]:
         perms = []
         for r in role_ids:
             if r.upper() in ["ADMIN", "CONTABILISTA"]:
@@ -280,6 +281,8 @@ class MockRoleRepository(IRoleRepository):
         self.roles: Dict[str, Role] = {}
         self.permissions: Dict[str, Permission] = {}
         self.assignments: Dict[str, int] = {}
+        # (tenant_id, role_id) -> conjunto de permissões; tenant_id None = âmbito global
+        self.overrides: Dict[tuple, set] = {}
         for pid, module in [
             ("invoices:read", "fiscal"),
             ("invoices:issue", "fiscal"),
@@ -291,19 +294,44 @@ class MockRoleRepository(IRoleRepository):
     def _visible(self, role: Role, tenant_id) -> bool:
         return role.tenant_id is None or role.tenant_id == tenant_id
 
-    async def list_roles(self, tenant_id) -> List[Role]:
-        return sorted(
-            [r for r in self.roles.values() if self._visible(r, tenant_id)],
-            key=lambda r: (not r.is_system, r.id),
+    def _effective(self, role: Role, tenant_id) -> List[str]:
+        key = (tenant_id, role.id)
+        if key in self.overrides:
+            return sorted(self.overrides[key])
+        global_key = (None, role.id)
+        if global_key in self.overrides:
+            return sorted(self.overrides[global_key])
+        return sorted(p.id for p in role.permissions)
+
+    def _clone(self, role: Role, tenant_id) -> Role:
+        effective = self._effective(role, tenant_id)
+        defaults = sorted(p.id for p in role.permissions)
+        return Role(
+            id=role.id,
+            name=role.name,
+            description=role.description,
+            is_system=role.is_system,
+            tenant_id=role.tenant_id,
+            permissions=[self.permissions[p] for p in effective],
+            has_override=effective != defaults,
         )
+
+    async def list_roles(self, tenant_id) -> List[Role]:
+        visible = [r for r in self.roles.values() if self._visible(r, tenant_id)]
+        results = [self._clone(role, tenant_id) for role in visible]
+        return sorted(results, key=lambda r: (not r.is_system, r.id))
 
     async def find_role(self, role_id: str, tenant_id) -> Optional[Role]:
         role = self.roles.get(role_id.strip().upper())
-        return role if role and self._visible(role, tenant_id) else None
+        if not role or not self._visible(role, tenant_id):
+            return None
+        return self._clone(role, tenant_id)
 
     async def find_role_owned(self, role_id: str, tenant_id) -> Optional[Role]:
         role = self.roles.get(role_id.strip().upper())
-        return role if role and role.tenant_id == tenant_id else None
+        if not role or role.tenant_id != tenant_id:
+            return None
+        return self._clone(role, tenant_id)
 
     async def list_permissions(self) -> List[Permission]:
         return sorted(self.permissions.values(), key=lambda p: p.id)
@@ -326,10 +354,36 @@ class MockRoleRepository(IRoleRepository):
         r.name = name
         r.description = description
 
-    async def replace_role_permissions(self, role_id: str, permission_ids: List[str]) -> None:
-        self.roles[role_id].permissions = [
-            self.permissions[p] for p in permission_ids if p in self.permissions
-        ]
+    async def replace_role_permissions(
+        self,
+        role_id: str,
+        permission_ids: List[str],
+        tenant_id: uuid.UUID = None,
+        scope: uuid.UUID = None,
+    ) -> None:
+        normalized = role_id.strip().upper()
+        role = self.roles.get(normalized)
+        clean = [p for p in permission_ids if p in self.permissions]
+        if role is not None and role.tenant_id is None:
+            self.overrides[(scope, normalized)] = set(clean)
+        else:
+            self.roles[normalized].permissions = [self.permissions[p] for p in clean]
+
+    async def reset_role_permissions(
+        self, role_id: str, tenant_id: uuid.UUID = None, include_global: bool = False
+    ) -> None:
+        normalized = role_id.strip().upper()
+        self.overrides.pop((tenant_id, normalized), None)
+        if include_global:
+            self.overrides.pop((None, normalized), None)
+
+    async def role_override_scope(self, role_id: str, tenant_id: uuid.UUID = None) -> Optional[str]:
+        normalized = role_id.strip().upper()
+        if (tenant_id, normalized) in self.overrides:
+            return "tenant"
+        if (None, normalized) in self.overrides:
+            return "global"
+        return None
 
     async def delete_role(self, role_id: str) -> None:
         self.roles.pop(role_id, None)
@@ -978,3 +1032,153 @@ async def test_invite_accepts_custom_roles_from_catalog():
                 password="PasswordForte2026!",
             )
         )
+
+
+async def test_admin_customises_system_role_only_for_own_tenant():
+    tenant_a = uuid.uuid4()
+    tenant_b = uuid.uuid4()
+    role_repo = MockRoleRepository()
+    role_repo.roles["GESTOR_STOCK"] = Role(
+        id="GESTOR_STOCK",
+        name="Gestor de Stocks",
+        is_system=True,
+        permissions=[role_repo.permissions["invoices:read"]],
+    )
+
+    perms_uc = UpdateRolePermissionsUseCase(role_repo)
+    list_uc = ListRolesUseCase(role_repo)
+
+    updated = await perms_uc.execute(
+        UpdateRolePermissionsCommand(
+            tenant_id=tenant_a,
+            role_id="GESTOR_STOCK",
+            permissions=["invoices:issue", "pos:sale"],
+            actor_roles=["ADMIN"],
+        )
+    )
+    assert updated.permissions == ["invoices:issue", "pos:sale"]
+    assert updated.has_override is True
+    assert updated.is_editable is True
+
+    catalog_a = {r.id: r for r in await list_uc.execute(tenant_a, ["ADMIN"])}
+    catalog_b = {r.id: r for r in await list_uc.execute(tenant_b, ["ADMIN"])}
+    assert catalog_a["GESTOR_STOCK"].permissions == ["invoices:issue", "pos:sale"]
+    assert catalog_a["GESTOR_STOCK"].has_override is True
+    assert catalog_b["GESTOR_STOCK"].permissions == ["invoices:read"]
+    assert catalog_b["GESTOR_STOCK"].has_override is False
+
+
+async def test_sysadmin_customisation_reaches_every_tenant():
+    tenant_a = uuid.uuid4()
+    tenant_b = uuid.uuid4()
+    role_repo = MockRoleRepository()
+    role_repo.roles["GESTOR_STOCK"] = Role(
+        id="GESTOR_STOCK",
+        name="Gestor de Stocks",
+        is_system=True,
+        permissions=[role_repo.permissions["invoices:read"]],
+    )
+
+    perms_uc = UpdateRolePermissionsUseCase(role_repo)
+    list_uc = ListRolesUseCase(role_repo)
+
+    await perms_uc.execute(
+        UpdateRolePermissionsCommand(
+            tenant_id=tenant_a,
+            role_id="GESTOR_STOCK",
+            permissions=["invoices:issue"],
+            actor_roles=["SYSADMIN"],
+        )
+    )
+
+    catalog_a = {r.id: r for r in await list_uc.execute(tenant_a, ["SYSADMIN"])}
+    catalog_b = {r.id: r for r in await list_uc.execute(tenant_b, ["ADMIN"])}
+    assert catalog_a["GESTOR_STOCK"].permissions == ["invoices:issue"]
+    assert catalog_b["GESTOR_STOCK"].permissions == ["invoices:issue"]
+    assert catalog_b["GESTOR_STOCK"].has_override is True
+    # O administrador da empresa não pode repor uma personalização global
+    assert catalog_b["GESTOR_STOCK"].can_reset_override is False
+    assert catalog_a["GESTOR_STOCK"].can_reset_override is True
+
+
+async def test_administrator_profiles_keep_immutable_permissions():
+    tenant_id = uuid.uuid4()
+    role_repo = MockRoleRepository()
+    role_repo.roles["ADMIN"] = Role(id="ADMIN", name="Administrador Geral", is_system=True)
+    role_repo.roles["SYSADMIN"] = Role(id="SYSADMIN", name="Administrador do Sistema", is_system=True)
+
+    perms_uc = UpdateRolePermissionsUseCase(role_repo)
+    list_uc = ListRolesUseCase(role_repo)
+
+    for role_id in ("ADMIN", "SYSADMIN"):
+        with pytest.raises(AuthorizationError):
+            await perms_uc.execute(
+                UpdateRolePermissionsCommand(
+                    tenant_id=tenant_id,
+                    role_id=role_id,
+                    permissions=["invoices:read"],
+                    actor_roles=["SYSADMIN"],
+                )
+            )
+
+    catalog = {r.id: r for r in await list_uc.execute(tenant_id, ["ADMIN"])}
+    assert catalog["ADMIN"].is_editable is False
+    assert catalog["SYSADMIN"].is_editable is False
+
+
+async def test_reset_role_permissions_restores_erp_defaults():
+    tenant_id = uuid.uuid4()
+    role_repo = MockRoleRepository()
+    role_repo.roles["GESTOR_STOCK"] = Role(
+        id="GESTOR_STOCK",
+        name="Gestor de Stocks",
+        is_system=True,
+        permissions=[role_repo.permissions["invoices:read"]],
+    )
+
+    perms_uc = UpdateRolePermissionsUseCase(role_repo)
+    reset_uc = ResetRolePermissionsUseCase(role_repo)
+    list_uc = ListRolesUseCase(role_repo)
+
+    await perms_uc.execute(
+        UpdateRolePermissionsCommand(
+            tenant_id=tenant_id,
+            role_id="GESTOR_STOCK",
+            permissions=["pos:sale"],
+            actor_roles=["ADMIN"],
+        )
+    )
+    restored = await reset_uc.execute("GESTOR_STOCK", tenant_id, ["ADMIN"])
+    assert restored.permissions == ["invoices:read"]
+    assert restored.has_override is False
+
+    catalog = {r.id: r for r in await list_uc.execute(tenant_id, ["ADMIN"])}
+    assert catalog["GESTOR_STOCK"].permissions == ["invoices:read"]
+
+
+async def test_override_without_permissions_is_preserved():
+    tenant_id = uuid.uuid4()
+    role_repo = MockRoleRepository()
+    role_repo.roles["AUDITOR"] = Role(
+        id="AUDITOR",
+        name="Auditor",
+        is_system=True,
+        permissions=[role_repo.permissions["invoices:read"]],
+    )
+
+    perms_uc = UpdateRolePermissionsUseCase(role_repo)
+    list_uc = ListRolesUseCase(role_repo)
+
+    await perms_uc.execute(
+        UpdateRolePermissionsCommand(
+            tenant_id=tenant_id,
+            role_id="AUDITOR",
+            permissions=[],
+            actor_roles=["ADMIN"],
+        )
+    )
+
+    catalog = {r.id: r for r in await list_uc.execute(tenant_id, ["ADMIN"])}
+    assert catalog["AUDITOR"].permissions == []
+    assert catalog["AUDITOR"].has_override is True
+    assert catalog["AUDITOR"].can_reset_override is True

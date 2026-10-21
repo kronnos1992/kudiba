@@ -27,7 +27,8 @@ class IUserTenantRepository(ABC):
         pass
 
     @abstractmethod
-    async def get_roles_permissions(self, role_ids: List[str]) -> List[str]:
+    async def get_roles_permissions(self, role_ids: List[str], tenant_id: uuid.UUID) -> List[str]:
+        """Permissões efectivas dos perfis na empresa indicada (aplica overrides por tenant)."""
         pass
 
     @abstractmethod

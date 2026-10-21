@@ -384,7 +384,7 @@ def create_auth_router() -> APIRouter:
     )
     async def list_roles(request: Request, ctx: SecurityContext = Depends(get_security_context)):
         app_state = get_app_state(request)
-        return await app_state.list_roles.execute(ctx.tenant_id)
+        return await app_state.list_roles.execute(ctx.tenant_id, ctx.roles)
 
     @router.get(
         "/permissions",
@@ -446,8 +446,27 @@ def create_auth_router() -> APIRouter:
         ctx: SecurityContext = Depends(require_permission("users:manage_roles")),
     ):
         app_state = get_app_state(request)
-        cmd = UpdateRolePermissionsCommand(tenant_id=ctx.tenant_id, role_id=role_id, permissions=req.permissions)
+        cmd = UpdateRolePermissionsCommand(
+            tenant_id=ctx.tenant_id,
+            role_id=role_id,
+            permissions=req.permissions,
+            actor_roles=ctx.roles,
+        )
         return await app_state.update_role_permissions.execute(cmd)
+
+    @router.delete(
+        "/roles/{role_id}/permissions/override",
+        summary="Repor Permissões Predefinidas de um Perfil de Sistema",
+        description="Remove a personalização das permissões de um perfil de Sistema nesta empresa, "
+        "restaurando o conjunto predefinido do Kudiba ERP.",
+    )
+    async def reset_role_permissions(
+        role_id: str,
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("users:manage_roles")),
+    ):
+        app_state = get_app_state(request)
+        return await app_state.reset_role_permissions.execute(role_id, ctx.tenant_id, ctx.roles)
 
     @router.delete(
         "/roles/{role_id}",

@@ -68,7 +68,7 @@ class SwitchTenantUseCase:
                     branch_dto = BranchSummaryDto(id=branch.id, code=branch.code, name=branch.name, city=branch.city)
 
             roles = await self.user_tenant_repo.get_user_roles_in_tenant(user.id, cmd.target_tenant_id)
-            permissions = await self.user_tenant_repo.get_roles_permissions(roles)
+            permissions = await self.user_tenant_repo.get_roles_permissions(roles, cmd.target_tenant_id)
 
             access_token, _, exp_ts = self.token_service.create_access_token(
                 user_id=str(user.id),

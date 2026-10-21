@@ -17,6 +17,7 @@ import {
   PermissionCatalogItem,
   CreateRolePayload,
 } from '../../api/auth';
+import { useAuthStore } from '../../stores/authStore';
 import { toast } from '../../stores/toastStore';
 
 const MODULE_LABELS: Record<string, string> = {
@@ -31,6 +32,8 @@ const MODULE_LABELS: Record<string, string> = {
 };
 
 const MODULE_ORDER = ['users', 'fiscal', 'pos', 'inventory', 'treasury', 'payroll', 'accounting', 'tenant'];
+
+const RESERVED_ROLE_IDS = ['ADMIN', 'SYSADMIN', 'SUPER_ADMIN'];
 
 const MODULE_COLORS: Record<string, string> = {
   users: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
@@ -62,6 +65,12 @@ const groupPermissionsByModule = (permissions: PermissionCatalogItem[]) => {
 
 export const RolesManager: React.FC = () => {
   const queryClient = useQueryClient();
+  const { user, activeTenant } = useAuthStore();
+
+  const actorRoles = (
+    user?.roles?.length ? user.roles : activeTenant?.roles ?? []
+  ).map((r) => r.toUpperCase());
+  const isSystemManager = actorRoles.includes('SYSADMIN') || actorRoles.includes('SUPER_ADMIN');
 
   const [search, setSearch] = useState('');
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -122,6 +131,16 @@ export const RolesManager: React.FC = () => {
     onError: handleError,
   });
 
+  const resetPermissionsMutation = useMutation({
+    mutationFn: (roleId: string) => authApi.resetRolePermissions(roleId),
+    onSuccess: () => {
+      invalidate();
+      setPermissionsRole(null);
+      toast.success('Permissões repostas nas predefinições do sistema!');
+    },
+    onError: handleError,
+  });
+
   const deleteMutation = useMutation({
     mutationFn: authApi.deleteRole,
     onSuccess: () => {
@@ -165,14 +184,19 @@ export const RolesManager: React.FC = () => {
         roleId: editingRole.id,
         payload: { name: form.name, description: form.description || null },
       });
-    } else {
-      createMutation.mutate({
-        id: form.id.toUpperCase(),
-        name: form.name,
-        description: form.description || null,
-        permissions: form.permissions,
-      });
+      return;
     }
+    const roleId = form.id.toUpperCase();
+    if (RESERVED_ROLE_IDS.includes(roleId)) {
+      toast.error(`O código "${roleId}" é reservado pelo sistema.`);
+      return;
+    }
+    createMutation.mutate({
+      id: roleId,
+      name: form.name,
+      description: form.description || null,
+      permissions: form.permissions,
+    });
   };
 
   const togglePermission = (permId: string, checked: boolean) => {
@@ -197,7 +221,8 @@ export const RolesManager: React.FC = () => {
             </span>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Perfis personalizados desta empresa — cada organização tem o seu próprio catálogo, isolado das restantes
+            Catálogo de perfis e permissões desta empresa — os perfis de Sistema podem ser ajustados sem afectar as
+            restantes organizações
           </p>
         </div>
 
@@ -265,15 +290,25 @@ export const RolesManager: React.FC = () => {
                       )}
                     </td>
                     <td className="p-3 text-center">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          role.is_system
-                            ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                            : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
-                        }`}
-                      >
-                        {role.is_system ? 'Sistema' : 'Personalizado'}
-                      </span>
+                      <div className="flex flex-col items-center gap-1">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                            role.is_system
+                              ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                          }`}
+                        >
+                          {role.is_system ? 'Sistema' : 'Personalizado'}
+                        </span>
+                        {role.has_override && (
+                          <span
+                            title="As permissões effective deste perfil foram personalizadas"
+                            className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                          >
+                            Ajustado
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="p-3">
                       <div className="flex flex-wrap gap-1 max-w-lg">
@@ -337,11 +372,15 @@ export const RolesManager: React.FC = () => {
         </div>
       </GlassCard>
 
-      <p className="text-[11px] text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
-        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-        Os perfis de Sistema (ADMIN, CONTABILISTA, OPERADOR_CAIXA, GESTOR_STOCK, AUDITOR, GESTOR_RH) são comuns a todas
-        as empresas e imutáveis. Os perfis personalizados pertencem apenas a esta empresa e não afectam outras
-        organizações.
+      <p className="text-[11px] text-slate-400 dark:text-slate-500 flex items-start gap-1.5">
+        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+        <span>
+          Os perfis de Sistema (ADMIN, SYSADMIN, CONTABILISTA, OPERADOR_CAIXA, GESTOR_STOCK, AUDITOR, GESTOR_RH) são
+          comuns a todas as empresas, mas as suas permissões podem ser ajustadas: o administrador do sistema
+          (SYSADMIN) aplica as alterações a todas as empresas, o administrador da empresa (ADMIN) apenas à sua.
+          ADMIN, SYSADMIN e SUPER_ADMIN têm acesso total e permissões imutáveis. Os perfis personalizados pertencem
+          apenas a esta empresa e não afectam outras organizações.
+        </span>
       </p>
 
       {/* MODAL: CRIAR / EDITAR PERFIL */}
@@ -445,10 +484,24 @@ export const RolesManager: React.FC = () => {
                   Permissões — {permissionsRole.name}
                 </h3>
                 <span className="text-xs text-slate-500 font-mono">{permissionsRole.id}</span>
-                {permissionsRole.is_system && (
+                {permissionsRole.is_editable ? (
                   <p className="text-[11px] text-amber-600 font-semibold mt-1">
-                    Perfil de sistema: apenas consulta (as permissões são definidas pelo Kudiba ERP).
+                    {permissionsRole.is_system
+                      ? isSystemManager
+                        ? 'Perfil de Sistema: as alterações são aplicadas a todas as empresas.'
+                        : 'Perfil de Sistema: as alterações aplicam-se apenas a esta empresa.'
+                      : 'Perfil personalizado desta empresa: as alterações não afectam outras empresas.'}
                   </p>
+                ) : (
+                  <p className="text-[11px] text-slate-500 font-semibold mt-1">
+                    Perfil de administrador: acesso total e permissões imutáveis.
+                  </p>
+                )}
+                {permissionsRole.has_override && (
+                  <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                    <Pencil className="w-3 h-3" />
+                    Permissões personalizadas
+                  </span>
                 )}
               </div>
               <button
@@ -473,7 +526,7 @@ export const RolesManager: React.FC = () => {
                     <div className="flex gap-2 text-[10px] font-bold">
                       <button
                         type="button"
-                        disabled={permissionsRole.is_system}
+                        disabled={!permissionsRole.is_editable}
                         onClick={() =>
                           setSelectedPermissions((prev) =>
                             Array.from(new Set([...prev, ...items.map((p) => p.id)]))
@@ -485,7 +538,7 @@ export const RolesManager: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        disabled={permissionsRole.is_system}
+                        disabled={!permissionsRole.is_editable}
                         onClick={() =>
                           setSelectedPermissions((prev) =>
                             prev.filter((pid) => !items.some((p) => p.id === pid))
@@ -502,12 +555,12 @@ export const RolesManager: React.FC = () => {
                       <label
                         key={p.id}
                         className={`flex items-start gap-2.5 p-2 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 ${
-                          permissionsRole.is_system ? 'opacity-70 cursor-default' : 'cursor-pointer'
+                          permissionsRole.is_editable ? 'cursor-pointer' : 'opacity-70 cursor-default'
                         }`}
                       >
                         <input
                           type="checkbox"
-                          disabled={permissionsRole.is_system}
+                          disabled={!permissionsRole.is_editable}
                           checked={selectedPermissions.includes(p.id)}
                           onChange={(e) => togglePermission(p.id, e.target.checked)}
                           className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
@@ -529,19 +582,29 @@ export const RolesManager: React.FC = () => {
               ))}
             </div>
 
-            <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
               <span className="text-xs font-bold text-slate-500">
                 {selectedPermissions.length} de {allPermissions.length} permissões seleccionadas
               </span>
               <div className="flex items-center gap-3">
+                {permissionsRole.can_reset_override && (
+                  <button
+                    type="button"
+                    disabled={resetPermissionsMutation.isPending}
+                    onClick={() => resetPermissionsMutation.mutate(permissionsRole.id)}
+                    className="px-4 py-2 rounded-xl text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 text-sm font-semibold hover:bg-amber-50 dark:hover:bg-amber-950/30 disabled:opacity-50"
+                  >
+                    {resetPermissionsMutation.isPending ? 'A repor...' : 'Repor predefinições'}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setPermissionsRole(null)}
                   className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 text-sm font-semibold"
                 >
-                  {permissionsRole.is_system ? 'Fechar' : 'Cancelar'}
+                  {permissionsRole.is_editable ? 'Cancelar' : 'Fechar'}
                 </button>
-                {!permissionsRole.is_system && (
+                {permissionsRole.is_editable && (
                   <button
                     type="button"
                     disabled={updatePermissionsMutation.isPending}

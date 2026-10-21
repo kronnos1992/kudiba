@@ -54,3 +54,17 @@ def test_only_admin_can_grant_admin_role():
 
     claims["roles"] = ["ADMIN"]
     ensure_role_grant_is_allowed(SecurityContext(claims), ["ADMIN"])
+
+
+def test_only_admin_can_grant_sysadmin_role():
+    claims = {
+        "sub": "00000000-0000-0000-0000-000000000001",
+        "tenant_id": "00000000-0000-0000-0000-000000000002",
+        "roles": ["CONTABILISTA"],
+        "permissions": ["users:invite"],
+    }
+    with pytest.raises(AuthorizationError):
+        ensure_role_grant_is_allowed(SecurityContext(claims), ["SYSADMIN"])
+
+    claims["roles"] = ["ADMIN"]
+    ensure_role_grant_is_allowed(SecurityContext(claims), ["SYSADMIN"])

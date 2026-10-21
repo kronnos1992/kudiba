@@ -90,10 +90,11 @@ Relação N:N de associação entre utilizadores, empresas e filiais padrão.
 | `is_default` | `BOOLEAN` | `DEFAULT FALSE` | Empresa pré-selecionada no login inicial. |
 | `default_branch_id` | `UUID` | `REFERENCES branches(id) ON DELETE SET NULL` | Filial preferencial. |
 
-#### Tabelas de RBAC (`roles`, `permissions`, `role_permissions`, `user_roles`)
-- `roles`: Catálogo de perfis (`ADMIN`, `CONTABILISTA`, `OPERADOR_CAIXA`, `GESTOR_STOCK`, `AUDITOR`).
-- `permissions`: Permissões atómicas (`invoices:issue`, `invoices:cancel`, `fiscal:saft:export`, `pos:z_report`, `users:invite`, etc.).
-- `role_permissions`: Associação formal entre perfis e permissões.
+#### Tabelas de RBAC (`roles`, `permissions`, `role_permissions`, `role_permission_overrides`, `user_roles`)
+- `roles`: Catálogo de perfis (`ADMIN`, `SYSADMIN`, `CONTABILISTA`, `OPERADOR_CAIXA`, `GESTOR_STOCK`, `GESTOR_RH`, `AUDITOR`).
+- `permissions`: Permissões atómicas (`invoices:issue`, `invoices:cancel`, `fiscal:saft:export`, `pos:sale`, `users:invite`, `inventory:manage`, etc.).
+- `role_permissions`: Permissões predefinidas do Kudiba ERP por perfil. Nunca são alteradas em runtime.
+- `role_permission_overrides`: Personalizações das permissões de um perfil. Uma linha por âmbito, com o conjunto completo de permissões no array `permissions` (array vazio = perfil sem acessos). `tenant_id IS NULL` representa o âmbito global (definido pelo `SYSADMIN`, afecta todos os tenants); `tenant_id` preenchido representa o âmbito da empresa (definido pelo `ADMIN` da empresa). Resolução: override da empresa > override global > predefinições do ERP. Os perfis de administrador (`ADMIN`, `SYSADMIN`, `SUPER_ADMIN`) têm acesso total e não são editáveis.
 - `user_roles`: Associação entre utilizador, organização (`tenant_id`) e papéis atribuídos.
 
 #### Tabela `refresh_tokens`

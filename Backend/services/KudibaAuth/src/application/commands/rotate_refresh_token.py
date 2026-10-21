@@ -136,7 +136,7 @@ class RotateRefreshTokenUseCase:
                     branch_dto = BranchSummaryDto(id=branch.id, code=branch.code, name=branch.name, city=branch.city)
 
             roles = await self.user_tenant_repo.get_user_roles_in_tenant(user.id, token_entry.tenant_id)
-            permissions = await self.user_tenant_repo.get_roles_permissions(roles)
+            permissions = await self.user_tenant_repo.get_roles_permissions(roles, token_entry.tenant_id)
 
             access_token, _, exp_ts = self.token_service.create_access_token(
                 user_id=str(user.id),

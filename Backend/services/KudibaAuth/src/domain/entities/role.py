@@ -19,3 +19,4 @@ class Role:
     permissions: List[Permission] = field(default_factory=list)
     is_system: bool = True
     tenant_id: Optional[uuid.UUID] = None  # NULL = perfil de sistema global
+    has_override: bool = False  # permissões personalizadas neste tenant

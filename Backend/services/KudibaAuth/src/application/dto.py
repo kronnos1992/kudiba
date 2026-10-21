@@ -218,6 +218,9 @@ class RoleDto:
     is_system: bool
     permissions: List[str] = field(default_factory=list)
     users_count: int = 0
+    is_editable: bool = True
+    has_override: bool = False
+    can_reset_override: bool = False
 
 
 @dataclass(frozen=True)
@@ -250,4 +253,5 @@ class UpdateRolePermissionsCommand:
     tenant_id: uuid.UUID
     role_id: str
     permissions: List[str] = field(default_factory=list)
+    actor_roles: List[str] = field(default_factory=list)
 

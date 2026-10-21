@@ -51,7 +51,7 @@ class GetUserProfileUseCase:
                     )
 
             roles = await self.user_tenant_repo.get_user_roles_in_tenant(user.id, tenant.id)
-            permissions = await self.user_tenant_repo.get_roles_permissions(roles)
+            permissions = await self.user_tenant_repo.get_roles_permissions(roles, tenant.id)
 
             branches = await self.tenant_repo.find_branches(tenant.id)
             branch_dtos = [

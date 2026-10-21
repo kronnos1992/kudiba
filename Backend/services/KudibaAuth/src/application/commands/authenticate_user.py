@@ -170,7 +170,7 @@ class AuthenticateUserUseCase:
             roles = await self.user_tenant_repo.get_user_roles_in_tenant(user.id, tenant_id)
             if not roles:
                 roles = ["ADMIN"] if user.is_superadmin else ["OPERADOR_CAIXA"]
-            permissions = await self.user_tenant_repo.get_roles_permissions(roles)
+            permissions = await self.user_tenant_repo.get_roles_permissions(roles, tenant_id)
 
             # 7. Emite Access Token JWT
             access_token, jti, exp_ts = self.token_service.create_access_token(

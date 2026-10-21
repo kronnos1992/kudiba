@@ -6,6 +6,7 @@ from src.domain.entities.user_tenant import UserTenant
 from src.domain.ports.user_tenant_repository import IUserTenantRepository
 from src.infrastructure.persistence.models import (
     RolePermissionModel,
+    RolePermissionOverrideModel,
     TenantModel,
     UserModel,
     UserRoleModel,
@@ -67,17 +68,45 @@ class SqlAlchemyUserTenantRepository(IUserTenantRepository):
             res = await session.execute(stmt)
             return sorted(list(res.scalars().all()))
 
-    async def get_roles_permissions(self, role_ids: List[str]) -> List[str]:
+    async def get_roles_permissions(self, role_ids: List[str], tenant_id: uuid.UUID) -> List[str]:
+        """Permissões efectivas dos perfis na empresa: override da empresa > override global > predefinições."""
         if not role_ids:
             return []
+        normalized_ids = [r.strip().upper() for r in role_ids]
         async with session_scope(self._session_factory) as (session, _):
-            stmt = (
-                select(RolePermissionModel.permission_id)
-                .where(RolePermissionModel.role_id.in_([r.upper() for r in role_ids]))
-                .distinct()
+            override_rows = await session.execute(
+                select(
+                    RolePermissionOverrideModel.tenant_id,
+                    RolePermissionOverrideModel.role_id,
+                    RolePermissionOverrideModel.permissions,
+                ).where(RolePermissionOverrideModel.role_id.in_(normalized_ids))
             )
-            res = await session.execute(stmt)
-            return sorted(list(res.scalars().all()))
+            tenant_overrides: dict = {}
+            global_overrides: dict = {}
+            for row_tenant_id, role_id, permissions in override_rows.all():
+                if row_tenant_id == tenant_id:
+                    tenant_overrides[role_id] = set(permissions)
+                elif row_tenant_id is None:
+                    global_overrides[role_id] = set(permissions)
+
+            default_rows = await session.execute(
+                select(RolePermissionModel.role_id, RolePermissionModel.permission_id).where(
+                    RolePermissionModel.role_id.in_(normalized_ids)
+                )
+            )
+            defaults: dict = {}
+            for role_id, permission_id in default_rows.all():
+                defaults.setdefault(role_id, set()).add(permission_id)
+
+            effective: set = set()
+            for role_id in normalized_ids:
+                if role_id in tenant_overrides:
+                    effective |= tenant_overrides[role_id]
+                elif role_id in global_overrides:
+                    effective |= global_overrides[role_id]
+                else:
+                    effective |= defaults.get(role_id, set())
+            return sorted(effective)
 
     async def assign_roles(self, user_id: uuid.UUID, tenant_id: uuid.UUID, roles: List[str]) -> None:
         async with session_scope(self._session_factory) as (session, owns_session):
