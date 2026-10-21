@@ -36,10 +36,10 @@ import {
   CreateWarehousePayload,
   RegisterEntityPayload,
   ReceivePurchasePayload,
-  TransferStockPayload,
   AdjustStockPayload,
   CreateBatchPayload,
 } from '../../api/inventory';
+import { invoicingApi, IssueInvoicePayload } from '../../api/invoicing';
 
 type InventoryTab = 'products' | 'warehouses' | 'movements' | 'batches' | 'entities';
 
@@ -172,7 +172,22 @@ export const InventoryView: React.FC = () => {
     batch_id: '',
     quantity: '1',
     notes: '',
+    auto_generate_gt: true,
+    vehicle_plate: 'LD-45-89-AO',
   });
+  const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false);
+  const [printingDocRef, setPrintingDocRef] = useState<string | null>(null);
+  const [cargoNoteMovement, setCargoNoteMovement] = useState<{
+    movement: any;
+    productName: string;
+    productCode: string;
+    fromWarehouseName: string;
+    toWarehouseName: string;
+    quantity: string | number;
+    docRef: string;
+    notes?: string | null;
+    date: string;
+  } | null>(null);
 
   // Formulário de Ajuste
   const [adjustForm, setAdjustForm] = useState({
@@ -331,19 +346,194 @@ export const InventoryView: React.FC = () => {
     },
   });
 
-  const transferMutation = useMutation({
-    mutationFn: (payload: TransferStockPayload) => inventoryApi.transferStock(payload),
-    onSuccess: () => {
+  const originAvailableStock = React.useMemo(() => {
+    if (!transferForm.from_warehouse_id || !transferForm.product_id) return null;
+    const item = stockBalances.find(
+      (b) => b.warehouse_id === transferForm.from_warehouse_id && b.product_id === transferForm.product_id
+    );
+    return item ? Number(item.quantity_on_hand) : 0;
+  }, [stockBalances, transferForm.from_warehouse_id, transferForm.product_id]);
+
+  const handleExecuteTransfer = async () => {
+    if (!transferForm.from_warehouse_id || !transferForm.to_warehouse_id || !transferForm.product_id) {
+      toast.error('Preencha os campos obrigatórios da transferência.');
+      return;
+    }
+    if (transferForm.from_warehouse_id === transferForm.to_warehouse_id) {
+      toast.error('Armazém de origem e armazém de destino devem ser diferentes.');
+      return;
+    }
+    const qty = Number(transferForm.quantity);
+    if (!qty || qty <= 0) {
+      toast.error('A quantidade a transferir tem de ser superior a zero.');
+      return;
+    }
+
+    const prod = products.find((p) => p.id === transferForm.product_id);
+    if (!prod) {
+      toast.error('Artigo não encontrado.');
+      return;
+    }
+
+    if (prod.track_lots && !transferForm.batch_id) {
+      toast.error('O lote do artigo é obrigatório para este produto.');
+      return;
+    }
+
+    if (originAvailableStock !== null && qty > originAvailableStock) {
+      toast.error(
+        `Stock insuficiente no armazém de origem. Disponível: ${originAvailableStock}, Solicitado: ${qty}.`
+      );
+      return;
+    }
+
+    setIsSubmittingTransfer(true);
+    try {
+      let docRef = transferForm.notes?.trim() || '';
+
+      if (transferForm.auto_generate_gt && activeTenant?.id) {
+        const fromWh = warehouses.find((w) => w.id === transferForm.from_warehouse_id);
+        const toWh = warehouses.find((w) => w.id === transferForm.to_warehouse_id);
+        const batch = transferProductBatches.find((b) => b.id === transferForm.batch_id);
+
+        const loadAddress = fromWh?.address_detail?.trim() || fromWh?.name || 'Armazém de Origem';
+        const unloadAddress = toWh?.address_detail?.trim() || toWh?.name || 'Armazém de Destino';
+
+        const now = new Date();
+        const gtPayload: IssueInvoicePayload = {
+          tenantId: activeTenant.id,
+          documentType: 'GT',
+          seriesCode: '2026A',
+          fiscalYear: now.getFullYear(),
+          customerName: activeTenant.company_name || `Transferência Interna - ${toWh?.name || 'Destino'}`,
+          customerNif: (activeTenant as any)?.tax_id || activeTenant?.taxId || activeTenant?.nif || '999999999',
+          customerAddress: unloadAddress,
+          customerCity: 'Luanda',
+          customerCountry: 'AO',
+          paymentMethods: ['OUTRO'],
+          vehiclePlateNumber: transferForm.vehicle_plate.trim() || 'LD-45-89-AO',
+          loadingAddress: loadAddress,
+          loadingCity: 'Luanda',
+          loadingDateTime: now.toISOString(),
+          unloadingAddress: unloadAddress,
+          unloadingCity: 'Luanda',
+          unloadingDateTime: new Date(now.getTime() + 4 * 3600 * 1000).toISOString(),
+          lines: [
+            {
+              productCode: prod.code,
+              description: `${prod.name}${batch ? ` (Lote: ${batch.batch_number})` : ''}`,
+              quantity: qty,
+              unitPrice: Number(prod.current_cmp || prod.cost_price || 0),
+              taxRate: 0,
+              taxExemptionCode: 'M02',
+              isService: false,
+            },
+          ],
+        };
+
+        const issuedGt = await invoicingApi.issueInvoice(gtPayload);
+        docRef = issuedGt.documentNumber;
+
+        // Tentar download automático do PDF da Guia
+        try {
+          const blob = issuedGt.id
+            ? await invoicingApi.getInvoicePdf(issuedGt.id)
+            : await invoicingApi.getInvoicePdfByNumber(issuedGt.documentNumber);
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${issuedGt.documentNumber.replace(/[/ ]/g, '_')}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.URL.revokeObjectURL(url);
+        } catch (pdfErr) {
+          console.warn('Download automático do PDF ignorado ou bloqueado pelo browser:', pdfErr);
+        }
+      }
+
+      await inventoryApi.transferStock({
+        from_warehouse_id: transferForm.from_warehouse_id,
+        to_warehouse_id: transferForm.to_warehouse_id,
+        product_id: transferForm.product_id,
+        batch_id: prod?.track_lots ? transferForm.batch_id : undefined,
+        quantity: transferForm.quantity,
+        document_ref: docRef || undefined,
+        notes: transferForm.notes
+          ? `${transferForm.notes}${docRef ? ` | ${docRef}` : ''}`
+          : docRef
+          ? `Guia de Transporte ${docRef}`
+          : undefined,
+      });
+
       queryClient.invalidateQueries({ queryKey: ['inventory_movements'] });
       queryClient.invalidateQueries({ queryKey: ['inventory_all_stock_balances'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory_dashboard'] });
+
       setShowTransferModal(false);
-      toast.success('Transferência de stock efetuada com sucesso!');
-    },
-    onError: (err: any) => {
-      const detail = err.response?.data?.detail || err.response?.data?.error || 'Erro ao efetuar transferência.';
+      setTransferForm({
+        from_warehouse_id: '',
+        to_warehouse_id: '',
+        product_id: '',
+        batch_id: '',
+        quantity: '1',
+        notes: '',
+        auto_generate_gt: true,
+        vehicle_plate: 'LD-45-89-AO',
+      });
+
+      toast.success(
+        docRef
+          ? `Transferência efetuada com sucesso! Guia ${docRef} gerada e pronta para impressão.`
+          : 'Transferência de stock efetuada com sucesso!'
+      );
+    } catch (err: any) {
+      const detail =
+        err.response?.data?.detail || err.response?.data?.error || err.message || 'Erro ao efetuar transferência.';
       toast.error(detail);
-    },
-  });
+    } finally {
+      setIsSubmittingTransfer(false);
+    }
+  };
+
+  const handlePrintTransferGuide = async (movement: any) => {
+    const docRef = movement.document_ref;
+    const prod = products.find((p) => p.id === movement.product_id);
+    const wh = warehouses.find((w) => w.id === movement.warehouse_id);
+
+    if (docRef) {
+      setPrintingDocRef(movement.id);
+      try {
+        const blob = await invoicingApi.getInvoicePdfByNumber(docRef);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${docRef.replace(/[/ ]/g, '_')}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        toast.success(`Guia Oficial ${docRef} descarregada.`);
+        return;
+      } catch (err) {
+        console.warn('PDF oficial não encontrado pelo número de documento, abrindo talão de carga:', err);
+      } finally {
+        setPrintingDocRef(null);
+      }
+    }
+
+    setCargoNoteMovement({
+      movement,
+      productName: prod?.name || 'Artigo de Stock',
+      productCode: prod?.code || '—',
+      fromWarehouseName: movement.movement_type.includes('OUT') ? wh?.name || 'Armazém de Origem' : 'Armazém de Origem',
+      toWarehouseName: movement.movement_type.includes('IN') ? wh?.name || 'Armazém de Destino' : 'Armazém de Destino',
+      quantity: movement.quantity,
+      docRef: docRef || `GT-${movement.id.slice(0, 8).toUpperCase()}`,
+      notes: movement.notes,
+      date: new Date(movement.created_at).toLocaleString('pt-AO'),
+    });
+  };
 
   const adjustMutation = useMutation({
     mutationFn: (payload: AdjustStockPayload) => inventoryApi.adjustStock(payload),
@@ -1242,18 +1432,19 @@ export const InventoryView: React.FC = () => {
                     <th className="px-4 py-3 text-right">Custo Total</th>
                     <th className="px-4 py-3 text-right">CMP Resultante</th>
                     <th className="px-4 py-3">Observações</th>
+                    <th className="px-4 py-3 text-center">Guia / Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {movementsLoading ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                         A carregar histórico de movimentos...
                       </td>
                     </tr>
                   ) : movements.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                         Nenhum movimento registado. Utilize os botões acima para registar Entradas, Transferências ou Ajustes.
                       </td>
                     </tr>
@@ -1281,7 +1472,7 @@ export const InventoryView: React.FC = () => {
                               {m.movement_type}
                             </span>
                           </td>
-                          <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
+                          <td className="px-4 py-3 font-medium text-slate-900 dark:text-white font-mono text-xs">
                             {m.document_ref || '—'}
                           </td>
                           <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
@@ -1298,6 +1489,26 @@ export const InventoryView: React.FC = () => {
                           </td>
                           <td className="px-4 py-3 text-xs text-slate-500 truncate max-w-xs">
                             {m.notes || '—'}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {m.document_ref || m.movement_type.includes('Transfer') ? (
+                              <button
+                                type="button"
+                                onClick={() => handlePrintTransferGuide(m)}
+                                disabled={printingDocRef === m.id}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 transition shadow-xs disabled:opacity-50"
+                                title="Imprimir Guia Oficial de Transporte (GT)"
+                              >
+                                {printingDocRef === m.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                                ) : (
+                                  <Printer className="w-3.5 h-3.5" />
+                                )}
+                                <span>{m.document_ref?.startsWith('GT') ? 'Guia GT' : 'Imprimir Guia'}</span>
+                              </button>
+                            ) : (
+                              <span className="text-2xs text-slate-400">—</span>
+                            )}
                           </td>
                         </tr>
                       );
@@ -2571,12 +2782,26 @@ export const InventoryView: React.FC = () => {
               })()}
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                  Quantidade a Transferir *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Quantidade a Transferir *
+                  </label>
+                  {originAvailableStock !== null && (
+                    <span
+                      className={`text-2xs font-bold ${
+                        Number(transferForm.quantity) > originAvailableStock
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-emerald-600 dark:text-emerald-400'
+                      }`}
+                    >
+                      Disponível na Origem: {originAvailableStock} UN
+                    </span>
+                  )}
+                </div>
                 <input
                   type="number"
                   min="1"
+                  max={originAvailableStock !== null ? originAvailableStock : undefined}
                   value={transferForm.quantity}
                   onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })}
                   className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold"
@@ -2589,11 +2814,56 @@ export const InventoryView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  placeholder="ex: Guia de Transporte GT 2026/001"
+                  placeholder="ex: Guia de Transporte GT 2026/001 ou ref. logística"
                   value={transferForm.notes}
                   onChange={(e) => setTransferForm({ ...transferForm, notes: e.target.value })}
                   className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
                 />
+              </div>
+
+              {/* Opção de Geração Automática de Guia de Transporte (GT) AGT */}
+              <div className="p-3.5 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50/70 dark:bg-blue-950/40 space-y-3">
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={transferForm.auto_generate_gt}
+                    onChange={(e) => setTransferForm({ ...transferForm, auto_generate_gt: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-blue-900 dark:text-blue-200">
+                      Emitir Guia de Transporte Oficial (GT) automaticamente
+                    </span>
+                    <span className="block text-2xs text-blue-700 dark:text-blue-300">
+                      Gera documento fiscal oficial conforme Decreto 71/25 com QR Code e assinatura RSA.
+                    </span>
+                  </div>
+                </label>
+
+                {transferForm.auto_generate_gt && (
+                  <div className="pt-2 border-t border-blue-200 dark:border-blue-900 space-y-2">
+                    <div>
+                      <label className="block text-2xs font-semibold text-blue-900 dark:text-blue-200 mb-1">
+                        Matrícula da Viatura Transportadora *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="ex: LD-45-89-AO"
+                        value={transferForm.vehicle_plate}
+                        onChange={(e) => setTransferForm({ ...transferForm, vehicle_plate: e.target.value })}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-800 rounded-lg font-mono font-bold"
+                      />
+                    </div>
+                    <div className="text-2xs text-blue-800/80 dark:text-blue-300/80 space-y-0.5">
+                      <p>
+                        • <strong>Carga:</strong> {warehouses.find((w) => w.id === transferForm.from_warehouse_id)?.name || 'Armazém de Origem'}
+                      </p>
+                      <p>
+                        • <strong>Descarga:</strong> {warehouses.find((w) => w.id === transferForm.to_warehouse_id)?.name || 'Armazém de Destino'}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2612,23 +2882,112 @@ export const InventoryView: React.FC = () => {
                   !transferForm.to_warehouse_id ||
                   !transferForm.product_id ||
                   Number(transferForm.quantity) <= 0 ||
+                  (originAvailableStock !== null && Number(transferForm.quantity) > originAvailableStock) ||
                   (Boolean(products.find((p) => p.id === transferForm.product_id)?.track_lots) && !transferForm.batch_id) ||
-                  transferMutation.isPending
+                  isSubmittingTransfer
                 }
-                onClick={() => {
-                  const prod = products.find((p) => p.id === transferForm.product_id);
-                  transferMutation.mutate({
-                    from_warehouse_id: transferForm.from_warehouse_id,
-                    to_warehouse_id: transferForm.to_warehouse_id,
-                    product_id: transferForm.product_id,
-                    batch_id: prod?.track_lots ? transferForm.batch_id : undefined,
-                    quantity: transferForm.quantity,
-                    notes: transferForm.notes || undefined,
-                  });
-                }}
-                className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50"
+                onClick={handleExecuteTransfer}
+                className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 inline-flex items-center gap-2"
               >
-                Efetuar Transferência
+                {isSubmittingTransfer && <Loader2 className="w-4 h-4 animate-spin" />}
+                {transferForm.auto_generate_gt ? 'Efetuar Transferência & Emitir GT' : 'Efetuar Transferência'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Guia de Transporte / Transferência Imprimível */}
+      {cargoNoteMovement && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 print:p-0 print:bg-white">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-2xl w-full p-6 space-y-6 print:shadow-none print:border-none print:max-w-none print:p-8">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4 print:border-black">
+              <div>
+                <span className="text-2xs font-extrabold tracking-wider uppercase text-blue-600 dark:text-blue-400 block">
+                  Documento de Movimentação e Circulação de Mercadorias (Dec. 71/25)
+                </span>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white print:text-black">
+                  GUIA DE TRANSPORTE E TRANSFERÊNCIA
+                </h3>
+              </div>
+              <div className="text-right">
+                <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 print:text-black">
+                  {cargoNoteMovement.docRef}
+                </span>
+                <span className="text-2xs text-slate-400 block print:text-slate-600">{cargoNoteMovement.date}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 print:border-slate-300 print:bg-white">
+                <span className="font-bold text-slate-500 uppercase text-2xs block mb-1">Empresa Emitente</span>
+                <p className="font-bold text-slate-900 dark:text-white print:text-black">{activeTenant?.company_name || 'Kudiba ERP'}</p>
+                <p className="text-slate-600 dark:text-slate-300 print:text-slate-700">NIF: {(activeTenant as any)?.tax_id || activeTenant?.taxId || activeTenant?.nif || '999999999'}</p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 print:border-slate-300 print:bg-white">
+                <span className="font-bold text-slate-500 uppercase text-2xs block mb-1">Origem &amp; Destino</span>
+                <p className="text-slate-700 dark:text-slate-300 print:text-black">
+                  <strong>Origem:</strong> {cargoNoteMovement.fromWarehouseName}
+                </p>
+                <p className="text-slate-700 dark:text-slate-300 print:text-black">
+                  <strong>Destino:</strong> {cargoNoteMovement.toWarehouseName}
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-hidden border border-slate-200 dark:border-slate-700 rounded-xl print:border-black">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-100 dark:bg-slate-800 print:bg-slate-200 font-bold text-slate-700 dark:text-slate-300 print:text-black border-b border-slate-200 dark:border-slate-700 print:border-black">
+                  <tr>
+                    <th className="px-4 py-2.5">Código</th>
+                    <th className="px-4 py-2.5">Artigo Transferido</th>
+                    <th className="px-4 py-2.5 text-right">Quantidade</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 print:divide-slate-300">
+                  <tr>
+                    <td className="px-4 py-3 font-mono">{cargoNoteMovement.productCode}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900 dark:text-white print:text-black">{cargoNoteMovement.productName}</td>
+                    <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white print:text-black">{cargoNoteMovement.quantity} UN</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {cargoNoteMovement.notes && (
+              <p className="text-xs text-slate-500 italic print:text-slate-700">
+                Observações: {cargoNoteMovement.notes}
+              </p>
+            )}
+
+            <div className="grid grid-cols-3 gap-4 pt-6 border-t border-slate-200 dark:border-slate-800 print:border-black text-center text-2xs text-slate-500 print:text-black">
+              <div className="border-t border-dashed border-slate-400 pt-2">
+                <span>Expedição / Carga</span>
+              </div>
+              <div className="border-t border-dashed border-slate-400 pt-2">
+                <span>Motorista / Transporte</span>
+              </div>
+              <div className="border-t border-dashed border-slate-400 pt-2">
+                <span>Receção / Destino</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800 print:hidden">
+              <button
+                type="button"
+                onClick={() => setCargoNoteMovement(null)}
+                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+              >
+                Fechar
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-2 px-5 py-2 text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md transition"
+              >
+                <Printer className="w-4 h-4" />
+                Imprimir Guia
               </button>
             </div>
           </div>

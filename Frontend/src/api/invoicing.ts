@@ -309,6 +309,14 @@ export const invoicingApi = {
     return response.data;
   },
 
+  getInvoicePdfByNumber: async (documentNumber: string): Promise<Blob> => {
+    const response = await apiClient.get('/api/v1/fiscal/invoices/pdf-by-number', {
+      params: { documentNumber },
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
   getInvoiceThermal: async (id: string): Promise<string> => {
     const response = await apiClient.get(`/api/v1/fiscal/invoices/${id}/thermal`, {
       params: { format: 'text' },

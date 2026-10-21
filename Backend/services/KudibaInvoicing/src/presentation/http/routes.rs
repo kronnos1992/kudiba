@@ -47,6 +47,14 @@ pub fn router(state: AppState) -> Router {
             post(cancel_invoice_handler),
         )
         // REST: renderização oficial do documento (PDF A4, Talão Térmico 80mm e QR Code AGT)
+        .route(
+            "/api/v1/invoices/pdf-by-number",
+            get(get_invoice_pdf_by_number_handler),
+        )
+        .route(
+            "/api/v1/fiscal/invoices/pdf-by-number",
+            get(get_invoice_pdf_by_number_handler),
+        )
         .route("/api/v1/invoices/{id}/pdf", get(get_invoice_pdf_handler))
         .route(
             "/api/v1/fiscal/invoices/{id}/pdf",
@@ -530,6 +538,87 @@ async fn get_invoice_pdf_handler(
         invoice_id: Some(id),
         tenant_id: Some(tenant_id),
         document_number: None,
+    };
+
+    let invoice = match state.get_invoice.execute(query).await {
+        Ok(invoice) => invoice,
+        Err(err) => return domain_error(err),
+    };
+
+    let tenant = load_tenant_by_id(&state.pool, tenant_id).await;
+    let company_name = tenant
+        .as_ref()
+        .map(|t| t.company_name.as_str())
+        .unwrap_or("Kudiba ERP");
+    let software_cert = tenant
+        .as_ref()
+        .and_then(|t| t.agt_cert_number.as_deref())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(&state.config.agt_software_cert);
+
+    match crate::infrastructure::reports::InvoicePdfGenerator::generate_pdf_with_tenant(
+        &invoice,
+        tenant.as_ref(),
+        company_name,
+        software_cert,
+    ) {
+        Ok(bytes) => {
+            let mut resp_headers = HeaderMap::new();
+            resp_headers.insert(
+                axum::http::header::CONTENT_TYPE,
+                HeaderValue::from_static("application/pdf"),
+            );
+            let filename = format!("{}.pdf", invoice.document_number.replace(['/', ' '], "_"));
+            if let Ok(disp) = HeaderValue::from_str(&format!("inline; filename=\"{filename}\"")) {
+                resp_headers.insert(axum::http::header::CONTENT_DISPOSITION, disp);
+            }
+            (StatusCode::OK, resp_headers, bytes).into_response()
+        }
+        Err(err) => domain_error(err),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetInvoicePdfByNumberParams {
+    #[serde(rename = "documentNumber")]
+    pub document_number: String,
+    #[serde(rename = "tenantId")]
+    pub tenant_id: Option<Uuid>,
+}
+
+async fn get_invoice_pdf_by_number_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<GetInvoicePdfByNumberParams>,
+) -> Response {
+    let tenant_id = match authorized_tenant_id(
+        &headers,
+        &[
+            "ADMIN",
+            "ADMINISTRADOR",
+            "GESTOR",
+            "CONTABILISTA",
+            "ACCOUNTANT",
+            "OPERADOR_FACTURACAO",
+            "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
+        ],
+    ) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response.into_response(),
+    };
+    if params
+        .tenant_id
+        .is_some_and(|requested| requested != tenant_id)
+    {
+        return forbidden_tenant().into_response();
+    }
+
+    let query = GetInvoiceQuery {
+        invoice_id: None,
+        tenant_id: Some(tenant_id),
+        document_number: Some(params.document_number.trim().to_string()),
     };
 
     let invoice = match state.get_invoice.execute(query).await {

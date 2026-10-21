@@ -323,6 +323,8 @@ pub struct TransferStockRequest {
     #[serde(default)]
     pub batch_id: Option<Uuid>,
     pub quantity: Decimal,
+    #[serde(default)]
+    pub document_ref: Option<String>,
     pub notes: Option<String>,
 }
 

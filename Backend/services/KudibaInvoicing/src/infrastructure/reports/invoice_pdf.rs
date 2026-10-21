@@ -424,6 +424,87 @@ impl InvoicePdfGenerator {
         // =====================================================================
         let mut y = 625.0;
 
+        if let Some(transport) = &invoice.transport {
+            let box_y = 598.0;
+            operations.push(Operation::new("q", vec![]));
+            operations.push(Operation::new(
+                "rg",
+                vec![0.97.into(), 0.98.into(), 0.99.into()],
+            ));
+            operations.push(Operation::new(
+                "re",
+                vec![40.into(), box_y.into(), 515.into(), 36.into()],
+            ));
+            operations.push(Operation::new("f", vec![]));
+            operations.push(Operation::new("Q", vec![]));
+            Self::draw_rect_border(
+                &mut operations,
+                40.0,
+                box_y,
+                515.0,
+                36.0,
+                0.5,
+                (0.82, 0.86, 0.92),
+            );
+
+            Self::add_text(
+                &mut operations,
+                "F2",
+                7.5,
+                48.0,
+                box_y + 25.0,
+                "DADOS DE TRANSPORTE E CARGA (DEC. 71/25):",
+                (0.2, 0.35, 0.55),
+            );
+
+            let plate = transport
+                .vehicle_registration
+                .as_deref()
+                .unwrap_or("Não especificada");
+            let load_addr = transport.load_address.as_deref().unwrap_or("—");
+            let load_city = transport.load_city.as_deref().unwrap_or("");
+            let load_str = if load_city.is_empty() {
+                load_addr.to_string()
+            } else {
+                format!("{load_addr}, {load_city}")
+            };
+
+            let unload_addr = transport.unload_address.as_deref().unwrap_or("—");
+            let unload_city = transport.unload_city.as_deref().unwrap_or("");
+            let unload_str = if unload_city.is_empty() {
+                unload_addr.to_string()
+            } else {
+                format!("{unload_addr}, {unload_city}")
+            };
+
+            Self::add_text(
+                &mut operations,
+                "F1",
+                8.0,
+                48.0,
+                box_y + 14.0,
+                &format!("Viatura / Matrícula: {plate} | Local de Carga: {load_str}"),
+                (0.2, 0.2, 0.2),
+            );
+
+            let load_time_str = transport
+                .load_date_time
+                .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                .unwrap_or_else(|| "—".to_string());
+
+            Self::add_text(
+                &mut operations,
+                "F1",
+                8.0,
+                48.0,
+                box_y + 4.0,
+                &format!("Início do Transporte: {load_time_str} | Local de Descarga: {unload_str}"),
+                (0.2, 0.2, 0.2),
+            );
+
+            y = box_y - 18.0;
+        }
+
         // Cabeçalho da Tabela
         operations.push(Operation::new("q", vec![]));
         operations.push(Operation::new(

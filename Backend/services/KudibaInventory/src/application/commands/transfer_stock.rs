@@ -143,7 +143,7 @@ impl TransferStockCommand {
             req.quantity,
             product.current_cmp,
             product.current_cmp,
-            None,
+            req.document_ref.clone(),
             req.notes.clone(),
             user_id,
         )?;
@@ -160,7 +160,7 @@ impl TransferStockCommand {
             req.quantity,
             product.current_cmp,
             product.current_cmp,
-            None,
+            req.document_ref.clone(),
             req.notes.clone(),
             user_id,
         )?;

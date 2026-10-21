@@ -202,6 +202,7 @@ export interface TransferStockPayload {
   product_id: string;
   batch_id?: string;
   quantity: string;
+  document_ref?: string;
   notes?: string;
 }
 
