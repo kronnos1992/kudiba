@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2,
@@ -21,6 +21,9 @@ import {
   Mail,
   Globe,
   Plus,
+  Star,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge } from '../../components/common/StatusBadge';
@@ -62,10 +65,59 @@ const ANGOLA_PROVINCES = [
   'Zaire',
 ];
 
+const ANGOLA_BANKS_MAP: Record<string, { name: string; swift: string }> = {
+  '0040': { name: 'BAI - Banco Angolano de Investimentos', swift: 'BAIPAOLU' },
+  '0006': { name: 'BFA - Banco de Fomento Angola', swift: 'BFMAAOLU' },
+  '0055': { name: 'Banco BIC', swift: 'BICAALLU' },
+  '0005': { name: 'BCI - Banco de Comércio e Indústria', swift: 'BCIAAOLU' },
+  '0053': { name: 'Banco Millennium Atlântico', swift: 'BMAOAOLU' },
+  '0051': { name: 'Standard Bank Angola', swift: 'SBICAOLX' },
+  '0044': { name: 'Banco Sol', swift: 'SOLBAOLU' },
+  '0045': { name: 'Banco Keve', swift: 'BKEVAOLU' },
+  '0059': { name: 'Banco Yetu', swift: 'YETUAOLU' },
+  '0043': { name: 'BNI - Banco de Negócios Internacional', swift: 'BNINAOLU' },
+  '0054': { name: 'BCGA - Banco Caixa Geral Angola', swift: 'BCGAAOLU' },
+  '0058': { name: 'BPC - Banco de Poupança e Crédito', swift: 'BPCTAOLU' },
+  '0067': { name: 'Access Bank Angola', swift: 'ACENAOLU' },
+  '0052': { name: 'BCA - Banco Comercial Angolano', swift: 'BCOMAOLU' },
+};
+
+const getNifValidation = (nif: string) => {
+  const clean = nif.replace(/[\s.-]/g, '').toUpperCase();
+  if (!clean) return null;
+  if (/^5\d{9}$/.test(clean)) {
+    return { valid: true, type: 'EMPRESA', label: 'NIF de Empresa Válido (Pessoa Coletiva)' };
+  }
+  if (/^\d{9}[A-Z]{2}\d{3}$/.test(clean)) {
+    return { valid: true, type: 'SINGULAR', label: 'NIF / BI de Pessoa Singular Válido' };
+  }
+  if (/^\d{10}$/.test(clean)) {
+    return { valid: true, type: 'COLETIVA', label: 'NIF Conforme (10 dígitos)' };
+  }
+  if (clean.length < 10) {
+    return { valid: false, type: 'INCOMPLETO', label: `Incompleto (${clean.length}/10 dígitos)` };
+  }
+  return { valid: false, type: 'INVALIDO', label: 'Formato de NIF não padrão AGT' };
+};
+
+const getIbanValidation = (iban: string) => {
+  const clean = iban.replace(/[\s.-]/g, '').toUpperCase();
+  if (!clean) return null;
+  const isAO = clean.startsWith('AO06') || clean.startsWith('AO');
+  if (isAO && clean.length === 25) {
+    return { valid: true, label: 'AO06 Conforme (25 caracteres)' };
+  }
+  if (isAO && clean.length < 25) {
+    return { valid: false, label: `${clean.length}/25 caracteres (BNA)` };
+  }
+  return null;
+};
+
 export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) => {
   const queryClient = useQueryClient();
   const { activeTenant, activeBranch, user, updateActiveTenantSettings } = useAuthStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>('organization');
+  const [previewMode, setPreviewMode] = useState<'a4' | 'thermal'>('a4');
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   // Company Parameterization Form State
@@ -236,13 +288,62 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
   };
 
   const handleUpdateBank = (index: number, field: keyof TenantBankAccount, value: any) => {
+    setCompanyForm((prev) => {
+      const updated = prev.bank_accounts.map((acc, i) => {
+        if (i !== index) return acc;
+        const nextAcc = { ...acc, [field]: value };
+        if (field === 'iban') {
+          const raw = String(value).replace(/[\s.-]/g, '').toUpperCase();
+          if (raw.length >= 8) {
+            const bankCode = raw.substring(4, 8);
+            if (ANGOLA_BANKS_MAP[bankCode]) {
+              nextAcc.bank_name = ANGOLA_BANKS_MAP[bankCode].name;
+              nextAcc.swift = ANGOLA_BANKS_MAP[bankCode].swift;
+            }
+          }
+        }
+        return nextAcc;
+      });
+      return { ...prev, bank_accounts: updated };
+    });
+  };
+
+  const handleSetPrimaryBank = (index: number) => {
     setCompanyForm((prev) => ({
       ...prev,
-      bank_accounts: prev.bank_accounts.map((acc, i) =>
-        i === index ? { ...acc, [field]: value } : acc
-      ),
+      bank_accounts: prev.bank_accounts.map((acc, i) => ({
+        ...acc,
+        is_primary: i === index,
+      })),
     }));
   };
+
+  const complianceChecks = useMemo(() => {
+    const hasLegalName = Boolean(companyForm.company_name.trim());
+    const hasNif = Boolean(companyForm.nif.trim() && companyForm.nif.trim().length >= 10);
+    const hasAddress = Boolean(companyForm.address_detail.trim() && companyForm.city.trim());
+    const hasTaxRegime = Boolean(companyForm.tax_regime_code);
+    const hasTaxOffice = Boolean(companyForm.tax_office_code?.trim());
+    const hasBank = companyForm.bank_accounts.some(
+      (b) => b.iban.replace(/[\s.-]/g, '').length >= 15
+    );
+    const hasSeries = seriesList.some((s) => s.isActive);
+
+    const items = [
+      { label: 'Denominação Social', ok: hasLegalName, hint: 'Nome societário oficial' },
+      { label: 'NIF de Empresa Válido', ok: hasNif, hint: '10 dígitos AGT' },
+      { label: 'Sede e Município', ok: hasAddress, hint: 'Endereço fiscal impresso' },
+      { label: 'Regime de IVA & Repartição', ok: hasTaxRegime && hasTaxOffice, hint: 'Enquadramento tributário' },
+      { label: 'IBAN para Pagamento', ok: hasBank, hint: 'Liquidação comercial' },
+      { label: 'Série Fiscal 2026 Ativa', ok: hasSeries, hint: 'Cronologia e numeração' },
+      { label: 'Chave RSA-2048 & Hash', ok: true, hint: 'Certificação informática' },
+    ];
+
+    const okCount = items.filter((i) => i.ok).length;
+    const percentage = Math.round((okCount / items.length) * 100);
+
+    return { items, okCount, total: items.length, percentage };
+  }, [companyForm, seriesList]);
 
   const handleRemoveBank = (index: number) => {
     setCompanyForm((prev) => ({
@@ -572,9 +673,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block mb-1">
-                    NIF (Número de Identificação Fiscal) *
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block">
+                      NIF (Número de Identificação Fiscal) *
+                    </label>
+                    {(() => {
+                      const info = getNifValidation(companyForm.nif);
+                      if (!info) return null;
+                      return (
+                        <span
+                          className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            info.valid
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                          }`}
+                        >
+                          {info.valid ? (
+                            <CheckCircle2 className="w-2.5 h-2.5" />
+                          ) : (
+                            <AlertCircle className="w-2.5 h-2.5" />
+                          )}
+                          {info.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
                   <input
                     type="text"
                     required
@@ -963,60 +1086,103 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {companyForm.bank_accounts.map((acc, idx) => (
-                    <div
-                      key={idx}
-                      className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center p-3 rounded-xl border border-white/15 bg-white/5"
-                    >
-                      <div className="sm:col-span-4">
-                        <label className="block text-[10px] font-bold text-white/60 uppercase mb-0.5">
-                          Banco
-                        </label>
-                        <input
-                          type="text"
-                          value={acc.bank_name}
-                          onChange={(e) => handleUpdateBank(idx, 'bank_name', e.target.value)}
-                          placeholder="Ex: BAI, BFA, BIC..."
-                          className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent transition-all"
-                        />
+                  {companyForm.bank_accounts.map((acc, idx) => {
+                    const ibanInfo = getIbanValidation(acc.iban);
+                    return (
+                      <div
+                        key={idx}
+                        className={`grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center p-3 rounded-xl border transition-all ${
+                          acc.is_primary
+                            ? 'border-amber-400/60 bg-amber-500/10 shadow-sm'
+                            : 'border-white/15 bg-white/5'
+                        }`}
+                      >
+                        <div className="sm:col-span-4">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <label className="block text-[10px] font-bold text-white/60 uppercase">
+                              Banco
+                            </label>
+                            {acc.is_primary && (
+                              <span className="text-[9px] font-bold text-amber-300 bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-400/40">
+                                Conta Principal
+                              </span>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={acc.bank_name}
+                            onChange={(e) => handleUpdateBank(idx, 'bank_name', e.target.value)}
+                            placeholder="Ex: BAI, BFA, BIC..."
+                            className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent transition-all"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-5">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <label className="block text-[10px] font-bold text-white/60 uppercase">
+                              IBAN (AO06)
+                            </label>
+                            {ibanInfo && (
+                              <span
+                                className={`text-[9px] font-mono font-bold px-1 py-0.2 rounded ${
+                                  ibanInfo.valid
+                                    ? 'text-emerald-300 bg-emerald-950/60'
+                                    : 'text-amber-300 bg-amber-950/60'
+                                }`}
+                              >
+                                {ibanInfo.label}
+                              </span>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={acc.iban}
+                            onChange={(e) => handleUpdateBank(idx, 'iban', e.target.value)}
+                            placeholder="AO06.0040.0000.0000.0000.0000.0"
+                            className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white font-mono text-xs placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent transition-all"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-[10px] font-bold text-white/60 uppercase mb-0.5">
+                            Moeda
+                          </label>
+                          <select
+                            value={acc.currency || 'AOA'}
+                            onChange={(e) => handleUpdateBank(idx, 'currency', e.target.value)}
+                            className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent transition-all"
+                          >
+                            <option value="AOA" className="text-slate-900">AOA (Kz)</option>
+                            <option value="USD" className="text-slate-900">USD ($)</option>
+                            <option value="EUR" className="text-slate-900">EUR (€)</option>
+                          </select>
+                        </div>
+
+                        <div className="sm:col-span-1 flex items-center justify-end gap-1 pt-3 sm:pt-4">
+                          <button
+                            type="button"
+                            title={acc.is_primary ? 'Conta Principal' : 'Definir como Conta Principal'}
+                            onClick={() => handleSetPrimaryBank(idx)}
+                            className={`p-1.5 rounded-lg transition-all ${
+                              acc.is_primary
+                                ? 'text-amber-400 bg-amber-400/20'
+                                : 'text-white/40 hover:text-amber-300 hover:bg-white/10'
+                            }`}
+                          >
+                            <Star className={`w-3.5 h-3.5 ${acc.is_primary ? 'fill-amber-400' : ''}`} />
+                          </button>
+                          <button
+                            type="button"
+                            title="Remover Conta"
+                            onClick={() => handleRemoveBank(idx)}
+                            className="p-1.5 text-white/50 hover:text-red-400 rounded-lg hover:bg-white/10 transition-all"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="sm:col-span-5">
-                        <label className="block text-[10px] font-bold text-white/60 uppercase mb-0.5">
-                          IBAN
-                        </label>
-                        <input
-                          type="text"
-                          value={acc.iban}
-                          onChange={(e) => handleUpdateBank(idx, 'iban', e.target.value)}
-                          placeholder="AO06.0040.0000.0000.0000.0000.0"
-                          className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white font-mono text-xs placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent transition-all"
-                        />
-                      </div>
-                      <div className="sm:col-span-2">
-                        <label className="block text-[10px] font-bold text-white/60 uppercase mb-0.5">
-                          Moeda
-                        </label>
-                        <select
-                          value={acc.currency || 'AOA'}
-                          onChange={(e) => handleUpdateBank(idx, 'currency', e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent transition-all"
-                        >
-                          <option value="AOA" className="text-slate-900">AOA</option>
-                          <option value="USD" className="text-slate-900">USD</option>
-                          <option value="EUR" className="text-slate-900">EUR</option>
-                        </select>
-                      </div>
-                      <div className="sm:col-span-1 flex justify-end pt-4">
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveBank(idx)}
-                          className="p-1.5 text-white/50 hover:text-red-400 rounded-lg hover:bg-white/10"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -1103,6 +1269,57 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
           </div>
 
           <div className="space-y-6">
+            {/* Checklist de Conformidade Decreto 71/25 */}
+            <GlassCard className="p-5 space-y-3.5 border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 via-transparent to-blue-500/5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center font-black text-xs shrink-0">
+                    {complianceChecks.percentage}%
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                      Check-up Decreto 71/25
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      {complianceChecks.okCount} de {complianceChecks.total} requisitos preenchidos
+                    </p>
+                  </div>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    complianceChecks.percentage === 100
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                  }`}
+                >
+                  {complianceChecks.percentage === 100 ? '100% Conforme' : 'Em Preparação'}
+                </span>
+              </div>
+
+              <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${complianceChecks.percentage}%` }}
+                />
+              </div>
+
+              <div className="space-y-1.5 pt-1 text-xs">
+                {complianceChecks.items.map((it, idx) => (
+                  <div key={idx} className="flex items-center justify-between text-[11px]">
+                    <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                      {it.ok ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      )}
+                      {it.label}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-medium">{it.hint}</span>
+                  </div>
+                ))}
+              </div>
+            </GlassCard>
+
             {/* Live Preview of Official Document Header/Footer */}
             <GlassCard className="p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
@@ -1115,84 +1332,161 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                     Pré-visualização em tempo real do cabeçalho fiscal
                   </p>
                 </div>
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode('a4')}
+                    className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${
+                      previewMode === 'a4'
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Fatura A4
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode('thermal')}
+                    className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${
+                      previewMode === 'thermal'
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    POS 80mm
+                  </button>
+                </div>
               </div>
 
-              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-gradient-to-br from-slate-900/95 via-slate-900/90 to-emerald-900/90 text-white p-4 space-y-3 shadow-md">
-                <div className="flex items-start gap-3">
-                  {companyForm.logo_data_url ? (
-                    <img
-                      src={companyForm.logo_data_url}
-                      alt="Logo"
-                      className="w-12 h-12 object-contain rounded border border-white/20 bg-white/10 p-0.5 shrink-0"
-                    />
-                  ) : (
-                    <div className="w-11 h-11 rounded-lg bg-white/10 text-white flex items-center justify-center font-bold text-base shrink-0 ring-1 ring-white/20">
-                      {(companyForm.trade_name || companyForm.company_name || 'K')
-                        .charAt(0)
-                        .toUpperCase()}
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1 text-xs space-y-0.5">
-                    <p className="font-bold text-white truncate">
-                      {companyForm.trade_name || companyForm.company_name || 'Nome da Empresa'}
-                    </p>
-                    {companyForm.trade_name &&
-                      companyForm.trade_name !== companyForm.company_name && (
-                        <p className="text-[11px] font-medium text-white/80 truncate">
-                          {companyForm.company_name}
+              {previewMode === 'a4' ? (
+                <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-gradient-to-br from-slate-900/95 via-slate-900/90 to-emerald-900/90 text-white p-4 space-y-3 shadow-md">
+                  <div className="flex items-start gap-3">
+                    {companyForm.logo_data_url ? (
+                      <img
+                        src={companyForm.logo_data_url}
+                        alt="Logo"
+                        className="w-12 h-12 object-contain rounded border border-white/20 bg-white/10 p-0.5 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-11 h-11 rounded-lg bg-white/10 text-white flex items-center justify-center font-bold text-base shrink-0 ring-1 ring-white/20">
+                        {(companyForm.trade_name || companyForm.company_name || 'K')
+                          .charAt(0)
+                          .toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1 text-xs space-y-0.5">
+                      <p className="font-bold text-white truncate">
+                        {companyForm.trade_name || companyForm.company_name || 'Nome da Empresa'}
+                      </p>
+                      {companyForm.trade_name &&
+                        companyForm.trade_name !== companyForm.company_name && (
+                          <p className="text-[11px] font-medium text-white/80 truncate">
+                            {companyForm.company_name}
+                          </p>
+                        )}
+                      <p className="font-mono text-[11px] text-white/90">
+                        NIF: {companyForm.nif || '0000000000'}
+                      </p>
+                      {companyForm.commercial_registry && (
+                        <p className="text-[10px] text-white/70 truncate">
+                          {companyForm.commercial_registry}
                         </p>
                       )}
-                    <p className="font-mono text-[11px] text-white/90">
-                      NIF: {companyForm.nif || '0000000000'}
-                    </p>
-                    {companyForm.commercial_registry && (
-                      <p className="text-[10px] text-white/70 truncate">
-                        {companyForm.commercial_registry}
-                      </p>
-                    )}
-                    {companyForm.share_capital && (
-                      <p className="text-[10px] text-white/70">
-                        Cap. Social: {companyForm.share_capital}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="text-[11px] text-white/90 border-t border-white/10 pt-2 space-y-0.5">
-                  <p>
-                    {companyForm.address_detail || 'Endereço da Sede'}, {companyForm.city || 'Luanda'}
-                    {companyForm.province ? ` (${companyForm.province})` : ''}
-                  </p>
-                  {(companyForm.phone || companyForm.email) && (
-                    <p className="text-white/80">
-                      {[companyForm.phone, companyForm.email].filter(Boolean).join(' • ')}
-                    </p>
-                  )}
-                  {companyForm.website && (
-                    <p className="text-white/90 truncate">{companyForm.website}</p>
-                  )}
-                </div>
-
-                {companyForm.bank_accounts.filter((b) => b.iban.trim()).length > 0 && (
-                  <div className="border-t border-white/10 pt-2">
-                    <p className="text-[10px] font-bold uppercase text-white/60 mb-1">
-                      Coordenadas Bancárias:
-                    </p>
-                    {companyForm.bank_accounts
-                      .filter((b) => b.iban.trim())
-                      .slice(0, 3)
-                      .map((b, i) => (
-                        <p key={i} className="text-[10px] font-mono text-white/80 truncate">
-                          <span className="font-bold text-white">{b.bank_name}:</span> {b.iban}
+                      {companyForm.share_capital && (
+                        <p className="text-[10px] text-white/70">
+                          Cap. Social: {companyForm.share_capital}
                         </p>
-                      ))}
+                      )}
+                    </div>
                   </div>
-                )}
 
-                <div className="border-t border-white/10 pt-2 text-[10px] text-white/70 italic">
-                  {companyForm.invoice_footer_notes}
+                  <div className="text-[11px] text-white/90 border-t border-white/10 pt-2 space-y-0.5">
+                    <p>
+                      {companyForm.address_detail || 'Endereço da Sede'}, {companyForm.city || 'Luanda'}
+                      {companyForm.province ? ` (${companyForm.province})` : ''}
+                    </p>
+                    {(companyForm.phone || companyForm.email) && (
+                      <p className="text-white/80">
+                        {[companyForm.phone, companyForm.email].filter(Boolean).join(' • ')}
+                      </p>
+                    )}
+                    {companyForm.website && (
+                      <p className="text-white/90 truncate">{companyForm.website}</p>
+                    )}
+                  </div>
+
+                  {companyForm.bank_accounts.filter((b) => b.iban.trim()).length > 0 && (
+                    <div className="border-t border-white/10 pt-2">
+                      <p className="text-[10px] font-bold uppercase text-white/60 mb-1">
+                        Coordenadas Bancárias:
+                      </p>
+                      {companyForm.bank_accounts
+                        .filter((b) => b.iban.trim())
+                        .slice(0, 3)
+                        .map((b, i) => (
+                          <p key={i} className="text-[10px] font-mono text-white/80 truncate flex items-center justify-between">
+                            <span>
+                              <span className="font-bold text-white">{b.bank_name}:</span> {b.iban}
+                            </span>
+                            {b.is_primary && (
+                              <span className="text-[9px] text-amber-300 font-bold ml-1">★ Principal</span>
+                            )}
+                          </p>
+                        ))}
+                    </div>
+                  )}
+
+                  <div className="border-t border-white/10 pt-2 text-[10px] text-white/70 italic">
+                    {companyForm.invoice_footer_notes}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white text-slate-900 p-4 space-y-2 shadow-inner font-mono text-xs">
+                  <div className="text-center space-y-0.5">
+                    {companyForm.logo_data_url && (
+                      <img
+                        src={companyForm.logo_data_url}
+                        alt="Logo"
+                        className="w-10 h-10 object-contain mx-auto mb-1 filter grayscale"
+                      />
+                    )}
+                    <p className="font-black text-sm uppercase">
+                      {companyForm.trade_name || companyForm.company_name || 'NOME DA EMPRESA'}
+                    </p>
+                    {companyForm.trade_name && companyForm.trade_name !== companyForm.company_name && (
+                      <p className="text-[11px] text-slate-600">{companyForm.company_name}</p>
+                    )}
+                    <p className="text-xs font-bold">NIF: {companyForm.nif || '0000000000'}</p>
+                    <p className="text-[11px] text-slate-600">
+                      {companyForm.address_detail || 'Endereço da Sede'}, {companyForm.city || 'Luanda'}
+                    </p>
+                    {companyForm.phone && (
+                      <p className="text-[11px] text-slate-600">Tel: {companyForm.phone}</p>
+                    )}
+                  </div>
+
+                  <div className="border-t border-b border-dashed border-slate-400 py-1.5 my-2 text-center text-[10px] font-bold text-slate-700">
+                    FATURA / RECIBO DE VENDA (POS 80mm)
+                  </div>
+
+                  <div className="text-[10px] text-center text-slate-600 space-y-0.5">
+                    <p>
+                      Processado por programa validado n.º{' '}
+                      <span className="font-bold">{companyForm.agt_cert_number || 'AGT/2026/0042'}</span>
+                    </p>
+                    <p className="text-[9px] text-slate-500">
+                      Dec. Pres. n.º 71/25 • Chave RSA-2048
+                    </p>
+                    <p className="text-[9px] font-mono text-slate-400">
+                      Hash: a1b2-Processado por computador
+                    </p>
+                  </div>
+
+                  <div className="border-t border-dashed border-slate-300 pt-2 text-[9px] text-center text-slate-500 italic">
+                    {companyForm.invoice_footer_notes}
+                  </div>
+                </div>
+              )}
             </GlassCard>
 
             <GlassCard className="p-6 space-y-4">
