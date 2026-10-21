@@ -12,11 +12,11 @@ class ModuleDefinition:
 
 
 BILLABLE_MODULES: Sequence[ModuleDefinition] = (
-    ModuleDefinition("invoicing", "Faturação AGT", "Facturas, séries fiscais e SAF-T Facturação"),
-    ModuleDefinition("inventory", "Artigos & Armazéns", "Catálogo, stock e movimentações"),
+    ModuleDefinition("invoicing", "Facturação", "Facturas, séries fiscais e SAF-T Facturação"),
+    ModuleDefinition("inventory", "Gestão de Stock", "Gestão de inventário, stock e movimentações"),
     ModuleDefinition("treasury", "Tesouraria & Caixa", "Caixas, bancos e liquidações"),
     ModuleDefinition("payroll", "Recursos Humanos", "Contratos, folha salarial e assiduidade"),
-    ModuleDefinition("accounting", "Contabilidade PGC", "Lançamentos, mapas e SAF-T Contabilidade"),
+    ModuleDefinition("accounting", "Contabilidade", "Lançamentos, mapas e SAF-T Contabilidade"),
     ModuleDefinition("integrations", "Integrações & ETL", "Conectores, webhooks e importações"),
 )
 

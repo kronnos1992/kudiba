@@ -16,3 +16,12 @@ class IAuditRepository(ABC):
         details: Optional[dict] = None,
     ) -> None:
         pass
+
+    @abstractmethod
+    async def list_events(
+        self,
+        tenant_id: uuid.UUID,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        pass

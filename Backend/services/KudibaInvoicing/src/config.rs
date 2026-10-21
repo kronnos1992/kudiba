@@ -48,6 +48,8 @@ pub struct Config {
     pub enforce_gateway_signature: bool,
     /// URL base do serviço de Tesouraria (para validação de sessões de caixa do POS)
     pub treasury_service_url: Option<String>,
+    /// URL base do serviço de Inventário (para validação prévia de stock e catálogo)
+    pub inventory_service_url: Option<String>,
 }
 
 impl Config {
@@ -120,6 +122,16 @@ impl Config {
                 .or_else(|| {
                     if environment == "development" || environment == "dev" {
                         Some("http://127.0.0.1:8084".to_string())
+                    } else {
+                        None
+                    }
+                }),
+            inventory_service_url: env::var("INVENTORY_SERVICE_URL")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .or_else(|| {
+                    if environment == "development" || environment == "dev" {
+                        Some("http://127.0.0.1:8083".to_string())
                     } else {
                         None
                     }

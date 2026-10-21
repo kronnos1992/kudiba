@@ -17,6 +17,7 @@ logs/
 # IDE and editors
 .vscode/
 .idea/
+.grok/
 *.swp
 *.swo
 

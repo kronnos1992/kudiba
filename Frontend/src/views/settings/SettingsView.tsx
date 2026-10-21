@@ -24,6 +24,15 @@ import {
   Star,
   CheckCircle2,
   AlertCircle,
+  Shield,
+  History,
+  Lock,
+  RefreshCw,
+  Eye,
+  ChevronUp,
+  Laptop,
+  UserCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge } from '../../components/common/StatusBadge';
@@ -234,6 +243,72 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
     queryKey: ['invoicing_series'],
     queryFn: invoicingApi.listSeries,
   });
+
+  // Audit & Logs State
+  const [auditSubTab, setAuditSubTab] = useState<'fiscal' | 'security' | 'saft'>('fiscal');
+  const [fiscalActionFilter, setFiscalActionFilter] = useState<'ALL' | 'INSERT' | 'TAMPER'>('ALL');
+  const [authActionFilter, setAuthActionFilter] = useState<string>('ALL');
+  const [auditSearch, setAuditSearch] = useState<string>('');
+  const [expandedFiscalAuditId, setExpandedFiscalAuditId] = useState<string | null>(null);
+  const [expandedAuthLogId, setExpandedAuthLogId] = useState<string | null>(null);
+
+  const {
+    data: fiscalAuditData,
+    isLoading: isFiscalAuditLoading,
+    refetch: refetchFiscalAudit,
+  } = useQuery({
+    queryKey: ['fiscal_audit_trail', activeTenant?.id],
+    queryFn: () => invoicingApi.getFiscalAuditTrail({ tenantId: activeTenant?.id, limit: 150 }),
+    enabled: Boolean(activeTenant?.id) && activeTab === 'saft',
+    refetchInterval: activeTab === 'saft' ? 3000 : false,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+  });
+
+  const {
+    data: authAuditData,
+    isLoading: isAuthAuditLoading,
+    refetch: refetchAuthAudit,
+  } = useQuery({
+    queryKey: ['auth_audit_logs', activeTenant?.id],
+    queryFn: () => authApi.getAuditLogs({ limit: 150 }),
+    enabled: Boolean(activeTenant?.id) && activeTab === 'saft',
+    refetchInterval: activeTab === 'saft' ? 4000 : false,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+  });
+
+  const fiscalAuditItems = useMemo(() => {
+    const list = fiscalAuditData?.items || [];
+    return list.filter((item) => {
+      if (fiscalActionFilter === 'INSERT' && item.action !== 'INSERT') return false;
+      if (fiscalActionFilter === 'TAMPER' && !item.action.startsWith('ATTEMPTED_')) return false;
+      if (auditSearch.trim()) {
+        const q = auditSearch.toLowerCase();
+        const refMatch = item.document_reference?.toLowerCase().includes(q);
+        const actorMatch = item.actor_user_id?.toLowerCase().includes(q);
+        const ipMatch = item.ip_address?.toLowerCase().includes(q);
+        return Boolean(refMatch || actorMatch || ipMatch);
+      }
+      return true;
+    });
+  }, [fiscalAuditData, fiscalActionFilter, auditSearch]);
+
+  const authAuditItems = useMemo(() => {
+    const list = authAuditData?.items || [];
+    return list.filter((item) => {
+      if (authActionFilter !== 'ALL' && item.action !== authActionFilter) return false;
+      if (auditSearch.trim()) {
+        const q = auditSearch.toLowerCase();
+        const actionMatch = item.action.toLowerCase().includes(q);
+        const emailMatch = item.email_attempted?.toLowerCase().includes(q);
+        const ipMatch = item.ip_address?.toLowerCase().includes(q);
+        const userMatch = item.user_id?.toLowerCase().includes(q);
+        return Boolean(actionMatch || emailMatch || ipMatch || userMatch);
+      }
+      return true;
+    });
+  }, [authAuditData, authActionFilter, auditSearch]);
 
   // Mutations
   const createBranchMutation = useMutation({
@@ -615,8 +690,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
             }`}
           >
-            <Download className="w-4 h-4" />
-            Auditoria &amp; SAF-T (AO)
+            <Shield className="w-4 h-4" />
+            Auditoria &amp; Logs ({fiscalAuditData?.total ?? 0})
           </button>
         </nav>
       </div>
@@ -1803,56 +1878,578 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
         </div>
       )}
 
-      {/* TAB 5: AUDITORIA & SAF-T (AO) */}
+      {/* TAB 5: AUDITORIA & LOGS DO SISTEMA */}
       {activeTab === 'saft' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <GlassCard className="p-6 space-y-4 flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 font-black flex items-center justify-center text-sm">
-                  XML
-                </span>
-                <StatusBadge status="ok" label="Conforme AGT" />
-              </div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Ficheiro SAF-T AO de Facturação Comercial
-              </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Exportação do ficheiro mensal de auditoria contendo clientes, artigos, catálogo de taxas de IVA e todas as facturas assinadas com hash SHA1withRSA.
-              </p>
+        <div className="space-y-6">
+          {/* Sub-navegação da Auditoria */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAuditSubTab('fiscal')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                  auditSubTab === 'fiscal'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Trilha Fiscal AGT ({fiscalAuditData?.total ?? 0})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuditSubTab('security')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                  auditSubTab === 'security'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <History className="w-3.5 h-3.5" />
+                Acessos &amp; Segurança ({authAuditData?.total ?? 0})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuditSubTab('saft')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                  auditSubTab === 'saft'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Ficheiros SAF-T (AO)
+              </button>
             </div>
-            <button
-              onClick={handleDownloadSaftInvoicing}
-              className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2"
-            >
-              <Download className="w-4 h-4" />
-              Descarregar SAF-T Facturação (XML)
-            </button>
-          </GlassCard>
 
-          <GlassCard className="p-6 space-y-4 flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 font-black flex items-center justify-center text-sm">
-                  XML
-                </span>
-                <StatusBadge status="ok" label="Classes 1 a 8" />
-              </div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Ficheiro SAF-T AO de Contabilidade Geral
-              </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Exportação do ficheiro anual de auditoria contabilística conforme as regras do PGC Angolano, contendo o plano de contas e todos os lançamentos do livro diário.
-              </p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-amber-500" />
+                Apenas Administradores
+              </span>
             </div>
-            <button
-              onClick={handleDownloadSaftAccounting}
-              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2"
-            >
-              <Download className="w-4 h-4" />
-              Descarregar SAF-T Contabilidade (XML)
-            </button>
-          </GlassCard>
+          </div>
+
+          {/* SUB-TAB 1: TRILHA FISCAL AGT */}
+          {auditSubTab === 'fiscal' && (
+            <div className="space-y-4">
+              {/* KPIs de Auditoria Fiscal */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <GlassCard className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500">Total de Eventos Fiscais</div>
+                    <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+                      {fiscalAuditData?.total ?? 0}
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500">Emissões Legais (INSERT)</div>
+                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                      {(fiscalAuditData?.items || []).filter((i) => i.action === 'INSERT').length}
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500">Violações Bloqueadas (Trigger)</div>
+                    <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1">
+                      {(fiscalAuditData?.items || []).filter((i) => i.action.startsWith('ATTEMPTED_')).length}
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                </GlassCard>
+              </div>
+
+              {/* Barra de Filtros e Pesquisa */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setFiscalActionFilter('ALL')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                      fiscalActionFilter === 'ALL'
+                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Todos ({fiscalAuditData?.total ?? 0})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFiscalActionFilter('INSERT')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                      fiscalActionFilter === 'INSERT'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Emissões
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFiscalActionFilter('TAMPER')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                      fiscalActionFilter === 'TAMPER'
+                        ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Bloqueios de Adulteração
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1 sm:w-64">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Pesquisar documento, utilizador, IP..."
+                      value={auditSearch}
+                      onChange={(e) => setAuditSearch(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => refetchFiscalAudit()}
+                    disabled={isFiscalAuditLoading}
+                    className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition"
+                    title="Actualizar dados de auditoria"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isFiscalAuditLoading ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabela de Trilha Fiscal */}
+              <GlassCard className="overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 border-b border-slate-200 dark:border-slate-800 font-bold uppercase tracking-wider">
+                      <tr>
+                        <th className="py-3 px-4">Data / Hora</th>
+                        <th className="py-3 px-4">Ação Fiscal</th>
+                        <th className="py-3 px-4">Documento</th>
+                        <th className="py-3 px-4">Utilizador / Ator</th>
+                        <th className="py-3 px-4">Endereço IP</th>
+                        <th className="py-3 px-4 text-right">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                      {isFiscalAuditLoading ? (
+                        <tr>
+                          <td colSpan={6} className="text-center py-10 text-slate-400">
+                            <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-500" />
+                            A carregar trilha fiscal de auditoria...
+                          </td>
+                        </tr>
+                      ) : fiscalAuditItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="text-center py-10 text-slate-400">
+                            Nenhum registo fiscal encontrado com os filtros actuais.
+                          </td>
+                        </tr>
+                      ) : (
+                        fiscalAuditItems.map((item) => {
+                          const isExpanded = expandedFiscalAuditId === item.audit_id;
+                          const isTamper = item.action.startsWith('ATTEMPTED_');
+
+                          return (
+                            <React.Fragment key={item.audit_id}>
+                              <tr className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 transition ${isTamper ? 'bg-rose-50/40 dark:bg-rose-950/20' : ''}`}>
+                                <td className="py-3 px-4 font-mono whitespace-nowrap">
+                                  {new Date(item.created_at).toLocaleString('pt-AO')}
+                                </td>
+                                <td className="py-3 px-4">
+                                  {item.action === 'INSERT' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300/40">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      EMISSÃO FISCAL
+                                    </span>
+                                  ) : isTamper ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-extrabold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300/40">
+                                      <ShieldAlert className="w-3 h-3" />
+                                      BLOQUEIO: {item.action}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-2xs font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                      {item.action}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 font-mono font-bold text-slate-900 dark:text-white">
+                                  {item.document_reference || 'N/A'}
+                                </td>
+                                <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
+                                  {item.actor_user_id || 'Sistema (Postgres Trigger)'}
+                                </td>
+                                <td className="py-3 px-4 font-mono text-slate-500 text-2xs">
+                                  {item.ip_address || 'Conexão Interna'}
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedFiscalAuditId(isExpanded ? null : item.audit_id)}
+                                    className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-white transition"
+                                    title="Ver Detalhes do Payload"
+                                  >
+                                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                  </button>
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr className="bg-slate-50/80 dark:bg-slate-900/80">
+                                  <td colSpan={6} className="p-4">
+                                    <div className="bg-slate-950 text-slate-100 rounded-xl p-3 font-mono text-2xs space-y-2 max-h-72 overflow-y-auto border border-slate-800">
+                                      <div className="flex items-center justify-between pb-1 border-b border-slate-800 text-slate-400">
+                                        <span>Registo ID: {item.audit_id}</span>
+                                        <span>Tabela: {item.table_name}</span>
+                                      </div>
+                                      <pre className="whitespace-pre-wrap leading-relaxed text-emerald-400">
+                                        {JSON.stringify(item.payload, null, 2)}
+                                      </pre>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </GlassCard>
+            </div>
+          )}
+
+          {/* SUB-TAB 2: HISTÓRICO & LOGS DE UTILIZADORES */}
+          {auditSubTab === 'security' && (
+            <div className="space-y-4">
+              {/* KPIs de Segurança & Acessos */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <GlassCard className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500">Total de Registos</div>
+                    <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+                      {authAuditData?.total ?? 0}
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                    <History className="w-5 h-5" />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500">Logins com Sucesso</div>
+                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                      {(authAuditData?.items || []).filter((i) => i.action === 'LOGIN_SUCCESS').length}
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <UserCheck className="w-5 h-5" />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500">Falhas de Login</div>
+                    <div className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">
+                      {(authAuditData?.items || []).filter((i) => i.action === 'LOGIN_FAILED').length}
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500">Bloqueios &amp; Alertas</div>
+                    <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1">
+                      {(authAuditData?.items || []).filter((i) => ['ACCOUNT_LOCKED', 'TOKEN_REUSE_DETECTED'].includes(i.action)).length}
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                </GlassCard>
+              </div>
+
+              {/* Barra de Filtros e Pesquisa */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setAuthActionFilter('ALL')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                      authActionFilter === 'ALL'
+                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthActionFilter('LOGIN_SUCCESS')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                      authActionFilter === 'LOGIN_SUCCESS'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Sucesso
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthActionFilter('LOGIN_FAILED')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                      authActionFilter === 'LOGIN_FAILED'
+                        ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Falhas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthActionFilter('ACCOUNT_LOCKED')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                      authActionFilter === 'ACCOUNT_LOCKED'
+                        ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Bloqueios
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthActionFilter('USER_INVITED')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                      authActionFilter === 'USER_INVITED'
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Convites
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1 sm:w-64">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Pesquisar e-mail, IP, utilizador..."
+                      value={auditSearch}
+                      onChange={(e) => setAuditSearch(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => refetchAuthAudit()}
+                    disabled={isAuthAuditLoading}
+                    className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition"
+                    title="Actualizar registos de acesso"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isAuthAuditLoading ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabela de Logs de Acesso */}
+              <GlassCard className="overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 border-b border-slate-200 dark:border-slate-800 font-bold uppercase tracking-wider">
+                      <tr>
+                        <th className="py-3 px-4">Data / Hora</th>
+                        <th className="py-3 px-4">Ação / Evento</th>
+                        <th className="py-3 px-4">E-mail / Utilizador</th>
+                        <th className="py-3 px-4">Endereço IP</th>
+                        <th className="py-3 px-4">Navegador / Agente</th>
+                        <th className="py-3 px-4 text-right">Detalhes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                      {isAuthAuditLoading ? (
+                        <tr>
+                          <td colSpan={6} className="text-center py-10 text-slate-400">
+                            <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-500" />
+                            A carregar histórico de acessos e segurança...
+                          </td>
+                        </tr>
+                      ) : authAuditItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="text-center py-10 text-slate-400">
+                            Nenhum registo de acesso encontrado com os filtros actuais.
+                          </td>
+                        </tr>
+                      ) : (
+                        authAuditItems.map((item) => {
+                          const isExpanded = expandedAuthLogId === item.id;
+
+                          return (
+                            <React.Fragment key={item.id}>
+                              <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                                <td className="py-3 px-4 font-mono whitespace-nowrap">
+                                  {new Date(item.created_at).toLocaleString('pt-AO')}
+                                </td>
+                                <td className="py-3 px-4">
+                                  {item.action === 'LOGIN_SUCCESS' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      LOGIN BEM-SUCEDIDO
+                                    </span>
+                                  ) : item.action === 'LOGIN_FAILED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                      <AlertCircle className="w-3 h-3" />
+                                      FALHA DE AUTENTICAÇÃO
+                                    </span>
+                                  ) : item.action === 'ACCOUNT_LOCKED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-extrabold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300/40">
+                                      <Lock className="w-3 h-3" />
+                                      CONTA BLOQUEADA
+                                    </span>
+                                  ) : item.action === 'TOKEN_REUSE_DETECTED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-extrabold bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-300/40">
+                                      <ShieldAlert className="w-3 h-3" />
+                                      TOKEN REUTILIZADO
+                                    </span>
+                                  ) : item.action === 'USER_INVITED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
+                                      <Users className="w-3 h-3" />
+                                      MEMBRO CONVIDADO
+                                    </span>
+                                  ) : item.action === 'ROLES_UPDATED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold bg-cyan-100 text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-300">
+                                      <Shield className="w-3 h-3" />
+                                      PAPÉIS ATUALIZADOS
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-2xs font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                      {item.action}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 font-medium text-slate-900 dark:text-white">
+                                  {item.email_attempted || item.user_id || 'N/A'}
+                                </td>
+                                <td className="py-3 px-4 font-mono text-slate-500 text-2xs">
+                                  {item.ip_address || 'Desconhecido'}
+                                </td>
+                                <td className="py-3 px-4 text-slate-500 max-w-xs truncate text-2xs" title={item.user_agent || ''}>
+                                  <span className="flex items-center gap-1">
+                                    <Laptop className="w-3 h-3 shrink-0 text-slate-400" />
+                                    <span className="truncate">{item.user_agent || 'Cliente HTTP'}</span>
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedAuthLogId(isExpanded ? null : item.id)}
+                                    className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-white transition"
+                                    title="Ver Detalhes do Evento"
+                                  >
+                                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                  </button>
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr className="bg-slate-50/80 dark:bg-slate-900/80">
+                                  <td colSpan={6} className="p-4">
+                                    <div className="bg-slate-950 text-slate-100 rounded-xl p-3 font-mono text-2xs space-y-2 max-h-72 overflow-y-auto border border-slate-800">
+                                      <div className="flex items-center justify-between pb-1 border-b border-slate-800 text-slate-400">
+                                        <span>Registo ID: {item.id}</span>
+                                        <span>Utilizador ID: {item.user_id || 'N/A'}</span>
+                                      </div>
+                                      <pre className="whitespace-pre-wrap leading-relaxed text-blue-400">
+                                        {JSON.stringify(item.details, null, 2)}
+                                      </pre>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </GlassCard>
+            </div>
+          )}
+
+          {/* SUB-TAB 3: FICHEIROS SAF-T (AO) */}
+          {auditSubTab === 'saft' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <GlassCard className="p-6 space-y-4 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 font-black flex items-center justify-center text-sm">
+                        XML
+                      </span>
+                      <StatusBadge status="ok" label="Conforme AGT" />
+                    </div>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                      Ficheiro SAF-T AO de Facturação Comercial
+                    </h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Exportação do ficheiro mensal de auditoria contendo clientes, artigos, catálogo de taxas de IVA e todas as facturas assinadas com hash SHA1withRSA.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleDownloadSaftInvoicing}
+                    className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Descarregar SAF-T Facturação (XML)
+                  </button>
+                </GlassCard>
+
+                <GlassCard className="p-6 space-y-4 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 font-black flex items-center justify-center text-sm">
+                        XML
+                      </span>
+                      <StatusBadge status="ok" label="Classes 1 a 8" />
+                    </div>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                      Ficheiro SAF-T AO de Contabilidade Geral
+                    </h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Exportação do ficheiro anual de auditoria contabilística conforme as regras contabilísticas angolanas, contendo o plano de contas e todos os lançamentos do livro diário.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleDownloadSaftAccounting}
+                    className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Descarregar SAF-T Contabilidade (XML)
+                  </button>
+                </GlassCard>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

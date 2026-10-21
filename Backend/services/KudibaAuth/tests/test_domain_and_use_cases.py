@@ -271,6 +271,9 @@ class MockAuditRepository(IAuditRepository):
     async def record_event(self, action, user_id=None, tenant_id=None, email_attempted=None, ip_address=None, user_agent=None, details=None):
         self.events.append({"action": action, "user_id": user_id, "tenant_id": tenant_id})
 
+    async def list_events(self, tenant_id, limit=100, offset=0):
+        return [e for e in self.events if e.get("tenant_id") == tenant_id][offset : offset + limit]
+
 
 class MockRoleRepository(IRoleRepository):
     def __init__(self):

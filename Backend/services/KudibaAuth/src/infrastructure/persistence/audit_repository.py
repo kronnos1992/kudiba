@@ -1,5 +1,6 @@
 import uuid
 from typing import Optional
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.domain.ports.audit_repository import IAuditRepository
 from src.infrastructure.persistence.models import AuthAuditLogModel
@@ -33,3 +34,36 @@ class SqlAlchemyAuditRepository(IAuditRepository):
             session.add(log)
             if owns_session:
                 await session.commit()
+
+    async def list_events(
+        self,
+        tenant_id: uuid.UUID,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        limit = max(1, min(limit, 500))
+        offset = max(0, offset)
+        async with session_scope(self._session_factory) as (session, _):
+            stmt = (
+                select(AuthAuditLogModel)
+                .where(AuthAuditLogModel.tenant_id == tenant_id)
+                .order_by(AuthAuditLogModel.created_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            result = await session.execute(stmt)
+            logs = result.scalars().all()
+            return [
+                {
+                    "id": str(log.id),
+                    "user_id": str(log.user_id) if log.user_id else None,
+                    "tenant_id": str(log.tenant_id) if log.tenant_id else None,
+                    "action": log.action,
+                    "email_attempted": log.email_attempted,
+                    "ip_address": str(log.ip_address) if log.ip_address else None,
+                    "user_agent": log.user_agent,
+                    "details": log.details or {},
+                    "created_at": log.created_at.isoformat() if log.created_at else None,
+                }
+                for log in logs
+            ]

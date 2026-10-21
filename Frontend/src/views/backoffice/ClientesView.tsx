@@ -36,14 +36,14 @@ const STATUS_META: Record<string, { status: StatusType; label: string }> = {
 
 const MODULE_CONFIG: Record<string, { label: string; short: string; color: string; border: string }> = {
   invoicing: {
-    label: 'Faturação AGT',
-    short: 'Faturação',
+    label: 'Facturação',
+    short: 'Facturação',
     color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
     border: 'border-emerald-200 dark:border-emerald-800/60',
   },
   inventory: {
-    label: 'Stocks & Catálogo',
-    short: 'Stocks',
+    label: 'Gestão de Stock',
+    short: 'Stock',
     color: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
     border: 'border-amber-200 dark:border-amber-800/60',
   },
@@ -60,7 +60,7 @@ const MODULE_CONFIG: Record<string, { label: string; short: string; color: strin
     border: 'border-purple-200 dark:border-purple-800/60',
   },
   accounting: {
-    label: 'Contabilidade Geral PGC',
+    label: 'Contabilidade',
     short: 'Contabilidade',
     color: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300',
     border: 'border-indigo-200 dark:border-indigo-800/60',

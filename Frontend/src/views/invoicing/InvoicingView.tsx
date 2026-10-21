@@ -27,6 +27,7 @@ import {
   Invoice,
   IssueInvoicePayload,
 } from '../../api/invoicing';
+import { inventoryApi, StockBalance } from '../../api/inventory';
 
 type ActiveTab = 'invoices' | 'new_invoice' | 'series' | 'saft';
 
@@ -75,6 +76,29 @@ export const InvoicingView: React.FC = () => {
     queryFn: () => invoicingApi.getProducts(),
     enabled: Boolean(activeTenant?.id),
   });
+
+  const { data: stockBalances = [] } = useQuery<StockBalance[]>({
+    queryKey: ['stock_balances', activeTenant?.id],
+    queryFn: () => inventoryApi.listAllStockBalances(),
+    enabled: Boolean(activeTenant?.id),
+  });
+
+  const productStockMap = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const b of stockBalances) {
+      const current = map.get(b.product_id) || 0;
+      map.set(b.product_id, current + (Number(b.quantity_on_hand) || 0));
+    }
+    return map;
+  }, [stockBalances]);
+
+  const getProductByCode = (code: string) => products.find((p) => p.code === code);
+
+  const getStockByCode = (code: string) => {
+    const prod = getProductByCode(code);
+    if (!prod) return 0;
+    return productStockMap.get(prod.id) ?? 0;
+  };
 
   // Formulário de Novo Documento
   const [docType, setDocType] = useState<'FT' | 'FR' | 'NC' | 'ND' | 'GT' | 'GR'>('FT');
@@ -133,6 +157,48 @@ export const InvoicingView: React.FC = () => {
     : 0;
   const totalAmount = netSubtotal + taxSubtotal - withholdingSubtotal;
 
+  const stockErrors = React.useMemo(() => {
+    if (docType === 'NC' || docType === 'ND') return [];
+    const errors: string[] = [];
+    const requestedByCode: Record<string, number> = {};
+    for (const l of lines) {
+      const prod = getProductByCode(l.productCode);
+      const isService = l.isService || prod?.product_type === 'S' || prod?.is_stockable === false;
+      if (!isService && l.productCode) {
+        requestedByCode[l.productCode] =
+          (requestedByCode[l.productCode] || 0) + (Number(l.quantity) || 0);
+      }
+    }
+    for (const [code, qty] of Object.entries(requestedByCode)) {
+      const prod = getProductByCode(code);
+      const available = getStockByCode(code);
+      if (qty > available) {
+        errors.push(
+          `Artigo "${prod?.name || code}" (${code}): solicitado ${qty} un., disponível em armazém apenas ${available} un.`
+        );
+      }
+    }
+    return errors;
+  }, [lines, docType, products, productStockMap]);
+
+  const serviceTransportErrors = React.useMemo(() => {
+    if (docType !== 'GT' && docType !== 'GR') return [];
+    const errors: string[] = [];
+    for (const l of lines) {
+      const prod = getProductByCode(l.productCode);
+      const isService = l.isService || prod?.product_type === 'S' || prod?.is_stockable === false;
+      if (isService) {
+        errors.push(
+          `O artigo "${l.description}" é um serviço. A AGT proíbe a inclusão de serviços em Guias de Transporte ou Remessa.`
+        );
+      }
+    }
+    return errors;
+  }, [lines, docType, products]);
+
+  const canSubmitInvoice =
+    stockErrors.length === 0 && serviceTransportErrors.length === 0 && lines.length > 0;
+
   // Mutations
   const issueMutation = useMutation({
     mutationFn: async (payload: IssueInvoicePayload) => {
@@ -150,6 +216,9 @@ export const InvoicingView: React.FC = () => {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: ['series'] });
+      queryClient.invalidateQueries({ queryKey: ['fiscal_audit_trail'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory_all_stock_balances'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory_products'] });
       setSelectedInvoice(data);
       setActiveTab('invoices');
     },
@@ -169,6 +238,8 @@ export const InvoicingView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['fiscal_audit_trail'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory_all_stock_balances'] });
       setCancelModalInvoice(null);
       setCancelReason('');
     },
@@ -278,6 +349,7 @@ export const InvoicingView: React.FC = () => {
   const handleSelectProduct = (idx: number, prodCode: string) => {
     const prod = products.find((p) => p.code === prodCode);
     if (!prod) return;
+    const isService = prod.product_type === 'S' || !prod.is_stockable;
     setLines((prev) =>
       prev.map((l, i) =>
         i === idx
@@ -285,9 +357,9 @@ export const InvoicingView: React.FC = () => {
               ...l,
               productCode: prod.code,
               description: prod.name,
-              unitPrice: parseFloat(prod.sale_price) || 0,
-              taxRate: parseFloat(prod.tax_percentage) || 14,
-              isService: prod.product_type === 'S',
+              unitPrice: parseFloat(String(prod.sale_price)) || 0,
+              taxRate: parseFloat(String(prod.tax_percentage)) || 14,
+              isService,
             }
           : l
       )
@@ -347,6 +419,16 @@ export const InvoicingView: React.FC = () => {
   const handleIssueSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeTenant?.id) return;
+
+    if (stockErrors.length > 0) {
+      alert(`Emissão bloqueada: Existem artigos com stock insuficiente em armazém.\n\n${stockErrors.join('\n')}`);
+      return;
+    }
+
+    if (serviceTransportErrors.length > 0) {
+      alert(`Emissão bloqueada: Regras da AGT para documentos de transporte.\n\n${serviceTransportErrors.join('\n')}`);
+      return;
+    }
 
     if ((docType === 'NC' || docType === 'ND') && !sourceDocNumber.trim()) {
       alert('Notas de Crédito e Débito exigem referência ao documento retificado.');
@@ -439,7 +521,7 @@ export const InvoicingView: React.FC = () => {
       <div className="no-print flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4">
         <div className="min-w-0">
           <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-            Faturação &amp; Gestão Fiscal AGT
+            Facturação
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Emissão certificada (Dec. Pres. n.º 71/25 &amp; 385/20) • Chave RSA-2048 ativa
@@ -623,30 +705,30 @@ export const InvoicingView: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-bold uppercase text-slate-500 dark:text-slate-400">
-                      <th className="py-2.5 px-3">Tipo</th>
-                      <th className="py-2.5 px-3">Nº Documento</th>
-                      <th className="py-2.5 px-3">Cliente</th>
-                      <th className="py-2.5 px-3">Data</th>
-                      <th className="py-2.5 px-3 text-right">Incidência</th>
+              <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto rounded-xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
+                <table className="w-full text-left text-sm border-separate border-spacing-0">
+                  <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs">
+                    <tr className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400">
+                      <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Tipo</th>
+                      <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Nº Documento</th>
+                      <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Cliente</th>
+                      <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Data</th>
+                      <th className="sticky top-0 py-2.5 px-3 text-right bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Incidência</th>
                       <th
-                        className="py-2.5 px-3 text-right"
+                        className="sticky top-0 py-2.5 px-3 text-right bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800"
                         title="Imposto liquidado (taxas 14%, 5% ou isenção 0%)"
                       >
                         IVA Liquidado
                       </th>
-                      <th className="py-2.5 px-3 text-right">Total (Kz)</th>
-                      <th className="py-2.5 px-3 text-center">Estado</th>
+                      <th className="sticky top-0 py-2.5 px-3 text-right bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Total (Kz)</th>
+                      <th className="sticky top-0 py-2.5 px-3 text-center bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Estado</th>
                       <th
-                        className="py-2.5 px-3 text-center"
+                        className="sticky top-0 py-2.5 px-3 text-center bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800"
                         title="4 Caracteres de Validação do Hash J-1 (Decreto Executivo 385/20)"
                       >
                         Validação J-1
                       </th>
-                      <th className="py-2.5 px-3 text-center">Ações</th>
+                      <th className="sticky top-0 py-2.5 px-3 text-center bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -661,7 +743,9 @@ export const InvoicingView: React.FC = () => {
                       return (
                         <tr
                           key={inv.id}
-                          className={`hover:bg-slate-50/60 dark:hover:bg-slate-800/40 ${
+                          onClick={() => setSelectedInvoice(inv)}
+                          title="Clique para abrir detalhes do documento (Drill-down)"
+                          className={`cursor-pointer group transition-colors hover:bg-emerald-50/50 dark:hover:bg-slate-800/60 ${
                             isNC ? 'bg-rose-50/20 dark:bg-rose-950/10' : ''
                           }`}
                         >
@@ -678,8 +762,10 @@ export const InvoicingView: React.FC = () => {
                               {inv.documentType}
                             </span>
                           </td>
-                          <td className="py-3 px-3 font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
-                            <div>{inv.documentNumber}</div>
+                          <td className="py-3 px-3 font-mono font-bold whitespace-nowrap">
+                            <div className="text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 group-hover:underline transition-colors flex items-center gap-1.5">
+                              <span>{inv.documentNumber}</span>
+                            </div>
                             {inv.sourceDocumentNumber && (
                               <span className="text-[10px] text-rose-600 dark:text-rose-400 font-mono block">
                                 Retifica: {inv.sourceDocumentNumber}
@@ -751,21 +837,30 @@ export const InvoicingView: React.FC = () => {
                           <td className="py-3 px-3 text-center">
                             <div className="flex items-center justify-center gap-1">
                               <button
-                                onClick={() => setSelectedInvoice(inv)}
-                                title="Visualizar A4"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedInvoice(inv);
+                                }}
+                                title="Visualizar A4 (Drill-down)"
                                 className="p-1.5 rounded-lg text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
                               >
                                 <Eye className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => handleViewThermal(inv)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewThermal(inv);
+                                }}
                                 title="Talão Térmico 80mm"
                                 className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
                               >
                                 <Printer className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => handleDownloadPdf(inv)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownloadPdf(inv);
+                                }}
                                 title="Download PDF AGT"
                                 className="p-1.5 rounded-lg text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30"
                               >
@@ -773,7 +868,10 @@ export const InvoicingView: React.FC = () => {
                               </button>
                               {!isNC && !isRectified && (
                                 <button
-                                  onClick={() => setCancelModalInvoice(inv)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCancelModalInvoice(inv);
+                                  }}
                                   title="Anular com Nota de Crédito (NC)"
                                   className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
                                 >
@@ -1071,11 +1169,15 @@ export const InvoicingView: React.FC = () => {
                             className="w-full px-2 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-mono font-semibold"
                           >
                             <option value={line.productCode}>{line.productCode}</option>
-                            {products.map((p) => (
-                              <option key={p.id} value={p.code}>
-                                {p.code} — {p.name}
-                              </option>
-                            ))}
+                            {products.map((p) => {
+                              const isSrv = p.product_type === 'S' || !p.is_stockable;
+                              const stock = getStockByCode(p.code);
+                              return (
+                                <option key={p.id} value={p.code}>
+                                  {p.code} — {p.name} ({isSrv ? 'Serviço' : `Stock: ${stock} un.`})
+                                </option>
+                              );
+                            })}
                           </select>
                         </div>
 
@@ -1174,7 +1276,7 @@ export const InvoicingView: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 pt-1 border-t border-slate-200/50 dark:border-slate-700/50 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200/50 dark:border-slate-700/50 text-xs">
                         <label className="inline-flex items-center gap-1.5 cursor-pointer text-slate-600 dark:text-slate-400">
                           <input
                             type="checkbox"
@@ -1189,10 +1291,40 @@ export const InvoicingView: React.FC = () => {
                             className="rounded text-emerald-600"
                           />
                           <span>
-                            Prestação de Serviços (sujeito a Retenção de{' '}
-                            {defaultWithholdingRate.toString().replace('.', ',')}%)
+                            {line.isService
+                              ? `Prestação de Serviços (sujeito a Retenção de ${defaultWithholdingRate.toString().replace('.', ',')}%)`
+                              : 'Marcar como Serviço (Sem dedução de stock)'}
                           </span>
                         </label>
+
+                        {line.isService ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                            Serviço (Isento de Stock)
+                          </span>
+                        ) : (
+                          (() => {
+                            const avail = getStockByCode(line.productCode);
+                            if (avail <= 0) {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                                  <AlertCircle className="w-3 h-3" /> Esgotado em armazém (0 un.)
+                                </span>
+                              );
+                            }
+                            if (line.quantity > avail) {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                  <AlertCircle className="w-3 h-3" /> Stock insuficiente (Disp: {avail} un.)
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                <CheckCircle2 className="w-3 h-3" /> Em Stock ({avail} un.)
+                              </span>
+                            );
+                          })()
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1247,21 +1379,54 @@ export const InvoicingView: React.FC = () => {
                   </div>
                 </div>
 
+                {stockErrors.length > 0 && (
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-200 space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-rose-900 dark:text-rose-100">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>Emissão Bloqueada por Ruptura de Stock</span>
+                    </div>
+                    <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
+                      {stockErrors.map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    </ul>
+                    <p className="text-[10px] text-rose-600 dark:text-rose-400">
+                      Dê entrada de mercadoria no módulo de <strong>Gestão de Stock</strong> ou ajuste as quantidades antes de faturar.
+                    </p>
+                  </div>
+                )}
+
+                {serviceTransportErrors.length > 0 && (
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Serviços em Documentos de Transporte</span>
+                    </div>
+                    <p className="text-[11px]">
+                      A AGT proíbe estritamente a emissão de Guias de Transporte (GT) ou Remessa (GR) para serviços.
+                    </p>
+                  </div>
+                )}
+
                 {issueMutation.isError && (
                   <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300">
-                    Erro ao emitir: {(issueMutation.error as any)?.response?.data?.error || 'Falha na validação'}
+                    Erro ao emitir: {(issueMutation.error as any)?.response?.data?.error || (issueMutation.error as any)?.response?.data?.detail || 'Falha na validação'}
                   </div>
                 )}
 
                 <button
                   type="submit"
-                  disabled={issueMutation.isPending || lines.length === 0}
-                  className="w-full py-3.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-md shadow-emerald-700/20 disabled:opacity-50 transition-all cursor-pointer"
+                  disabled={issueMutation.isPending || !canSubmitInvoice}
+                  className="w-full py-3.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-md shadow-emerald-700/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
                 >
                   <ShieldCheck className="w-5 h-5" />
                   <span>
                     {issueMutation.isPending
                       ? 'A assinar criptograficamente...'
+                      : !canSubmitInvoice && stockErrors.length > 0
+                      ? 'Stock Insuficiente (Bloqueado)'
+                      : !canSubmitInvoice && serviceTransportErrors.length > 0
+                      ? 'Serviços Inválidos em GT (Bloqueado)'
                       : 'Emitir & Assinar Fiscalmente'}
                   </span>
                 </button>
@@ -1292,15 +1457,15 @@ export const InvoicingView: React.FC = () => {
                 Séries Fiscais Ativas (Exercício 2026)
               </h3>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-bold uppercase text-slate-500">
-                      <th className="py-2.5 px-3">Tipo Doc</th>
-                      <th className="py-2.5 px-3">Código Série</th>
-                      <th className="py-2.5 px-3">Ano Fiscal</th>
-                      <th className="py-2.5 px-3 text-right">Última Sequência</th>
-                      <th className="py-2.5 px-3 text-center">Estado</th>
+              <div className="overflow-x-auto max-h-[350px] overflow-y-auto rounded-xl border border-slate-200/80 dark:border-slate-800/80">
+                <table className="w-full text-left text-sm border-separate border-spacing-0">
+                  <thead className="sticky top-0 z-10 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md">
+                    <tr className="text-xs font-bold uppercase text-slate-500">
+                      <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Tipo Doc</th>
+                      <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Código Série</th>
+                      <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Ano Fiscal</th>
+                      <th className="sticky top-0 py-2.5 px-3 text-right bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Última Sequência</th>
+                      <th className="sticky top-0 py-2.5 px-3 text-center bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Estado</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">

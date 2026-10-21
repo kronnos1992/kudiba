@@ -75,6 +75,23 @@ export interface CreateBranchPayload {
   address_detail?: string | null;
 }
 
+export interface AuthAuditLogItem {
+  id: string;
+  user_id: string | null;
+  tenant_id: string | null;
+  action: string;
+  email_attempted: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  details: Record<string, any>;
+  created_at: string;
+}
+
+export interface AuthAuditLogsResponse {
+  items: AuthAuditLogItem[];
+  total: number;
+}
+
 export interface UpdateTenantSettingsPayload {
   company_name?: string;
   trade_name?: string | null;
@@ -196,6 +213,11 @@ export const authApi = {
 
   deleteRole: async (roleId: string): Promise<void> => {
     await apiClient.delete(`/api/v1/auth/roles/${roleId}`);
+  },
+
+  getAuditLogs: async (params?: { limit?: number; offset?: number }): Promise<AuthAuditLogsResponse> => {
+    const response = await apiClient.get<AuthAuditLogsResponse>('/api/v1/auth/audit-logs', { params });
+    return response.data;
   },
 
   checkGatewayHealth: async () => {

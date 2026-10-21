@@ -4,8 +4,10 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{Datelike, Utc};
-use serde::Deserialize;
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::application::commands::sync_agt::SyncAgtCommand;
@@ -104,6 +106,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/v1/fiscal/saft/jobs/{id}/download",
             get(download_saft_job_handler),
+        )
+        .route(
+            "/api/v1/fiscal/audit-trail",
+            get(fiscal_audit_trail_handler),
         )
         .route("/api/v1/fiscal/reports/tax", get(fiscal_report_handler))
         .route(
@@ -241,8 +247,25 @@ async fn issue_invoice_handler(
         }
     }
 
+    if let Err(stock_err) = validate_stock_and_service_integrity(
+        &state.pool,
+        state.config.inventory_service_url.as_deref(),
+        &mut command,
+    )
+    .await
+    {
+        return stock_err.into_response();
+    }
+
     match state.issue_invoice.execute(command).await {
-        Ok(result) => (StatusCode::CREATED, Json(result)).into_response(),
+        Ok(result) => {
+            tracing::info!(
+                document_number = %result.document_number,
+                gross_total = %result.gross_total,
+                "Documento fiscal emitido com sucesso e registado na trilha de auditoria AGT"
+            );
+            (StatusCode::CREATED, Json(result)).into_response()
+        }
         Err(err) => domain_error(err),
     }
 }
@@ -1386,6 +1409,151 @@ fn build_pdf_report_response(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct FiscalAuditTrailQueryParams {
+    #[serde(rename = "tenantId")]
+    pub tenant_id: Option<Uuid>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    pub action: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FiscalAuditTrailEntry {
+    pub audit_id: Uuid,
+    pub tenant_id: Uuid,
+    pub table_name: String,
+    pub action: String,
+    pub document_reference: Option<String>,
+    pub payload: serde_json::Value,
+    pub actor_user_id: Option<String>,
+    pub ip_address: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+async fn fiscal_audit_trail_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<FiscalAuditTrailQueryParams>,
+) -> Response {
+    let allowed_roles = [
+        "ADMIN",
+        "ADMINISTRADOR",
+        "SUPER_ADMIN",
+        "AUDITOR",
+        "GESTOR",
+        "CONTABILISTA",
+    ];
+    let authorized_tenant = match authorized_tenant_id(&headers, &allowed_roles) {
+        Ok(t) => t,
+        Err(err) => return err.into_response(),
+    };
+
+    let target_tenant = params.tenant_id.unwrap_or(authorized_tenant);
+    if target_tenant != authorized_tenant {
+        return forbidden_tenant().into_response();
+    }
+
+    let limit = params.limit.unwrap_or(100).clamp(1, 500);
+    let offset = params.offset.unwrap_or(0).max(0);
+
+    let query_res = match params.action {
+        Some(ref act) if !act.trim().is_empty() => {
+            sqlx::query(
+                r#"
+                SELECT 
+                    audit_id,
+                    tenant_id,
+                    table_name,
+                    action,
+                    document_reference,
+                    payload::text AS payload,
+                    actor_user_id,
+                    ip_address::text AS ip_address,
+                    created_at
+                FROM kudiba_audit.fiscal_audit_trail
+                WHERE tenant_id = $1 AND action = $2
+                ORDER BY created_at DESC
+                LIMIT $3 OFFSET $4
+                "#,
+            )
+            .bind(target_tenant)
+            .bind(act.trim())
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&state.pool)
+            .await
+        }
+        _ => {
+            sqlx::query(
+                r#"
+                SELECT 
+                    audit_id,
+                    tenant_id,
+                    table_name,
+                    action,
+                    document_reference,
+                    payload::text AS payload,
+                    actor_user_id,
+                    ip_address::text AS ip_address,
+                    created_at
+                FROM kudiba_audit.fiscal_audit_trail
+                WHERE tenant_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2 OFFSET $3
+                "#,
+            )
+            .bind(target_tenant)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&state.pool)
+            .await
+        }
+    };
+
+    match query_res {
+        Ok(rows) => {
+            let items: Vec<FiscalAuditTrailEntry> = rows
+                .iter()
+                .map(|r| {
+                    let payload_str: String = r.get("payload");
+                    let payload: serde_json::Value =
+                        serde_json::from_str(&payload_str).unwrap_or(serde_json::Value::Null);
+
+                    FiscalAuditTrailEntry {
+                        audit_id: r.get("audit_id"),
+                        tenant_id: r.get("tenant_id"),
+                        table_name: r.get("table_name"),
+                        action: r.get("action"),
+                        document_reference: r.get("document_reference"),
+                        payload,
+                        actor_user_id: r.get("actor_user_id"),
+                        ip_address: r.get("ip_address"),
+                        created_at: r.get("created_at"),
+                    }
+                })
+                .collect();
+
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "items": items,
+                    "total": items.len()
+                })),
+            )
+                .into_response()
+        }
+        Err(err) => {
+            tracing::error!("Erro ao consultar trilha fiscal de auditoria: {:?}", err);
+            ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Falha ao consultar registos de auditoria fiscal.",
+            )
+            .into_response()
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct DashboardSummaryQueryParams {
     pub year: Option<i32>,
 }
@@ -1887,7 +2055,10 @@ fn check_cashier_and_session_security(
     command: &mut IssueInvoiceCommand,
 ) -> Result<(), ApiError> {
     if command.cash_session_id.is_none() {
-        if let Some(header_val) = headers.get("X-Cash-Session-ID").and_then(|v| v.to_str().ok()) {
+        if let Some(header_val) = headers
+            .get("X-Cash-Session-ID")
+            .and_then(|v| v.to_str().ok())
+        {
             if let Ok(parsed_id) = Uuid::parse_str(header_val.trim()) {
                 command.cash_session_id = Some(parsed_id);
             }
@@ -1903,7 +2074,9 @@ fn check_cashier_and_session_security(
         .map(str::to_ascii_uppercase)
         .collect::<Vec<_>>();
 
-    let has_cashier_role = roles.iter().any(|r| r == "OPERADOR_CAIXA" || r == "CASHIER");
+    let has_cashier_role = roles
+        .iter()
+        .any(|r| r == "OPERADOR_CAIXA" || r == "CASHIER");
     let has_elevated_role = roles.iter().any(|r| {
         r == "ADMIN"
             || r == "ADMINISTRADOR"
@@ -1964,10 +2137,7 @@ async fn validate_cash_session(
             }
             if resp.status().is_success() {
                 if let Ok(json) = resp.json::<serde_json::Value>().await {
-                    let status = json
-                        .get("status")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let status = json.get("status").and_then(|v| v.as_str()).unwrap_or("");
                     if status.eq_ignore_ascii_case("CLOSED") {
                         return Err(ApiError::new(
                             StatusCode::UNPROCESSABLE_ENTITY,
@@ -1998,12 +2168,10 @@ async fn validate_cash_session(
             }
             Ok(())
         }
-        Ok(None) => {
-            Err(ApiError::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "A sessão de caixa informada não existe nesta organização.",
-            ))
-        }
+        Ok(None) => Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "A sessão de caixa informada não existe nesta organização.",
+        )),
         Err(err) => {
             tracing::warn!(
                 "Não foi possível verificar sessão de caixa na base local ({err}); autorizando emissão."
@@ -2011,6 +2179,172 @@ async fn validate_cash_session(
             Ok(())
         }
     }
+}
+
+async fn validate_stock_and_service_integrity(
+    pool: &sqlx::PgPool,
+    inventory_service_url: Option<&str>,
+    command: &mut IssueInvoiceCommand,
+) -> Result<(), ApiError> {
+    let doc_type = command.document_type.trim().to_uppercase();
+
+    if doc_type == "GT" || doc_type == "GR" {
+        for line in &command.lines {
+            if line.is_service == Some(true) {
+                return Err(ApiError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    format!(
+                        "A AGT não permite a inclusão de serviços em Guias de Transporte ou Remessa. Linha: '{}'.",
+                        line.description
+                    ),
+                ));
+            }
+        }
+    }
+
+    if doc_type == "NC" || doc_type == "ND" {
+        return Ok(());
+    }
+
+    let mut requested_by_code: std::collections::HashMap<String, Decimal> =
+        std::collections::HashMap::new();
+    for line in &command.lines {
+        *requested_by_code
+            .entry(line.product_code.trim().to_string())
+            .or_default() += line.quantity;
+    }
+
+    for (code, requested_qty) in requested_by_code {
+        let query_res = sqlx::query(
+            r#"
+            SELECT 
+                p.name,
+                p.product_type::text AS product_type,
+                p.is_stockable,
+                COALESCE(SUM(sb.quantity_on_hand), 0) AS total_stock
+            FROM kudiba_inventory.products p
+            LEFT JOIN kudiba_inventory.stock_balances sb 
+                ON sb.product_id = p.id AND sb.tenant_id = p.tenant_id
+            WHERE p.tenant_id = $1 AND p.code = $2
+            GROUP BY p.id, p.name, p.product_type, p.is_stockable
+            "#,
+        )
+        .bind(command.tenant_id)
+        .bind(&code)
+        .fetch_optional(pool)
+        .await;
+
+        match query_res {
+            Ok(Some(row)) => {
+                let prod_name: String = row.get("name");
+                let prod_type: String = row.get("product_type");
+                let is_stockable: bool = row.get("is_stockable");
+                let total_stock: Decimal = row.get("total_stock");
+
+                let is_service = prod_type.eq_ignore_ascii_case("S") || !is_stockable;
+
+                if is_service {
+                    if doc_type == "GT" || doc_type == "GR" {
+                        return Err(ApiError::new(
+                            StatusCode::UNPROCESSABLE_ENTITY,
+                            format!(
+                                "O artigo '{}' ({}) está registado como serviço e não pode constar em Guias de Transporte ou Remessa.",
+                                prod_name, code
+                            ),
+                        ));
+                    }
+                    for line in command
+                        .lines
+                        .iter_mut()
+                        .filter(|l| l.product_code.trim() == code)
+                    {
+                        line.is_service = Some(true);
+                    }
+                    continue;
+                }
+
+                for line in command
+                    .lines
+                    .iter_mut()
+                    .filter(|l| l.product_code.trim() == code)
+                {
+                    line.is_service = Some(false);
+                }
+
+                if total_stock < requested_qty {
+                    return Err(ApiError::new(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        format!(
+                            "Stock insuficiente para o artigo '{}' (código: {}). Saldo disponível em armazém: {}, Quantidade solicitada: {}.",
+                            prod_name, code, total_stock, requested_qty
+                        ),
+                    ));
+                }
+            }
+            Ok(None) => {
+                if let Some(url) = inventory_service_url {
+                    let endpoint = format!(
+                        "{}/api/v1/inventory/products/by-code/{}",
+                        url.trim_end_matches('/'),
+                        &code
+                    );
+                    let client = reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_secs(3))
+                        .build()
+                        .unwrap_or_default();
+
+                    if let Ok(resp) = client
+                        .get(&endpoint)
+                        .header("X-Resolved-Tenant-ID", command.tenant_id.to_string())
+                        .send()
+                        .await
+                    {
+                        if resp.status().is_success() {
+                            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                                let ptype = json
+                                    .get("product_type")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("P");
+                                let is_stockable = json
+                                    .get("is_stockable")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(true);
+                                let name =
+                                    json.get("name").and_then(|v| v.as_str()).unwrap_or(&code);
+
+                                if ptype.eq_ignore_ascii_case("S") || !is_stockable {
+                                    if doc_type == "GT" || doc_type == "GR" {
+                                        return Err(ApiError::new(
+                                            StatusCode::UNPROCESSABLE_ENTITY,
+                                            format!(
+                                                "O artigo '{}' ({}) é um serviço e não pode constar em documentos de transporte.",
+                                                name, code
+                                            ),
+                                        ));
+                                    }
+                                    for line in command
+                                        .lines
+                                        .iter_mut()
+                                        .filter(|l| l.product_code.trim() == code)
+                                    {
+                                        line.is_service = Some(true);
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                tracing::debug!(
+                    "Não foi possível verificar stock do artigo {code} no banco local: {err}"
+                );
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn generate_keys_handler(headers: HeaderMap) -> Response {

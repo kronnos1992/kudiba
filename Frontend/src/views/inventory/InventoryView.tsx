@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Package,
@@ -20,12 +20,15 @@ import {
   Printer,
   Download,
   Sparkles,
+  ArrowDownCircle,
+  Loader2,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { toast } from '../../stores/toastStore';
 import {
   inventoryApi,
   Product,
@@ -153,6 +156,14 @@ export const InventoryView: React.FC = () => {
     notes: '',
   });
 
+  const [purchaseBatchMode, setPurchaseBatchMode] = useState<'existing' | 'new'>('existing');
+  const [newBatchForm, setNewBatchForm] = useState({
+    batch_number: '',
+    expiry_date: '',
+    manufacture_date: '',
+  });
+  const [isSubmittingPurchase, setIsSubmittingPurchase] = useState(false);
+
   // Formulário de Transferência
   const [transferForm, setTransferForm] = useState({
     from_warehouse_id: '',
@@ -173,6 +184,62 @@ export const InventoryView: React.FC = () => {
     document_ref: '',
     notes: '',
   });
+
+  // Lotes para os formulários de Entrada, Transferência e Ajuste
+  const { data: purchaseProductBatches = [] } = useQuery({
+    queryKey: ['inventory_batches', purchaseForm.product_id],
+    queryFn: () => (purchaseForm.product_id ? inventoryApi.listBatchesByProduct(purchaseForm.product_id) : []),
+    enabled: Boolean(purchaseForm.product_id),
+  });
+
+  const { data: transferProductBatches = [] } = useQuery({
+    queryKey: ['inventory_batches', transferForm.product_id],
+    queryFn: () => (transferForm.product_id ? inventoryApi.listBatchesByProduct(transferForm.product_id) : []),
+    enabled: Boolean(transferForm.product_id),
+  });
+
+  const { data: adjustProductBatches = [] } = useQuery({
+    queryKey: ['inventory_batches', adjustForm.product_id],
+    queryFn: () => (adjustForm.product_id ? inventoryApi.listBatchesByProduct(adjustForm.product_id) : []),
+    enabled: Boolean(adjustForm.product_id),
+  });
+
+  useEffect(() => {
+    if (purchaseForm.product_id) {
+      const prod = products.find((p) => p.id === purchaseForm.product_id);
+      if (prod?.track_lots) {
+        if (purchaseProductBatches.length === 0) {
+          setPurchaseBatchMode('new');
+        } else {
+          if (!purchaseForm.batch_id || !purchaseProductBatches.some((b) => b.id === purchaseForm.batch_id)) {
+            setPurchaseForm((prev) => ({ ...prev, batch_id: purchaseProductBatches[0].id }));
+          }
+        }
+      }
+    }
+  }, [purchaseForm.product_id, purchaseProductBatches, products]);
+
+  useEffect(() => {
+    if (transferForm.product_id) {
+      const prod = products.find((p) => p.id === transferForm.product_id);
+      if (prod?.track_lots && transferProductBatches.length > 0) {
+        if (!transferForm.batch_id || !transferProductBatches.some((b) => b.id === transferForm.batch_id)) {
+          setTransferForm((prev) => ({ ...prev, batch_id: transferProductBatches[0].id }));
+        }
+      }
+    }
+  }, [transferForm.product_id, transferProductBatches, products]);
+
+  useEffect(() => {
+    if (adjustForm.product_id) {
+      const prod = products.find((p) => p.id === adjustForm.product_id);
+      if (prod?.track_lots && adjustProductBatches.length > 0) {
+        if (!adjustForm.batch_id || !adjustProductBatches.some((b) => b.id === adjustForm.batch_id)) {
+          setAdjustForm((prev) => ({ ...prev, batch_id: adjustProductBatches[0].id }));
+        }
+      }
+    }
+  }, [adjustForm.product_id, adjustProductBatches, products]);
 
   // Formulário de Lote
   const [batchForm, setBatchForm] = useState({
@@ -242,6 +309,8 @@ export const InventoryView: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_movements'] });
       queryClient.invalidateQueries({ queryKey: ['inventory_products'] });
       queryClient.invalidateQueries({ queryKey: ['inventory_all_stock_balances'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory_dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory_batches'] });
       setShowPurchaseModal(false);
       setPurchaseForm({
         warehouse_id: '',
@@ -252,6 +321,13 @@ export const InventoryView: React.FC = () => {
         document_ref: '',
         notes: '',
       });
+      setPurchaseBatchMode('existing');
+      setNewBatchForm({ batch_number: '', expiry_date: '', manufacture_date: '' });
+      toast.success('Entrada de stock e recálculo de CMP registados com sucesso!');
+    },
+    onError: (err: any) => {
+      const detail = err.response?.data?.detail || err.response?.data?.error || 'Erro ao registar entrada de stock.';
+      toast.error(detail);
     },
   });
 
@@ -261,6 +337,11 @@ export const InventoryView: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_movements'] });
       queryClient.invalidateQueries({ queryKey: ['inventory_all_stock_balances'] });
       setShowTransferModal(false);
+      toast.success('Transferência de stock efetuada com sucesso!');
+    },
+    onError: (err: any) => {
+      const detail = err.response?.data?.detail || err.response?.data?.error || 'Erro ao efetuar transferência.';
+      toast.error(detail);
     },
   });
 
@@ -271,8 +352,71 @@ export const InventoryView: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_products'] });
       queryClient.invalidateQueries({ queryKey: ['inventory_all_stock_balances'] });
       setShowAdjustModal(false);
+      toast.success('Ajuste de inventário registado com sucesso!');
+    },
+    onError: (err: any) => {
+      const detail = err.response?.data?.detail || err.response?.data?.error || 'Erro ao efetuar ajuste de stock.';
+      toast.error(detail);
     },
   });
+
+  const handleConfirmPurchase = async () => {
+    if (!purchaseForm.warehouse_id || !purchaseForm.product_id) return;
+    const prod = products.find((p) => p.id === purchaseForm.product_id);
+    if (!prod) return;
+
+    let finalBatchId: string | undefined = undefined;
+
+    if (prod.track_lots) {
+      if (purchaseBatchMode === 'new') {
+        if (!newBatchForm.batch_number.trim()) {
+          toast.error('Indique o número do lote para este artigo.');
+          return;
+        }
+        setIsSubmittingPurchase(true);
+        try {
+          const created = await inventoryApi.createBatch({
+            product_id: prod.id,
+            batch_number: newBatchForm.batch_number.trim(),
+            expiry_date: newBatchForm.expiry_date || undefined,
+            manufacture_date: newBatchForm.manufacture_date || undefined,
+          });
+          queryClient.invalidateQueries({ queryKey: ['inventory_batches'] });
+          finalBatchId = created.id;
+        } catch (err: any) {
+          setIsSubmittingPurchase(false);
+          const detail =
+            err.response?.data?.detail || err.response?.data?.error || 'Erro ao registar o novo lote.';
+          toast.error(detail);
+          return;
+        }
+      } else {
+        if (!purchaseForm.batch_id) {
+          toast.error('Selecione um lote para este artigo.');
+          return;
+        }
+        finalBatchId = purchaseForm.batch_id;
+      }
+    }
+
+    setIsSubmittingPurchase(true);
+    purchaseMutation.mutate(
+      {
+        warehouse_id: purchaseForm.warehouse_id,
+        product_id: purchaseForm.product_id,
+        batch_id: finalBatchId,
+        quantity: purchaseForm.quantity,
+        unit_cost: purchaseForm.unit_cost,
+        document_ref: purchaseForm.document_ref || undefined,
+        notes: purchaseForm.notes || undefined,
+      },
+      {
+        onSettled: () => {
+          setIsSubmittingPurchase(false);
+        },
+      }
+    );
+  };
 
   const createBatchMutation = useMutation({
     mutationFn: (payload: CreateBatchPayload) => inventoryApi.createBatch(payload),
@@ -415,11 +559,13 @@ export const InventoryView: React.FC = () => {
   const stockByProduct = React.useMemo(() => {
     const map = new Map<string, { onHand: number; reserved: number; reorderPoint: number }>();
     for (const b of stockBalances) {
-      const current = map.get(b.product_id) || { onHand: 0, reserved: 0, reorderPoint: 0 };
-      current.onHand += Number(b.quantity_on_hand) || 0;
-      current.reserved += Number(b.quantity_reserved) || 0;
-      current.reorderPoint = Math.max(current.reorderPoint, Number(b.reorder_point) || 0);
-      map.set(b.product_id, current);
+      const prodId = b.product_id || (b as any).productId;
+      if (!prodId) continue;
+      const current = map.get(prodId) || { onHand: 0, reserved: 0, reorderPoint: 0 };
+      current.onHand += Number(b.quantity_on_hand ?? (b as any).quantityOnHand) || 0;
+      current.reserved += Number(b.quantity_reserved ?? (b as any).quantityReserved) || 0;
+      current.reorderPoint = Math.max(current.reorderPoint, Number(b.reorder_point ?? (b as any).reorderPoint) || 0);
+      map.set(prodId, current);
     }
     return map;
   }, [stockBalances]);
@@ -451,7 +597,7 @@ export const InventoryView: React.FC = () => {
         <div className="min-w-0">
           <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
             <Boxes className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-600 shrink-0" />
-            <span>Gestão de Artigos, Armazéns &amp; Stocks</span>
+            <span>Gestão de Stock</span>
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
             Catálogo certificado AGT, valorização por Custo Médio Ponderado (CMP), lotes e armazéns via KudibaInventory
@@ -460,16 +606,40 @@ export const InventoryView: React.FC = () => {
 
         <div className="flex flex-wrap items-center gap-2">
           {activeTab === 'products' && (
-            <button
-              onClick={() => {
-                resetProductForm();
-                setShowProductModal(true);
-              }}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm transition-colors"
-            >
-              <PlusCircle className="w-4 h-4 shrink-0" />
-              <span>Novo Artigo / Serviço</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const defWarehouse = warehouses.find((w) => w.is_default) || warehouses[0];
+                  setPurchaseForm({
+                    warehouse_id: defWarehouse ? defWarehouse.id : '',
+                    product_id: '',
+                    batch_id: '',
+                    quantity: '1',
+                    unit_cost: '0',
+                    document_ref: '',
+                    notes: '',
+                  });
+                  setShowPurchaseModal(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm transition-colors"
+                title="Registar Entrada de Stock por Compra ou Ressuprimento"
+              >
+                <ArrowDownCircle className="w-4 h-4 shrink-0" />
+                <span>Entrada / Ressuprir</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  resetProductForm();
+                  setShowProductModal(true);
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm transition-colors"
+              >
+                <PlusCircle className="w-4 h-4 shrink-0" />
+                <span>Novo Artigo / Serviço</span>
+              </button>
+            </div>
           )}
 
           {activeTab === 'warehouses' && (
@@ -706,21 +876,21 @@ export const InventoryView: React.FC = () => {
           </div>
 
           <GlassCard className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase font-semibold">
-                  <tr>
-                    <th className="px-4 py-3">Código / Barras</th>
-                    <th className="px-4 py-3">Designação</th>
-                    <th className="px-4 py-3">Tipo</th>
-                    <th className="px-4 py-3 text-right">Preço Venda</th>
-                    <th className="px-4 py-3 text-right">Custo CMP</th>
-                    <th className="px-4 py-3 text-center">Margem</th>
-                    <th className="px-4 py-3 text-center">Stock Atual</th>
-                    <th className="px-4 py-3 text-center">IVA</th>
-                    <th className="px-4 py-3 text-center">Lotes</th>
-                    <th className="px-4 py-3 text-center">Estado</th>
-                    <th className="px-4 py-3 text-right">Ações</th>
+            <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto rounded-xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs">
+                  <tr className="text-xs text-slate-500 uppercase font-semibold">
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3">Código / Barras</th>
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3">Designação</th>
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3">Tipo</th>
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-right">Preço Venda</th>
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-right">Custo CMP</th>
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-center">Margem</th>
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-center">Stock Atual</th>
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-center">IVA</th>
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-center">Lotes</th>
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-center">Estado</th>
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -741,9 +911,20 @@ export const InventoryView: React.FC = () => {
                       const salePrice = Number(p.sale_price) || 0;
                       const cmpPrice = Number(p.current_cmp || p.cost_price) || 0;
                       return (
-                        <tr key={p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                        <tr
+                          key={p.id}
+                          onClick={() => {
+                            if (p.product_type === 'P') {
+                              setStockDetailProduct(p);
+                            }
+                          }}
+                          title={p.product_type === 'P' ? "Clique para abrir detalhe de stock e armazéns (Drill-down)" : undefined}
+                          className={`hover:bg-emerald-50/50 dark:hover:bg-slate-800/60 transition-colors ${
+                            p.product_type === 'P' ? 'cursor-pointer group' : ''
+                          }`}
+                        >
                           <td className="px-4 py-3">
-                            <span className="font-semibold text-slate-900 dark:text-white block font-mono">
+                            <span className="font-semibold text-slate-900 dark:text-white block font-mono group-hover:text-emerald-600 dark:group-hover:text-emerald-400 group-hover:underline transition-colors">
                               {p.code}
                             </span>
                             <span className="text-xs text-emerald-600 dark:text-emerald-400 font-mono block">
@@ -897,7 +1078,10 @@ export const InventoryView: React.FC = () => {
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
                               <button
-                                onClick={() => openQrModal(p)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openQrModal(p);
+                                }}
                                 title="Ver / Imprimir QR Code do Artigo"
                                 className="p-1.5 text-slate-500 hover:text-emerald-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
                               >
@@ -905,15 +1089,42 @@ export const InventoryView: React.FC = () => {
                               </button>
                               {p.product_type === 'P' && (
                                 <button
-                                  onClick={() => setStockDetailProduct(p)}
-                                  title="Ver Saldos e Lotes"
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const defWarehouse = warehouses.find((w) => w.is_default) || warehouses[0];
+                                    setPurchaseForm({
+                                      warehouse_id: defWarehouse ? defWarehouse.id : '',
+                                      product_id: p.id,
+                                      batch_id: '',
+                                      quantity: '10',
+                                      unit_cost: String(p.cost_price || p.current_cmp || '0'),
+                                      document_ref: '',
+                                      notes: `Ressuprimento de ${p.name}`,
+                                    });
+                                    setShowPurchaseModal(true);
+                                  }}
+                                  title="Dar Entrada / Ressuprir Stock"
+                                  className="p-1.5 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                  <ArrowDownCircle className="w-4 h-4" />
+                                </button>
+                              )}
+                              {p.product_type === 'P' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setStockDetailProduct(p);
+                                  }}
+                                  title="Ver Saldos e Lotes (Drill-down)"
                                   className="p-1.5 text-slate-500 hover:text-emerald-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
                                 >
                                   <Eye className="w-4 h-4" />
                                 </button>
                               )}
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setPriceModalProduct(p);
                                   setNewSalePrice(String(p.sale_price));
                                   setNewCostPrice(String(p.cost_price || p.current_cmp));
@@ -924,7 +1135,8 @@ export const InventoryView: React.FC = () => {
                                 <DollarSign className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setEditingProduct(p);
                                   setProductForm({
                                     code: p.code,
@@ -1821,7 +2033,30 @@ export const InventoryView: React.FC = () => {
               )}
             </div>
 
-            <div className="flex justify-end pt-3 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  const prod = stockDetailProduct;
+                  const defWarehouse = warehouses.find((w) => w.is_default) || warehouses[0];
+                  setPurchaseForm({
+                    warehouse_id: defWarehouse ? defWarehouse.id : '',
+                    product_id: prod.id,
+                    batch_id: '',
+                    quantity: '10',
+                    unit_cost: String(prod.cost_price || prod.current_cmp || '0'),
+                    document_ref: '',
+                    notes: `Ressuprimento de ${prod.name}`,
+                  });
+                  setStockDetailProduct(null);
+                  setShowPurchaseModal(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+              >
+                <ArrowDownCircle className="w-4 h-4" />
+                <span>Registar Entrada / Ressuprir</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setStockDetailProduct(null)}
@@ -1974,6 +2209,7 @@ export const InventoryView: React.FC = () => {
                     setPurchaseForm({
                       ...purchaseForm,
                       product_id: e.target.value,
+                      batch_id: '',
                       unit_cost: prod ? String(prod.cost_price || prod.current_cmp) : '0',
                     });
                   }}
@@ -1989,6 +2225,116 @@ export const InventoryView: React.FC = () => {
                     ))}
                 </select>
               </div>
+
+              {/* Bloco de Gestão de Lote se o Artigo exigir controlo de lotes */}
+              {(() => {
+                const selectedProd = products.find((p) => p.id === purchaseForm.product_id);
+                if (!selectedProd?.track_lots) return null;
+
+                return (
+                  <div className="p-3 bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 rounded-xl space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                        <CalendarDays className="w-4 h-4 text-amber-600" />
+                        Gestão de Lote Obrigatória (AGT) *
+                      </label>
+                      <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setPurchaseBatchMode('existing')}
+                          className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                            purchaseBatchMode === 'existing'
+                              ? 'bg-amber-500 text-white shadow-sm'
+                              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                          }`}
+                        >
+                          Lote Existente
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPurchaseBatchMode('new')}
+                          className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                            purchaseBatchMode === 'new'
+                              ? 'bg-amber-500 text-white shadow-sm'
+                              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                          }`}
+                        >
+                          + Novo Lote
+                        </button>
+                      </div>
+                    </div>
+
+                    {purchaseBatchMode === 'existing' ? (
+                      <div>
+                        {purchaseProductBatches.length > 0 ? (
+                          <div>
+                            <select
+                              value={purchaseForm.batch_id}
+                              onChange={(e) => setPurchaseForm({ ...purchaseForm, batch_id: e.target.value })}
+                              className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                            >
+                              <option value="">Selecione o lote...</option>
+                              {purchaseProductBatches.map((b) => (
+                                <option key={b.id} value={b.id}>
+                                  Lote: {b.batch_number} {b.expiry_date ? `(Validade: ${b.expiry_date})` : ''} {b.is_expired ? '⚠️ EXPIRADO' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-amber-800 dark:text-amber-300 bg-amber-100/50 dark:bg-amber-900/30 p-2.5 rounded-lg flex items-center justify-between">
+                            <span>Ainda não existem lotes registados para este artigo.</span>
+                            <button
+                              type="button"
+                              onClick={() => setPurchaseBatchMode('new')}
+                              className="underline font-bold text-amber-900 dark:text-amber-100 ml-1"
+                            >
+                              Criar novo lote
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div className="sm:col-span-1">
+                          <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-0.5">
+                            N.º do Lote *
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="ex: LOT-2026-001"
+                            value={newBatchForm.batch_number}
+                            onChange={(e) => setNewBatchForm({ ...newBatchForm, batch_number: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono font-medium"
+                          />
+                        </div>
+                        <div className="sm:col-span-1">
+                          <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-0.5">
+                            Data de Validade
+                          </label>
+                          <input
+                            type="date"
+                            value={newBatchForm.expiry_date}
+                            onChange={(e) => setNewBatchForm({ ...newBatchForm, expiry_date: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                          />
+                        </div>
+                        <div className="sm:col-span-1">
+                          <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-0.5">
+                            Data de Fabrico
+                          </label>
+                          <input
+                            type="date"
+                            value={newBatchForm.manufacture_date}
+                            onChange={(e) => setNewBatchForm({ ...newBatchForm, manufacture_date: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -2043,6 +2389,53 @@ export const InventoryView: React.FC = () => {
                   className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
                 />
               </div>
+
+              {/* Resumo da Operação & Recálculo de CMP */}
+              {(() => {
+                const selectedProd = products.find((p) => p.id === purchaseForm.product_id);
+                if (!selectedProd) return null;
+
+                const currentStock = stockByProduct.get(selectedProd.id)?.onHand ?? 0;
+                const currentCmp = Number(selectedProd.cost_price || selectedProd.current_cmp || 0);
+                const addQty = Number(purchaseForm.quantity) || 0;
+                const unitCost = Number(purchaseForm.unit_cost) || 0;
+                const totalCost = addQty * unitCost;
+
+                const newTotalStock = currentStock + addQty;
+                const newCmp =
+                  newTotalStock > 0
+                    ? ((currentStock * currentCmp) + (addQty * unitCost)) / newTotalStock
+                    : unitCost;
+
+                return (
+                  <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700/60 text-xs space-y-1.5">
+                    <div className="font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                      <span>Impacto no Stock &amp; CMP</span>
+                      <span className="text-emerald-600 font-mono font-bold">
+                        +{addQty} {selectedProd.unit_of_measure || 'UN'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                      <span>Stock Resultante:</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {currentStock} &rarr; <span className="text-blue-600 font-bold">{newTotalStock} {selectedProd.unit_of_measure || 'UN'}</span>
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                      <span>Novo Custo Médio (CMP):</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        <KzAmount value={newCmp} />
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                      <span>Custo Total da Entrada:</span>
+                      <span className="font-bold text-slate-900 dark:text-white">
+                        <KzAmount value={totalCost} />
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
@@ -2055,19 +2448,22 @@ export const InventoryView: React.FC = () => {
               </button>
               <button
                 type="button"
-                disabled={!purchaseForm.warehouse_id || !purchaseForm.product_id || purchaseMutation.isPending}
-                onClick={() =>
-                  purchaseMutation.mutate({
-                    warehouse_id: purchaseForm.warehouse_id,
-                    product_id: purchaseForm.product_id,
-                    quantity: purchaseForm.quantity,
-                    unit_cost: purchaseForm.unit_cost,
-                    document_ref: purchaseForm.document_ref || undefined,
-                    notes: purchaseForm.notes || undefined,
-                  })
+                disabled={
+                  !purchaseForm.warehouse_id ||
+                  !purchaseForm.product_id ||
+                  Number(purchaseForm.quantity) <= 0 ||
+                  isSubmittingPurchase ||
+                  purchaseMutation.isPending ||
+                  (Boolean(products.find((p) => p.id === purchaseForm.product_id)?.track_lots) &&
+                    ((purchaseBatchMode === 'existing' && !purchaseForm.batch_id) ||
+                      (purchaseBatchMode === 'new' && !newBatchForm.batch_number.trim())))
                 }
-                className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50"
+                onClick={handleConfirmPurchase}
+                className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50 inline-flex items-center gap-2"
               >
+                {(isSubmittingPurchase || purchaseMutation.isPending) && (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                )}
                 Confirmar Entrada
               </button>
             </div>
@@ -2134,7 +2530,7 @@ export const InventoryView: React.FC = () => {
                 </label>
                 <select
                   value={transferForm.product_id}
-                  onChange={(e) => setTransferForm({ ...transferForm, product_id: e.target.value })}
+                  onChange={(e) => setTransferForm({ ...transferForm, product_id: e.target.value, batch_id: '' })}
                   className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
                 >
                   <option value="">Selecione o produto...</option>
@@ -2147,6 +2543,32 @@ export const InventoryView: React.FC = () => {
                     ))}
                 </select>
               </div>
+
+              {/* Lote se o Artigo exigir controlo de lotes */}
+              {(() => {
+                const prod = products.find((p) => p.id === transferForm.product_id);
+                if (!prod?.track_lots) return null;
+
+                return (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                      Lote do Artigo *
+                    </label>
+                    <select
+                      value={transferForm.batch_id}
+                      onChange={(e) => setTransferForm({ ...transferForm, batch_id: e.target.value })}
+                      className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                    >
+                      <option value="">Selecione o lote a transferir...</option>
+                      {transferProductBatches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          Lote: {b.batch_number} {b.expiry_date ? `(Validade: ${b.expiry_date})` : ''} {b.is_expired ? '⚠️ EXPIRADO' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
@@ -2189,17 +2611,21 @@ export const InventoryView: React.FC = () => {
                   !transferForm.from_warehouse_id ||
                   !transferForm.to_warehouse_id ||
                   !transferForm.product_id ||
+                  Number(transferForm.quantity) <= 0 ||
+                  (Boolean(products.find((p) => p.id === transferForm.product_id)?.track_lots) && !transferForm.batch_id) ||
                   transferMutation.isPending
                 }
-                onClick={() =>
+                onClick={() => {
+                  const prod = products.find((p) => p.id === transferForm.product_id);
                   transferMutation.mutate({
                     from_warehouse_id: transferForm.from_warehouse_id,
                     to_warehouse_id: transferForm.to_warehouse_id,
                     product_id: transferForm.product_id,
+                    batch_id: prod?.track_lots ? transferForm.batch_id : undefined,
                     quantity: transferForm.quantity,
                     notes: transferForm.notes || undefined,
-                  })
-                }
+                  });
+                }}
                 className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50"
               >
                 Efetuar Transferência
@@ -2248,7 +2674,7 @@ export const InventoryView: React.FC = () => {
                 </label>
                 <select
                   value={adjustForm.product_id}
-                  onChange={(e) => setAdjustForm({ ...adjustForm, product_id: e.target.value })}
+                  onChange={(e) => setAdjustForm({ ...adjustForm, product_id: e.target.value, batch_id: '' })}
                   className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
                 >
                   <option value="">Selecione o produto...</option>
@@ -2261,6 +2687,32 @@ export const InventoryView: React.FC = () => {
                     ))}
                 </select>
               </div>
+
+              {/* Lote se o Artigo exigir controlo de lotes */}
+              {(() => {
+                const prod = products.find((p) => p.id === adjustForm.product_id);
+                if (!prod?.track_lots) return null;
+
+                return (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                      Lote do Artigo *
+                    </label>
+                    <select
+                      value={adjustForm.batch_id}
+                      onChange={(e) => setAdjustForm({ ...adjustForm, batch_id: e.target.value })}
+                      className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                    >
+                      <option value="">Selecione o lote a ajustar...</option>
+                      {adjustProductBatches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          Lote: {b.batch_number} {b.expiry_date ? `(Validade: ${b.expiry_date})` : ''} {b.is_expired ? '⚠️ EXPIRADO' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
@@ -2316,17 +2768,20 @@ export const InventoryView: React.FC = () => {
                   !adjustForm.warehouse_id ||
                   !adjustForm.product_id ||
                   adjustForm.quantity_delta === '0' ||
+                  (Boolean(products.find((p) => p.id === adjustForm.product_id)?.track_lots) && !adjustForm.batch_id) ||
                   adjustMutation.isPending
                 }
-                onClick={() =>
+                onClick={() => {
+                  const prod = products.find((p) => p.id === adjustForm.product_id);
                   adjustMutation.mutate({
                     warehouse_id: adjustForm.warehouse_id,
                     product_id: adjustForm.product_id,
+                    batch_id: prod?.track_lots ? adjustForm.batch_id : undefined,
                     quantity_delta: adjustForm.quantity_delta,
                     is_waste: adjustForm.is_waste,
                     notes: adjustForm.notes || undefined,
-                  })
-                }
+                  });
+                }}
                 className="px-4 py-2 text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg disabled:opacity-50"
               >
                 Confirmar Ajuste

@@ -132,6 +132,23 @@ export interface PosTaxBreakdown {
   taxAmount: number;
 }
 
+export interface FiscalAuditTrailItem {
+  audit_id: string;
+  tenant_id: string;
+  table_name: string;
+  action: 'INSERT' | 'ATTEMPTED_UPDATE' | 'ATTEMPTED_DELETE' | string;
+  document_reference: string | null;
+  payload: Record<string, any>;
+  actor_user_id: string | null;
+  ip_address: string | null;
+  created_at: string;
+}
+
+export interface FiscalAuditTrailResponse {
+  items: FiscalAuditTrailItem[];
+  total: number;
+}
+
 export interface PosPaymentBreakdown {
   paymentMethod: string;
   paymentMethodName: string;
@@ -383,6 +400,23 @@ export const invoicingApi = {
 
   syncFiscalTenant: async (payload: Record<string, any>): Promise<any> => {
     const response = await apiClient.put('/api/v1/fiscal/tenant', payload);
+    return response.data;
+  },
+
+  getFiscalAuditTrail: async (params?: {
+    tenantId?: string;
+    limit?: number;
+    offset?: number;
+    action?: string;
+  }): Promise<FiscalAuditTrailResponse> => {
+    const response = await apiClient.get<FiscalAuditTrailResponse>('/api/v1/fiscal/audit-trail', {
+      params: {
+        tenantId: params?.tenantId,
+        limit: params?.limit,
+        offset: params?.offset,
+        action: params?.action,
+      },
+    });
     return response.data;
   },
 };

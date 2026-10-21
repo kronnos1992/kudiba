@@ -592,7 +592,7 @@ export const AccountingView: React.FC = () => {
 
   // Exportação CSV do Razão
   const handleExportLedgerCsv = () => {
-    const header = `Extrato de Conta PGC: ${selectedLedgerAccount.code} - ${selectedLedgerAccount.name}\r\nData;Nº Lançamento;Diário;Histórico;Débito (Kz);Crédito (Kz);Saldo Acumulado (Kz);Sentido`;
+    const header = `Extrato de Conta: ${selectedLedgerAccount.code} - ${selectedLedgerAccount.name}\r\nData;Nº Lançamento;Diário;Histórico;Débito (Kz);Crédito (Kz);Saldo Acumulado (Kz);Sentido`;
     const lines = ledgerEntries.map((r) => {
       const cleanDesc = `"${r.description.replace(/"/g, '""')}"`;
       const sentido = r.runningBalance >= 0 ? 'Devedor' : 'Credor';
@@ -861,14 +861,14 @@ export const AccountingView: React.FC = () => {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white">
-              Contabilidade Geral &amp; PGC Angolano
+              Contabilidade
             </h2>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
               Classes 1 a 8
             </span>
           </div>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Plano Geral de Contabilidade de Angola, lançamentos em partidas dobradas, balancetes de 4 e 6 colunas e exportação SAF-T AO
+            Lançamentos em partidas dobradas, balancetes de 4 e 6 colunas, demonstrações financeiras e exportação SAF-T AO
           </p>
         </div>
 
@@ -906,7 +906,7 @@ export const AccountingView: React.FC = () => {
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold text-sm transition"
             >
               <Sparkles className="w-4 h-4 text-amber-400" />
-              {seedPgcMutation.isPending ? 'A inicializar...' : 'Inicializar PGC'}
+              {seedPgcMutation.isPending ? 'A inicializar...' : 'Inicializar Plano de Contas'}
             </button>
           )}
         </div>
@@ -1052,7 +1052,7 @@ export const AccountingView: React.FC = () => {
             }`}
           >
             <Layers className="w-4 h-4" />
-            Plano de Contas PGC ({chart.length})
+            Plano de Contas ({chart.length})
           </button>
 
           <button
@@ -1512,7 +1512,7 @@ export const AccountingView: React.FC = () => {
             <div className="flex flex-wrap items-center gap-3 flex-1">
               <div className="w-full sm:w-80">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                  Selecionar Conta PGC:
+                  Selecionar Conta:
                 </label>
                 <select
                   value={selectedLedgerAccountCode}
@@ -1717,7 +1717,7 @@ export const AccountingView: React.FC = () => {
                     : 'text-slate-600 dark:text-slate-400'
                 }`}
               >
-                Balanço Patrimonial PGC
+                Balanço Patrimonial
               </button>
               <button
                 type="button"
@@ -1733,7 +1733,7 @@ export const AccountingView: React.FC = () => {
             </div>
 
             <div className="text-xs text-slate-500">
-              Exercício Fiscal: <span className="font-bold text-slate-800 dark:text-slate-200">{activeYear?.year_code || 2026}</span> (Angola - PGC Classes 1 a 8)
+              Exercício Fiscal: <span className="font-bold text-slate-800 dark:text-slate-200">{activeYear?.year_code || 2026}</span> (Angola - Classes 1 a 8)
             </div>
           </GlassCard>
 
@@ -1970,7 +1970,7 @@ export const AccountingView: React.FC = () => {
             <GlassCard className="p-6 max-w-4xl mx-auto space-y-4">
               <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
                 <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                  Demonstração de Resultados por Natureza (PGC Angola - Classes 6, 7 e 8)
+                  Demonstração de Resultados por Natureza (Classes 6, 7 e 8)
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Apuramento económico dos proveitos e custos operacionais, financeiros e determinação do Resultado Líquido
@@ -2197,8 +2197,8 @@ export const AccountingView: React.FC = () => {
                 </div>
                 <div className="mt-2 text-[11px] text-slate-500">
                   {vatSettlement.isPayable
-                    ? 'Conta PGC: 34.5.7 (IVA a Pagar)'
-                    : 'Conta PGC: 34.5.8 (IVA a Recuperar)'}
+                    ? 'Conta: 34.5.7 (IVA a Pagar)'
+                    : 'Conta: 34.5.8 (IVA a Recuperar)'}
                 </div>
               </div>
             </div>
@@ -2209,7 +2209,7 @@ export const AccountingView: React.FC = () => {
                 <thead className="bg-slate-100 dark:bg-slate-800 font-bold font-sans">
                   <tr>
                     <th className="p-3">Campo do Modelo 7</th>
-                    <th className="p-3">Conta PGC</th>
+                    <th className="p-3">Conta</th>
                     <th className="p-3 text-right">Valor Apurado (Kz)</th>
                   </tr>
                 </thead>
@@ -2376,7 +2376,7 @@ export const AccountingView: React.FC = () => {
                         </td>
                         <td className="p-3 text-center">
                           {a.is_system_reserved ? (
-                            <span className="text-[10px] text-amber-600 font-bold">Oficial PGC</span>
+                            <span className="text-[10px] text-amber-600 font-bold">Oficial</span>
                           ) : (
                             <span className="text-[10px] text-slate-400">Personalizada</span>
                           )}
@@ -2800,7 +2800,7 @@ export const AccountingView: React.FC = () => {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 dark:bg-slate-800/60 font-bold text-slate-600 dark:text-slate-300">
                     <tr>
-                      <th className="p-2.5 w-72">Conta Analítica PGC</th>
+                      <th className="p-2.5 w-72">Conta Analítica</th>
                       <th className="p-2.5">Histórico da Linha</th>
                       <th className="p-2.5 w-36 text-right">Débito (Kz)</th>
                       <th className="p-2.5 w-36 text-right">Crédito (Kz)</th>
@@ -2985,7 +2985,7 @@ export const AccountingView: React.FC = () => {
           <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Nova Conta Analítica (PGC)
+                Nova Conta Analítica
               </h3>
               <button
                 onClick={() => setIsCreateAccountModalOpen(false)}
@@ -3326,7 +3326,7 @@ export const AccountingView: React.FC = () => {
                 <thead className="bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300 font-sans">
                   <tr>
                     <th className="p-2.5">Linha</th>
-                    <th className="p-2.5">Conta PGC</th>
+                    <th className="p-2.5">Conta</th>
                     <th className="p-2.5">Descrição</th>
                     <th className="p-2.5 text-right">Débito (Kz)</th>
                     <th className="p-2.5 text-right">Crédito (Kz)</th>
@@ -3539,7 +3539,7 @@ export const AccountingView: React.FC = () => {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 dark:bg-slate-800/60 font-bold text-slate-600 dark:text-slate-300">
                     <tr>
-                      <th className="p-2.5 w-72">Conta Analítica PGC</th>
+                      <th className="p-2.5 w-72">Conta Analítica</th>
                       <th className="p-2.5">Histórico da Linha</th>
                       <th className="p-2.5 w-36 text-right">Débito (Kz)</th>
                       <th className="p-2.5 w-36 text-right">Crédito (Kz)</th>

@@ -23,6 +23,7 @@ pub struct InvoicePdfGenerator;
 
 impl InvoicePdfGenerator {
     /// Produz o ficheiro binário PDF (formato A4) do documento fiscal
+    #[allow(dead_code)]
     pub fn generate_pdf(
         invoice: &Invoice,
         company_name: &str,

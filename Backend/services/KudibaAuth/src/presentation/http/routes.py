@@ -277,6 +277,26 @@ def create_auth_router() -> APIRouter:
         app_state = get_app_state(request)
         return await app_state.list_tenant_members.execute(ctx.tenant_id)
 
+    @router.get(
+        "/audit-logs",
+        summary="Consultar Registos de Auditoria e Acessos",
+        description="Devolve o histórico de eventos de autenticação e segurança da empresa.",
+    )
+    async def get_audit_logs(
+        request: Request,
+        limit: int = 100,
+        offset: int = 0,
+        ctx: SecurityContext = Depends(require_permission("users:read")),
+    ):
+        if not (ctx.has_role("ADMIN") or ctx.has_role("SUPER_ADMIN") or ctx.has_role("AUDITOR")):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Apenas administradores têm permissão para consultar os registos de auditoria.",
+            )
+        app_state = get_app_state(request)
+        items = await app_state.audit_repo.list_events(tenant_id=ctx.tenant_id, limit=limit, offset=offset)
+        return {"items": items, "total": len(items)}
+
     @router.post(
         "/users/invite",
         status_code=status.HTTP_201_CREATED,

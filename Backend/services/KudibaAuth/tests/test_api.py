@@ -38,6 +38,9 @@ async def test_unauthorized_endpoints():
         assert data["code"] == "UNAUTHORIZED"
         assert "detail" in data
 
+        response_audit = await ac.get("/auth/audit-logs")
+        assert response_audit.status_code == 401
+
 
 def test_only_admin_can_grant_admin_role():
     claims = {

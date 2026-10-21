@@ -25,6 +25,7 @@ import {
   Banknote,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
+import { toast } from '../../stores/toastStore';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { inventoryApi, Product } from '../../api/inventory';
@@ -92,10 +93,28 @@ export const PosView: React.FC = () => {
   const isManager = roles.length === 0 || roles.some((r) => r !== 'OPERADOR_CAIXA');
 
   // Queries
-  const { data: products = [], isLoading: isLoadingProducts } = useQuery({    queryKey: ['pos_products', activeTenant?.id],
+  const { data: products = [], isLoading: isLoadingProducts } = useQuery({
+    queryKey: ['pos_products', activeTenant?.id],
     queryFn: () => inventoryApi.listProducts({ limit: 150 }),
     enabled: Boolean(activeTenant?.id),
   });
+
+  const { data: stockBalances = [] } = useQuery({
+    queryKey: ['pos_stock_balances', activeTenant?.id],
+    queryFn: () => inventoryApi.listAllStockBalances(),
+    enabled: Boolean(activeTenant?.id),
+  });
+
+  const productStockMap = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const b of stockBalances) {
+      const current = map.get(b.product_id) || 0;
+      map.set(b.product_id, current + (Number(b.quantity_on_hand) || 0));
+    }
+    return map;
+  }, [stockBalances]);
+
+  const getProductStock = (productId: string) => productStockMap.get(productId) ?? 0;
 
   const { data: seriesList = [] } = useQuery({
     queryKey: ['pos_series', activeTenant?.id],
@@ -168,6 +187,21 @@ export const PosView: React.FC = () => {
       ? tenderedNum - totalGross
       : 0;
 
+  const cartStockErrors = React.useMemo(() => {
+    const errors: string[] = [];
+    for (const item of cart) {
+      if (!item.isService) {
+        const available = getProductStock(item.productId);
+        if (item.qty > available) {
+          errors.push(
+            `"${item.name}": disponível ${available} un., solicitado ${item.qty} un.`
+          );
+        }
+      }
+    }
+    return errors;
+  }, [cart, productStockMap]);
+
   // Filtragem de catálogo
   const filteredProducts = products.filter(
     (p) =>
@@ -198,8 +232,21 @@ export const PosView: React.FC = () => {
   };
 
   const handleAddToCart = (product: Product) => {
+    const isService = product.product_type === 'S' || !product.is_stockable;
+    const available = getProductStock(product.id);
+    const existing = cart.find((item) => item.productId === product.id);
+    const requested = (existing?.qty || 0) + 1;
+
+    if (!isService && requested > available) {
+      toast.error(
+        available <= 0
+          ? `Artigo "${product.name}" sem stock em armazém (0 un. disponível).`
+          : `Stock insuficiente para "${product.name}". Disponível: ${available} un., Solicitado: ${requested} un.`
+      );
+      return;
+    }
+
     setCart((prev) => {
-      const existing = prev.find((item) => item.productId === product.id);
       const price = Number(product.sale_price) || 0;
       const taxRate =
         product.tax_percentage !== undefined && product.tax_percentage !== null
@@ -220,7 +267,7 @@ export const PosView: React.FC = () => {
           unitPrice: price,
           qty: 1,
           taxRate,
-          isService: product.product_type === 'S' || !product.is_stockable,
+          isService,
           exemptionCode: product.exemption_reason_code,
         },
       ];
@@ -228,14 +275,23 @@ export const PosView: React.FC = () => {
   };
 
   const handleUpdateQty = (productId: string, delta: number) => {
+    const item = cart.find((i) => i.productId === productId);
+    if (!item) return;
+    const isService = item.isService;
+    const available = getProductStock(productId);
+    if (delta > 0 && !isService && item.qty + delta > available) {
+      toast.error(`Stock máximo disponível para "${item.name}": ${available} un.`);
+      return;
+    }
+
     setCart((prev) =>
       prev
-        .map((item) => {
-          if (item.productId === productId) {
-            const newQty = item.qty + delta;
-            return newQty > 0 ? { ...item, qty: newQty } : null;
+        .map((it) => {
+          if (it.productId === productId) {
+            const newQty = it.qty + delta;
+            return newQty > 0 ? { ...it, qty: newQty } : null;
           }
-          return item;
+          return it;
         })
         .filter(Boolean) as CartItem[]
     );
@@ -347,6 +403,17 @@ export const PosView: React.FC = () => {
         '2026A';
 
       const cartSnapshot = [...cart];
+      for (const item of cartSnapshot) {
+        if (!item.isService) {
+          const available = getProductStock(item.productId);
+          if (item.qty > available) {
+            const msg = `Stock insuficiente: "${item.name}" tem apenas ${available} un. em stock (solicitado: ${item.qty} un.).`;
+            setErrorMessage(msg);
+            toast.error(msg);
+            throw new Error(msg);
+          }
+        }
+      }
       const customerNameVal = customerName.trim() || 'Consumidor Final';
       const customerNifVal = customerNif.trim() || '999999999';
 
@@ -479,8 +546,11 @@ export const PosView: React.FC = () => {
       setCart([]);
       setAmountTendered('');
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['fiscal_audit_trail'] });
       queryClient.invalidateQueries({ queryKey: ['pos_products'] });
       queryClient.invalidateQueries({ queryKey: ['pos_current_session'] });
+      queryClient.invalidateQueries({ queryKey: ['pos_stock_balances'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory_all_stock_balances'] });
     },
     onError: (err: any) => {
       const msg =
@@ -805,44 +875,58 @@ export const PosView: React.FC = () => {
                 Nenhum artigo encontrado.
               </div>
             ) : (
-              filteredProducts.map((prod) => (
-                <button
-                  key={prod.id}
-                  onClick={() => handleAddToCart(prod)}
-                  className="p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 hover:border-emerald-500 hover:shadow-md transition-all text-left flex flex-col justify-between group cursor-pointer min-w-0"
-                >
-                  <div>
-                    <div className="flex items-center justify-between text-[10px] font-mono font-bold text-slate-400 group-hover:text-emerald-600 transition-colors">
-                      <span>{prod.code}</span>
-                      <span className="text-slate-400 font-normal">
-                        Ref: {prod.ref_id || `REF-${prod.code}`}
+              filteredProducts.map((prod) => {
+                const isSrv = prod.product_type === 'S' || !prod.is_stockable;
+                const avail = getProductStock(prod.id);
+                const isOutOfStock = !isSrv && avail <= 0;
+
+                return (
+                  <button
+                    key={prod.id}
+                    onClick={() => handleAddToCart(prod)}
+                    className={`p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 border ${
+                      isOutOfStock
+                        ? 'border-rose-300 dark:border-rose-900/60 opacity-80 hover:border-rose-400'
+                        : 'border-slate-200 dark:border-slate-700/60 hover:border-emerald-500 hover:shadow-md'
+                    } transition-all text-left flex flex-col justify-between group cursor-pointer min-w-0`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] font-mono font-bold text-slate-400 group-hover:text-emerald-600 transition-colors">
+                        <span>{prod.code}</span>
+                        <span className="text-slate-400 font-normal">
+                          Ref: {prod.ref_id || `REF-${prod.code}`}
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 mt-0.5">
+                        {prod.name}
+                      </h4>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        {isSrv ? (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-500/20">
+                            Serviço
+                          </span>
+                        ) : isOutOfStock ? (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-500/20">
+                            Esgotado (0 un)
+                          </span>
+                        ) : (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-500/20">
+                            Stock: {avail} un
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <span className="text-xs font-extrabold text-emerald-700 dark:text-emerald-400 truncate">
+                        <KzAmount value={Number(prod.sale_price) || 0} />
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold shrink-0">
+                        +{prod.tax_percentage}%
                       </span>
                     </div>
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 mt-0.5">
-                      {prod.name}
-                    </h4>
-                    <div className="flex items-center gap-1.5 mt-1.5">
-                      <span
-                        className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider ${
-                          prod.product_type === 'S' || !prod.is_stockable
-                            ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-500/20'
-                            : 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-500/20'
-                        }`}
-                      >
-                        {prod.product_type === 'S' || !prod.is_stockable ? 'Serviço' : 'Físico / Stock'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <span className="text-xs font-extrabold text-emerald-700 dark:text-emerald-400 truncate">
-                      <KzAmount value={Number(prod.sale_price) || 0} />
-                    </span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold shrink-0">
-                      +{prod.tax_percentage}%
-                    </span>
-                  </div>
-                </button>
-              ))
+                  </button>
+                );
+              })
             )}
           </div>
         </div>
@@ -1089,17 +1173,32 @@ export const PosView: React.FC = () => {
                 </div>
               )}
 
+              {cartStockErrors.length > 0 && (
+                <div className="p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-200 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-rose-900 dark:text-rose-100">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <span>Venda Bloqueada por Ruptura de Stock</span>
+                  </div>
+                  <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
+                    {cartStockErrors.map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <button
                 disabled={
                   cart.length === 0 ||
                   issueFrMutation.isPending ||
                   !isCashSessionOpen ||
+                  cartStockErrors.length > 0 ||
                   (selectedPaymentMethod === 'NUMERARIO' &&
                     tenderedNum > 0 &&
                     tenderedNum < totalGross)
                 }
                 onClick={() => issueFrMutation.mutate()}
-                className="w-full py-3 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-md shadow-emerald-700/20 disabled:opacity-50 transition-all cursor-pointer"
+                className="w-full py-3 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-md shadow-emerald-700/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
               >
                 {issueFrMutation.isPending ? (
                   <>
@@ -1110,6 +1209,11 @@ export const PosView: React.FC = () => {
                   <>
                     <Lock className="w-4 h-4" />
                     <span>Abra o Turno para Vender</span>
+                  </>
+                ) : cartStockErrors.length > 0 ? (
+                  <>
+                    <AlertCircle className="w-4 h-4 text-amber-300" />
+                    <span>Stock Insuficiente no Carrinho</span>
                   </>
                 ) : (
                   <>
@@ -1487,9 +1591,12 @@ export const PosView: React.FC = () => {
               <X className="w-4 h-4" />
             </button>
             <h3 className="text-base font-extrabold mb-1">Fecho Cego de Sessão</h3>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-xs text-slate-500 mb-3">
               Declare o valor físico contado em gaveta para reconciliação automática.
             </p>
+            <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+              <span className="font-bold">Controlo de Auditoria AGT:</span> Por segurança (Fecho Cego), o sistema não pré-preenche o saldo teórico para exigir a contagem física real do dinheiro em gaveta. O cálculo de quebras ou sobras é processado automaticamente após a confirmação.
+            </div>
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
