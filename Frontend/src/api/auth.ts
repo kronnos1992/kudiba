@@ -120,6 +120,84 @@ export interface UpdateTenantSettingsPayload {
   onboarding_completed?: boolean;
 }
 
+export interface DatabaseNodeStatus {
+  service_id: string;
+  service_name: string;
+  database_name: string;
+  role: string;
+  driver: string;
+  host: string;
+  port: number;
+  status: 'ONLINE' | 'OFFLINE';
+  latency_ms: number | null;
+  version: string | null;
+  active_connections: number;
+  error: string | null;
+}
+
+export interface CustomDatabaseConnection {
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password?: string;
+  schema_name: string;
+  ssl_mode: string;
+  pool_size: number;
+  timeout_seconds: number;
+  read_replica_enabled: boolean;
+  read_replica_host: string;
+  read_replica_port?: number | null;
+  is_custom_configured: boolean;
+  has_password?: boolean;
+  last_tested_at?: string | null;
+  last_test_status?: string | null;
+  last_test_latency_ms?: number | null;
+}
+
+export interface TenantDatabaseOverview {
+  tenant_id: string;
+  cluster_nodes: DatabaseNodeStatus[];
+  custom_connection: CustomDatabaseConnection;
+}
+
+export interface TestDatabaseConnectionPayload {
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password?: string;
+  ssl_mode?: string;
+  timeout_seconds?: number;
+}
+
+export interface TestDatabaseConnectionResult {
+  success: boolean;
+  latency_ms: number;
+  version: string | null;
+  database: string | null;
+  user: string | null;
+  schema: string | null;
+  error: string | null;
+  tested_at: string;
+}
+
+export interface UpdateDatabaseConnectionPayload {
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password?: string;
+  schema_name?: string;
+  ssl_mode?: string;
+  pool_size?: number;
+  timeout_seconds?: number;
+  read_replica_enabled?: boolean;
+  read_replica_host?: string;
+  read_replica_port?: number | null;
+  is_custom_configured?: boolean;
+}
+
 export const authApi = {
   login: async (payload: LoginPayload): Promise<LoginResponse> => {
     const response = await apiClient.post<LoginResponse>('/api/v1/auth/login', payload);
@@ -245,6 +323,30 @@ export const authApi = {
 
   checkServicesStatus: async () => {
     const response = await apiClient.get('/status');
+    return response.data;
+  },
+
+  getDatabaseConnections: async (): Promise<TenantDatabaseOverview> => {
+    const response = await apiClient.get<TenantDatabaseOverview>('/api/v1/auth/tenant/database-connections');
+    return response.data;
+  },
+
+  testDatabaseConnection: async (payload: TestDatabaseConnectionPayload): Promise<TestDatabaseConnectionResult> => {
+    const response = await apiClient.post<TestDatabaseConnectionResult>(
+      '/api/v1/auth/tenant/database-connections/test',
+      payload
+    );
+    return response.data;
+  },
+
+  updateDatabaseConnection: async (
+    payload: UpdateDatabaseConnectionPayload
+  ): Promise<{ success: boolean; message: string; custom_connection: CustomDatabaseConnection }> => {
+    const response = await apiClient.put<{
+      success: boolean;
+      message: string;
+      custom_connection: CustomDatabaseConnection;
+    }>('/api/v1/auth/tenant/database-connections', payload);
     return response.data;
   },
 };

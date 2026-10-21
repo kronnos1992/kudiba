@@ -30,6 +30,7 @@ class Tenant:
     default_withholding_rate: float = 6.50
     invoice_footer_notes: Optional[str] = None
     bank_accounts: List[Dict[str, Any]] = field(default_factory=list)
+    database_connections: Dict[str, Any] = field(default_factory=dict)
     onboarding_completed: bool = False
     license_valid_until: Optional[datetime] = None
     subscribed_modules: Optional[List[str]] = None

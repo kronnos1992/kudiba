@@ -59,6 +59,7 @@ class TenantModel(Base):
     default_withholding_rate: Mapped[float] = mapped_column(Numeric(5, 2), default=6.50, nullable=False)
     invoice_footer_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     bank_accounts: Mapped[List[Dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    database_connections: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="ACTIVE", nullable=False)
     license_valid_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

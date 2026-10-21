@@ -90,6 +90,10 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_auth" <<-EO
        AND license_valid_until IS NULL;
 EOSQL
 
+# 8d. Bootstrap do utilizador SYSADMIN (Superadministrador do Sistema)
+echo "Provisionando utilizador inicial SYSADMIN no banco 'kudiba_auth'..."
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_auth" -f /docker-entrypoint-initdb.d/15-bootstrap-sysadmin.sql
+
 
 # 9. Compatibilidade regressiva para o banco padrão kudiba_erp
 echo "Aplicando schema no banco padrão '$POSTGRES_DB'..."
@@ -100,6 +104,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/06-accounting-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/07-payroll-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/08-integrations-schema.sql
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/15-bootstrap-sysadmin.sql
 
 echo "================================================================="
 echo "Inicialização de Bancos Concluída com Sucesso!"

@@ -50,6 +50,7 @@ class AppState:
     cache: RedisCacheService
     role_repo: SqlAlchemyRoleRepository
     audit_repo: SqlAlchemyAuditRepository
+    tenant_repo: SqlAlchemyTenantRepository
 
     # Casos de Uso (Commands)
     authenticate_user: AuthenticateUserUseCase
@@ -232,6 +233,7 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         cache=cache,
         role_repo=role_repo,
         audit_repo=audit_repo,
+        tenant_repo=tenant_repo,
         authenticate_user=authenticate_user,
         rotate_refresh_token=rotate_refresh_token,
         logout_user=logout_user,

@@ -95,6 +95,11 @@ services:
       - JWT_SECRET=kudiba_jwt_secret_development_key_change_in_production_2026
       - JWT_ACCESS_EXPIRATION_MINUTES=15
       - REFRESH_TOKEN_EXPIRATION_DAYS=7
+      - BOOTSTRAP_SYSADMIN_ENABLED=true
+      - BOOTSTRAP_SYSADMIN_EMAIL=sysadmin@kudiba.ao
+      - BOOTSTRAP_SYSADMIN_PASSWORD=SysAdmin@Kudiba2026!
+      - BOOTSTRAP_SYSADMIN_NAME=Administrador do Sistema (SYSADMIN)
+      - BOOTSTRAP_SYSADMIN_TENANT_SLUG=demo
     depends_on:
       postgres:
         condition: service_healthy
@@ -307,6 +312,7 @@ services:
       - ./Backend/deploy/07-payroll-schema.sql:/docker-entrypoint-initdb.d/07-payroll-schema.sql:ro
       - ./Backend/deploy/08-integrations-schema.sql:/docker-entrypoint-initdb.d/08-integrations-schema.sql:ro
       - ./Backend/deploy/09-backoffice-schema.sql:/docker-entrypoint-initdb.d/09-backoffice-schema.sql:ro
+      - ./Backend/deploy/15-bootstrap-sysadmin.sql:/docker-entrypoint-initdb.d/15-bootstrap-sysadmin.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kudiba -d kudiba_erp"]
       interval: 5s

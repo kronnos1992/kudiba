@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     # Políticas de Segurança e Anti-Bruteforce
     max_login_attempts: int = 5
     account_lockout_minutes: int = 15
+
+    # Bootstrap Inicial de Sysadmin (Superusuário na Implantação de Containers)
+    bootstrap_sysadmin_enabled: bool = True
+    bootstrap_sysadmin_email: str = "sysadmin@kudiba.ao"
+    bootstrap_sysadmin_password: str = "SysAdmin@Kudiba2026!"
+    bootstrap_sysadmin_name: str = "Administrador do Sistema (SYSADMIN)"
+    bootstrap_sysadmin_tenant_slug: str = "demo"
+
     cors_allowed_origins: Annotated[List[str], NoDecode] = [
         "http://localhost:3000",
         "http://localhost:5173",

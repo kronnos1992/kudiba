@@ -41,6 +41,22 @@ app_state = create_app_state(settings, session_factory)
 async def lifespan(app: FastAPI):
     # Armazena app_state no estado global da aplicação
     app.state.app_state = app_state
+
+    # Auto-bootstrap do utilizador SYSADMIN se ativado no deploy
+    if settings.bootstrap_sysadmin_enabled:
+        try:
+            from src.infrastructure.bootstrap import ensure_sysadmin_bootstrapped
+            await ensure_sysadmin_bootstrapped(
+                session_factory=session_factory,
+                email=settings.bootstrap_sysadmin_email,
+                password=settings.bootstrap_sysadmin_password,
+                full_name=settings.bootstrap_sysadmin_name,
+                tenant_slug=settings.bootstrap_sysadmin_tenant_slug,
+                password_hasher=app_state.hasher,
+            )
+        except Exception as e:
+            logger.warning("Falha não-bloqueante no bootstrap do utilizador SYSADMIN: %s", e)
+
     yield
     # Fechamento gracioso
     await app_state.cache.close()

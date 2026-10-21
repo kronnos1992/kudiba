@@ -278,3 +278,56 @@ class UpdateRolePermissionsCommand:
     permissions: List[str] = field(default_factory=list)
     actor_roles: List[str] = field(default_factory=list)
 
+
+@dataclass(frozen=True)
+class DatabaseNodeStatusDto:
+    service_id: str
+    service_name: str
+    database_name: str
+    host: str
+    port: int
+    status: str
+    latency_ms: Optional[float] = None
+    version: Optional[str] = None
+    description: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class DatabaseConnectionConfigDto:
+    host: str = "localhost"
+    port: int = 5432
+    database: str = "kudiba_erp"
+    username: str = "kudiba"
+    password: Optional[str] = None
+    schema_name: str = "kudiba_core"
+    ssl_mode: str = "prefer"
+    pool_size: int = 20
+    timeout_seconds: int = 5
+    read_replica_enabled: bool = False
+    read_replica_host: Optional[str] = None
+    read_replica_port: Optional[int] = None
+    is_custom_configured: bool = False
+    last_tested_at: Optional[str] = None
+    last_test_status: Optional[str] = None
+    last_test_latency_ms: Optional[float] = None
+
+
+@dataclass(frozen=True)
+class TenantDatabaseOverviewDto:
+    tenant_id: uuid.UUID
+    cluster_nodes: List[Dict[str, Any]]
+    custom_connection: Dict[str, Any]
+
+
+@dataclass(frozen=True)
+class TestDatabaseConnectionResultDto:
+    success: bool
+    latency_ms: float
+    version: Optional[str] = None
+    database: Optional[str] = None
+    user: Optional[str] = None
+    schema: Optional[str] = None
+    error: Optional[str] = None
+    tested_at: str = ""
+
+

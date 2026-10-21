@@ -60,7 +60,7 @@ def test_only_admin_can_grant_sysadmin_role():
     claims = {
         "sub": "00000000-0000-0000-0000-000000000001",
         "tenant_id": "00000000-0000-0000-0000-000000000002",
-        "roles": ["CONTABILISTA"],
+        "roles": ["OPERADOR_CAIXA"],
         "permissions": ["users:invite"],
     }
     with pytest.raises(AuthorizationError):
@@ -68,3 +68,14 @@ def test_only_admin_can_grant_sysadmin_role():
 
     claims["roles"] = ["ADMIN"]
     ensure_role_grant_is_allowed(SecurityContext(claims), ["SYSADMIN"])
+
+
+@pytest.mark.asyncio
+async def test_database_connections_unauthorized():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get("/auth/tenant/database-connections")
+        assert response.status_code == 401
+        response_test = await ac.post("/auth/tenant/database-connections/test", json={"host": "localhost"})
+        assert response_test.status_code == 401
+

@@ -84,6 +84,7 @@ class SqlAlchemyTenantRepository(ITenantRepository):
             m.default_withholding_rate = tenant.default_withholding_rate
             m.invoice_footer_notes = tenant.invoice_footer_notes
             m.bank_accounts = list(tenant.bank_accounts or [])
+            m.database_connections = dict(tenant.database_connections or {})
             m.onboarding_completed = bool(tenant.onboarding_completed)
             await session.flush()
             if owns_session:
@@ -117,6 +118,7 @@ class SqlAlchemyTenantRepository(ITenantRepository):
             default_withholding_rate=float(m.default_withholding_rate) if m.default_withholding_rate is not None else 6.50,
             invoice_footer_notes=m.invoice_footer_notes,
             bank_accounts=list(m.bank_accounts) if m.bank_accounts else [],
+            database_connections=dict(m.database_connections) if getattr(m, "database_connections", None) else {},
             onboarding_completed=bool(m.onboarding_completed),
             license_valid_until=m.license_valid_until,
             subscribed_modules=list(m.subscribed_modules) if m.subscribed_modules else None,

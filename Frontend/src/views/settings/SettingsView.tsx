@@ -36,6 +36,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Database,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge } from '../../components/common/StatusBadge';
@@ -48,8 +49,9 @@ import { invoicingApi } from '../../api/invoicing';
 import { accountingApi } from '../../api/accounting';
 import { toast } from '../../stores/toastStore';
 import { RolesManager } from './RolesManager';
+import { DatabaseSettingsManager } from './DatabaseSettingsManager';
 
-type SettingsTab = 'organization' | 'users' | 'certification' | 'series' | 'saft';
+type SettingsTab = 'organization' | 'users' | 'certification' | 'series' | 'saft' | 'databases';
 
 interface SettingsViewProps {
   onOpenOnboarding?: () => void;
@@ -758,6 +760,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
           >
             <Shield className="w-4 h-4" />
             Auditoria &amp; Logs ({(fiscalAuditData?.total ?? 0) + (authAuditData?.total ?? 0)})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('databases')}
+            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
+              activeTab === 'databases'
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
+            }`}
+          >
+            <Database className="w-4 h-4" />
+            Bases de Dados &amp; Conexões
           </button>
         </nav>
       </div>
@@ -3074,6 +3088,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
           </div>
         </div>
       )}
+
+      {/* TAB 6: BASES DE DADOS & CONEXÕES */}
+      {activeTab === 'databases' && <DatabaseSettingsManager />}
 
       {/* MODAL: NOVA SÉRIE FISCAL */}
       {isSeriesModalOpen && (
