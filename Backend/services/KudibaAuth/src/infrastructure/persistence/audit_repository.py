@@ -1,6 +1,6 @@
 import uuid
 from typing import Optional
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.domain.ports.audit_repository import IAuditRepository
 from src.infrastructure.persistence.models import AuthAuditLogModel
@@ -67,3 +67,10 @@ class SqlAlchemyAuditRepository(IAuditRepository):
                 }
                 for log in logs
             ]
+
+    async def count_events(self, tenant_id: uuid.UUID) -> int:
+        async with session_scope(self._session_factory) as (session, _):
+            stmt = select(func.count(AuthAuditLogModel.id)).where(AuthAuditLogModel.tenant_id == tenant_id)
+            result = await session.execute(stmt)
+            return int(result.scalar() or 0)
+

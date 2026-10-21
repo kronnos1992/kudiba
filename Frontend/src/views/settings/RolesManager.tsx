@@ -9,8 +9,12 @@ import {
   X,
   Users,
   Search,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
+import { SortableHeader } from '../../components/common/SortableHeader';
+import { useTableSort } from '../../hooks/useTableSort';
 import {
   authApi,
   RoleCatalogItem,
@@ -22,16 +26,17 @@ import { toast } from '../../stores/toastStore';
 
 const MODULE_LABELS: Record<string, string> = {
   users: 'Utilizadores & RBAC',
-  fiscal: 'Fiscal & Faturação',
+  fiscal: 'Fiscal & Facturação',
   pos: 'Ponto de Venda (POS)',
-  inventory: 'Inventário',
-  treasury: 'Tesouraria',
-  payroll: 'Recursos Humanos',
-  accounting: 'Contabilidade',
+  inventory: 'Inventário & Armazéns',
+  treasury: 'Tesouraria & Caixa',
+  payroll: 'Recursos Humanos & Salários',
+  accounting: 'Contabilidade & PGC',
+  integrations: 'Integrações & Biometria',
   tenant: 'Organização',
 };
 
-const MODULE_ORDER = ['users', 'fiscal', 'pos', 'inventory', 'treasury', 'payroll', 'accounting', 'tenant'];
+const MODULE_ORDER = ['users', 'fiscal', 'pos', 'inventory', 'treasury', 'payroll', 'accounting', 'integrations', 'tenant'];
 
 const RESERVED_ROLE_IDS = ['ADMIN', 'SYSADMIN', 'SUPER_ADMIN'];
 
@@ -43,6 +48,7 @@ const MODULE_COLORS: Record<string, string> = {
   treasury: 'bg-teal-50 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
   payroll: 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300',
   accounting: 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300',
+  integrations: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
   tenant: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
 };
 
@@ -92,6 +98,7 @@ export const RolesManager: React.FC = () => {
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['auth_roles'] });
+    queryClient.invalidateQueries({ queryKey: ['auth_audit_logs'] });
   };
 
   const handleError = (err: any) =>
@@ -160,6 +167,9 @@ export const RolesManager: React.FC = () => {
       (r.description ?? '').toLowerCase().includes(q)
     );
   });
+
+  const [expandedRoleId, setExpandedRoleId] = useState<string | null>(null);
+  const { sortedItems: sortedRoles, sortConfig: rolesSort, requestSort: requestRolesSort } = useTableSort(filteredRoles, 'name');
 
   const openCreateModal = () => {
     setEditingRole(null);
@@ -250,122 +260,207 @@ export const RolesManager: React.FC = () => {
 
       {/* Tabela de Perfis */}
       <GlassCard className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/75 text-xs font-bold text-slate-600 dark:text-slate-300">
-                <th className="p-3">Perfil</th>
-                <th className="p-3 text-center">Tipo</th>
-                <th className="p-3">Permissões</th>
-                <th className="p-3 text-center w-28">Utilizadores</th>
-                <th className="p-3 text-center w-40">Ações</th>
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+          <table className="w-full text-left text-sm border-separate border-spacing-0">
+            <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs">
+              <tr className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 w-10 text-center">
+                  <span className="sr-only">Drill-down</span>
+                </th>
+                <SortableHeader field="name" currentSortField={rolesSort?.key} sortDirection={rolesSort?.direction} onSort={requestRolesSort} className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                  Perfil
+                </SortableHeader>
+                <SortableHeader field="is_system" currentSortField={rolesSort?.key} sortDirection={rolesSort?.direction} onSort={requestRolesSort} align="center" className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                  Tipo
+                </SortableHeader>
+                <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">
+                  Permissões Atribuídas
+                </th>
+                <SortableHeader field="users_count" currentSortField={rolesSort?.key} sortDirection={rolesSort?.direction} onSort={requestRolesSort} align="center" className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800 w-28">
+                  Utilizadores
+                </SortableHeader>
+                <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 text-center w-40">
+                  Ações
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-400">
+                  <td colSpan={6} className="p-8 text-center text-slate-400">
                     A carregar perfis...
                   </td>
                 </tr>
-              ) : filteredRoles.length === 0 ? (
+              ) : sortedRoles.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-400">
+                  <td colSpan={6} className="p-8 text-center text-slate-400">
                     Nenhum perfil encontrado.
                   </td>
                 </tr>
               ) : (
-                filteredRoles.map((role) => (
-                  <tr
-                    key={role.id}
-                    className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition align-top"
-                  >
-                    <td className="p-3">
-                      <div className="font-bold text-slate-900 dark:text-white text-sm">{role.name}</div>
-                      <div className="font-mono text-[10px] font-bold text-blue-600 mt-0.5">{role.id}</div>
-                      {role.description && (
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 max-w-md">
-                          {role.description}
-                        </p>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                            role.is_system
-                              ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
-                          }`}
-                        >
-                          {role.is_system ? 'Sistema' : 'Personalizado'}
-                        </span>
-                        {role.has_override && (
-                          <span
-                            title="As permissões effective deste perfil foram personalizadas"
-                            className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                sortedRoles.map((role) => {
+                  const isExpanded = expandedRoleId === role.id;
+
+                  return (
+                    <React.Fragment key={role.id}>
+                      <tr
+                        className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition align-top cursor-pointer ${
+                          isExpanded ? 'bg-blue-50/40 dark:bg-blue-950/20' : ''
+                        }`}
+                        onClick={() => setExpandedRoleId(isExpanded ? null : role.id)}
+                      >
+                        <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedRoleId(isExpanded ? null : role.id)}
+                            className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-white transition"
+                            title="Expandir detalhes de permissões (Drill-down)"
                           >
-                            Ajustado
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      <div className="flex flex-wrap gap-1 max-w-lg">
-                        {role.permissions.length === 0 ? (
-                          <span className="text-[10px] text-slate-400 italic">Sem permissões atribuídas</span>
-                        ) : (
-                          role.permissions.map((p) => (
+                            {isExpanded ? <ChevronDown className="w-4 h-4 text-blue-600 dark:text-blue-400" /> : <ChevronRight className="w-4 h-4" />}
+                          </button>
+                        </td>
+                        <td className="p-3">
+                          <div className="font-bold text-slate-900 dark:text-white text-sm">{role.name}</div>
+                          <div className="font-mono text-[10px] font-bold text-blue-600 mt-0.5">{role.id}</div>
+                          {role.description && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 max-w-md">
+                              {role.description}
+                            </p>
+                          )}
+                        </td>
+                        <td className="p-3 text-center">
+                          <div className="flex flex-col items-center gap-1">
                             <span
-                              key={p}
-                              className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                role.is_system
+                                  ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                  : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                              }`}
                             >
-                              {p}
+                              {role.is_system ? 'Sistema' : 'Personalizado'}
                             </span>
-                          ))
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-3 text-center">
-                      <span className="inline-flex items-center gap-1 font-bold text-slate-700 dark:text-slate-300">
-                        <Users className="w-3.5 h-3.5 text-slate-400" />
-                        {role.users_count}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => openPermissionsModal(role)}
-                          title="Gerir permissões"
-                          className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
-                        >
-                          <KeyRound className="w-3.5 h-3.5" />
-                        </button>
-                        {!role.is_system && (
-                          <>
+                            {role.has_override && (
+                              <span
+                                title="As permissões effective deste perfil foram personalizadas"
+                                className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                              >
+                                Ajustado
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                              {role.permissions.length} de {allPermissions.length} ativas
+                            </span>
+                            <span className="text-2xs text-slate-400">
+                              (Clique na linha para expandir a matriz)
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-3 text-center">
+                          <span className="inline-flex items-center gap-1 font-bold text-slate-700 dark:text-slate-300">
+                            <Users className="w-3.5 h-3.5 text-slate-400" />
+                            {role.users_count}
+                          </span>
+                        </td>
+                        <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-1.5">
                             <button
                               type="button"
-                              onClick={() => openEditModal(role)}
-                              title="Editar perfil"
+                              onClick={() => openPermissionsModal(role)}
+                              title="Gerir permissões"
                               className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
                             >
-                              <Pencil className="w-3.5 h-3.5" />
+                              <KeyRound className="w-3.5 h-3.5" />
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => setRoleToDelete(role)}
-                              title="Eliminar perfil"
-                              className="p-1.5 rounded-lg border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/40 text-red-600 dark:text-red-400"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                            {!role.is_system && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => openEditModal(role)}
+                                  title="Editar perfil"
+                                  className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setRoleToDelete(role)}
+                                  title="Eliminar perfil"
+                                  className="p-1.5 rounded-lg border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/40 text-red-600 dark:text-red-400"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-slate-50/90 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800">
+                          <td colSpan={6} className="p-4">
+                            <div className="bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+                              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                                <div>
+                                  <span className="text-2xs font-bold uppercase tracking-wider text-slate-400">Drill-down de Permissões</span>
+                                  <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                    Perfil: {role.name}
+                                    <span className="text-xs font-mono font-normal text-blue-600">({role.id})</span>
+                                  </h4>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => openPermissionsModal(role)}
+                                  className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white inline-flex items-center gap-1.5 shadow-xs"
+                                >
+                                  <KeyRound className="w-3.5 h-3.5" />
+                                  Personalizar Permissões
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                                {MODULE_ORDER.map((module) => {
+                                  const modulePerms = role.permissions.filter((p) => {
+                                    const meta = allPermissions.find((ap) => ap.id === p);
+                                    return meta ? meta.module === module : p.startsWith(`${module}:`);
+                                  });
+                                  if (modulePerms.length === 0) return null;
+
+                                  return (
+                                    <div
+                                      key={module}
+                                      className="p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-1.5"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-2xs font-bold text-slate-700 dark:text-slate-300">
+                                          {MODULE_LABELS[module] || module}
+                                        </span>
+                                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-slate-200 dark:bg-slate-800 font-bold">
+                                          {modulePerms.length}
+                                        </span>
+                                      </div>
+                                      <div className="flex flex-wrap gap-1">
+                                        {modulePerms.map((pid) => (
+                                          <span
+                                            key={pid}
+                                            className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                                          >
+                                            {pid}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -486,7 +581,9 @@ export const RolesManager: React.FC = () => {
                 <span className="text-xs text-slate-500 font-mono">{permissionsRole.id}</span>
                 {permissionsRole.is_editable ? (
                   <p className="text-[11px] text-amber-600 font-semibold mt-1">
-                    {permissionsRole.is_system
+                    {permissionsRole.id === 'ADMIN'
+                      ? 'Perfil de Administrador: as alterações aplicam-se a esta empresa; as permissões essenciais de gestão são salvaguardadas automaticamente.'
+                      : permissionsRole.is_system
                       ? isSystemManager
                         ? 'Perfil de Sistema: as alterações são aplicadas a todas as empresas.'
                         : 'Perfil de Sistema: as alterações aplicam-se apenas a esta empresa.'
@@ -494,7 +591,7 @@ export const RolesManager: React.FC = () => {
                   </p>
                 ) : (
                   <p className="text-[11px] text-slate-500 font-semibold mt-1">
-                    Perfil de administrador: acesso total e permissões imutáveis.
+                    Perfil de administração de sistema (SYSADMIN/SUPER_ADMIN): acesso total e permissões imutáveis.
                   </p>
                 )}
                 {permissionsRole.has_override && (

@@ -9,9 +9,11 @@ from src.application.commands import (
     DeleteRoleUseCase,
     InviteUserUseCase,
     LogoutUserUseCase,
+    RemoveMemberUseCase,
     ResetRolePermissionsUseCase,
     RotateRefreshTokenUseCase,
     SwitchTenantUseCase,
+    UpdateMemberStatusUseCase,
     UpdateRolePermissionsUseCase,
     UpdateRoleUseCase,
     UpdateTenantSettingsUseCase,
@@ -56,6 +58,8 @@ class AppState:
     switch_tenant: SwitchTenantUseCase
     invite_user: InviteUserUseCase
     update_user_roles: UpdateUserRolesUseCase
+    update_member_status: UpdateMemberStatusUseCase
+    remove_member: RemoveMemberUseCase
     update_tenant_settings: UpdateTenantSettingsUseCase
     create_branch: CreateBranchUseCase
     create_role: CreateRoleUseCase
@@ -154,6 +158,25 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         cache_service=cache,
         session_revocation_ttl_seconds=config.jwt_access_expiration_minutes * 60 + 60,
         role_repo=role_repo,
+        audit_repo=audit_repo,
+    )
+
+    update_member_status = UpdateMemberStatusUseCase(
+        uow_factory=uow_factory,
+        user_tenant_repo=user_tenant_repo,
+        refresh_token_repo=refresh_token_repo,
+        cache_service=cache,
+        session_revocation_ttl_seconds=config.jwt_access_expiration_minutes * 60 + 60,
+        audit_repo=audit_repo,
+    )
+
+    remove_member = RemoveMemberUseCase(
+        uow_factory=uow_factory,
+        user_tenant_repo=user_tenant_repo,
+        refresh_token_repo=refresh_token_repo,
+        cache_service=cache,
+        session_revocation_ttl_seconds=config.jwt_access_expiration_minutes * 60 + 60,
+        audit_repo=audit_repo,
     )
 
     update_tenant_settings = UpdateTenantSettingsUseCase(
@@ -168,11 +191,11 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         audit_repo=audit_repo,
     )
 
-    create_role = CreateRoleUseCase(role_repo=role_repo)
-    update_role = UpdateRoleUseCase(role_repo=role_repo)
-    update_role_permissions = UpdateRolePermissionsUseCase(role_repo=role_repo)
-    reset_role_permissions = ResetRolePermissionsUseCase(role_repo=role_repo)
-    delete_role = DeleteRoleUseCase(role_repo=role_repo)
+    create_role = CreateRoleUseCase(role_repo=role_repo, audit_repo=audit_repo)
+    update_role = UpdateRoleUseCase(role_repo=role_repo, audit_repo=audit_repo)
+    update_role_permissions = UpdateRolePermissionsUseCase(role_repo=role_repo, audit_repo=audit_repo)
+    reset_role_permissions = ResetRolePermissionsUseCase(role_repo=role_repo, audit_repo=audit_repo)
+    delete_role = DeleteRoleUseCase(role_repo=role_repo, audit_repo=audit_repo)
 
     # 3. Casos de Uso (Queries)
     get_user_profile = GetUserProfileUseCase(
@@ -215,6 +238,8 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         switch_tenant=switch_tenant,
         invite_user=invite_user,
         update_user_roles=update_user_roles,
+        update_member_status=update_member_status,
+        remove_member=remove_member,
         update_tenant_settings=update_tenant_settings,
         create_branch=create_branch,
         create_role=create_role,

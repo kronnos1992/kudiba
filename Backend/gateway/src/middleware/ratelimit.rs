@@ -123,9 +123,13 @@ pub async fn rate_limit_middleware(
     }
 }
 
+fn is_login_or_refresh_path(path: &str) -> bool {
+    path.contains("/auth/login") || path.contains("/auth/refresh")
+}
+
 fn get_rate_limit_policy(path: &str) -> (i64, i64) {
-    if path.contains("/auth") {
-        (10, 60) // 10 req/min para login e autenticação
+    if is_login_or_refresh_path(path) {
+        (30, 60) // 30 req/min para login e refresh (protecção contra brute-force)
     } else if path.contains("/fiscal") || path.contains("/invoices") {
         (120, 60) // 120 emissões/min por tenant
     } else if path.contains("/sync") {
@@ -136,8 +140,10 @@ fn get_rate_limit_policy(path: &str) -> (i64, i64) {
 }
 
 fn sanitize_path(path: &str) -> &'static str {
-    if path.contains("/auth") {
-        "auth"
+    if is_login_or_refresh_path(path) {
+        "auth_login"
+    } else if path.contains("/auth") {
+        "auth_api"
     } else if path.contains("/fiscal") || path.contains("/invoices") {
         "fiscal"
     } else if path.contains("/sync") {
@@ -148,7 +154,7 @@ fn sanitize_path(path: &str) -> &'static str {
 }
 
 fn is_auth_path(path: &str) -> bool {
-    path.contains("/auth")
+    is_login_or_refresh_path(path)
 }
 
 fn rate_limit_unavailable(path: String) -> Response {

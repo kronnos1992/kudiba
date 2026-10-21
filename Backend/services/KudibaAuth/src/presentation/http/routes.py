@@ -9,8 +9,10 @@ from src.application.dto import (
     CreateRoleCommand,
     InviteUserCommand,
     LogoutUserCommand,
+    RemoveMemberCommand,
     RotateRefreshTokenCommand,
     SwitchTenantCommand,
+    UpdateMemberStatusCommand,
     UpdateRoleCommand,
     UpdateRolePermissionsCommand,
     UpdateTenantSettingsCommand,
@@ -50,6 +52,10 @@ class InviteHttpRequest(BaseModel):
 
 class UpdateRolesHttpRequest(BaseModel):
     roles: List[str] = Field(..., min_length=1, description="Novos papéis")
+
+
+class UpdateMemberStatusHttpRequest(BaseModel):
+    status: str = Field(..., pattern=r"^(ACTIVE|SUSPENDED)$", description="Estado do membro (ACTIVE ou SUSPENDED)")
 
 
 class BankAccountHttpItem(BaseModel):
@@ -295,7 +301,8 @@ def create_auth_router() -> APIRouter:
             )
         app_state = get_app_state(request)
         items = await app_state.audit_repo.list_events(tenant_id=ctx.tenant_id, limit=limit, offset=offset)
-        return {"items": items, "total": len(items)}
+        total = await app_state.audit_repo.count_events(tenant_id=ctx.tenant_id)
+        return {"items": items, "total": total}
 
     @router.post(
         "/users/invite",
@@ -318,6 +325,8 @@ def create_auth_router() -> APIRouter:
             branch_id=req.branch_id,
             actor_user_id=ctx.user_id,
             password=req.password,
+            ip_address=extract_client_ip(request),
+            user_agent=request.headers.get("User-Agent"),
         )
         return await app_state.invite_user.execute(cmd)
 
@@ -340,8 +349,54 @@ def create_auth_router() -> APIRouter:
             target_user_id=target_user_id,
             roles=req.roles,
             actor_user_id=ctx.user_id,
+            ip_address=extract_client_ip(request),
+            user_agent=request.headers.get("User-Agent"),
         )
         await app_state.update_user_roles.execute(cmd)
+
+    @router.patch(
+        "/users/{target_user_id}/status",
+        status_code=status.HTTP_204_NO_CONTENT,
+        summary="Alterar Estado de um Membro",
+        description="Ativa ou suspende o acesso de um membro à organização.",
+    )
+    async def update_member_status(
+        target_user_id: uuid.UUID,
+        req: UpdateMemberStatusHttpRequest,
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("users:manage_roles")),
+    ):
+        app_state = get_app_state(request)
+        cmd = UpdateMemberStatusCommand(
+            tenant_id=ctx.tenant_id,
+            target_user_id=target_user_id,
+            status=req.status,
+            actor_user_id=ctx.user_id,
+            ip_address=extract_client_ip(request),
+            user_agent=request.headers.get("User-Agent"),
+        )
+        await app_state.update_member_status.execute(cmd)
+
+    @router.delete(
+        "/users/{target_user_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        summary="Remover Membro da Organização",
+        description="Desvincula um membro da organização activa.",
+    )
+    async def remove_member(
+        target_user_id: uuid.UUID,
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("users:manage_roles")),
+    ):
+        app_state = get_app_state(request)
+        cmd = RemoveMemberCommand(
+            tenant_id=ctx.tenant_id,
+            target_user_id=target_user_id,
+            actor_user_id=ctx.user_id,
+            ip_address=extract_client_ip(request),
+            user_agent=request.headers.get("User-Agent"),
+        )
+        await app_state.remove_member.execute(cmd)
 
     @router.get(
         "/branches",

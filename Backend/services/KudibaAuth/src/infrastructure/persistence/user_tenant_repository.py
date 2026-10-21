@@ -131,6 +131,34 @@ class SqlAlchemyUserTenantRepository(IUserTenantRepository):
             if owns_session:
                 await session.commit()
 
+    async def update_member_status(self, user_id: uuid.UUID, tenant_id: uuid.UUID, status: str) -> None:
+        async with session_scope(self._session_factory) as (session, owns_session):
+            stmt = select(UserTenantModel).where(
+                UserTenantModel.user_id == user_id, UserTenantModel.tenant_id == tenant_id
+            )
+            res = await session.execute(stmt)
+            m = res.scalar_one_or_none()
+            if m:
+                m.status = status
+                session.add(m)
+                if owns_session:
+                    await session.commit()
+
+    async def remove_member(self, user_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
+        async with session_scope(self._session_factory) as (session, owns_session):
+            await session.execute(
+                delete(UserRoleModel).where(
+                    UserRoleModel.user_id == user_id, UserRoleModel.tenant_id == tenant_id
+                )
+            )
+            await session.execute(
+                delete(UserTenantModel).where(
+                    UserTenantModel.user_id == user_id, UserTenantModel.tenant_id == tenant_id
+                )
+            )
+            if owns_session:
+                await session.commit()
+
     async def lock_tenant_role_updates(self, tenant_id: uuid.UUID) -> None:
         async with session_scope(self._session_factory) as (session, _):
             await session.execute(

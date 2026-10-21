@@ -28,6 +28,8 @@ import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { SortableHeader } from '../../components/common/SortableHeader';
+import { useTableSort } from '../../hooks/useTableSort';
 import { toast } from '../../stores/toastStore';
 import {
   inventoryApi,
@@ -741,6 +743,9 @@ export const InventoryView: React.FC = () => {
     return true;
   });
 
+  const { sortedItems: sortedProducts, sortConfig: productsSort, requestSort: requestProductsSort } = useTableSort(filteredProducts, 'name');
+  const { sortedItems: sortedMovements, sortConfig: movementsSort, requestSort: requestMovementsSort } = useTableSort(movements, 'created_at', 'desc');
+
   // Totais e Métricas de Catálogo
   const totalProducts = products.length;
   const physicalItems = products.filter((p) => p.product_type === 'P').length;
@@ -1070,16 +1075,30 @@ export const InventoryView: React.FC = () => {
               <table className="w-full text-left text-sm border-separate border-spacing-0">
                 <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs">
                   <tr className="text-xs text-slate-500 uppercase font-semibold">
-                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3">Código / Barras</th>
-                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3">Designação</th>
-                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3">Tipo</th>
-                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-right">Preço Venda</th>
-                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-right">Custo CMP</th>
+                    <SortableHeader field="code" currentSortField={productsSort?.key} sortDirection={productsSort?.direction} onSort={requestProductsSort} className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      Código / Barras
+                    </SortableHeader>
+                    <SortableHeader field="name" currentSortField={productsSort?.key} sortDirection={productsSort?.direction} onSort={requestProductsSort} className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      Designação
+                    </SortableHeader>
+                    <SortableHeader field="product_type" currentSortField={productsSort?.key} sortDirection={productsSort?.direction} onSort={requestProductsSort} className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      Tipo
+                    </SortableHeader>
+                    <SortableHeader field="sale_price" currentSortField={productsSort?.key} sortDirection={productsSort?.direction} onSort={requestProductsSort} align="right" className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      Preço Venda
+                    </SortableHeader>
+                    <SortableHeader field="cost_price" currentSortField={productsSort?.key} sortDirection={productsSort?.direction} onSort={requestProductsSort} align="right" className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      Custo CMP
+                    </SortableHeader>
                     <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-center">Margem</th>
                     <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-center">Stock Atual</th>
-                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-center">IVA</th>
+                    <SortableHeader field="tax_rate" currentSortField={productsSort?.key} sortDirection={productsSort?.direction} onSort={requestProductsSort} align="center" className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      IVA
+                    </SortableHeader>
                     <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-center">Lotes</th>
-                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-center">Estado</th>
+                    <SortableHeader field="is_active" currentSortField={productsSort?.key} sortDirection={productsSort?.direction} onSort={requestProductsSort} align="center" className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      Estado
+                    </SortableHeader>
                     <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
@@ -1090,14 +1109,14 @@ export const InventoryView: React.FC = () => {
                         A carregar catálogo de artigos...
                       </td>
                     </tr>
-                  ) : filteredProducts.length === 0 ? (
+                  ) : sortedProducts.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
                         Nenhum artigo encontrado. Clique em "Novo Artigo / Serviço" para registar.
                       </td>
                     </tr>
                   ) : (
-                    filteredProducts.map((p) => {
+                    sortedProducts.map((p) => {
                       const salePrice = Number(p.sale_price) || 0;
                       const cmpPrice = Number(p.current_cmp || p.cost_price) || 0;
                       return (
@@ -1420,19 +1439,33 @@ export const InventoryView: React.FC = () => {
               </h3>
               <span className="text-xs text-slate-400">Últimos movimentos registados</span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase font-semibold">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs text-xs text-slate-500 uppercase font-semibold">
                   <tr>
-                    <th className="px-4 py-3">Data / Hora</th>
-                    <th className="px-4 py-3">Tipo Movimento</th>
-                    <th className="px-4 py-3">Doc Ref</th>
-                    <th className="px-4 py-3 text-right">Quantidade</th>
-                    <th className="px-4 py-3 text-right">Custo Unitário</th>
-                    <th className="px-4 py-3 text-right">Custo Total</th>
-                    <th className="px-4 py-3 text-right">CMP Resultante</th>
-                    <th className="px-4 py-3">Observações</th>
-                    <th className="px-4 py-3 text-center">Guia / Ações</th>
+                    <SortableHeader field="created_at" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      Data / Hora
+                    </SortableHeader>
+                    <SortableHeader field="movement_type" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      Tipo Movimento
+                    </SortableHeader>
+                    <SortableHeader field="document_ref" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      Doc Ref
+                    </SortableHeader>
+                    <SortableHeader field="quantity" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} align="right" className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      Quantidade
+                    </SortableHeader>
+                    <SortableHeader field="unit_cost" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} align="right" className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      Custo Unitário
+                    </SortableHeader>
+                    <SortableHeader field="total_cost" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} align="right" className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      Custo Total
+                    </SortableHeader>
+                    <SortableHeader field="resulting_cmp" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} align="right" className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+                      CMP Resultante
+                    </SortableHeader>
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3">Observações</th>
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-center">Guia / Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1442,14 +1475,14 @@ export const InventoryView: React.FC = () => {
                         A carregar histórico de movimentos...
                       </td>
                     </tr>
-                  ) : movements.length === 0 ? (
+                  ) : sortedMovements.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                         Nenhum movimento registado. Utilize os botões acima para registar Entradas, Transferências ou Ajustes.
                       </td>
                     </tr>
                   ) : (
-                    movements.map((m) => {
+                    sortedMovements.map((m) => {
                       const qty = Number(m.quantity) || 0;
                       const unitCost = Number(m.unit_cost) || 0;
                       const totalCost = Number(m.total_cost) || 0;

@@ -173,6 +173,14 @@ export const authApi = {
     await apiClient.put(`/api/v1/auth/users/${userId}/roles`, payload);
   },
 
+  updateMemberStatus: async (userId: string, status: 'ACTIVE' | 'SUSPENDED'): Promise<void> => {
+    await apiClient.patch(`/api/v1/auth/users/${userId}/status`, { status });
+  },
+
+  removeMember: async (userId: string): Promise<void> => {
+    await apiClient.delete(`/api/v1/auth/users/${userId}`);
+  },
+
   listBranches: async (): Promise<BranchDto[]> => {
     const response = await apiClient.get<BranchDto[]>('/api/v1/auth/branches');
     return response.data;

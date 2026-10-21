@@ -21,13 +21,19 @@ import {
   Receipt,
   FileSpreadsheet,
   Lock,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { SortableHeader } from '../../components/common/SortableHeader';
+import { useTableSort } from '../../hooks/useTableSort';
 import {
   accountingApi,
   JournalEntryResponse,
+  TrialBalanceRow,
+  AccountResponse,
   PostManualEntryPayload,
   CreateAccountPayload,
   CreateJournalPayload,
@@ -452,6 +458,34 @@ export const AccountingView: React.FC = () => {
       return true;
     });
   }, [entries, entriesSearch]);
+
+  const {
+    sortedData: sortedTrialBalanceRows,
+    sortConfig: trialBalanceSortConfig,
+    requestSort: requestTrialBalanceSort,
+  } = useTableSort<TrialBalanceRow>(filteredTrialBalanceRows, { key: 'account_code', direction: 'asc' });
+
+  const [expandedEntryIds, setExpandedEntryIds] = useState<Set<string>>(new Set());
+  const toggleEntryExpand = (id: string) => {
+    setExpandedEntryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const {
+    sortedData: sortedEntries,
+    sortConfig: entriesSortConfig,
+    requestSort: requestEntriesSort,
+  } = useTableSort<JournalEntryResponse>(filteredEntries, { key: 'entry_number', direction: 'desc' });
+
+  const {
+    sortedData: sortedChartAccounts,
+    sortConfig: chartSortConfig,
+    requestSort: requestChartSort,
+  } = useTableSort<AccountResponse>(filteredChartAccounts, { key: 'account_code', direction: 'asc' });
 
   const activeYear = fiscalYears.find((y) => y.status === 'OPEN') || fiscalYears[0];
 
@@ -1163,35 +1197,79 @@ export const AccountingView: React.FC = () => {
 
           {/* Table */}
           <GlassCard className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/75 text-xs font-bold text-slate-600 dark:text-slate-300">
-                    <th className="p-3 w-28">Código</th>
-                    <th className="p-3">Designação da Conta</th>
+            <div className="overflow-x-auto max-h-[650px] overflow-y-auto">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="text-xs uppercase font-semibold">
+                  <tr>
+                    <SortableHeader
+                      columnKey="account_code"
+                      label="Código"
+                      currentSort={trialBalanceSortConfig}
+                      onSort={requestTrialBalanceSort}
+                      className="p-3 w-28"
+                    />
+                    <SortableHeader
+                      columnKey="account_name"
+                      label="Designação da Conta"
+                      currentSort={trialBalanceSortConfig}
+                      onSort={requestTrialBalanceSort}
+                      className="p-3"
+                    />
                     {trialBalanceColumns === 6 && (
                       <>
-                        <th className="p-3 text-right bg-slate-100/50 dark:bg-slate-800/50">
-                          S. Inicial Déb.
-                        </th>
-                        <th className="p-3 text-right bg-slate-100/50 dark:bg-slate-800/50">
-                          S. Inicial Créd.
-                        </th>
+                        <SortableHeader
+                          columnKey="opening_debit"
+                          label="S. Inicial Déb."
+                          align="right"
+                          currentSort={trialBalanceSortConfig}
+                          onSort={requestTrialBalanceSort}
+                          className="p-3"
+                        />
+                        <SortableHeader
+                          columnKey="opening_credit"
+                          label="S. Inicial Créd."
+                          align="right"
+                          currentSort={trialBalanceSortConfig}
+                          onSort={requestTrialBalanceSort}
+                          className="p-3"
+                        />
                       </>
                     )}
-                    <th className="p-3 text-right text-blue-700 dark:text-blue-400">
-                      Mov. Débito
+                    <SortableHeader
+                      columnKey="period_debit"
+                      label="Mov. Débito"
+                      align="right"
+                      currentSort={trialBalanceSortConfig}
+                      onSort={requestTrialBalanceSort}
+                      className="p-3 text-blue-700 dark:text-blue-400"
+                    />
+                    <SortableHeader
+                      columnKey="period_credit"
+                      label="Mov. Crédito"
+                      align="right"
+                      currentSort={trialBalanceSortConfig}
+                      onSort={requestTrialBalanceSort}
+                      className="p-3 text-indigo-700 dark:text-indigo-400"
+                    />
+                    <SortableHeader
+                      columnKey="closing_debit"
+                      label="Saldo Devedor"
+                      align="right"
+                      currentSort={trialBalanceSortConfig}
+                      onSort={requestTrialBalanceSort}
+                      className="p-3 text-emerald-800 dark:text-emerald-300 font-extrabold"
+                    />
+                    <SortableHeader
+                      columnKey="closing_credit"
+                      label="Saldo Credor"
+                      align="right"
+                      currentSort={trialBalanceSortConfig}
+                      onSort={requestTrialBalanceSort}
+                      className="p-3 text-amber-800 dark:text-amber-300 font-extrabold"
+                    />
+                    <th className="p-3 text-center w-20 sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10">
+                      Ações
                     </th>
-                    <th className="p-3 text-right text-indigo-700 dark:text-indigo-400">
-                      Mov. Crédito
-                    </th>
-                    <th className="p-3 text-right bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 font-extrabold">
-                      Saldo Devedor
-                    </th>
-                    <th className="p-3 text-right bg-amber-50/50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 font-extrabold">
-                      Saldo Credor
-                    </th>
-                    <th className="p-3 text-center w-20">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono text-xs">
@@ -1204,7 +1282,7 @@ export const AccountingView: React.FC = () => {
                         A carregar balancete de verificação...
                       </td>
                     </tr>
-                  ) : filteredTrialBalanceRows.length === 0 ? (
+                  ) : sortedTrialBalanceRows.length === 0 ? (
                     <tr>
                       <td
                         colSpan={trialBalanceColumns === 6 ? 9 : 7}
@@ -1214,7 +1292,7 @@ export const AccountingView: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    filteredTrialBalanceRows.map((r) => {
+                    sortedTrialBalanceRows.map((r) => {
                       const isSynthetic = !r.is_analytical;
                       return (
                         <tr
@@ -1401,102 +1479,237 @@ export const AccountingView: React.FC = () => {
           </GlassCard>
 
           <GlassCard className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/75 text-xs font-bold text-slate-600 dark:text-slate-300">
-                    <th className="p-3 w-16">Nº</th>
-                    <th className="p-3 w-28">Data</th>
-                    <th className="p-3 w-20">Período</th>
-                    <th className="p-3">Descrição / Histórico</th>
-                    <th className="p-3 w-32">Origem</th>
-                    <th className="p-3 text-right">Total Débito</th>
-                    <th className="p-3 text-right">Total Crédito</th>
-                    <th className="p-3 text-center w-28">Estado</th>
-                    <th className="p-3 text-center w-24">Ações</th>
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="text-xs uppercase font-semibold">
+                  <tr>
+                    <th className="w-10 px-3 py-3 sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10"></th>
+                    <SortableHeader
+                      columnKey="entry_number"
+                      label="Nº"
+                      currentSort={entriesSortConfig}
+                      onSort={requestEntriesSort}
+                      className="p-3 w-16"
+                    />
+                    <SortableHeader
+                      columnKey="transaction_date"
+                      label="Data"
+                      currentSort={entriesSortConfig}
+                      onSort={requestEntriesSort}
+                      className="p-3 w-28"
+                    />
+                    <SortableHeader
+                      columnKey="period"
+                      label="Período"
+                      currentSort={entriesSortConfig}
+                      onSort={requestEntriesSort}
+                      className="p-3 w-20"
+                    />
+                    <SortableHeader
+                      columnKey="description"
+                      label="Descrição / Histórico"
+                      currentSort={entriesSortConfig}
+                      onSort={requestEntriesSort}
+                      className="p-3"
+                    />
+                    <SortableHeader
+                      columnKey="source_service"
+                      label="Origem"
+                      currentSort={entriesSortConfig}
+                      onSort={requestEntriesSort}
+                      className="p-3 w-32"
+                    />
+                    <SortableHeader
+                      columnKey="total_debit"
+                      label="Total Débito"
+                      align="right"
+                      currentSort={entriesSortConfig}
+                      onSort={requestEntriesSort}
+                      className="p-3"
+                    />
+                    <SortableHeader
+                      columnKey="total_credit"
+                      label="Total Crédito"
+                      align="right"
+                      currentSort={entriesSortConfig}
+                      onSort={requestEntriesSort}
+                      className="p-3"
+                    />
+                    <SortableHeader
+                      columnKey="status"
+                      label="Estado"
+                      align="center"
+                      currentSort={entriesSortConfig}
+                      onSort={requestEntriesSort}
+                      className="p-3 w-28"
+                    />
+                    <th className="p-3 text-center w-24 sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10">
+                      Ações
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
                   {isLoadingEntries ? (
                     <tr>
-                      <td colSpan={9} className="p-8 text-center text-slate-400">
+                      <td colSpan={10} className="p-8 text-center text-slate-400">
                         A carregar lançamentos contabilísticos...
                       </td>
                     </tr>
-                  ) : filteredEntries.length === 0 ? (
+                  ) : sortedEntries.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="p-8 text-center text-slate-400">
+                      <td colSpan={10} className="p-8 text-center text-slate-400">
                         Nenhum lançamento contabilístico registado.
                       </td>
                     </tr>
                   ) : (
-                    filteredEntries.map((e) => (
-                      <tr
-                        key={e.id}
-                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition cursor-pointer"
-                        onClick={() => setSelectedEntry(e)}
-                      >
-                        <td className="p-3 font-mono font-bold text-blue-600 dark:text-blue-400">
-                          #{e.entry_number}
-                        </td>
-                        <td className="p-3 text-slate-600 dark:text-slate-300">
-                          {e.transaction_date}
-                        </td>
-                        <td className="p-3 font-semibold text-slate-500">Mês {e.period}</td>
-                        <td className="p-3 font-medium text-slate-900 dark:text-white">
-                          <div>{e.description}</div>
-                          {e.source_document_ref && (
-                            <span className="text-[11px] text-slate-500 block">
-                              Ref: {e.source_document_ref}
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                            {e.source_service || 'MANUAL'}
-                          </span>
-                        </td>
-                        <td className="p-3 text-right font-mono font-semibold text-slate-900 dark:text-white">
-                          <KzAmount value={parseFloat(String(e.total_debit))} />
-                        </td>
-                        <td className="p-3 text-right font-mono font-semibold text-slate-900 dark:text-white">
-                          <KzAmount value={parseFloat(String(e.total_credit))} />
-                        </td>
-                        <td className="p-3 text-center">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              e.status === 'POSTED'
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
-                                : e.status === 'REVERSED'
-                                ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
-                                : 'bg-slate-100 text-slate-700'
+                    sortedEntries.map((e) => {
+                      const isExpanded = expandedEntryIds.has(e.id);
+                      return (
+                        <React.Fragment key={e.id}>
+                          <tr
+                            className={`transition cursor-pointer ${
+                              isExpanded
+                                ? 'bg-blue-50/40 dark:bg-blue-950/20'
+                                : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
                             }`}
+                            onClick={() => toggleEntryExpand(e.id)}
                           >
-                            {e.status}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center" onClick={(ev) => ev.stopPropagation()}>
-                          {e.status !== 'REVERSED' && (
-                            <button
-                              type="button"
-                              onClick={() => openEntryEdit(e)}
-                              className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-blue-600"
-                              title="Editar Lançamento"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
+                            <td className="px-3 py-3 text-center text-slate-400">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-blue-600 inline" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 inline" />
+                              )}
+                            </td>
+                            <td className="p-3 font-mono font-bold text-blue-600 dark:text-blue-400">
+                              #{e.entry_number}
+                            </td>
+                            <td className="p-3 text-slate-600 dark:text-slate-300">
+                              {e.transaction_date}
+                            </td>
+                            <td className="p-3 font-semibold text-slate-500">Mês {e.period}</td>
+                            <td className="p-3 font-medium text-slate-900 dark:text-white">
+                              <div>{e.description}</div>
+                              {e.source_document_ref && (
+                                <span className="text-[11px] text-slate-500 block">
+                                  Ref: {e.source_document_ref}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                {e.source_service || 'MANUAL'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right font-mono font-semibold text-slate-900 dark:text-white">
+                              <KzAmount value={parseFloat(String(e.total_debit))} />
+                            </td>
+                            <td className="p-3 text-right font-mono font-semibold text-slate-900 dark:text-white">
+                              <KzAmount value={parseFloat(String(e.total_credit))} />
+                            </td>
+                            <td className="p-3 text-center">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  e.status === 'POSTED'
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                    : e.status === 'REVERSED'
+                                    ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+                                    : 'bg-slate-100 text-slate-700'
+                                }`}
+                              >
+                                {e.status}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center" onClick={(ev) => ev.stopPropagation()}>
+                              {e.status !== 'REVERSED' && (
+                                <button
+                                  type="button"
+                                  onClick={() => openEntryEdit(e)}
+                                  className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-blue-600"
+                                  title="Editar Lançamento"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setSelectedEntry(e)}
+                                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-blue-600"
+                                title="Ver Partidas Dobradas"
+                              >
+                                <FileText className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-slate-50/80 dark:bg-slate-900/60 border-y border-blue-100 dark:border-blue-900/30">
+                              <td colSpan={10} className="px-6 py-3">
+                                <div className="space-y-2">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 dark:border-slate-800 pb-1.5">
+                                    <div className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                                      Drilldown — Partidas Dobradas do Lançamento #{e.entry_number}
+                                    </div>
+                                    <div className="flex items-center gap-3 text-[11px] text-slate-500 font-mono">
+                                      <span>ID: {e.id}</span>
+                                      {e.source_document_ref && <span>Ref: {e.source_document_ref}</span>}
+                                      <span>Período: Mês {e.period}</span>
+                                    </div>
+                                  </div>
+                                  {e.lines && e.lines.length > 0 ? (
+                                    <div className="rounded border border-slate-200 dark:border-slate-800 overflow-hidden font-mono text-xs">
+                                      <table className="w-full text-left">
+                                        <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px]">
+                                          <tr>
+                                            <th className="px-3 py-1.5">Conta</th>
+                                            <th className="px-3 py-1.5">Designação</th>
+                                            <th className="px-3 py-1.5">Descrição</th>
+                                            <th className="px-3 py-1.5 text-right text-blue-600">Débito</th>
+                                            <th className="px-3 py-1.5 text-right text-indigo-600">Crédito</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                          {e.lines.map((l: any, idx: number) => (
+                                            <tr key={l.id || idx}>
+                                              <td className="px-3 py-1.5 font-bold text-slate-900 dark:text-white">
+                                                {l.account_code}
+                                              </td>
+                                              <td className="px-3 py-1.5 font-sans text-slate-600 dark:text-slate-300">
+                                                {l.account_name || 'Conta PGC'}
+                                              </td>
+                                              <td className="px-3 py-1.5 font-sans text-slate-500">
+                                                {l.description || e.description}
+                                              </td>
+                                              <td className="px-3 py-1.5 text-right text-blue-600 font-semibold">
+                                                {parseFloat(String(l.debit_amount || 0)) > 0 ? (
+                                                  <KzAmount value={parseFloat(String(l.debit_amount))} />
+                                                ) : (
+                                                  '-'
+                                                )}
+                                              </td>
+                                              <td className="px-3 py-1.5 text-right text-indigo-600 font-semibold">
+                                                {parseFloat(String(l.credit_amount || 0)) > 0 ? (
+                                                  <KzAmount value={parseFloat(String(l.credit_amount))} />
+                                                ) : (
+                                                  '-'
+                                                )}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-slate-400 italic">
+                                      Nenhuma linha de detalhe carregada inline. Clique no ícone de documento para abrir o modal completo.
+                                    </p>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => setSelectedEntry(e)}
-                            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-blue-600"
-                            title="Ver Partidas Dobradas"
-                          >
-                            <FileText className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -2302,17 +2515,56 @@ export const AccountingView: React.FC = () => {
           </GlassCard>
 
           <GlassCard className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/75 text-xs font-bold text-slate-600 dark:text-slate-300">
-                    <th className="p-3 w-32">Código</th>
-                    <th className="p-3">Designação da Conta</th>
-                    <th className="p-3 w-36">Natureza</th>
-                    <th className="p-3 w-36">Tipo</th>
-                    <th className="p-3 w-32">SAF-T Grupo</th>
-                    <th className="p-3 w-32 text-center">Reservada</th>
-                    <th className="p-3 w-24 text-center">Ações</th>
+            <div className="overflow-x-auto max-h-[650px] overflow-y-auto">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="text-xs uppercase font-semibold">
+                  <tr>
+                    <SortableHeader
+                      columnKey="account_code"
+                      label="Código"
+                      currentSort={chartSortConfig}
+                      onSort={requestChartSort}
+                      className="p-3 w-32"
+                    />
+                    <SortableHeader
+                      columnKey="account_name"
+                      label="Designação da Conta"
+                      currentSort={chartSortConfig}
+                      onSort={requestChartSort}
+                      className="p-3"
+                    />
+                    <SortableHeader
+                      columnKey="account_nature"
+                      label="Natureza"
+                      currentSort={chartSortConfig}
+                      onSort={requestChartSort}
+                      className="p-3 w-36"
+                    />
+                    <SortableHeader
+                      columnKey="is_analytical"
+                      label="Tipo"
+                      currentSort={chartSortConfig}
+                      onSort={requestChartSort}
+                      className="p-3 w-36"
+                    />
+                    <SortableHeader
+                      columnKey="saft_grouping_code"
+                      label="SAF-T Grupo"
+                      currentSort={chartSortConfig}
+                      onSort={requestChartSort}
+                      className="p-3 w-32"
+                    />
+                    <SortableHeader
+                      columnKey="is_system_reserved"
+                      label="Reservada"
+                      align="center"
+                      currentSort={chartSortConfig}
+                      onSort={requestChartSort}
+                      className="p-3 w-32"
+                    />
+                    <th className="p-3 w-24 text-center sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10">
+                      Ações
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
@@ -2322,14 +2574,14 @@ export const AccountingView: React.FC = () => {
                         A carregar Plano Geral de Contabilidade...
                       </td>
                     </tr>
-                  ) : filteredChartAccounts.length === 0 ? (
+                  ) : sortedChartAccounts.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="p-8 text-center text-slate-400">
                         Nenhuma conta encontrada.
                       </td>
                     </tr>
                   ) : (
-                    filteredChartAccounts.map((a) => (
+                    sortedChartAccounts.map((a) => (
                       <tr
                         key={a.id}
                         className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition ${

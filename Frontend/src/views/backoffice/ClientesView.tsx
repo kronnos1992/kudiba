@@ -15,9 +15,13 @@ import {
   Award,
   Copy,
   Check,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge, StatusType } from '../../components/common/StatusBadge';
+import { SortableHeader } from '../../components/common/SortableHeader';
+import { useTableSort } from '../../hooks/useTableSort';
 import { backofficeApi } from '../../api/backoffice';
 import {
   BackofficeClient,
@@ -151,6 +155,9 @@ export const ClientesView: React.FC = () => {
         status: statusFilter || undefined,
       }),
   });
+
+  const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+  const { sortedItems: sortedClients, sortConfig: clientsSort, requestSort: requestClientsSort } = useTableSort(clients, 'company_name');
 
   const { data: detail } = useQuery({
     queryKey: ['backoffice_client', detailClient?.id],
@@ -358,36 +365,68 @@ export const ClientesView: React.FC = () => {
           </select>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase font-semibold">
+        <div className="overflow-x-auto max-h-[650px] overflow-y-auto">
+          <table className="w-full text-left text-sm border-separate border-spacing-0">
+            <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs text-xs text-slate-500 uppercase font-semibold">
               <tr>
-                <th className="px-4 py-3">Empresa</th>
-                <th className="px-4 py-3">NIF</th>
-                <th className="px-4 py-3">Módulos</th>
-                <th className="px-4 py-3">Validade</th>
-                <th className="px-4 py-3 text-center">Estado</th>
-                <th className="px-4 py-3 text-center">Ações</th>
+                <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 w-10 text-center">
+                  <span className="sr-only">Drill-down</span>
+                </th>
+                <SortableHeader field="company_name" currentSortField={clientsSort?.key} sortDirection={clientsSort?.direction} onSort={requestClientsSort} className="py-2.5 px-4 border-b border-slate-200 dark:border-slate-800">
+                  Empresa
+                </SortableHeader>
+                <SortableHeader field="nif" currentSortField={clientsSort?.key} sortDirection={clientsSort?.direction} onSort={requestClientsSort} className="py-2.5 px-4 border-b border-slate-200 dark:border-slate-800">
+                  NIF
+                </SortableHeader>
+                <th className="sticky top-0 py-2.5 px-4 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">
+                  Módulos
+                </th>
+                <SortableHeader field="license.valid_until" currentSortField={clientsSort?.key} sortDirection={clientsSort?.direction} onSort={requestClientsSort} className="py-2.5 px-4 border-b border-slate-200 dark:border-slate-800">
+                  Validade
+                </SortableHeader>
+                <SortableHeader field="license_status" currentSortField={clientsSort?.key} sortDirection={clientsSort?.direction} onSort={requestClientsSort} align="center" className="py-2.5 px-4 border-b border-slate-200 dark:border-slate-800">
+                  Estado
+                </SortableHeader>
+                <th className="sticky top-0 py-2.5 px-4 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 text-center">
+                  Ações
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                     A carregar clientes...
                   </td>
                 </tr>
-              ) : clients.length === 0 ? (
+              ) : sortedClients.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                     Nenhum cliente encontrado. Clique em "Novo Cliente" para registar um subscritor.
                   </td>
                 </tr>
               ) : (
-                clients.map((client) => {
+                sortedClients.map((client) => {
                   const meta = statusMeta(client.license_status);
+                  const isExpanded = expandedClientId === client.id;
                   return (
-                    <tr key={client.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                    <React.Fragment key={client.id}>
+                      <tr
+                        className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer ${
+                          isExpanded ? 'bg-blue-50/40 dark:bg-blue-950/20' : ''
+                        }`}
+                        onClick={() => setExpandedClientId(isExpanded ? null : client.id)}
+                      >
+                        <td className="py-3 px-2 text-center" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedClientId(isExpanded ? null : client.id)}
+                            className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-white transition"
+                            title="Expandir detalhes (Drill-down)"
+                          >
+                            {isExpanded ? <ChevronDown className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> : <ChevronRight className="w-4 h-4" />}
+                          </button>
+                        </td>
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500/20 to-blue-500/20 text-emerald-700 dark:text-emerald-300 font-black text-sm flex items-center justify-center shrink-0 border border-emerald-500/30">
@@ -530,9 +569,63 @@ export const ClientesView: React.FC = () => {
                         </div>
                       </td>
                     </tr>
-                  );
-                })
-              )}
+                    {isExpanded && (
+                      <tr className="bg-slate-50/90 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800">
+                        <td colSpan={7} className="p-4">
+                          <div className="bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                              <div>
+                                <span className="text-2xs font-bold uppercase tracking-wider text-slate-400">Drill-down do Subscritor</span>
+                                <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                  {client.company_name}
+                                  <span className="text-xs font-mono font-bold text-emerald-600">NIF: {client.nif}</span>
+                                </h4>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setDetailClient(client)}
+                                  className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 inline-flex items-center gap-1.5"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  Ver Ficha Completa
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setCertificateClient(client)}
+                                  className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white inline-flex items-center gap-1.5 shadow-xs"
+                                >
+                                  <Award className="w-3.5 h-3.5" />
+                                  Emitir Certificado
+                                </button>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                              <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                <span className="text-2xs text-slate-400 font-bold block mb-1">Tenant ID (Kudiba Core)</span>
+                                <span className="font-mono text-2xs text-slate-700 dark:text-slate-300 break-all select-all">{client.tenant_id}</span>
+                              </div>
+                              <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                <span className="text-2xs text-slate-400 font-bold block mb-1">Chave da Licença (RSA Token)</span>
+                                <span className="font-mono text-2xs text-slate-700 dark:text-slate-300 truncate block">
+                                  {client.license?.license_key ? `${client.license.license_key.substring(0, 32)}...` : 'Sem chave emitida'}
+                                </span>
+                              </div>
+                              <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                <span className="text-2xs text-slate-400 font-bold block mb-1">Capacidade de Utilizadores</span>
+                                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                  Até {client.license?.seats || 1} utilizadores em simultâneo
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })
+            )}
             </tbody>
           </table>
         </div>

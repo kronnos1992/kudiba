@@ -55,6 +55,21 @@ pub struct MonthlyPoint {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DailyPoint {
+    pub date: String,
+    pub day: i32,
+    pub month: i32,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub gross_total: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub net_total: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub tax_total: Decimal,
+    pub invoices_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TopCustomer {
     pub customer_name: String,
     pub customer_nif: String,
@@ -92,6 +107,7 @@ pub struct DashboardSummaryResult {
     pub generated_at: DateTime<Utc>,
     pub totals: DashboardTotals,
     pub monthly_trend: Vec<MonthlyPoint>,
+    pub daily_trend: Vec<DailyPoint>,
     pub top_customers: Vec<TopCustomer>,
     pub tax_breakdown: Vec<TaxBucket>,
     pub agt: AgtMonitor,
@@ -166,6 +182,42 @@ impl DashboardSummaryUseCase {
             .into_iter()
             .map(|row| {
                 Ok(MonthlyPoint {
+                    month: get_i32(&row, "month")?,
+                    gross_total: get_decimal(&row, "gross_total")?,
+                    net_total: get_decimal(&row, "net_total")?,
+                    tax_total: get_decimal(&row, "tax_total")?,
+                    invoices_count: get_i64(&row, "invoices_count")?,
+                })
+            })
+            .collect::<Result<Vec<_>, DomainError>>()?;
+
+        let daily_rows = sqlx::query(
+            "SELECT to_char(issued_at, 'YYYY-MM-DD') AS date_str, \
+                    EXTRACT(DAY FROM issued_at)::INT AS day, \
+                    EXTRACT(MONTH FROM issued_at)::INT AS month, \
+                    COALESCE(SUM(CASE WHEN document_type = 'NC' THEN -gross_total ELSE gross_total END), 0) AS gross_total, \
+                    COALESCE(SUM(CASE WHEN document_type = 'NC' THEN -net_total ELSE net_total END), 0) AS net_total, \
+                    COALESCE(SUM(CASE WHEN document_type = 'NC' THEN -tax_total ELSE tax_total END), 0) AS tax_total, \
+                    COUNT(*) FILTER (WHERE document_type != 'NC') AS invoices_count \
+             FROM kudiba_core.invoices \
+             WHERE tenant_id = $1 AND EXTRACT(YEAR FROM issued_at)::INT = $2 \
+             GROUP BY to_char(issued_at, 'YYYY-MM-DD'), EXTRACT(DAY FROM issued_at)::INT, EXTRACT(MONTH FROM issued_at)::INT \
+             ORDER BY date_str ASC",
+        )
+        .bind(query.tenant_id)
+        .bind(query.year)
+        .fetch_all(&mut *session.connection())
+        .await
+        .map_err(|e| DomainError::Persistence(e.to_string()))?;
+
+        let daily_trend = daily_rows
+            .into_iter()
+            .map(|row| {
+                Ok(DailyPoint {
+                    date: row
+                        .try_get("date_str")
+                        .map_err(|e| DomainError::Persistence(e.to_string()))?,
+                    day: get_i32(&row, "day")?,
                     month: get_i32(&row, "month")?,
                     gross_total: get_decimal(&row, "gross_total")?,
                     net_total: get_decimal(&row, "net_total")?,
@@ -271,6 +323,7 @@ impl DashboardSummaryUseCase {
             generated_at: Utc::now(),
             totals,
             monthly_trend,
+            daily_trend,
             top_customers,
             tax_breakdown,
             agt: AgtMonitor {

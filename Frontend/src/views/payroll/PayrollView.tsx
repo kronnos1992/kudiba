@@ -18,16 +18,22 @@ import {
   Clock,
   Printer,
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { SortableHeader } from '../../components/common/SortableHeader';
+import { useTableSort } from '../../hooks/useTableSort';
 import {
   payrollApi,
   PayrollPeriod,
   Payslip,
   Employee,
+  Contract,
+  VacationRequest,
   CreateEmployeePayload,
   CreateContractPayload,
   OpenPeriodPayload,
@@ -183,6 +189,137 @@ export const PayrollView: React.FC = () => {
     queryFn: () => payrollApi.listAbsences(),
     enabled: Boolean(activeTenant?.id),
   });
+
+  const [expandedPeriodIds, setExpandedPeriodIds] = useState<Set<string>>(new Set());
+  const togglePeriodExpand = (id: string) => {
+    setExpandedPeriodIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const filteredPeriods = React.useMemo(() => {
+    return periods.filter(
+      (p) =>
+        p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        `${p.month}/${p.year}`.includes(searchTerm)
+    );
+  }, [periods, searchTerm]);
+
+  const {
+    sortedData: sortedPeriods,
+    sortConfig: periodsSortConfig,
+    requestSort: requestPeriodsSort,
+  } = useTableSort<PayrollPeriod>(filteredPeriods, { key: 'year', direction: 'desc' });
+
+  const [expandedEmployeeIds, setExpandedEmployeeIds] = useState<Set<string>>(new Set());
+  const toggleEmployeeExpand = (id: string) => {
+    setExpandedEmployeeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const filteredEmployees = React.useMemo(() => {
+    return employees.filter(
+      (e) =>
+        e.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        e.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        e.nif.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [employees, searchTerm]);
+
+  const {
+    sortedData: sortedEmployees,
+    sortConfig: employeesSortConfig,
+    requestSort: requestEmployeesSort,
+  } = useTableSort<Employee>(filteredEmployees, { key: 'code', direction: 'asc' });
+
+  const [expandedContractIds, setExpandedContractIds] = useState<Set<string>>(new Set());
+  const toggleContractExpand = (id: string) => {
+    setExpandedContractIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const filteredContracts = React.useMemo(() => {
+    return contracts.filter((c) => {
+      const emp = employees.find((e) => e.id === c.employee_id);
+      return (
+        (emp?.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.contract_type.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    });
+  }, [contracts, employees, searchTerm]);
+
+  const {
+    sortedData: sortedContracts,
+    sortConfig: contractsSortConfig,
+    requestSort: requestContractsSort,
+  } = useTableSort<Contract>(filteredContracts, { key: 'start_date', direction: 'desc' });
+
+  const filteredVacations = React.useMemo(() => {
+    return vacations.filter((v) => {
+      const emp = employees.find((e) => e.id === v.employee_id);
+      return (emp?.full_name || '').toLowerCase().includes(searchTerm.toLowerCase());
+    });
+  }, [vacations, employees, searchTerm]);
+
+  const {
+    sortedData: sortedVacations,
+    sortConfig: vacationsSortConfig,
+    requestSort: requestVacationsSort,
+  } = useTableSort<VacationRequest>(filteredVacations, { key: 'start_date', direction: 'desc' });
+
+  const filteredAbsences = React.useMemo(() => {
+    return absences.filter((a) => {
+      const emp = employees.find((e) => e.id === a.employee_id);
+      return (
+        (emp?.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (a.absence_type || '').toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    });
+  }, [absences, employees, searchTerm]);
+
+  const {
+    sortedData: sortedAbsences,
+    sortConfig: absencesSortConfig,
+    requestSort: requestAbsencesSort,
+  } = useTableSort<any>(filteredAbsences, { key: 'absence_date', direction: 'desc' });
+
+  const [expandedPayslipIds, setExpandedPayslipIds] = useState<Set<string>>(new Set());
+  const togglePayslipExpand = (id: string) => {
+    setExpandedPayslipIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const payslipsWithNames = React.useMemo(() => {
+    if (!selectedPeriodPayslips?.payslips) return [];
+    return selectedPeriodPayslips.payslips.map((ps) => {
+      const emp = employees.find((e) => e.id === ps.employee_id);
+      return {
+        ...ps,
+        employee_name: emp ? emp.full_name : 'Colaborador',
+      };
+    });
+  }, [selectedPeriodPayslips, employees]);
+
+  const {
+    sortedData: sortedPayslips,
+    sortConfig: payslipsSortConfig,
+    requestSort: requestPayslipsSort,
+  } = useTableSort<any>(payslipsWithNames, { key: 'employee_name', direction: 'asc' });
 
   // Mutations
   const openPeriodMutation = useMutation({
@@ -796,128 +933,238 @@ export const PayrollView: React.FC = () => {
       {activeTab === 'periods' && (
         <div className="space-y-4">
           <GlassCard className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase font-semibold">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="text-xs uppercase font-semibold">
                   <tr>
-                    <th className="px-4 py-3">Período / Folha</th>
-                    <th className="px-4 py-3">Ano / Mês</th>
-                    <th className="px-4 py-3 text-right">Total Bruto</th>
-                    <th className="px-4 py-3 text-right">INSS (11%)</th>
-                    <th className="px-4 py-3 text-right">IRT Retido</th>
-                    <th className="px-4 py-3 text-right">Total Líquido</th>
-                    <th className="px-4 py-3 text-center">Estado</th>
-                    <th className="px-4 py-3 text-right">Ações</th>
+                    <th className="w-10 px-3 py-3 sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10"></th>
+                    <SortableHeader
+                      columnKey="title"
+                      label="Período / Folha"
+                      currentSort={periodsSortConfig}
+                      onSort={requestPeriodsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="year"
+                      label="Ano / Mês"
+                      currentSort={periodsSortConfig}
+                      onSort={requestPeriodsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="total_gross"
+                      label="Total Bruto"
+                      align="right"
+                      currentSort={periodsSortConfig}
+                      onSort={requestPeriodsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="total_inss_employee"
+                      label="INSS (11%)"
+                      align="right"
+                      currentSort={periodsSortConfig}
+                      onSort={requestPeriodsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="total_irt"
+                      label="IRT Retido"
+                      align="right"
+                      currentSort={periodsSortConfig}
+                      onSort={requestPeriodsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="total_net"
+                      label="Total Líquido"
+                      align="right"
+                      currentSort={periodsSortConfig}
+                      onSort={requestPeriodsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="status"
+                      label="Estado"
+                      align="center"
+                      currentSort={periodsSortConfig}
+                      onSort={requestPeriodsSort}
+                      className="px-4 py-3"
+                    />
+                    <th className="px-4 py-3 text-right sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10">
+                      Ações
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {periodsLoading ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                         A carregar períodos salariais...
                       </td>
                     </tr>
-                  ) : periods.length === 0 ? (
+                  ) : sortedPeriods.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                         Nenhum período salarial aberto. Clique em "Abrir Período Salarial" para iniciar.
                       </td>
                     </tr>
                   ) : (
-                    periods.map((p) => {
+                    sortedPeriods.map((p) => {
                       const totalInss =
                         Number(p.total_inss_employee) + Number(p.total_inss_employer);
+                      const isExpanded = expandedPeriodIds.has(p.id);
                       return (
-                        <tr key={p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                          <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
-                            {p.title}
-                          </td>
-                          <td className="px-4 py-3 text-xs font-mono text-slate-500">
-                            {p.month.toString().padStart(2, '0')}/{p.year}
-                          </td>
-                          <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
-                            <KzAmount value={Number(p.total_gross)} />
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">
-                            <KzAmount value={totalInss} />
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold text-purple-600">
-                            <KzAmount value={Number(p.total_irt)} />
-                          </td>
-                          <td className="px-4 py-3 text-right font-extrabold text-emerald-600">
-                            <KzAmount value={Number(p.total_net)} />
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
-                                p.status === 'CLOSED'
-                                  ? 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300'
+                        <React.Fragment key={p.id}>
+                          <tr
+                            onClick={() => togglePeriodExpand(p.id)}
+                            className={`cursor-pointer transition-colors ${
+                              isExpanded
+                                ? 'bg-emerald-50/40 dark:bg-emerald-950/20'
+                                : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/40'
+                            }`}
+                          >
+                            <td className="px-3 py-3 text-center text-slate-400">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-emerald-600 inline" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 inline" />
+                              )}
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
+                              {p.title}
+                            </td>
+                            <td className="px-4 py-3 text-xs font-mono text-slate-500">
+                              {p.month.toString().padStart(2, '0')}/{p.year}
+                            </td>
+                            <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
+                              <KzAmount value={Number(p.total_gross)} />
+                            </td>
+                            <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">
+                              <KzAmount value={totalInss} />
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold text-purple-600">
+                              <KzAmount value={Number(p.total_irt)} />
+                            </td>
+                            <td className="px-4 py-3 text-right font-extrabold text-emerald-600">
+                              <KzAmount value={Number(p.total_net)} />
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
+                                  p.status === 'CLOSED'
+                                    ? 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300'
+                                    : p.status === 'CALCULATED'
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                }`}
+                              >
+                                {p.status === 'CLOSED'
+                                  ? 'Encerrado'
                                   : p.status === 'CALCULATED'
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                              }`}
-                            >
-                              {p.status === 'CLOSED'
-                                ? 'Encerrado'
-                                : p.status === 'CALCULATED'
-                                ? 'Calculado'
-                                : 'Em Aberto'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {p.status !== 'CLOSED' && (
+                                  ? 'Calculado'
+                                  : 'Em Aberto'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1.5">
+                                {p.status !== 'CLOSED' && (
+                                  <button
+                                    onClick={() => calculatePeriodMutation.mutate(p.id)}
+                                    title="Calcular Folha"
+                                    className="p-1.5 text-slate-600 hover:text-emerald-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                                  >
+                                    <Calculator className="w-4 h-4" />
+                                  </button>
+                                )}
+
                                 <button
-                                  onClick={() => calculatePeriodMutation.mutate(p.id)}
-                                  title="Calcular Folha"
-                                  className="p-1.5 text-slate-600 hover:text-emerald-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                                  onClick={async () => {
+                                    const payslips = await payrollApi.listPeriodPayslips(p.id);
+                                    setSelectedPeriodPayslips({ period: p, payslips });
+                                  }}
+                                  title="Ver Recibos & Apuramento Fiscal"
+                                  className="p-1.5 text-slate-600 hover:text-blue-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                                 >
-                                  <Calculator className="w-4 h-4" />
+                                  <FileText className="w-4 h-4" />
                                 </button>
-                              )}
 
-                              <button
-                                onClick={async () => {
-                                  const payslips = await payrollApi.listPeriodPayslips(p.id);
-                                  setSelectedPeriodPayslips({ period: p, payslips });
-                                }}
-                                title="Ver Recibos & Apuramento Fiscal"
-                                className="p-1.5 text-slate-600 hover:text-blue-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                              >
-                                <FileText className="w-4 h-4" />
-                              </button>
-
-                              <button
-                                onClick={async () => {
-                                  const payslips = await payrollApi.listPeriodPayslips(p.id);
-                                  handlePrintPayrollSheet(p, payslips);
-                                }}
-                                title="Imprimir Mapa Geral de Salários"
-                                className="p-1.5 text-slate-600 hover:text-amber-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                              >
-                                <Printer className="w-4 h-4" />
-                              </button>
-
-                              <button
-                                onClick={() => handleExportPs2(p.id)}
-                                title="Exportar Remessa Bancária PS2"
-                                className="p-1.5 text-slate-600 hover:text-purple-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                              >
-                                <Download className="w-4 h-4" />
-                              </button>
-
-                              {p.status === 'CALCULATED' && (
                                 <button
-                                  onClick={() => setConfirmClosePeriod(p)}
-                                  title="Fechar Folha Salarial"
-                                  className="p-1.5 text-slate-600 hover:text-rose-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                  onClick={async () => {
+                                    const payslips = await payrollApi.listPeriodPayslips(p.id);
+                                    handlePrintPayrollSheet(p, payslips);
+                                  }}
+                                  title="Imprimir Mapa Geral de Salários"
+                                  className="p-1.5 text-slate-600 hover:text-amber-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                                 >
-                                  <Lock className="w-4 h-4" />
+                                  <Printer className="w-4 h-4" />
                                 </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
+
+                                <button
+                                  onClick={() => handleExportPs2(p.id)}
+                                  title="Exportar Remessa Bancária PS2"
+                                  className="p-1.5 text-slate-600 hover:text-purple-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+
+                                {p.status === 'CALCULATED' && (
+                                  <button
+                                    onClick={() => setConfirmClosePeriod(p)}
+                                    title="Fechar Folha Salarial"
+                                    className="p-1.5 text-slate-600 hover:text-rose-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                  >
+                                    <Lock className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-slate-50/80 dark:bg-slate-900/60 border-y border-emerald-200 dark:border-emerald-900/30">
+                              <td colSpan={9} className="px-6 py-4">
+                                <div className="space-y-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 dark:border-slate-800 pb-2">
+                                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                                      Drilldown — Folha de Pagamento Oficial
+                                    </div>
+                                    <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
+                                      <span>Vigência: {p.start_date} até {p.end_date}</span>
+                                      <span>ID: {p.id}</span>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                                    <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[11px]">INSS Trabalhador (3%):</span>
+                                      <span className="font-semibold text-slate-900 dark:text-white">
+                                        <KzAmount value={Number(p.total_inss_employee)} />
+                                      </span>
+                                    </div>
+                                    <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[11px]">INSS Patronal (8%):</span>
+                                      <span className="font-semibold text-slate-900 dark:text-white">
+                                        <KzAmount value={Number(p.total_inss_employer)} />
+                                      </span>
+                                    </div>
+                                    <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[11px]">Retenção IRT (Lei 28/20):</span>
+                                      <span className="font-bold text-purple-600">
+                                        <KzAmount value={Number(p.total_irt)} />
+                                      </span>
+                                    </div>
+                                    <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[11px]">Custo Total Empresa:</span>
+                                      <span className="font-bold text-emerald-600">
+                                        <KzAmount value={Number(p.total_gross) + Number(p.total_inss_employer)} />
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })
                   )}
@@ -943,88 +1190,183 @@ export const PayrollView: React.FC = () => {
           </div>
 
           <GlassCard className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase font-semibold">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="text-xs uppercase font-semibold">
                   <tr>
-                    <th className="px-4 py-3">Código</th>
-                    <th className="px-4 py-3">Nome Completo</th>
-                    <th className="px-4 py-3">NIF / BI</th>
-                    <th className="px-4 py-3">N.º INSS</th>
-                    <th className="px-4 py-3">IBAN Angolano</th>
-                    <th className="px-4 py-3">Admissão</th>
-                    <th className="px-4 py-3 text-center">Estado</th>
-                    <th className="px-4 py-3 text-center">Ações</th>
+                    <th className="w-10 px-3 py-3 sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10"></th>
+                    <SortableHeader
+                      columnKey="code"
+                      label="Código"
+                      currentSort={employeesSortConfig}
+                      onSort={requestEmployeesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="full_name"
+                      label="Nome Completo"
+                      currentSort={employeesSortConfig}
+                      onSort={requestEmployeesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="nif"
+                      label="NIF / BI"
+                      currentSort={employeesSortConfig}
+                      onSort={requestEmployeesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="inss_number"
+                      label="N.º INSS"
+                      currentSort={employeesSortConfig}
+                      onSort={requestEmployeesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="iban"
+                      label="IBAN Angolano"
+                      currentSort={employeesSortConfig}
+                      onSort={requestEmployeesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="hire_date"
+                      label="Admissão"
+                      currentSort={employeesSortConfig}
+                      onSort={requestEmployeesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="status"
+                      label="Estado"
+                      align="center"
+                      currentSort={employeesSortConfig}
+                      onSort={requestEmployeesSort}
+                      className="px-4 py-3"
+                    />
+                    <th className="px-4 py-3 text-center sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10">
+                      Ações
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {employeesLoading ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                         A carregar colaboradores...
                       </td>
                     </tr>
-                  ) : employees.length === 0 ? (
+                  ) : sortedEmployees.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                         Nenhum colaborador cadastrado. Clique em "Novo Colaborador" para registar.
                       </td>
                     </tr>
                   ) : (
-                    employees
-                      .filter(
-                        (e) =>
-                          e.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          e.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          e.nif.toLowerCase().includes(searchTerm.toLowerCase())
-                      )
-                      .map((e) => (
-                        <tr key={e.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                          <td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-white">
-                            {e.code}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="font-semibold text-slate-900 dark:text-white block">
-                              {e.full_name}
-                            </span>
-                            <span className="text-xs text-slate-400 block">{e.email || '—'}</span>
-                          </td>
-                          <td className="px-4 py-3 font-mono text-xs text-slate-500">
-                            <div>BI: {e.identity_card_number}</div>
-                            <div>NIF: {e.nif}</div>
-                          </td>
-                          <td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">
-                            {e.inss_number || '—'}
-                          </td>
-                          <td className="px-4 py-3 font-mono text-xs text-emerald-600 font-semibold">
-                            {e.iban}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {new Date(e.hire_date).toLocaleDateString('pt-AO')}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <StatusBadge
-                              status={e.status === 'ACTIVE' ? 'ok' : 'acompanhar'}
-                              label={e.status === 'ACTIVE' ? 'Ativo' : e.status}
-                            />
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            {e.status === 'ACTIVE' && (
-                              <button
-                                onClick={() => {
-                                  setTerminateModalEmployee(e);
-                                  setTerminationDate(new Date().toISOString().slice(0, 10));
-                                  setTerminationReason('Rescisão por mútuo acordo');
-                                }}
-                                title="Terminar Contrato / Desligamento"
-                                className="p-1.5 text-slate-500 hover:text-rose-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                              >
-                                <UserX className="w-4 h-4" />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))
+                    sortedEmployees.map((e) => {
+                      const isExpanded = expandedEmployeeIds.has(e.id);
+                      return (
+                        <React.Fragment key={e.id}>
+                          <tr
+                            onClick={() => toggleEmployeeExpand(e.id)}
+                            className={`cursor-pointer transition-colors ${
+                              isExpanded
+                                ? 'bg-emerald-50/40 dark:bg-emerald-950/20'
+                                : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/40'
+                            }`}
+                          >
+                            <td className="px-3 py-3 text-center text-slate-400">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-emerald-600 inline" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 inline" />
+                              )}
+                            </td>
+                            <td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-white">
+                              {e.code}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="font-semibold text-slate-900 dark:text-white block">
+                                {e.full_name}
+                              </span>
+                              <span className="text-xs text-slate-400 block">{e.email || '—'}</span>
+                            </td>
+                            <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                              <div>BI: {e.identity_card_number}</div>
+                              <div>NIF: {e.nif}</div>
+                            </td>
+                            <td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">
+                              {e.inss_number || '—'}
+                            </td>
+                            <td className="px-4 py-3 font-mono text-xs text-emerald-600 font-semibold">
+                              {e.iban}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-500">
+                              {new Date(e.hire_date).toLocaleDateString('pt-AO')}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <StatusBadge
+                                status={e.status === 'ACTIVE' ? 'ok' : 'acompanhar'}
+                                label={e.status === 'ACTIVE' ? 'Ativo' : e.status}
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              {e.status === 'ACTIVE' && (
+                                <button
+                                  onClick={() => {
+                                    setTerminateModalEmployee(e);
+                                    setTerminationDate(new Date().toISOString().slice(0, 10));
+                                    setTerminationReason('Rescisão por mútuo acordo');
+                                  }}
+                                  title="Terminar Contrato / Desligamento"
+                                  className="p-1.5 text-slate-500 hover:text-rose-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                  <UserX className="w-4 h-4" />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-slate-50/80 dark:bg-slate-900/60 border-y border-emerald-100 dark:border-emerald-900/30">
+                              <td colSpan={9} className="px-6 py-4">
+                                <div className="space-y-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 dark:border-slate-800 pb-2">
+                                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                                      Drilldown — Ficha Cadastral do Colaborador
+                                    </div>
+                                    <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
+                                      <span>ID: {e.id}</span>
+                                      <span>Banco: {e.bank_code || 'BAI'}</span>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                                    <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[11px]">Telefone:</span>
+                                      <span className="font-semibold text-slate-900 dark:text-white">{e.phone || '—'}</span>
+                                    </div>
+                                    <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[11px]">Género / Estado Civil:</span>
+                                      <span className="font-semibold text-slate-900 dark:text-white">{e.gender} / {e.marital_status}</span>
+                                    </div>
+                                    <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[11px]">Nascimento / Dependentes:</span>
+                                      <span className="font-semibold text-slate-900 dark:text-white">
+                                        {e.birth_date ? new Date(e.birth_date).toLocaleDateString('pt-AO') : '—'} ({e.dependents_count || 0} dep.)
+                                      </span>
+                                    </div>
+                                    <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[11px]">Morada Residencial:</span>
+                                      <span className="font-semibold text-slate-900 dark:text-white truncate block">{e.address || 'Luanda, Angola'}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1037,70 +1379,187 @@ export const PayrollView: React.FC = () => {
       {activeTab === 'contracts' && (
         <div className="space-y-4">
           <GlassCard className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase font-semibold">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="text-xs uppercase font-semibold">
                   <tr>
-                    <th className="px-4 py-3">Colaborador</th>
-                    <th className="px-4 py-3">Tipo de Contrato</th>
-                    <th className="px-4 py-3">Data Início</th>
-                    <th className="px-4 py-3 text-right">Salário Base</th>
-                    <th className="px-4 py-3">Subsídios / Componentes</th>
-                    <th className="px-4 py-3 text-center">Estado</th>
+                    <th className="w-10 px-3 py-3 sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10"></th>
+                    <SortableHeader
+                      columnKey="employee_id"
+                      label="Colaborador"
+                      currentSort={contractsSortConfig}
+                      onSort={requestContractsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="contract_type"
+                      label="Tipo de Contrato"
+                      currentSort={contractsSortConfig}
+                      onSort={requestContractsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="start_date"
+                      label="Data Início"
+                      currentSort={contractsSortConfig}
+                      onSort={requestContractsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="base_salary"
+                      label="Salário Base"
+                      align="right"
+                      currentSort={contractsSortConfig}
+                      onSort={requestContractsSort}
+                      className="px-4 py-3"
+                    />
+                    <th className="px-4 py-3 sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10">
+                      Subsídios / Componentes
+                    </th>
+                    <SortableHeader
+                      columnKey="status"
+                      label="Estado"
+                      align="center"
+                      currentSort={contractsSortConfig}
+                      onSort={requestContractsSort}
+                      className="px-4 py-3"
+                    />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {contractsLoading ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                         A carregar contratos...
                       </td>
                     </tr>
-                  ) : contracts.length === 0 ? (
+                  ) : sortedContracts.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                         Nenhum contrato registado.
                       </td>
                     </tr>
                   ) : (
-                    contracts.map((c) => {
+                    sortedContracts.map((c) => {
                       const emp = employees.find((e) => e.id === c.employee_id);
+                      const isExpanded = expandedContractIds.has(c.id);
                       return (
-                        <tr key={c.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                          <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
-                            {emp ? `${emp.full_name} (${emp.code})` : c.employee_id.slice(0, 8)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300">
-                              {c.contract_type}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {new Date(c.start_date).toLocaleDateString('pt-AO')}
-                          </td>
-                          <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
-                            <KzAmount value={Number(c.base_salary)} />
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {c.components && c.components.length > 0 ? (
-                              <div className="flex flex-wrap gap-1">
-                                {c.components.map((comp) => (
-                                  <span
-                                    key={comp.id}
-                                    className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-medium text-[11px]"
-                                  >
-                                    {comp.name}: {Number(comp.amount).toLocaleString('pt-AO')} Kz
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              'Sem subsídios'
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <StatusBadge status="ok" label="Ativo" />
-                          </td>
-                        </tr>
+                        <React.Fragment key={c.id}>
+                          <tr
+                            onClick={() => toggleContractExpand(c.id)}
+                            className={`cursor-pointer transition-colors ${
+                              isExpanded
+                                ? 'bg-emerald-50/40 dark:bg-emerald-950/20'
+                                : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/40'
+                            }`}
+                          >
+                            <td className="px-3 py-3 text-center text-slate-400">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-emerald-600 inline" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 inline" />
+                              )}
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
+                              {emp ? `${emp.full_name} (${emp.code})` : c.employee_id.slice(0, 8)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300">
+                                {c.contract_type}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-500">
+                              {new Date(c.start_date).toLocaleDateString('pt-AO')}
+                            </td>
+                            <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
+                              <KzAmount value={Number(c.base_salary)} />
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-500">
+                              {c.components && c.components.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {c.components.map((comp) => (
+                                    <span
+                                      key={comp.id}
+                                      className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-medium text-[11px]"
+                                    >
+                                      {comp.name}: {Number(comp.amount).toLocaleString('pt-AO')} Kz
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                'Sem subsídios'
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <StatusBadge status="ok" label={c.status || 'Ativo'} />
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-slate-50/80 dark:bg-slate-900/60 border-y border-emerald-100 dark:border-emerald-900/30">
+                              <td colSpan={7} className="px-6 py-4">
+                                <div className="space-y-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 dark:border-slate-800 pb-2">
+                                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                                      Drilldown — Pacote Remuneratório do Contrato
+                                    </div>
+                                    <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
+                                      <span>ID: {c.id}</span>
+                                      {c.end_date && <span>Término: {c.end_date}</span>}
+                                    </div>
+                                  </div>
+                                  {c.components && c.components.length > 0 ? (
+                                    <div className="rounded border border-slate-200 dark:border-slate-800 overflow-hidden">
+                                      <table className="w-full text-xs">
+                                        <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 font-semibold">
+                                          <tr>
+                                            <th className="px-3 py-1.5 text-left">Componente / Subsídio</th>
+                                            <th className="px-3 py-1.5 text-left">Tipo</th>
+                                            <th className="px-3 py-1.5 text-right">Valor Mensal</th>
+                                            <th className="px-3 py-1.5 text-center">Tributável IRT</th>
+                                            <th className="px-3 py-1.5 text-center">Incidência INSS</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                          {c.components.map((comp) => (
+                                            <tr key={comp.id}>
+                                              <td className="px-3 py-1.5 font-medium text-slate-900 dark:text-white">
+                                                {comp.name}
+                                              </td>
+                                              <td className="px-3 py-1.5 text-slate-500 font-mono">
+                                                {comp.component_type}
+                                              </td>
+                                              <td className="px-3 py-1.5 text-right font-bold text-slate-900 dark:text-white">
+                                                <KzAmount value={Number(comp.amount)} />
+                                              </td>
+                                              <td className="px-3 py-1.5 text-center">
+                                                {comp.is_taxable_irt ? (
+                                                  <span className="text-rose-600 font-semibold">Sim</span>
+                                                ) : (
+                                                  <span className="text-emerald-600 font-semibold">Isento</span>
+                                                )}
+                                              </td>
+                                              <td className="px-3 py-1.5 text-center">
+                                                {comp.is_taxable_inss ? (
+                                                  <span className="text-rose-600 font-semibold">Sim</span>
+                                                ) : (
+                                                  <span className="text-emerald-600 font-semibold">Isento</span>
+                                                )}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-slate-400 italic">
+                                      Nenhum subsídio ou componente adicional associado. Apenas Salário Base contratual.
+                                    </p>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })
                   )}
@@ -1173,28 +1632,68 @@ export const PayrollView: React.FC = () => {
       {activeTab === 'vacations' && (
         <div className="space-y-4">
           <GlassCard className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase font-semibold">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="text-xs uppercase font-semibold">
                   <tr>
-                    <th className="px-4 py-3">Colaborador</th>
-                    <th className="px-4 py-3">Início</th>
-                    <th className="px-4 py-3">Fim</th>
-                    <th className="px-4 py-3 text-right">Dias Úteis</th>
-                    <th className="px-4 py-3">Observações</th>
-                    <th className="px-4 py-3 text-center">Estado</th>
-                    <th className="px-4 py-3 text-center">Ações</th>
+                    <SortableHeader
+                      columnKey="employee_id"
+                      label="Colaborador"
+                      currentSort={vacationsSortConfig}
+                      onSort={requestVacationsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="start_date"
+                      label="Início"
+                      currentSort={vacationsSortConfig}
+                      onSort={requestVacationsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="end_date"
+                      label="Fim"
+                      currentSort={vacationsSortConfig}
+                      onSort={requestVacationsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="days"
+                      label="Dias Úteis"
+                      align="right"
+                      currentSort={vacationsSortConfig}
+                      onSort={requestVacationsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="notes"
+                      label="Observações"
+                      currentSort={vacationsSortConfig}
+                      onSort={requestVacationsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="status"
+                      label="Estado"
+                      align="center"
+                      currentSort={vacationsSortConfig}
+                      onSort={requestVacationsSort}
+                      className="px-4 py-3"
+                    />
+                    <th className="px-4 py-3 text-center sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10">
+                      Ações
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {vacations.length === 0 ? (
+                  {sortedVacations.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                         Nenhum pedido de férias registado.
                       </td>
                     </tr>
                   ) : (
-                    vacations.map((v) => {
+                    sortedVacations.map((v) => {
                       const emp = employees.find((e) => e.id === v.employee_id);
                       return (
                         <tr key={v.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
@@ -1256,15 +1755,46 @@ export const PayrollView: React.FC = () => {
       {activeTab === 'absences' && (
         <div className="space-y-4">
           <GlassCard className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase font-semibold">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="text-xs uppercase font-semibold">
                   <tr>
-                    <th className="px-4 py-3">Data</th>
-                    <th className="px-4 py-3">Colaborador</th>
-                    <th className="px-4 py-3">Tipo de Falta</th>
-                    <th className="px-4 py-3 text-center">Remunerada?</th>
-                    <th className="px-4 py-3">Observações / Justificativo</th>
+                    <SortableHeader
+                      columnKey="absence_date"
+                      label="Data"
+                      currentSort={absencesSortConfig}
+                      onSort={requestAbsencesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="employee_id"
+                      label="Colaborador"
+                      currentSort={absencesSortConfig}
+                      onSort={requestAbsencesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="absence_type"
+                      label="Tipo de Falta"
+                      currentSort={absencesSortConfig}
+                      onSort={requestAbsencesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="is_paid"
+                      label="Remunerada?"
+                      align="center"
+                      currentSort={absencesSortConfig}
+                      onSort={requestAbsencesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="notes"
+                      label="Observações / Justificativo"
+                      currentSort={absencesSortConfig}
+                      onSort={requestAbsencesSort}
+                      className="px-4 py-3"
+                    />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1274,14 +1804,14 @@ export const PayrollView: React.FC = () => {
                         A carregar registos de assiduidade...
                       </td>
                     </tr>
-                  ) : absences.length === 0 ? (
+                  ) : sortedAbsences.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                         Nenhuma falta registada. Clique em "Registar Falta / Ausência" para lançar.
                       </td>
                     </tr>
                   ) : (
-                    absences.map((ab: any) => {
+                    sortedAbsences.map((ab: any) => {
                       const emp = employees.find((e) => e.id === ab.employee_id);
                       return (
                         <tr key={ab.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
@@ -1526,57 +2056,171 @@ export const PayrollView: React.FC = () => {
             </div>
 
             {payslipsSubTab === 'payslips' ? (
-              <div className="overflow-x-auto max-h-[60vh]">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase sticky top-0">
+              <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+                <table className="w-full text-left text-xs border-separate border-spacing-0">
+                  <thead className="uppercase font-semibold">
                     <tr>
-                      <th className="px-3 py-2">Colaborador</th>
-                      <th className="px-3 py-2 text-right">Vencimento Base</th>
-                      <th className="px-3 py-2 text-right">Subsídios</th>
-                      <th className="px-3 py-2 text-right">Total Bruto</th>
-                      <th className="px-3 py-2 text-right">INSS (3%)</th>
-                      <th className="px-3 py-2 text-right">IRT Retido</th>
-                      <th className="px-3 py-2 text-right font-bold text-emerald-600">Salário Líquido</th>
-                      <th className="px-3 py-2 text-center">PDF</th>
+                      <th className="w-8 px-2 py-2 sticky top-0 bg-slate-50/95 dark:bg-slate-800/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10"></th>
+                      <SortableHeader
+                        columnKey="employee_name"
+                        label="Colaborador"
+                        currentSort={payslipsSortConfig}
+                        onSort={requestPayslipsSort}
+                        className="px-3 py-2 text-xs"
+                      />
+                      <SortableHeader
+                        columnKey="base_salary"
+                        label="Vencimento Base"
+                        align="right"
+                        currentSort={payslipsSortConfig}
+                        onSort={requestPayslipsSort}
+                        className="px-3 py-2 text-xs"
+                      />
+                      <SortableHeader
+                        columnKey="total_allowances"
+                        label="Subsídios"
+                        align="right"
+                        currentSort={payslipsSortConfig}
+                        onSort={requestPayslipsSort}
+                        className="px-3 py-2 text-xs"
+                      />
+                      <SortableHeader
+                        columnKey="total_gross"
+                        label="Total Bruto"
+                        align="right"
+                        currentSort={payslipsSortConfig}
+                        onSort={requestPayslipsSort}
+                        className="px-3 py-2 text-xs"
+                      />
+                      <SortableHeader
+                        columnKey="inss_employee"
+                        label="INSS (3%)"
+                        align="right"
+                        currentSort={payslipsSortConfig}
+                        onSort={requestPayslipsSort}
+                        className="px-3 py-2 text-xs"
+                      />
+                      <SortableHeader
+                        columnKey="irt"
+                        label="IRT Retido"
+                        align="right"
+                        currentSort={payslipsSortConfig}
+                        onSort={requestPayslipsSort}
+                        className="px-3 py-2 text-xs"
+                      />
+                      <SortableHeader
+                        columnKey="net_salary"
+                        label="Salário Líquido"
+                        align="right"
+                        currentSort={payslipsSortConfig}
+                        onSort={requestPayslipsSort}
+                        className="px-3 py-2 text-xs font-bold text-emerald-600"
+                      />
+                      <th className="px-3 py-2 text-center sticky top-0 bg-slate-50/95 dark:bg-slate-800/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10">
+                        PDF
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {selectedPeriodPayslips.payslips.map((ps) => {
+                    {sortedPayslips.map((ps: any) => {
                       const emp = employees.find((e) => e.id === ps.employee_id);
-                      const empName = emp ? emp.full_name : 'Colaborador';
+                      const empName = ps.employee_name || 'Colaborador';
+                      const isExpanded = expandedPayslipIds.has(ps.id);
                       return (
-                        <tr key={ps.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                          <td className="px-3 py-2 font-semibold text-slate-900 dark:text-white">
-                            {empName}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <KzAmount value={Number(ps.base_salary)} />
-                          </td>
-                          <td className="px-3 py-2 text-right text-slate-500">
-                            <KzAmount value={Number(ps.total_allowances)} />
-                          </td>
-                          <td className="px-3 py-2 text-right font-bold text-slate-900 dark:text-white">
-                            <KzAmount value={Number(ps.total_gross)} />
-                          </td>
-                          <td className="px-3 py-2 text-right text-rose-600">
-                            -<KzAmount value={Number(ps.inss_employee)} />
-                          </td>
-                          <td className="px-3 py-2 text-right text-purple-600 font-semibold">
-                            -<KzAmount value={Number(ps.irt)} />
-                          </td>
-                          <td className="px-3 py-2 text-right font-extrabold text-emerald-600 text-sm">
-                            <KzAmount value={Number(ps.net_salary)} />
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            <button
-                              onClick={() => handleDownloadPayslipPdf(ps.id, empName)}
-                              className="p-1 text-slate-500 hover:text-emerald-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                              title="Descarregar Recibo em PDF"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
+                        <React.Fragment key={ps.id}>
+                          <tr
+                            onClick={() => togglePayslipExpand(ps.id)}
+                            className={`cursor-pointer transition-colors ${
+                              isExpanded
+                                ? 'bg-emerald-50/40 dark:bg-emerald-950/20'
+                                : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/40'
+                            }`}
+                          >
+                            <td className="px-2 py-2 text-center text-slate-400">
+                              {isExpanded ? (
+                                <ChevronDown className="w-3.5 h-3.5 text-emerald-600 inline" />
+                              ) : (
+                                <ChevronRight className="w-3.5 h-3.5 inline" />
+                              )}
+                            </td>
+                            <td className="px-3 py-2 font-semibold text-slate-900 dark:text-white">
+                              {empName}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <KzAmount value={Number(ps.base_salary)} />
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-500">
+                              <KzAmount value={Number(ps.total_allowances)} />
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold text-slate-900 dark:text-white">
+                              <KzAmount value={Number(ps.total_gross)} />
+                            </td>
+                            <td className="px-3 py-2 text-right text-rose-600">
+                              -<KzAmount value={Number(ps.inss_employee)} />
+                            </td>
+                            <td className="px-3 py-2 text-right text-purple-600 font-semibold">
+                              -<KzAmount value={Number(ps.irt)} />
+                            </td>
+                            <td className="px-3 py-2 text-right font-extrabold text-emerald-600 text-sm">
+                              <KzAmount value={Number(ps.net_salary)} />
+                            </td>
+                            <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                onClick={() => handleDownloadPayslipPdf(ps.id, empName)}
+                                className="p-1 text-slate-500 hover:text-emerald-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                title="Descarregar Recibo em PDF"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-slate-50/80 dark:bg-slate-900/60 border-y border-emerald-100 dark:border-emerald-900/30">
+                              <td colSpan={9} className="px-5 py-3">
+                                <div className="space-y-2">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 dark:border-slate-800 pb-1.5">
+                                    <div className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                                      Drilldown — Apuramento Detalhado do Recibo
+                                    </div>
+                                    <div className="flex items-center gap-3 text-[11px] text-slate-500 font-mono">
+                                      <span>NIF: {emp?.nif || '—'}</span>
+                                      <span>INSS: {emp?.inss_number || '—'}</span>
+                                      <span>IBAN: {emp?.iban || '—'}</span>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                    <div className="p-2 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[10px]">INSS Patronal (8%):</span>
+                                      <span className="font-semibold text-slate-900 dark:text-white">
+                                        <KzAmount value={Number(ps.inss_employer || 0)} />
+                                      </span>
+                                    </div>
+                                    <div className="p-2 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[10px]">Total Retenções:</span>
+                                      <span className="font-bold text-rose-600">
+                                        <KzAmount value={Number(ps.inss_employee) + Number(ps.irt)} />
+                                      </span>
+                                    </div>
+                                    <div className="p-2 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[10px]">Custo Global Colaborador:</span>
+                                      <span className="font-bold text-emerald-600">
+                                        <KzAmount value={Number(ps.total_gross) + Number(ps.inss_employer || 0)} />
+                                      </span>
+                                    </div>
+                                    <div className="p-2 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[10px]">Taxa Efetiva IRT:</span>
+                                      <span className="font-semibold text-purple-600">
+                                        {Number(ps.total_gross) > 0
+                                          ? `${((Number(ps.irt) / Number(ps.total_gross)) * 100).toFixed(1)}%`
+                                          : '0%'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })}
                   </tbody>

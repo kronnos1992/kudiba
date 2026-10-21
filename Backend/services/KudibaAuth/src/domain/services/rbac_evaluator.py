@@ -10,6 +10,11 @@ class RbacEvaluator:
 
     @staticmethod
     def has_permission(user_roles: List[str], user_permissions: List[str], required_permission: str) -> bool:
+        """Avalia se um conjunto de papéis e permissões satisfaz a permissão exigida.
+
+        Os perfis de administrador (ADMIN, SYSADMIN, SUPER_ADMIN) mantêm acesso total
+        garantido, mesmo que as suas permissões sejam personalizadas num âmbito.
+        """
         roles_set: Set[str] = {r.upper() for r in user_roles}
         if roles_set & ADMINISTRATOR_ROLE_IDS:
             return True

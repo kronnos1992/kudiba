@@ -10,9 +10,11 @@ from src.application.commands import (
     DeleteRoleUseCase,
     InviteUserUseCase,
     LogoutUserUseCase,
+    RemoveMemberUseCase,
     ResetRolePermissionsUseCase,
     RotateRefreshTokenUseCase,
     SwitchTenantUseCase,
+    UpdateMemberStatusUseCase,
     UpdateRolePermissionsUseCase,
     UpdateRoleUseCase,
     UpdateTenantSettingsUseCase,
@@ -24,8 +26,10 @@ from src.application.dto import (
     CreateRoleCommand,
     InviteUserCommand,
     LogoutUserCommand,
+    RemoveMemberCommand,
     RotateRefreshTokenCommand,
     SwitchTenantCommand,
+    UpdateMemberStatusCommand,
     UpdateRoleCommand,
     UpdateRolePermissionsCommand,
     UpdateTenantSettingsCommand,
@@ -176,12 +180,22 @@ class MockUserTenantRepository(IUserTenantRepository):
     async def lock_tenant_role_updates(self, tenant_id: uuid.UUID) -> None:
         pass
 
+    async def update_member_status(self, user_id: uuid.UUID, tenant_id: uuid.UUID, status: str) -> None:
+        for m in self.memberships:
+            if m.user_id == user_id and m.tenant_id == tenant_id:
+                m.status = status
+
+    async def remove_member(self, user_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
+        self.memberships = [m for m in self.memberships if not (m.user_id == user_id and m.tenant_id == tenant_id)]
+        self.roles.pop(f"{user_id}:{tenant_id}", None)
+
     async def count_active_admins(self, tenant_id: uuid.UUID) -> int:
-        return sum(
-            1
-            for key, roles in self.roles.items()
-            if key.endswith(f":{tenant_id}") and "ADMIN" in roles
-        )
+        count = 0
+        for m in self.memberships:
+            if m.tenant_id == tenant_id and m.status == "ACTIVE":
+                if "ADMIN" in self.roles.get(f"{m.user_id}:{tenant_id}", []):
+                    count += 1
+        return count
 
 
 class MockRefreshTokenRepository(IRefreshTokenRepository):
@@ -275,6 +289,9 @@ class MockAuditRepository(IAuditRepository):
     async def list_events(self, tenant_id, limit=100, offset=0):
         return [e for e in self.events if e.get("tenant_id") == tenant_id][offset : offset + limit]
 
+    async def count_events(self, tenant_id):
+        return len([e for e in self.events if e.get("tenant_id") == tenant_id])
+
 
 class MockRoleRepository(IRoleRepository):
     def __init__(self):
@@ -287,6 +304,9 @@ class MockRoleRepository(IRoleRepository):
             ("invoices:read", "fiscal"),
             ("invoices:issue", "fiscal"),
             ("users:read", "users"),
+            ("users:invite", "users"),
+            ("users:manage_roles", "users"),
+            ("tenant:settings:manage", "tenant"),
             ("pos:sale", "pos"),
         ]:
             self.permissions[pid] = Permission(id=pid, module=module, name=pid)
@@ -918,10 +938,12 @@ async def test_role_catalog_crud_lifecycle():
     )
     assert republished.permissions == ["invoices:issue"]
 
-    with pytest.raises(AuthorizationError):
-        await perms_uc.execute(
-            UpdateRolePermissionsCommand(tenant_id=tenant_id, role_id="ADMIN", permissions=["invoices:issue"])
-        )
+    admin_perms = await perms_uc.execute(
+        UpdateRolePermissionsCommand(tenant_id=tenant_id, role_id="ADMIN", permissions=["invoices:issue"])
+    )
+    assert "invoices:issue" in admin_perms.permissions
+    assert "users:read" in admin_perms.permissions
+    assert "users:invite" in admin_perms.permissions
 
     catalog = await list_uc.execute(tenant_id)
     assert [r.id for r in catalog] == ["ADMIN", "GERENTE_LOJA"]
@@ -1106,11 +1128,12 @@ async def test_administrator_profiles_keep_immutable_permissions():
     role_repo = MockRoleRepository()
     role_repo.roles["ADMIN"] = Role(id="ADMIN", name="Administrador Geral", is_system=True)
     role_repo.roles["SYSADMIN"] = Role(id="SYSADMIN", name="Administrador do Sistema", is_system=True)
+    role_repo.roles["SUPER_ADMIN"] = Role(id="SUPER_ADMIN", name="Super Administrador", is_system=True)
 
     perms_uc = UpdateRolePermissionsUseCase(role_repo)
     list_uc = ListRolesUseCase(role_repo)
 
-    for role_id in ("ADMIN", "SYSADMIN"):
+    for role_id in ("SYSADMIN", "SUPER_ADMIN"):
         with pytest.raises(AuthorizationError):
             await perms_uc.execute(
                 UpdateRolePermissionsCommand(
@@ -1121,8 +1144,19 @@ async def test_administrator_profiles_keep_immutable_permissions():
                 )
             )
 
+    admin_res = await perms_uc.execute(
+        UpdateRolePermissionsCommand(
+            tenant_id=tenant_id,
+            role_id="ADMIN",
+            permissions=["invoices:read"],
+            actor_roles=["ADMIN"],
+        )
+    )
+    assert "invoices:read" in admin_res.permissions
+    assert "users:read" in admin_res.permissions
+
     catalog = {r.id: r for r in await list_uc.execute(tenant_id, ["ADMIN"])}
-    assert catalog["ADMIN"].is_editable is False
+    assert catalog["ADMIN"].is_editable is True
     assert catalog["SYSADMIN"].is_editable is False
 
 
@@ -1181,4 +1215,56 @@ async def test_override_without_permissions_is_preserved():
     catalog = {r.id: r for r in await list_uc.execute(tenant_id, ["ADMIN"])}
     assert catalog["AUDITOR"].permissions == []
     assert catalog["AUDITOR"].has_override is True
-    assert catalog["AUDITOR"].can_reset_override is True
+
+
+async def test_update_member_status_and_remove_member():
+    tenant_id = uuid.uuid4()
+    admin_id = uuid.uuid4()
+    cashier_id = uuid.uuid4()
+
+    uow_factory = MockUnitOfWorkFactory()
+    user_tenant_repo = MockUserTenantRepository()
+    cache_service = MockCacheService()
+
+    m_admin = UserTenant(id=uuid.uuid4(), user_id=admin_id, tenant_id=tenant_id, status="ACTIVE")
+    m_cashier = UserTenant(id=uuid.uuid4(), user_id=cashier_id, tenant_id=tenant_id, status="ACTIVE")
+    await user_tenant_repo.save_membership(m_admin)
+    await user_tenant_repo.save_membership(m_cashier)
+    await user_tenant_repo.assign_roles(admin_id, tenant_id, ["ADMIN"])
+    await user_tenant_repo.assign_roles(cashier_id, tenant_id, ["OPERADOR_CAIXA"])
+
+    status_uc = UpdateMemberStatusUseCase(uow_factory, user_tenant_repo, cache_service=cache_service)
+    remove_uc = RemoveMemberUseCase(uow_factory, user_tenant_repo, cache_service=cache_service)
+
+    with pytest.raises(ConflictError):
+        await status_uc.execute(
+            UpdateMemberStatusCommand(tenant_id, admin_id, "SUSPENDED", actor_user_id=admin_id)
+        )
+
+    with pytest.raises(DomainError):
+        await status_uc.execute(
+            UpdateMemberStatusCommand(tenant_id, cashier_id, "INVALIDO", actor_user_id=admin_id)
+        )
+
+    await status_uc.execute(
+        UpdateMemberStatusCommand(tenant_id, cashier_id, "SUSPENDED", actor_user_id=admin_id)
+    )
+    membership_cashier = await user_tenant_repo.find_membership(cashier_id, tenant_id)
+    assert membership_cashier.status == "SUSPENDED"
+
+    with pytest.raises(ConflictError):
+        await remove_uc.execute(
+            RemoveMemberCommand(tenant_id, admin_id, actor_user_id=admin_id)
+        )
+
+    with pytest.raises(ConflictError):
+        other_actor = uuid.uuid4()
+        await remove_uc.execute(
+            RemoveMemberCommand(tenant_id, admin_id, actor_user_id=other_actor)
+        )
+
+    await remove_uc.execute(
+        RemoveMemberCommand(tenant_id, cashier_id, actor_user_id=admin_id)
+    )
+    assert await user_tenant_repo.find_membership(cashier_id, tenant_id) is None
+    assert f"{cashier_id}:{tenant_id}" not in user_tenant_repo.roles

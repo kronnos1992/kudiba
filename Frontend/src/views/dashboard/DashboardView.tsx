@@ -497,6 +497,7 @@ const CompanyView: React.FC<{
   year,
   onNavigate,
 }) => {
+  const [trendGranularity, setTrendGranularity] = useState<'daily' | 'monthly'>('daily');
   const invoicing = invoicingQuery.data;
   const treasury = treasuryQuery.data;
   const payroll = payrollQuery.data;
@@ -519,6 +520,19 @@ const CompanyView: React.FC<{
     iva: num(p.taxTotal),
     documentos: p.invoicesCount,
   }));
+
+  const dailyTrend = (invoicing?.dailyTrend || []).map((p) => {
+    const parts = (p.date || '').split('-');
+    const dayLabel = parts.length === 3 ? `${parts[2]}/${parts[1]}` : `Dia ${p.day}`;
+    return {
+      label: dayLabel,
+      date: p.date,
+      day: p.day,
+      faturacao: num(p.grossTotal),
+      iva: num(p.taxTotal),
+      documentos: p.invoicesCount,
+    };
+  });
 
   const taxBreakdown = (invoicing?.taxBreakdown || []).map((t) => ({
     name: `${num(t.taxRate)}%`,
@@ -789,14 +803,50 @@ const CompanyView: React.FC<{
       )}
 
       {invoicingReady && (
-        <ChartCard title="Evolução Mensal da Faturação" subtitle={`Exercício fiscal ${year}`}>
+        <ChartCard
+          title={trendGranularity === 'daily' ? 'Produção Diária de Facturação' : 'Evolução Mensal da Faturação'}
+          subtitle={
+            trendGranularity === 'daily'
+              ? `Ritmo de vendas e emissões diárias em ${year}`
+              : `Exercício fiscal ${year}`
+          }
+          action={
+            <div className="inline-flex rounded-lg bg-slate-100 dark:bg-slate-800/80 p-0.5 border border-slate-200 dark:border-slate-700 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setTrendGranularity('daily')}
+                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                  trendGranularity === 'daily'
+                    ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Produção Diária
+              </button>
+              <button
+                type="button"
+                onClick={() => setTrendGranularity('monthly')}
+                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                  trendGranularity === 'monthly'
+                    ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Evolução Mensal
+              </button>
+            </div>
+          }
+        >
           {invoicingQuery.isLoading ? (
             <LoadingBlock message="A carregar evolução..." />
-          ) : monthlyTrend.length === 0 ? (
-            <EmptyState message="Ainda não foram emitidos documentos fiscais neste exercício." />
+          ) : (trendGranularity === 'daily' ? dailyTrend : monthlyTrend).length === 0 ? (
+            <EmptyState message="Ainda não foram emitidos documentos fiscais neste período." />
           ) : (
             <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={monthlyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <AreaChart
+                data={trendGranularity === 'daily' ? dailyTrend : monthlyTrend}
+                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+              >
                 <defs>
                   <linearGradient id="grossGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#059669" stopOpacity={0.35} />
@@ -806,7 +856,20 @@ const CompanyView: React.FC<{
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" vertical={false} />
                 <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
                 <YAxis tick={axisTick} axisLine={false} tickLine={false} width={64} />
-                <Tooltip contentStyle={tooltipStyle} formatter={moneyFormatter} />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  formatter={(val: any, name: any) => [
+                    `${Number(val).toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kz`,
+                    name === 'faturacao' ? 'Faturação' : name,
+                  ]}
+                  labelFormatter={(lbl, items) => {
+                    const item = items?.[0]?.payload;
+                    if (item && item.documentos !== undefined) {
+                      return `${lbl} (${item.documentos} doc${item.documentos === 1 ? '' : 's'})`;
+                    }
+                    return lbl;
+                  }}
+                />
                 <Area
                   type="monotone"
                   dataKey="faturacao"
@@ -814,6 +877,8 @@ const CompanyView: React.FC<{
                   stroke="#059669"
                   strokeWidth={2}
                   fill="url(#grossGradient)"
+                  dot={trendGranularity === 'daily' ? { r: 3, fill: '#059669' } : false}
+                  activeDot={{ r: 5 }}
                 />
               </AreaChart>
             </ResponsiveContainer>

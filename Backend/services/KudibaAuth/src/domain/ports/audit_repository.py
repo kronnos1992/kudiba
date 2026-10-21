@@ -25,3 +25,7 @@ class IAuditRepository(ABC):
         offset: int = 0,
     ) -> list[dict]:
         pass
+
+    @abstractmethod
+    async def count_events(self, tenant_id: uuid.UUID) -> int:
+        pass

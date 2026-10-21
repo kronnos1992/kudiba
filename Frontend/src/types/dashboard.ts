@@ -177,6 +177,16 @@ export interface InvoicingMonthlyPoint {
   invoicesCount: number;
 }
 
+export interface InvoicingDailyPoint {
+  date: string;
+  day: number;
+  month: number;
+  grossTotal: number | string;
+  netTotal: number | string;
+  taxTotal: number | string;
+  invoicesCount: number;
+}
+
 export interface InvoicingTopCustomer {
   customerName: string;
   customerNif: string;
@@ -204,6 +214,7 @@ export interface InvoicingDashboardSummary {
   generatedAt: string;
   totals: InvoicingTotals;
   monthlyTrend: InvoicingMonthlyPoint[];
+  dailyTrend?: InvoicingDailyPoint[];
   topCustomers: InvoicingTopCustomer[];
   taxBreakdown: InvoicingTaxBucket[];
   agt: InvoicingAgt;

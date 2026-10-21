@@ -40,6 +40,14 @@ class IUserTenantRepository(ABC):
         pass
 
     @abstractmethod
+    async def update_member_status(self, user_id: uuid.UUID, tenant_id: uuid.UUID, status: str) -> None:
+        pass
+
+    @abstractmethod
+    async def remove_member(self, user_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
+        pass
+
+    @abstractmethod
     async def lock_tenant_role_updates(self, tenant_id: uuid.UUID) -> None:
         """Serializa alterações de papéis para impedir remoção concorrente do último ADMIN."""
         pass

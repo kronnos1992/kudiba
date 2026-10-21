@@ -31,7 +31,7 @@ class ListRolesUseCase:
                     is_system=r.is_system,
                     permissions=[p.id for p in r.permissions],
                     users_count=users_count,
-                    is_editable=not RoleType.is_administrator(r.id),
+                    is_editable=not RoleType.is_immutable_admin(r.id),
                     has_override=r.has_override,
                     can_reset_override=override_scope is not None
                     and (system_manager or override_scope == "tenant"),

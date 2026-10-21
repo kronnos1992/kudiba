@@ -22,6 +22,8 @@ import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { SortableHeader } from '../../components/common/SortableHeader';
+import { useTableSort } from '../../hooks/useTableSort';
 import {
   invoicingApi,
   Invoice,
@@ -485,6 +487,8 @@ export const InvoicingView: React.FC = () => {
     return matchesType && matchesSearch;
   });
 
+  const { sortedItems: sortedInvoices, sortConfig: invoicesSort, requestSort: requestInvoicesSort } = useTableSort(filteredInvoices, 'issuedAt', 'desc');
+
   const summaryTotals = filteredInvoices.reduce(
     (acc, inv) => {
       const isNC = inv.documentType === 'NC';
@@ -709,19 +713,38 @@ export const InvoicingView: React.FC = () => {
                 <table className="w-full text-left text-sm border-separate border-spacing-0">
                   <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs">
                     <tr className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400">
-                      <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Tipo</th>
-                      <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Nº Documento</th>
-                      <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Cliente</th>
-                      <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Data</th>
-                      <th className="sticky top-0 py-2.5 px-3 text-right bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Incidência</th>
-                      <th
-                        className="sticky top-0 py-2.5 px-3 text-right bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800"
+                      <SortableHeader field="documentType" currentSortField={invoicesSort?.key} sortDirection={invoicesSort?.direction} onSort={requestInvoicesSort} className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                        Tipo
+                      </SortableHeader>
+                      <SortableHeader field="documentNumber" currentSortField={invoicesSort?.key} sortDirection={invoicesSort?.direction} onSort={requestInvoicesSort} className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                        Nº Documento
+                      </SortableHeader>
+                      <SortableHeader field="customerName" currentSortField={invoicesSort?.key} sortDirection={invoicesSort?.direction} onSort={requestInvoicesSort} className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                        Cliente
+                      </SortableHeader>
+                      <SortableHeader field="issuedAt" currentSortField={invoicesSort?.key} sortDirection={invoicesSort?.direction} onSort={requestInvoicesSort} className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                        Data
+                      </SortableHeader>
+                      <SortableHeader field="netTotal" currentSortField={invoicesSort?.key} sortDirection={invoicesSort?.direction} onSort={requestInvoicesSort} align="right" className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                        Incidência
+                      </SortableHeader>
+                      <SortableHeader
+                        field="taxTotal"
+                        currentSortField={invoicesSort?.key}
+                        sortDirection={invoicesSort?.direction}
+                        onSort={requestInvoicesSort}
+                        align="right"
+                        className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800"
                         title="Imposto liquidado (taxas 14%, 5% ou isenção 0%)"
                       >
                         IVA Liquidado
-                      </th>
-                      <th className="sticky top-0 py-2.5 px-3 text-right bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Total (Kz)</th>
-                      <th className="sticky top-0 py-2.5 px-3 text-center bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">Estado</th>
+                      </SortableHeader>
+                      <SortableHeader field="grossTotal" currentSortField={invoicesSort?.key} sortDirection={invoicesSort?.direction} onSort={requestInvoicesSort} align="right" className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                        Total (Kz)
+                      </SortableHeader>
+                      <SortableHeader field="status" currentSortField={invoicesSort?.key} sortDirection={invoicesSort?.direction} onSort={requestInvoicesSort} align="center" className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                        Estado
+                      </SortableHeader>
                       <th
                         className="sticky top-0 py-2.5 px-3 text-center bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800"
                         title="4 Caracteres de Validação do Hash J-1 (Decreto Executivo 385/20)"
@@ -732,7 +755,7 @@ export const InvoicingView: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                    {filteredInvoices.map((inv) => {
+                    {sortedInvoices.map((inv) => {
                       const isNC = inv.documentType === 'NC';
                       const isRectified =
                         inv.documentType === 'FT' &&

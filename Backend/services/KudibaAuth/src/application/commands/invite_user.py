@@ -76,6 +76,8 @@ class InviteUserUseCase:
                 user_id=cmd.actor_user_id,
                 tenant_id=cmd.target_tenant_id,
                 email_attempted=email_vo.value,
+                ip_address=cmd.ip_address,
+                user_agent=cmd.user_agent,
                 details={"target_user_id": str(user.id), "roles": roles},
             )
 

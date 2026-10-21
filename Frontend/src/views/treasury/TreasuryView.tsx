@@ -14,11 +14,15 @@ import {
   Search,
   Printer,
   ExternalLink,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { SortableHeader } from '../../components/common/SortableHeader';
+import { useTableSort } from '../../hooks/useTableSort';
 import {
   treasuryApi,
   CashRegister,
@@ -31,6 +35,8 @@ import {
   RecordCashMovementPayload,
   CreateBankAccountPayload,
   IssueReceiptPayload,
+  TreasuryReceipt,
+  InvoiceReceivable,
 } from '../../api/treasury';
 import { toast } from '../../stores/toastStore';
 import { inventoryApi } from '../../api/inventory';
@@ -122,6 +128,54 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
     queryFn: () => (reportModalSessionId ? treasuryApi.getSessionReport(reportModalSessionId) : null),
     enabled: Boolean(reportModalSessionId),
   });
+
+  const [expandedReceiptIds, setExpandedReceiptIds] = useState<Set<string>>(new Set());
+  const toggleReceiptExpand = (id: string) => {
+    setExpandedReceiptIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const filteredReceipts = React.useMemo(() => {
+    return receipts.filter(
+      (r) =>
+        r.receipt_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        r.customer_name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [receipts, searchTerm]);
+
+  const {
+    sortedData: sortedReceipts,
+    sortConfig: receiptsSortConfig,
+    requestSort: requestReceiptsSort,
+  } = useTableSort<TreasuryReceipt>(filteredReceipts, { key: 'issued_at', direction: 'desc' });
+
+  const [expandedReceivableIds, setExpandedReceivableIds] = useState<Set<string>>(new Set());
+  const toggleReceivableExpand = (id: string) => {
+    setExpandedReceivableIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const filteredReceivables = React.useMemo(() => {
+    return receivables.filter(
+      (rec) =>
+        rec.document_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        rec.document_type.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [receivables, searchTerm]);
+
+  const {
+    sortedData: sortedReceivables,
+    sortConfig: receivablesSortConfig,
+    requestSort: requestReceivablesSort,
+  } = useTableSort<InvoiceReceivable>(filteredReceivables, { key: 'created_at', direction: 'desc' });
 
   // Formulário de Caixa
   const [registerForm, setRegisterForm] = useState<CreateCashRegisterPayload>({
@@ -718,66 +772,184 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
           </div>
 
           <GlassCard className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase font-semibold">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="text-xs uppercase font-semibold">
                   <tr>
-                    <th className="px-4 py-3">N.º do Recibo</th>
-                    <th className="px-4 py-3">Data / Hora</th>
-                    <th className="px-4 py-3">Cliente / Adquirente</th>
-                    <th className="px-4 py-3">NIF</th>
-                    <th className="px-4 py-3">Método Pagamento</th>
-                    <th className="px-4 py-3 text-right">Valor Quitado</th>
-                    <th className="px-4 py-3">Observações</th>
+                    <th className="w-10 px-3 py-3 sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10"></th>
+                    <SortableHeader
+                      columnKey="receipt_number"
+                      label="N.º do Recibo"
+                      currentSort={receiptsSortConfig}
+                      onSort={requestReceiptsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="issued_at"
+                      label="Data / Hora"
+                      currentSort={receiptsSortConfig}
+                      onSort={requestReceiptsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="customer_name"
+                      label="Cliente / Adquirente"
+                      currentSort={receiptsSortConfig}
+                      onSort={requestReceiptsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="customer_nif"
+                      label="NIF"
+                      currentSort={receiptsSortConfig}
+                      onSort={requestReceiptsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="payment_method"
+                      label="Método Pagamento"
+                      currentSort={receiptsSortConfig}
+                      onSort={requestReceiptsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="total_amount"
+                      label="Valor Quitado"
+                      align="right"
+                      currentSort={receiptsSortConfig}
+                      onSort={requestReceiptsSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="notes"
+                      label="Observações"
+                      currentSort={receiptsSortConfig}
+                      onSort={requestReceiptsSort}
+                      className="px-4 py-3"
+                    />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {receiptsLoading ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                         A carregar recibos...
                       </td>
                     </tr>
-                  ) : receipts.length === 0 ? (
+                  ) : sortedReceipts.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                         Nenhum recibo de quitação emitido até ao momento.
                       </td>
                     </tr>
                   ) : (
-                    receipts
-                      .filter(
-                        (r) =>
-                          r.receipt_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          r.customer_name.toLowerCase().includes(searchTerm.toLowerCase())
-                      )
-                      .map((r) => (
-                        <tr key={r.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                          <td className="px-4 py-3 font-mono font-bold text-emerald-600">
-                            {r.receipt_number}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {new Date(r.issued_at).toLocaleString('pt-AO')}
-                          </td>
-                          <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
-                            {r.customer_name}
-                          </td>
-                          <td className="px-4 py-3 font-mono text-xs text-slate-500">
-                            {r.customer_nif || '999999999'}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300">
-                              {r.payment_method}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
-                            <KzAmount value={Number(r.total_amount)} />
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500 truncate max-w-xs">
-                            {r.notes || '—'}
-                          </td>
-                        </tr>
-                      ))
+                    sortedReceipts.map((r) => {
+                      const isExpanded = expandedReceiptIds.has(r.id);
+                      return (
+                        <React.Fragment key={r.id}>
+                          <tr
+                            onClick={() => toggleReceiptExpand(r.id)}
+                            className={`cursor-pointer transition-colors ${
+                              isExpanded
+                                ? 'bg-emerald-50/40 dark:bg-emerald-950/20'
+                                : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/40'
+                            }`}
+                          >
+                            <td className="px-3 py-3 text-center text-slate-400">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-emerald-600 inline" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 inline" />
+                              )}
+                            </td>
+                            <td className="px-4 py-3 font-mono font-bold text-emerald-600">
+                              {r.receipt_number}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-500">
+                              {new Date(r.issued_at).toLocaleString('pt-AO')}
+                            </td>
+                            <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
+                              {r.customer_name}
+                            </td>
+                            <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                              {r.customer_nif || '999999999'}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300">
+                                {r.payment_method}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
+                              <KzAmount value={Number(r.total_amount)} />
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-500 truncate max-w-xs">
+                              {r.notes || '—'}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-slate-50/80 dark:bg-slate-900/60 border-y border-emerald-100 dark:border-emerald-900/30">
+                              <td colSpan={8} className="px-6 py-4">
+                                <div className="space-y-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 dark:border-slate-800 pb-2">
+                                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                                      Drilldown — Recibo de Quitação Oficial (RC)
+                                    </div>
+                                    <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
+                                      <span>ID: {r.id}</span>
+                                      <span>Moeda: {r.currency || 'AOA'}</span>
+                                      {r.bank_account_id && <span>Conta Bancária: {r.bank_account_id}</span>}
+                                      {r.session_id && <span>Sessão POS: {r.session_id}</span>}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <h4 className="text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">
+                                      Faturas Liquidadas neste Recibo:
+                                    </h4>
+                                    {r.lines && r.lines.length > 0 ? (
+                                      <div className="rounded border border-slate-200 dark:border-slate-800 overflow-hidden">
+                                        <table className="w-full text-xs">
+                                          <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 font-semibold">
+                                            <tr>
+                                              <th className="px-3 py-1.5 text-left">Fatura N.º</th>
+                                              <th className="px-3 py-1.5 text-left">ID Fatura</th>
+                                              <th className="px-3 py-1.5 text-right">Valor Quitado</th>
+                                              <th className="px-3 py-1.5 text-left">Anotações</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                            {r.lines.map((l, idx) => (
+                                              <tr key={l.id || idx}>
+                                                <td className="px-3 py-1.5 font-mono font-bold text-emerald-600">
+                                                  {l.invoice_number || 'FT s/n'}
+                                                </td>
+                                                <td className="px-3 py-1.5 font-mono text-slate-500">
+                                                  {l.invoice_id}
+                                                </td>
+                                                <td className="px-3 py-1.5 text-right font-bold text-slate-900 dark:text-white">
+                                                  <KzAmount value={Number(l.amount_settled)} />
+                                                </td>
+                                                <td className="px-3 py-1.5 text-slate-500">
+                                                  {l.notes || 'Liquidação'}
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    ) : (
+                                      <p className="text-xs text-slate-400 italic">
+                                        Nenhuma linha discriminada individualmente (quitação global de fatura).
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -853,95 +1025,187 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
               </span>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase font-semibold">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="text-xs uppercase font-semibold">
                   <tr>
-                    <th className="px-4 py-3">Documento</th>
-                    <th className="px-4 py-3">Tipo</th>
-                    <th className="px-4 py-3">Data Emissão</th>
-                    <th className="px-4 py-3">Mecanismo Pagamento</th>
-                    <th className="px-4 py-3 text-right">Total a Liquidar</th>
-                    <th className="px-4 py-3 text-center">Estado</th>
-                    <th className="px-4 py-3 text-right">Ação</th>
+                    <th className="w-10 px-3 py-3 sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10"></th>
+                    <SortableHeader
+                      columnKey="document_number"
+                      label="Documento"
+                      currentSort={receivablesSortConfig}
+                      onSort={requestReceivablesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="document_type"
+                      label="Tipo"
+                      currentSort={receivablesSortConfig}
+                      onSort={requestReceivablesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="created_at"
+                      label="Data Emissão"
+                      currentSort={receivablesSortConfig}
+                      onSort={requestReceivablesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="payment_mechanism"
+                      label="Mecanismo Pagamento"
+                      currentSort={receivablesSortConfig}
+                      onSort={requestReceivablesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="gross_total"
+                      label="Total a Liquidar"
+                      align="right"
+                      currentSort={receivablesSortConfig}
+                      onSort={requestReceivablesSort}
+                      className="px-4 py-3"
+                    />
+                    <SortableHeader
+                      columnKey="status"
+                      label="Estado"
+                      align="center"
+                      currentSort={receivablesSortConfig}
+                      onSort={requestReceivablesSort}
+                      className="px-4 py-3"
+                    />
+                    <th className="px-4 py-3 text-right sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10">
+                      Ação
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {receivablesLoading ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                         A carregar contas a receber...
                       </td>
                     </tr>
-                  ) : receivables.length === 0 ? (
+                  ) : sortedReceivables.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                         Nenhuma fatura a prazo pendente de liquidação.
                       </td>
                     </tr>
                   ) : (
-                    receivables.map((rec) => (
-                      <tr key={rec.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                        <td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-white">
-                          {rec.document_number}
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-xs text-slate-600 dark:text-slate-300">
-                          {rec.document_type}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-500">
-                          {new Date(rec.created_at).toLocaleDateString('pt-AO')}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-500">
-                          {rec.payment_mechanism || 'CREDITO'}
-                        </td>
-                        <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
-                          <KzAmount value={Number(rec.gross_total)} />
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
-                              rec.status === 'Outstanding'
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                    sortedReceivables.map((rec) => {
+                      const isExpanded = expandedReceivableIds.has(rec.id);
+                      return (
+                        <React.Fragment key={rec.id}>
+                          <tr
+                            onClick={() => toggleReceivableExpand(rec.id)}
+                            className={`cursor-pointer transition-colors ${
+                              isExpanded
+                                ? 'bg-amber-50/40 dark:bg-amber-950/20'
+                                : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/40'
                             }`}
                           >
-                            {rec.status === 'Outstanding' ? 'Pendente' : 'Liquidada'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {rec.status === 'Outstanding' && (
-                            <button
-                              onClick={() => {
-                                const defaultEntity = entities.length > 0 ? entities[0] : null;
-                                setReceiptForm({
-                                  customer_id: defaultEntity?.id || '',
-                                  customer_name: defaultEntity?.name || 'Cliente Adquirente',
-                                  customer_nif: defaultEntity?.tax_id || '999999999',
-                                  bank_account_id: bankAccounts[0]?.id || '',
-                                  session_id: '',
-                                  payment_method: 'TRANSFERENCIA',
-                                  total_amount: String(rec.gross_total),
-                                  currency: 'AOA',
-                                  notes: `Liquidação da fatura ${rec.document_number}`,
-                                  lines: [
-                                    {
-                                      invoice_id: rec.invoice_id,
-                                      invoice_number: rec.document_number,
-                                      amount_settled: String(rec.gross_total),
-                                      notes: 'Liquidação integral',
-                                    },
-                                  ],
-                                });
-                                setShowReceiptModal(true);
-                              }}
-                              className="px-2.5 py-1 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg"
-                            >
-                              Emitir RC
-                            </button>
+                            <td className="px-3 py-3 text-center text-slate-400">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-amber-600 inline" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 inline" />
+                              )}
+                            </td>
+                            <td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-white">
+                              {rec.document_number}
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-xs text-slate-600 dark:text-slate-300">
+                              {rec.document_type}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-500">
+                              {new Date(rec.created_at).toLocaleDateString('pt-AO')}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-500">
+                              {rec.payment_mechanism || 'CREDITO'}
+                            </td>
+                            <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
+                              <KzAmount value={Number(rec.gross_total)} />
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
+                                  rec.status === 'Outstanding'
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                }`}
+                              >
+                                {rec.status === 'Outstanding' ? 'Pendente' : 'Liquidada'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                              {rec.status === 'Outstanding' && (
+                                <button
+                                  onClick={() => {
+                                    const defaultEntity = entities.length > 0 ? entities[0] : null;
+                                    setReceiptForm({
+                                      customer_id: defaultEntity?.id || '',
+                                      customer_name: defaultEntity?.name || 'Cliente Adquirente',
+                                      customer_nif: defaultEntity?.tax_id || '999999999',
+                                      bank_account_id: bankAccounts[0]?.id || '',
+                                      session_id: '',
+                                      payment_method: 'TRANSFERENCIA',
+                                      total_amount: String(rec.gross_total),
+                                      currency: 'AOA',
+                                      notes: `Liquidação da fatura ${rec.document_number}`,
+                                      lines: [
+                                        {
+                                          invoice_id: rec.invoice_id,
+                                          invoice_number: rec.document_number,
+                                          amount_settled: String(rec.gross_total),
+                                          notes: 'Liquidação integral',
+                                        },
+                                      ],
+                                    });
+                                    setShowReceiptModal(true);
+                                  }}
+                                  className="px-2.5 py-1 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
+                                >
+                                  Emitir RC
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-slate-50/80 dark:bg-slate-900/60 border-y border-amber-200 dark:border-amber-900/30">
+                              <td colSpan={8} className="px-6 py-4">
+                                <div className="space-y-2">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 dark:border-slate-800 pb-2">
+                                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                                      Drilldown — Conta a Receber (Fatura a Crédito)
+                                    </div>
+                                    <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
+                                      <span>ID Registo: {rec.id}</span>
+                                      <span>UUID Fatura: {rec.invoice_id}</span>
+                                      <span>Última Atualização: {new Date(rec.updated_at).toLocaleString('pt-AO')}</span>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-600 dark:text-slate-300 pt-1">
+                                    <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[11px]">Tipo de Documento:</span>
+                                      <span className="font-semibold text-slate-900 dark:text-white">{rec.document_type}</span>
+                                    </div>
+                                    <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[11px]">Condição de Pagamento:</span>
+                                      <span className="font-semibold text-slate-900 dark:text-white">{rec.payment_mechanism || 'Crédito / A Prazo'}</span>
+                                    </div>
+                                    <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[11px]">Total Pendente de Cobrança:</span>
+                                      <span className="font-bold text-amber-600"><KzAmount value={Number(rec.gross_total)} /></span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
                           )}
-                        </td>
-                      </tr>
-                    ))
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

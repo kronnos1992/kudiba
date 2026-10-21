@@ -32,10 +32,15 @@ import {
   ChevronUp,
   Laptop,
   UserCheck,
+  UserX,
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { SortableHeader } from '../../components/common/SortableHeader';
+import { useTableSort } from '../../hooks/useTableSort';
 import { useAuthStore } from '../../stores/authStore';
 import { authApi, TenantMember, InviteMemberPayload, RoleCatalogItem } from '../../api/auth';
 import { TenantBankAccount } from '../../types/auth';
@@ -170,6 +175,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [selectedMemberForRoles, setSelectedMemberForRoles] = useState<TenantMember | null>(null);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [memberToDelete, setMemberToDelete] = useState<TenantMember | null>(null);
 
   // Invite Form
   const [inviteForm, setInviteForm] = useState<InviteMemberPayload>({
@@ -251,6 +257,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
   const [auditSearch, setAuditSearch] = useState<string>('');
   const [expandedFiscalAuditId, setExpandedFiscalAuditId] = useState<string | null>(null);
   const [expandedAuthLogId, setExpandedAuthLogId] = useState<string | null>(null);
+  const [expandedMemberId, setExpandedMemberId] = useState<string | null>(null);
+  const [expandedSeriesId, setExpandedSeriesId] = useState<string | null>(null);
 
   const {
     data: fiscalAuditData,
@@ -259,7 +267,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
   } = useQuery({
     queryKey: ['fiscal_audit_trail', activeTenant?.id],
     queryFn: () => invoicingApi.getFiscalAuditTrail({ tenantId: activeTenant?.id, limit: 150 }),
-    enabled: Boolean(activeTenant?.id) && activeTab === 'saft',
+    enabled: Boolean(activeTenant?.id),
     refetchInterval: activeTab === 'saft' ? 3000 : false,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
@@ -272,7 +280,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
   } = useQuery({
     queryKey: ['auth_audit_logs', activeTenant?.id],
     queryFn: () => authApi.getAuditLogs({ limit: 150 }),
-    enabled: Boolean(activeTenant?.id) && activeTab === 'saft',
+    enabled: Boolean(activeTenant?.id),
     refetchInterval: activeTab === 'saft' ? 4000 : false,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
@@ -294,21 +302,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
     });
   }, [fiscalAuditData, fiscalActionFilter, auditSearch]);
 
+  const membersMap = useMemo(() => new Map(members.map((m) => [m.user_id, m])), [members]);
+
   const authAuditItems = useMemo(() => {
     const list = authAuditData?.items || [];
     return list.filter((item) => {
-      if (authActionFilter !== 'ALL' && item.action !== authActionFilter) return false;
+      if (authActionFilter === 'MEMBERS_ROLES') {
+        const isMemberOrRole =
+          item.action.startsWith('MEMBER_') ||
+          item.action.startsWith('ROLE_') ||
+          item.action === 'USER_INVITED' ||
+          item.action === 'ROLES_UPDATED';
+        if (!isMemberOrRole) return false;
+      } else if (authActionFilter === 'ACCOUNT_LOCKED') {
+        if (!['ACCOUNT_LOCKED', 'TOKEN_REUSE_DETECTED'].includes(item.action)) return false;
+      } else if (authActionFilter !== 'ALL' && item.action !== authActionFilter) {
+        return false;
+      }
       if (auditSearch.trim()) {
         const q = auditSearch.toLowerCase();
         const actionMatch = item.action.toLowerCase().includes(q);
         const emailMatch = item.email_attempted?.toLowerCase().includes(q);
         const ipMatch = item.ip_address?.toLowerCase().includes(q);
         const userMatch = item.user_id?.toLowerCase().includes(q);
-        return Boolean(actionMatch || emailMatch || ipMatch || userMatch);
+        const member = item.user_id ? membersMap.get(item.user_id) : undefined;
+        const memberNameMatch = member?.full_name?.toLowerCase().includes(q);
+        const memberEmailMatch = member?.email?.toLowerCase().includes(q);
+        const detailsMatch = item.details ? JSON.stringify(item.details).toLowerCase().includes(q) : false;
+        return Boolean(actionMatch || emailMatch || ipMatch || userMatch || memberNameMatch || memberEmailMatch || detailsMatch);
       }
       return true;
     });
-  }, [authAuditData, authActionFilter, auditSearch]);
+  }, [authAuditData, authActionFilter, auditSearch, membersMap]);
 
   // Mutations
   const createBranchMutation = useMutation({
@@ -500,6 +525,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
     mutationFn: authApi.inviteMember,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['auth_members'] });
+      queryClient.invalidateQueries({ queryKey: ['auth_audit_logs'] });
       setIsInviteModalOpen(false);
       setInviteForm({
         email: '',
@@ -508,6 +534,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
         branch_id: activeBranch?.id || null,
         password: '',
       });
+      toast.success('Utilizador convidado com sucesso!');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || 'Falha ao convidar utilizador.');
     },
   });
 
@@ -516,7 +546,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
       authApi.updateMemberRoles(userId, { roles }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['auth_members'] });
+      queryClient.invalidateQueries({ queryKey: ['auth_audit_logs'] });
       setSelectedMemberForRoles(null);
+      toast.success('Papéis de acesso actualizados com sucesso!');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || 'Falha ao actualizar papéis.');
+    },
+  });
+
+  const updateMemberStatusMutation = useMutation({
+    mutationFn: ({ userId, status }: { userId: string; status: 'ACTIVE' | 'SUSPENDED' }) =>
+      authApi.updateMemberStatus(userId, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['auth_members'] });
+      queryClient.invalidateQueries({ queryKey: ['auth_audit_logs'] });
+      toast.success('Estado do utilizador alterado com sucesso!');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || 'Erro ao alterar o estado do utilizador.');
+    },
+  });
+
+  const removeMemberMutation = useMutation({
+    mutationFn: (userId: string) => authApi.removeMember(userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['auth_members'] });
+      queryClient.invalidateQueries({ queryKey: ['auth_audit_logs'] });
+      setMemberToDelete(null);
+      toast.success('Utilizador removido da empresa.');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || 'Erro ao remover utilizador da empresa.');
     },
   });
 
@@ -571,6 +632,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
     const q = userSearch.toLowerCase();
     return m.full_name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q);
   });
+
+  const { sortedItems: sortedMembers, sortConfig: membersSort, requestSort: requestMembersSort } = useTableSort(filteredMembers, 'full_name');
+  const { sortedItems: sortedSeries, sortConfig: seriesSort, requestSort: requestSeriesSort } = useTableSort(seriesList, 'seriesCode');
+  const { sortedItems: sortedFiscalAudit, sortConfig: fiscalAuditSort, requestSort: requestFiscalAuditSort } = useTableSort(fiscalAuditItems, 'created_at', 'desc');
+  const { sortedItems: sortedAuthAudit, sortConfig: authAuditSort, requestSort: requestAuthAuditSort } = useTableSort(authAuditItems, 'created_at', 'desc');
 
   const roles = user?.roles?.length ? user.roles : (activeTenant?.roles ?? []);
   const isSuperadmin = Boolean(user?.is_superadmin);
@@ -691,7 +757,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
             }`}
           >
             <Shield className="w-4 h-4" />
-            Auditoria &amp; Logs ({fiscalAuditData?.total ?? 0})
+            Auditoria &amp; Logs ({(fiscalAuditData?.total ?? 0) + (authAuditData?.total ?? 0)})
           </button>
         </nav>
       </div>
@@ -1624,89 +1690,228 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
           </GlassCard>
 
           <GlassCard className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/75 text-xs font-bold text-slate-600 dark:text-slate-300">
-                    <th className="p-3">Utilizador</th>
-                    <th className="p-3">E-mail</th>
-                    <th className="p-3">Papéis Atribuídos</th>
-                    <th className="p-3 text-center">Estado</th>
-                    <th className="p-3 text-center w-28">Ações</th>
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs">
+                  <tr className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                    <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 w-10 text-center">
+                      <span className="sr-only">Drill-down</span>
+                    </th>
+                    <SortableHeader field="full_name" currentSortField={membersSort?.key} sortDirection={membersSort?.direction} onSort={requestMembersSort} className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                      Utilizador
+                    </SortableHeader>
+                    <SortableHeader field="email" currentSortField={membersSort?.key} sortDirection={membersSort?.direction} onSort={requestMembersSort} className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                      E-mail &amp; Filial
+                    </SortableHeader>
+                    <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">
+                      Papéis Atribuídos
+                    </th>
+                    <SortableHeader field="status" currentSortField={membersSort?.key} sortDirection={membersSort?.direction} onSort={requestMembersSort} align="center" className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                      Estado
+                    </SortableHeader>
+                    <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 text-center w-48">
+                      Ações
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
                   {isLoadingMembers ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-slate-400">
+                      <td colSpan={6} className="p-8 text-center text-slate-400">
                         A carregar utilizadores...
                       </td>
                     </tr>
-                  ) : filteredMembers.length === 0 ? (
+                  ) : sortedMembers.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-slate-400">
+                      <td colSpan={6} className="p-8 text-center text-slate-400">
                         Nenhum utilizador encontrado.
                       </td>
                     </tr>
                   ) : (
-                    filteredMembers.map((m) => (
-                      <tr
-                        key={m.user_id}
-                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition"
-                      >
-                        <td className="p-3 font-bold text-slate-900 dark:text-white flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-black flex items-center justify-center text-xs">
-                            {m.full_name.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <div>{m.full_name}</div>
-                            {user?.id === m.user_id && (
-                              <span className="text-[10px] text-blue-600 font-bold">
-                                (A sua sessão)
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3 font-mono text-slate-600 dark:text-slate-300">
-                          {m.email}
-                        </td>
-                        <td className="p-3">
-                          <div className="flex flex-wrap gap-1.5">
-                            {m.roles.map((r) => (
-                              <span
-                                key={r}
-                                className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300"
-                              >
-                                {r}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="p-3 text-center">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                              m.status === 'ACTIVE'
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
-                                : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                    sortedMembers.map((m) => {
+                      const branch = m.default_branch_id ? branches.find((b) => b.id === m.default_branch_id) : null;
+                      const isSelf = user?.id === m.user_id;
+                      const isExpanded = expandedMemberId === m.user_id;
+                      return (
+                        <React.Fragment key={m.user_id}>
+                          <tr
+                            className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition cursor-pointer ${
+                              isExpanded ? 'bg-blue-50/40 dark:bg-blue-950/20' : ''
                             }`}
+                            onClick={() => setExpandedMemberId(isExpanded ? null : m.user_id)}
                           >
-                            {m.status}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedMemberForRoles(m);
-                              setSelectedRoles([...m.roles]);
-                            }}
-                            className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300"
-                          >
-                            Papéis
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                            <td className="py-3 px-2 text-center" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => setExpandedMemberId(isExpanded ? null : m.user_id)}
+                                className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-white transition"
+                                title="Expandir detalhes (Drill-down)"
+                              >
+                                {isExpanded ? <ChevronDown className="w-4 h-4 text-blue-600 dark:text-blue-400" /> : <ChevronRight className="w-4 h-4" />}
+                              </button>
+                            </td>
+                            <td className="p-3 font-bold text-slate-900 dark:text-white flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-black flex items-center justify-center text-xs shrink-0">
+                                {m.full_name.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div>{m.full_name}</div>
+                                {isSelf && (
+                                  <span className="text-[10px] text-blue-600 font-bold">
+                                    (A sua sessão)
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <div className="font-mono text-slate-600 dark:text-slate-300">{m.email}</div>
+                              {branch && (
+                                <span className="text-[10px] text-slate-400 block mt-0.5">
+                                  Filial: {branch.name} ({branch.code})
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <div className="flex flex-wrap gap-1.5">
+                                {m.roles.map((r) => (
+                                  <span
+                                    key={r}
+                                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300"
+                                  >
+                                    {r}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                  m.status === 'ACTIVE'
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                    : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                                }`}
+                              >
+                                {m.status === 'ACTIVE' ? 'Ativo' : 'Suspenso'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedMemberForRoles(m);
+                                    setSelectedRoles([...m.roles]);
+                                  }}
+                                  title="Editar papéis de acesso"
+                                  className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300"
+                                >
+                                  Papéis
+                                </button>
+                                {m.status === 'ACTIVE' ? (
+                                  <button
+                                    type="button"
+                                    disabled={isSelf || updateMemberStatusMutation.isPending}
+                                    onClick={() =>
+                                      updateMemberStatusMutation.mutate({ userId: m.user_id, status: 'SUSPENDED' })
+                                    }
+                                    title={isSelf ? 'Não pode suspender a sua própria sessão' : 'Suspender acesso'}
+                                    className="px-2 py-1 rounded-lg border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-xs font-semibold disabled:opacity-40"
+                                  >
+                                    Suspender
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={updateMemberStatusMutation.isPending}
+                                    onClick={() =>
+                                      updateMemberStatusMutation.mutate({ userId: m.user_id, status: 'ACTIVE' })
+                                    }
+                                    title="Reativar acesso"
+                                    className="px-2 py-1 rounded-lg border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-xs font-semibold disabled:opacity-40"
+                                  >
+                                    Ativar
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  disabled={isSelf}
+                                  onClick={() => setMemberToDelete(m)}
+                                  title={isSelf ? 'Não pode remover a sua própria conta' : 'Remover utilizador'}
+                                  className="p-1 rounded-lg border border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-40"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-slate-50/90 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800">
+                              <td colSpan={6} className="p-4">
+                                <div className="bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                                    <div>
+                                      <span className="text-2xs font-bold uppercase tracking-wider text-slate-400">Drill-down do Colaborador</span>
+                                      <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                        {m.full_name}
+                                        <span className="text-xs font-mono font-normal text-slate-500">({m.email})</span>
+                                      </h4>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setAuditSearch(m.email);
+                                          setActiveTab('saft');
+                                          setAuditSubTab('security');
+                                        }}
+                                        className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-600 dark:text-blue-400 inline-flex items-center gap-1.5"
+                                        title="Filtrar eventos de segurança deste utilizador na auditoria"
+                                      >
+                                        <History className="w-3.5 h-3.5" />
+                                        Ver Auditoria deste Utilizador
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                                    <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                      <span className="text-2xs text-slate-400 font-bold block mb-1">Identificador Único (UUID)</span>
+                                      <span className="font-mono text-2xs text-slate-700 dark:text-slate-300 break-all select-all">{m.user_id}</span>
+                                    </div>
+                                    <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                      <span className="text-2xs text-slate-400 font-bold block mb-1">Filial &amp; Lotação</span>
+                                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                        {branch ? `${branch.name} (${branch.code}) - ${branch.city}` : 'Sede Principal'}
+                                      </span>
+                                    </div>
+                                    <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                      <span className="text-2xs text-slate-400 font-bold block mb-1">Estado de Acesso</span>
+                                      <span className="font-semibold flex items-center gap-1">
+                                        <span className={`w-2 h-2 rounded-full ${m.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                        {m.status === 'ACTIVE' ? 'Sessão e credenciais ativas' : 'Acesso temporariamente bloqueado'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <span className="text-2xs text-slate-400 font-bold block mb-1.5">Papéis Atribuídos e Privilégios</span>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {m.roles.map((r) => (
+                                        <span
+                                          key={r}
+                                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5"
+                                        >
+                                          <Shield className="w-3 h-3 text-indigo-500" />
+                                          {r}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1821,55 +2026,125 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
           </GlassCard>
 
           <GlassCard className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/75 text-xs font-bold text-slate-600 dark:text-slate-300">
-                    <th className="p-3">Código da Série</th>
-                    <th className="p-3">Ano Fiscal</th>
-                    <th className="p-3">Sequenciador Atual</th>
-                    <th className="p-3">Data de Ativação</th>
-                    <th className="p-3 text-center">Estado</th>
+            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+              <table className="w-full text-left text-sm border-separate border-spacing-0">
+                <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs">
+                  <tr className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                    <th className="sticky top-0 py-2.5 px-3 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 w-10 text-center">
+                      <span className="sr-only">Drill-down</span>
+                    </th>
+                    <SortableHeader field="seriesCode" currentSortField={seriesSort?.key} sortDirection={seriesSort?.direction} onSort={requestSeriesSort} className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                      Código da Série
+                    </SortableHeader>
+                    <SortableHeader field="fiscalYear" currentSortField={seriesSort?.key} sortDirection={seriesSort?.direction} onSort={requestSeriesSort} className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                      Ano Fiscal
+                    </SortableHeader>
+                    <SortableHeader field="currentSequence" currentSortField={seriesSort?.key} sortDirection={seriesSort?.direction} onSort={requestSeriesSort} className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                      Sequenciador Atual
+                    </SortableHeader>
+                    <SortableHeader field="documentType" currentSortField={seriesSort?.key} sortDirection={seriesSort?.direction} onSort={requestSeriesSort} className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                      Tipo Documental
+                    </SortableHeader>
+                    <SortableHeader field="isActive" currentSortField={seriesSort?.key} sortDirection={seriesSort?.direction} onSort={requestSeriesSort} align="center" className="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">
+                      Estado
+                    </SortableHeader>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-                  {seriesList.length === 0 ? (
+                  {sortedSeries.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-slate-400">
+                      <td colSpan={6} className="p-8 text-center text-slate-400">
                         Nenhuma série fiscal registada.
                       </td>
                     </tr>
                   ) : (
-                    seriesList.map((s) => (
-                      <tr
-                        key={s.id}
-                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition"
-                      >
-                        <td className="p-3 font-mono font-bold text-blue-600 dark:text-blue-400">
-                          {s.seriesCode}
-                        </td>
-                        <td className="p-3 font-bold text-slate-800 dark:text-slate-200">
-                          {s.fiscalYear}
-                        </td>
-                        <td className="p-3 font-mono font-semibold text-slate-900 dark:text-white">
-                          #{s.currentSequence}
-                        </td>
-                        <td className="p-3 text-slate-500 font-mono text-xs">
-                          {s.documentType || 'FT'}
-                        </td>
-                        <td className="p-3 text-center">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                              s.isActive
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
-                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                    sortedSeries.map((s) => {
+                      const isExpanded = expandedSeriesId === s.id;
+                      return (
+                        <React.Fragment key={s.id}>
+                          <tr
+                            className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition cursor-pointer ${
+                              isExpanded ? 'bg-blue-50/40 dark:bg-blue-950/20' : ''
                             }`}
+                            onClick={() => setExpandedSeriesId(isExpanded ? null : s.id)}
                           >
-                            {s.isActive ? 'ATIVA' : 'ENCERRADA'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))
+                            <td className="py-3 px-2 text-center" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => setExpandedSeriesId(isExpanded ? null : s.id)}
+                                className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-white transition"
+                                title="Expandir detalhes (Drill-down)"
+                              >
+                                {isExpanded ? <ChevronDown className="w-4 h-4 text-blue-600 dark:text-blue-400" /> : <ChevronRight className="w-4 h-4" />}
+                              </button>
+                            </td>
+                            <td className="p-3 font-mono font-bold text-blue-600 dark:text-blue-400">
+                              {s.seriesCode}
+                            </td>
+                            <td className="p-3 font-bold text-slate-800 dark:text-slate-200">
+                              {s.fiscalYear}
+                            </td>
+                            <td className="p-3 font-mono font-semibold text-slate-900 dark:text-white">
+                              #{s.currentSequence}
+                            </td>
+                            <td className="p-3 text-slate-700 dark:text-slate-300 font-mono text-xs">
+                              {s.documentType || 'FT'}
+                            </td>
+                            <td className="p-3 text-center">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                  s.isActive
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                }`}
+                              >
+                                {s.isActive ? 'ATIVA' : 'ENCERRADA'}
+                              </span>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-slate-50/90 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800">
+                              <td colSpan={6} className="p-4">
+                                <div className="bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+                                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                                    <div>
+                                      <span className="text-2xs font-bold uppercase tracking-wider text-slate-400">Drill-down de Série Fiscal</span>
+                                      <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                                        Série {s.seriesCode} — Exercício {s.fiscalYear}
+                                      </h4>
+                                    </div>
+                                    <span className="text-xs font-mono px-2 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 font-bold">
+                                      Tipo: {s.documentType || 'FT'}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                                    <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                      <span className="text-2xs text-slate-400 font-bold block mb-1">Certificação AGT</span>
+                                      <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                        Certificado AGT/2026/0042
+                                      </span>
+                                    </div>
+                                    <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                      <span className="text-2xs text-slate-400 font-bold block mb-1">Sequenciador &amp; Numeração</span>
+                                      <span className="font-mono text-slate-800 dark:text-slate-200 font-bold">
+                                        Último emitido: #{s.currentSequence} (Sem intervalos)
+                                      </span>
+                                    </div>
+                                    <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                      <span className="text-2xs text-slate-400 font-bold block mb-1">Validação Criptográfica</span>
+                                      <span className="font-mono text-2xs text-slate-600 dark:text-slate-400">
+                                        Chave RSA-2048 / Hash SHA-1 (D.E. 385/20)
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -2035,16 +2310,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
 
               {/* Tabela de Trilha Fiscal */}
               <GlassCard className="overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 border-b border-slate-200 dark:border-slate-800 font-bold uppercase tracking-wider">
+                <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                  <table className="w-full text-left text-xs border-separate border-spacing-0">
+                    <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs text-slate-500 font-bold uppercase tracking-wider">
                       <tr>
-                        <th className="py-3 px-4">Data / Hora</th>
-                        <th className="py-3 px-4">Ação Fiscal</th>
-                        <th className="py-3 px-4">Documento</th>
-                        <th className="py-3 px-4">Utilizador / Ator</th>
-                        <th className="py-3 px-4">Endereço IP</th>
-                        <th className="py-3 px-4 text-right">Ações</th>
+                        <SortableHeader field="created_at" currentSortField={fiscalAuditSort?.key} sortDirection={fiscalAuditSort?.direction} onSort={requestFiscalAuditSort} className="py-3 px-4 border-b border-slate-200 dark:border-slate-800">
+                          Data / Hora
+                        </SortableHeader>
+                        <SortableHeader field="action" currentSortField={fiscalAuditSort?.key} sortDirection={fiscalAuditSort?.direction} onSort={requestFiscalAuditSort} className="py-3 px-4 border-b border-slate-200 dark:border-slate-800">
+                          Ação Fiscal
+                        </SortableHeader>
+                        <SortableHeader field="document_reference" currentSortField={fiscalAuditSort?.key} sortDirection={fiscalAuditSort?.direction} onSort={requestFiscalAuditSort} className="py-3 px-4 border-b border-slate-200 dark:border-slate-800">
+                          Documento
+                        </SortableHeader>
+                        <SortableHeader field="actor_user_id" currentSortField={fiscalAuditSort?.key} sortDirection={fiscalAuditSort?.direction} onSort={requestFiscalAuditSort} className="py-3 px-4 border-b border-slate-200 dark:border-slate-800">
+                          Utilizador / Ator
+                        </SortableHeader>
+                        <SortableHeader field="ip_address" currentSortField={fiscalAuditSort?.key} sortDirection={fiscalAuditSort?.direction} onSort={requestFiscalAuditSort} className="py-3 px-4 border-b border-slate-200 dark:border-slate-800">
+                          Endereço IP
+                        </SortableHeader>
+                        <th className="sticky top-0 py-3 px-4 text-right bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">
+                          Drill-down
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
@@ -2055,14 +2342,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                             A carregar trilha fiscal de auditoria...
                           </td>
                         </tr>
-                      ) : fiscalAuditItems.length === 0 ? (
+                      ) : sortedFiscalAudit.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="text-center py-10 text-slate-400">
                             Nenhum registo fiscal encontrado com os filtros actuais.
                           </td>
                         </tr>
                       ) : (
-                        fiscalAuditItems.map((item) => {
+                        sortedFiscalAudit.map((item) => {
                           const isExpanded = expandedFiscalAuditId === item.audit_id;
                           const isTamper = item.action.startsWith('ATTEMPTED_');
 
@@ -2238,14 +2525,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAuthActionFilter('USER_INVITED')}
+                    onClick={() => setAuthActionFilter('MEMBERS_ROLES')}
                     className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
-                      authActionFilter === 'USER_INVITED'
+                      authActionFilter === 'MEMBERS_ROLES'
                         ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
                         : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                     }`}
                   >
-                    Convites
+                    Membros &amp; Perfis
                   </button>
                 </div>
 
@@ -2274,16 +2561,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
 
               {/* Tabela de Logs de Acesso */}
               <GlassCard className="overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 border-b border-slate-200 dark:border-slate-800 font-bold uppercase tracking-wider">
+                <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                  <table className="w-full text-left text-xs border-separate border-spacing-0">
+                    <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs text-slate-500 font-bold uppercase tracking-wider">
                       <tr>
-                        <th className="py-3 px-4">Data / Hora</th>
-                        <th className="py-3 px-4">Ação / Evento</th>
-                        <th className="py-3 px-4">E-mail / Utilizador</th>
-                        <th className="py-3 px-4">Endereço IP</th>
-                        <th className="py-3 px-4">Navegador / Agente</th>
-                        <th className="py-3 px-4 text-right">Detalhes</th>
+                        <SortableHeader field="created_at" currentSortField={authAuditSort?.key} sortDirection={authAuditSort?.direction} onSort={requestAuthAuditSort} className="py-3 px-4 border-b border-slate-200 dark:border-slate-800">
+                          Data / Hora
+                        </SortableHeader>
+                        <SortableHeader field="action" currentSortField={authAuditSort?.key} sortDirection={authAuditSort?.direction} onSort={requestAuthAuditSort} className="py-3 px-4 border-b border-slate-200 dark:border-slate-800">
+                          Ação / Evento
+                        </SortableHeader>
+                        <SortableHeader field="email_attempted" currentSortField={authAuditSort?.key} sortDirection={authAuditSort?.direction} onSort={requestAuthAuditSort} className="py-3 px-4 border-b border-slate-200 dark:border-slate-800">
+                          E-mail / Utilizador
+                        </SortableHeader>
+                        <SortableHeader field="ip_address" currentSortField={authAuditSort?.key} sortDirection={authAuditSort?.direction} onSort={requestAuthAuditSort} className="py-3 px-4 border-b border-slate-200 dark:border-slate-800">
+                          Endereço IP
+                        </SortableHeader>
+                        <th className="sticky top-0 py-3 px-4 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">
+                          Navegador / Agente
+                        </th>
+                        <th className="sticky top-0 py-3 px-4 text-right bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">
+                          Drill-down
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
@@ -2294,19 +2593,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                             A carregar histórico de acessos e segurança...
                           </td>
                         </tr>
-                      ) : authAuditItems.length === 0 ? (
+                      ) : sortedAuthAudit.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="text-center py-10 text-slate-400">
                             Nenhum registo de acesso encontrado com os filtros actuais.
                           </td>
                         </tr>
                       ) : (
-                        authAuditItems.map((item) => {
+                        sortedAuthAudit.map((item) => {
                           const isExpanded = expandedAuthLogId === item.id;
 
                           return (
                             <React.Fragment key={item.id}>
-                              <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                              <tr
+                                className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition cursor-pointer"
+                                onClick={() => setExpandedAuthLogId(isExpanded ? null : item.id)}
+                              >
                                 <td className="py-3 px-4 font-mono whitespace-nowrap">
                                   {new Date(item.created_at).toLocaleString('pt-AO')}
                                 </td>
@@ -2336,10 +2638,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                                       <Users className="w-3 h-3" />
                                       MEMBRO CONVIDADO
                                     </span>
+                                  ) : item.action === 'MEMBER_SUSPENDED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/40">
+                                      <UserX className="w-3 h-3" />
+                                      ACESSO SUSPENSO
+                                    </span>
+                                  ) : item.action === 'MEMBER_ACTIVATED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300/40">
+                                      <UserCheck className="w-3 h-3" />
+                                      ACESSO REATIVADO
+                                    </span>
+                                  ) : item.action === 'MEMBER_REMOVED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-extrabold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300/40">
+                                      <UserX className="w-3 h-3" />
+                                      MEMBRO REMOVIDO
+                                    </span>
                                   ) : item.action === 'ROLES_UPDATED' ? (
                                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold bg-cyan-100 text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-300">
                                       <Shield className="w-3 h-3" />
-                                      PAPÉIS ATUALIZADOS
+                                      PAPÉIS DO UTILIZADOR
+                                    </span>
+                                  ) : item.action === 'ROLE_CREATED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300">
+                                      <ShieldCheck className="w-3 h-3" />
+                                      PERFIL CRIADO
+                                    </span>
+                                  ) : item.action === 'ROLE_UPDATED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300">
+                                      <ShieldCheck className="w-3 h-3" />
+                                      PERFIL EDITADO
+                                    </span>
+                                  ) : item.action === 'ROLE_PERMISSIONS_UPDATED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300">
+                                      <Shield className="w-3 h-3" />
+                                      PERMISSÕES SALVAS
+                                    </span>
+                                  ) : item.action === 'ROLE_PERMISSIONS_RESET' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-200">
+                                      <RefreshCw className="w-3 h-3" />
+                                      PERMISSÕES REPOSTAS
+                                    </span>
+                                  ) : item.action === 'ROLE_DELETED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                                      <Trash2 className="w-3 h-3" />
+                                      PERFIL ELIMINADO
                                     </span>
                                   ) : (
                                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-2xs font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
@@ -2348,7 +2690,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                                   )}
                                 </td>
                                 <td className="py-3 px-4 font-medium text-slate-900 dark:text-white">
-                                  {item.email_attempted || item.user_id || 'N/A'}
+                                  {(() => {
+                                    const member = item.user_id ? membersMap.get(item.user_id) : undefined;
+                                    if (member) {
+                                      return (
+                                        <div>
+                                          <div>{member.full_name}</div>
+                                          <div className="text-2xs text-slate-400 font-mono">{member.email}</div>
+                                        </div>
+                                      );
+                                    }
+                                    if (item.email_attempted) {
+                                      return <span>{item.email_attempted}</span>;
+                                    }
+                                    if (item.details?.role_id) {
+                                      return <span className="font-mono text-blue-500">Perfil: {item.details.role_id}</span>;
+                                    }
+                                    if (item.user_id) {
+                                      return <span className="font-mono text-2xs text-slate-500">{item.user_id}</span>;
+                                    }
+                                    return <span>N/A</span>;
+                                  })()}
                                 </td>
                                 <td className="py-3 px-4 font-mono text-slate-500 text-2xs">
                                   {item.ip_address || 'Desconhecido'}
@@ -2509,23 +2871,66 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                 />
               </div>
 
+              {branches.length > 0 && (
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Filial de Trabalho
+                  </label>
+                  <select
+                    value={inviteForm.branch_id || ''}
+                    onChange={(e) => setInviteForm({ ...inviteForm, branch_id: e.target.value || null })}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
+                  >
+                    <option value="">Sede / Sem filial fixa</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                  Papel no Sistema
+                  Papéis de Acesso
                 </label>
-                <select
-                  value={inviteForm.roles[0] || 'OPERADOR_CAIXA'}
-                  onChange={(e) => setInviteForm({ ...inviteForm, roles: [e.target.value] })}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
-                >
+                <div className="space-y-1.5 max-h-44 overflow-y-auto p-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
                   {rolesCatalog
                     .filter((rc: RoleCatalogItem) => rc.id !== 'SUPER_ADMIN')
                     .map((rc: RoleCatalogItem) => (
-                      <option key={rc.id} value={rc.id}>
-                        {rc.name}
-                      </option>
+                      <label
+                        key={rc.id}
+                        className="flex items-center gap-2.5 p-2 rounded-md hover:bg-white dark:hover:bg-slate-800 cursor-pointer text-xs"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={inviteForm.roles.includes(rc.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setInviteForm({
+                                ...inviteForm,
+                                roles: [...inviteForm.roles, rc.id],
+                              });
+                            } else {
+                              const remaining = inviteForm.roles.filter((r) => r !== rc.id);
+                              setInviteForm({
+                                ...inviteForm,
+                                roles: remaining.length ? remaining : ['OPERADOR_CAIXA'],
+                              });
+                            }
+                          }}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div className="min-w-0">
+                          <span className="font-semibold text-slate-800 dark:text-slate-200 block">
+                            {rc.name}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400">{rc.id}</span>
+                        </div>
+                      </label>
                     ))}
-                </select>
+                </div>
               </div>
             </div>
 
@@ -2625,6 +3030,45 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                 className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md transition disabled:opacity-50"
               >
                 {updateRolesMutation.isPending ? 'A gravar...' : 'Gravar Papéis'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR REMOÇÃO DE MEMBRO */}
+      {memberToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-400">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Remover Utilizador</h3>
+                <span className="text-xs text-slate-500">{memberToDelete.full_name}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Tem a certeza de que deseja remover este utilizador da empresa? Os seus acessos e permissões serão revogados de imediato.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setMemberToDelete(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={removeMemberMutation.isPending}
+                onClick={() => removeMemberMutation.mutate(memberToDelete.user_id)}
+                className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm shadow-md transition disabled:opacity-50"
+              >
+                {removeMemberMutation.isPending ? 'A remover...' : 'Confirmar Remoção'}
               </button>
             </div>
           </div>

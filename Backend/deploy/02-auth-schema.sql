@@ -308,7 +308,43 @@ INSERT INTO kudiba_core.permissions (id, module, name, description) VALUES
     -- Permissões de Inventário (KudibaInventory)
     ('inventory:read', 'inventory', 'Consultar Inventário', 'Consulta de produtos, existências por armazém e histórico de movimentos'),
     ('inventory:manage', 'inventory', 'Gerir Produtos e Existências', 'Criação e actualização de produtos, unidades de medida e níveis mínimos de stock'),
-    ('inventory:transfer', 'inventory', 'Transferir Stock entre Armazéns', 'Criação e processamento de transferências de mercadorias entre armazéns')
+    ('inventory:transfer', 'inventory', 'Transferir Stock entre Armazéns', 'Criação e processamento de transferências de mercadorias entre armazéns'),
+    ('inventory:warehouses', 'inventory', 'Gerir Armazéns & Lojas', 'Parametrização de armazéns físicos, locais de guarda e centros de distribuição'),
+    ('inventory:adjust', 'inventory', 'Ajustes & Contagem de Stock', 'Registo de quebras, sobras, perdas e acertos pontuais de existências'),
+    ('inventory:suppliers', 'inventory', 'Fornecedores & Compras', 'Gestão do cadastro de fornecedores, encomendas de compra e preços acordados'),
+
+    -- Permissões de Clientes & Facturação Avançada
+    ('customers:read', 'fiscal', 'Consultar Clientes', 'Consulta da lista de clientes, fichas comerciais e histórico de compras'),
+    ('customers:manage', 'fiscal', 'Gerir Clientes & NIF', 'Criação, actualização de dados cadastrais e validação do NIF de clientes'),
+    ('invoices:proforma', 'fiscal', 'Orçamentos & Facturas Proforma', 'Emissão, actualização e conversão de orçamentos e facturas proforma'),
+    ('invoices:transport', 'fiscal', 'Guias de Transporte & Remessa', 'Emissão de guias de transporte rodoviário e movimentação física de bens'),
+    ('invoices:receipts', 'fiscal', 'Recibos Autónomos de Quitação (RG)', 'Emissão de recibos de liquidação total ou parcial de facturas a crédito'),
+    ('invoices:debit_note', 'fiscal', 'Emitir Notas de Débito', 'Emissão de notas de débito para cobrança de acertos e despesas a clientes'),
+
+    -- Permissões Avançadas de POS
+    ('pos:cash_movements', 'pos', 'Sangrias & Suprimentos de Caixa', 'Registo de reforços e retiradas de valores na gaveta do operador de caixa'),
+    ('pos:discounts', 'pos', 'Aplicar Descontos Manuais', 'Aplicação de descontos comerciais em linha ou no total da venda no POS'),
+
+    -- Permissões de Tesouraria (KudibaTreasury)
+    ('treasury:read', 'treasury', 'Consultar Tesouraria & Caixas', 'Consulta de saldos de caixas, extractos de contas bancárias e posições financeiras'),
+    ('treasury:manage', 'treasury', 'Gerir Caixas & Contas Bancárias', 'Configuração de caixas físicos, contas bancárias da empresa e métodos de pagamento'),
+    ('treasury:movements', 'treasury', 'Movimentos de Caixa & Despesas', 'Lançamento de despesas correntes, entradas e saídas de caixa da tesouraria'),
+    ('treasury:transfers', 'treasury', 'Transferências entre Contas', 'Realização de transferências entre caixas e contas bancárias da empresa'),
+    ('treasury:reconcile', 'treasury', 'Reconciliação Bancária', 'Conferência de extractos bancários, cruzamento de saldos e reconciliação financeira'),
+
+    -- Permissões de Contabilidade Geral (KudibaAccounting)
+    ('accounting:read', 'accounting', 'Consultar Contabilidade & Razão', 'Consulta do plano de contas, diários, extractos de conta e balancetes'),
+    ('accounting:journal', 'accounting', 'Lançamentos Contabilísticos Manuais', 'Registo e estorno de lançamentos em partidas dobradas nos diários oficiais'),
+    ('accounting:chart', 'accounting', 'Gerir Plano Geral de Contas (PGC)', 'Criação e manutenção de contas e subcontas das classes 1 a 8 do PGC Angolano'),
+    ('accounting:vat_settlement', 'accounting', 'Apuramento Periódico de IVA', 'Cálculo, fecho e apuramento do IVA a pagar ou a recuperar perante a administração fiscal'),
+    ('accounting:reports', 'accounting', 'Balanço & Demonstração de Resultados', 'Geração do Balanço analítico, Balancete de Verificação e Demonstração de Resultados'),
+
+    -- Permissões de Integrações & Biometria (KudibaIntegrations)
+    ('integrations:read', 'integrations', 'Consultar Dispositivos & Presenças', 'Visualização de terminais biométricos conectados, webhooks e marcações de ponto'),
+    ('integrations:manage', 'integrations', 'Gerir Terminais & Mapeamentos', 'Parametrização de terminais biométricos (Hikvision, ZKTeco, Anviz) e regras de sincronização'),
+
+    -- Permissões de Auditoria
+    ('audit:read', 'auth', 'Consultar Registos de Auditoria', 'Visualização da trilha de auditoria fiscal, eventos de autenticação e logs de segurança')
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     description = EXCLUDED.description;
@@ -324,44 +360,82 @@ INSERT INTO kudiba_core.role_permissions (role_id, permission_id)
 SELECT 'SYSADMIN', id FROM kudiba_core.permissions
 ON CONFLICT DO NOTHING;
 
--- CONTABILISTA: Permissões Fiscais + Relatórios + Leitura
+-- CONTABILISTA: Permissões Fiscais, Tesouraria, Contabilidade, SAF-T, Mapas e Leitura
 INSERT INTO kudiba_core.role_permissions (role_id, permission_id) VALUES
     ('CONTABILISTA', 'invoices:issue'),
     ('CONTABILISTA', 'invoices:read'),
     ('CONTABILISTA', 'invoices:cancel'),
+    ('CONTABILISTA', 'invoices:proforma'),
+    ('CONTABILISTA', 'invoices:receipts'),
+    ('CONTABILISTA', 'invoices:debit_note'),
     ('CONTABILISTA', 'fiscal:series:manage'),
     ('CONTABILISTA', 'fiscal:saft:export'),
     ('CONTABILISTA', 'fiscal:reports:read'),
     ('CONTABILISTA', 'pos:reading_x'),
     ('CONTABILISTA', 'pos:closing_z'),
-    ('CONTABILISTA', 'users:read')
+    ('CONTABILISTA', 'customers:read'),
+    ('CONTABILISTA', 'customers:manage'),
+    ('CONTABILISTA', 'treasury:read'),
+    ('CONTABILISTA', 'treasury:movements'),
+    ('CONTABILISTA', 'treasury:transfers'),
+    ('CONTABILISTA', 'treasury:reconcile'),
+    ('CONTABILISTA', 'accounting:read'),
+    ('CONTABILISTA', 'accounting:journal'),
+    ('CONTABILISTA', 'accounting:chart'),
+    ('CONTABILISTA', 'accounting:vat_settlement'),
+    ('CONTABILISTA', 'accounting:reports'),
+    ('CONTABILISTA', 'inventory:read'),
+    ('CONTABILISTA', 'users:read'),
+    ('CONTABILISTA', 'audit:read')
 ON CONFLICT DO NOTHING;
 
--- OPERADOR_CAIXA: Vendas no POS, Leitura X e Emissão
+-- OPERADOR_CAIXA: Vendas no POS, Leitura X, Recibos e Clientes
 INSERT INTO kudiba_core.role_permissions (role_id, permission_id) VALUES
     ('OPERADOR_CAIXA', 'invoices:issue'),
     ('OPERADOR_CAIXA', 'invoices:read'),
+    ('OPERADOR_CAIXA', 'invoices:receipts'),
     ('OPERADOR_CAIXA', 'pos:sale'),
-    ('OPERADOR_CAIXA', 'pos:reading_x')
+    ('OPERADOR_CAIXA', 'pos:reading_x'),
+    ('OPERADOR_CAIXA', 'pos:cash_movements'),
+    ('OPERADOR_CAIXA', 'pos:discounts'),
+    ('OPERADOR_CAIXA', 'customers:read'),
+    ('OPERADOR_CAIXA', 'customers:manage'),
+    ('OPERADOR_CAIXA', 'inventory:read')
 ON CONFLICT DO NOTHING;
 
--- AUDITOR: Leitura
+-- AUDITOR: Leitura Integral e Relatórios
 INSERT INTO kudiba_core.role_permissions (role_id, permission_id) VALUES
     ('AUDITOR', 'invoices:read'),
+    ('AUDITOR', 'invoices:proforma'),
+    ('AUDITOR', 'invoices:receipts'),
     ('AUDITOR', 'fiscal:reports:read'),
     ('AUDITOR', 'fiscal:saft:export'),
-    ('AUDITOR', 'users:read')
+    ('AUDITOR', 'customers:read'),
+    ('AUDITOR', 'treasury:read'),
+    ('AUDITOR', 'treasury:reconcile'),
+    ('AUDITOR', 'accounting:read'),
+    ('AUDITOR', 'accounting:reports'),
+    ('AUDITOR', 'inventory:read'),
+    ('AUDITOR', 'payroll:view'),
+    ('AUDITOR', 'integrations:read'),
+    ('AUDITOR', 'users:read'),
+    ('AUDITOR', 'audit:read')
 ON CONFLICT DO NOTHING;
 
--- GESTOR_STOCK: Inventário, transferências de armazém e leitura de documentos
+-- GESTOR_STOCK: Inventário, armazéns, transferências e fornecedores
 INSERT INTO kudiba_core.role_permissions (role_id, permission_id) VALUES
     ('GESTOR_STOCK', 'inventory:read'),
     ('GESTOR_STOCK', 'inventory:manage'),
     ('GESTOR_STOCK', 'inventory:transfer'),
-    ('GESTOR_STOCK', 'invoices:read')
+    ('GESTOR_STOCK', 'inventory:warehouses'),
+    ('GESTOR_STOCK', 'inventory:adjust'),
+    ('GESTOR_STOCK', 'inventory:suppliers'),
+    ('GESTOR_STOCK', 'invoices:read'),
+    ('GESTOR_STOCK', 'invoices:transport'),
+    ('GESTOR_STOCK', 'customers:read')
 ON CONFLICT DO NOTHING;
 
--- GESTOR_RH: Permissões de Recursos Humanos & Payroll
+-- GESTOR_RH: Recursos Humanos, Payroll e Integrações Biométricas
 INSERT INTO kudiba_core.role_permissions (role_id, permission_id) VALUES
     ('GESTOR_RH', 'payroll:manage'),
     ('GESTOR_RH', 'payroll:view'),
@@ -369,7 +443,10 @@ INSERT INTO kudiba_core.role_permissions (role_id, permission_id) VALUES
     ('GESTOR_RH', 'payroll:approve'),
     ('GESTOR_RH', 'payroll:export'),
     ('GESTOR_RH', 'payroll:hr'),
-    ('GESTOR_RH', 'users:read')
+    ('GESTOR_RH', 'integrations:read'),
+    ('GESTOR_RH', 'integrations:manage'),
+    ('GESTOR_RH', 'users:read'),
+    ('GESTOR_RH', 'audit:read')
 ON CONFLICT DO NOTHING;
 
 -- -----------------------------------------------------------------------------

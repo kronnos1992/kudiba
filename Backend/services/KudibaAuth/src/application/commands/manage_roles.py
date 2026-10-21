@@ -9,11 +9,13 @@ from src.application.dto import (
 )
 from src.domain.entities.role import Role
 from src.domain.error import AuthorizationError, ConflictError, DomainError, EntityNotFoundError
+from src.domain.ports.audit_repository import IAuditRepository
 from src.domain.ports.role_repository import IRoleRepository
-from src.domain.value_objects.role_type import ADMINISTRATOR_ROLE_IDS, RoleType
+from src.domain.value_objects.role_type import ADMIN_ROLE_IDS, IMMUTABLE_ADMIN_ROLE_IDS, RoleType
 
-RESERVED_ROLE_IDS = set(ADMINISTRATOR_ROLE_IDS)
+RESERVED_ROLE_IDS = set(IMMUTABLE_ADMIN_ROLE_IDS)
 SYSTEM_SCOPE_ROLE_IDS = {"SUPER_ADMIN", "SYSADMIN"}
+ADMIN_GUARDED_PERMISSIONS = {"users:read", "users:invite", "users:manage_roles", "tenant:settings:manage"}
 
 
 def _normalize_role_id(role_id: str) -> str:
@@ -21,8 +23,8 @@ def _normalize_role_id(role_id: str) -> str:
 
 
 def _is_editable(role_id: str) -> bool:
-    """Perfis de administrador são imutáveis; os restantes podem ser ajustados."""
-    return not RoleType.is_administrator(role_id)
+    """Perfis imutáveis: apenas SYSADMIN e SUPER_ADMIN. O ADMIN pode ser editado."""
+    return not RoleType.is_immutable_admin(role_id)
 
 
 def _is_system_manager(actor_roles: Optional[List[str]]) -> bool:
@@ -40,6 +42,14 @@ async def _ensure_permissions_exist(role_repo: IRoleRepository, permission_ids: 
     if unknown:
         raise DomainError(f"Permissões desconhecidas: {', '.join(unknown)}.", code="INVALID_PERMISSION")
     return clean
+
+
+def _ensure_admin_guardrails(role_id: str, permission_ids: List[str]) -> List[str]:
+    """Garante que o ADMIN conserva sempre o acesso à gestão da empresa."""
+    if role_id not in ADMIN_ROLE_IDS:
+        return permission_ids
+    merged = set(permission_ids) | ADMIN_GUARDED_PERMISSIONS
+    return sorted(merged)
 
 
 async def _load_owned_role(role_repo: IRoleRepository, role_id: str, tenant_id: uuid.UUID) -> Role:
@@ -62,7 +72,7 @@ async def _load_editable_role(role_repo: IRoleRepository, role_id: str, tenant_i
         raise EntityNotFoundError("Perfil", role_id)
     if not _is_editable(role.id):
         raise AuthorizationError(
-            "Os perfis de administrador (ADMIN, SYSADMIN, SUPER_ADMIN) têm acesso total "
+            "Os perfis de administrador (SYSADMIN, SUPER_ADMIN) têm acesso total "
             "e as suas permissões são imutáveis."
         )
     return role
@@ -71,8 +81,9 @@ async def _load_editable_role(role_repo: IRoleRepository, role_id: str, tenant_i
 class CreateRoleUseCase:
     """Caso de uso de criação de um perfil de acesso personalizado no âmbito do tenant."""
 
-    def __init__(self, role_repo: IRoleRepository):
+    def __init__(self, role_repo: IRoleRepository, audit_repo: Optional[IAuditRepository] = None):
         self.role_repo = role_repo
+        self.audit_repo = audit_repo
 
     async def execute(self, cmd: CreateRoleCommand) -> RoleDto:
         role_id = _normalize_role_id(cmd.role_id)
@@ -96,6 +107,12 @@ class CreateRoleUseCase:
             tenant_id=cmd.tenant_id,
         )
         await self.role_repo.save_role(role, permission_ids)
+        if self.audit_repo is not None:
+            await self.audit_repo.record_event(
+                action="ROLE_CREATED",
+                tenant_id=cmd.tenant_id,
+                details={"role_id": role.id, "name": role.name, "permissions": permission_ids},
+            )
         return RoleDto(
             id=role.id,
             name=role.name,
@@ -112,8 +129,9 @@ class CreateRoleUseCase:
 class UpdateRoleUseCase:
     """Caso de uso de actualização dos dados de um perfil personalizado do tenant."""
 
-    def __init__(self, role_repo: IRoleRepository):
+    def __init__(self, role_repo: IRoleRepository, audit_repo: Optional[IAuditRepository] = None):
         self.role_repo = role_repo
+        self.audit_repo = audit_repo
 
     async def execute(self, cmd: UpdateRoleCommand) -> RoleDto:
         role_id = _normalize_role_id(cmd.role_id)
@@ -124,6 +142,12 @@ class UpdateRoleUseCase:
             raise DomainError("O nome do perfil deve ter entre 2 e 64 caracteres.", code="INVALID_ROLE_NAME")
         description = (cmd.description or "").strip() or None
         await self.role_repo.update_role(role_id, name, description)
+        if self.audit_repo is not None:
+            await self.audit_repo.record_event(
+                action="ROLE_UPDATED",
+                tenant_id=cmd.tenant_id,
+                details={"role_id": role_id, "name": name},
+            )
         users_count = await self.role_repo.count_role_assignments(role_id, cmd.tenant_id)
         return RoleDto(
             id=role_id,
@@ -146,17 +170,29 @@ class UpdateRolePermissionsUseCase:
       * ADMIN da empresa -> apenas a empresa em que está autenticado.
     """
 
-    def __init__(self, role_repo: IRoleRepository):
+    def __init__(self, role_repo: IRoleRepository, audit_repo: Optional[IAuditRepository] = None):
         self.role_repo = role_repo
+        self.audit_repo = audit_repo
 
     async def execute(self, cmd: UpdateRolePermissionsCommand) -> RoleDto:
         role_id = _normalize_role_id(cmd.role_id)
         role = await _load_editable_role(self.role_repo, role_id, cmd.tenant_id)
 
         permission_ids = await _ensure_permissions_exist(self.role_repo, cmd.permissions)
+        permission_ids = _ensure_admin_guardrails(role_id, permission_ids)
         global_scope = _is_system_manager(cmd.actor_roles)
         scope = None if global_scope else cmd.tenant_id
         await self.role_repo.replace_role_permissions(role_id, permission_ids, cmd.tenant_id, scope)
+        if self.audit_repo is not None:
+            await self.audit_repo.record_event(
+                action="ROLE_PERMISSIONS_UPDATED",
+                tenant_id=cmd.tenant_id,
+                details={
+                    "role_id": role_id,
+                    "permissions": permission_ids,
+                    "scope": "global" if global_scope else str(cmd.tenant_id),
+                },
+            )
         users_count = await self.role_repo.count_role_assignments(role_id, cmd.tenant_id)
         refreshed = await self.role_repo.find_role(role_id, cmd.tenant_id)
         override_scope = await self.role_repo.role_override_scope(role_id, cmd.tenant_id)
@@ -176,8 +212,9 @@ class UpdateRolePermissionsUseCase:
 class ResetRolePermissionsUseCase:
     """Caso de uso de reposição das permissões predefinidas de um perfil."""
 
-    def __init__(self, role_repo: IRoleRepository):
+    def __init__(self, role_repo: IRoleRepository, audit_repo: Optional[IAuditRepository] = None):
         self.role_repo = role_repo
+        self.audit_repo = audit_repo
 
     async def execute(
         self, role_id: str, tenant_id: uuid.UUID, actor_roles: Optional[List[str]] = None
@@ -186,6 +223,12 @@ class ResetRolePermissionsUseCase:
         role = await _load_editable_role(self.role_repo, normalized, tenant_id)
         include_global = _is_system_manager(actor_roles)
         await self.role_repo.reset_role_permissions(normalized, tenant_id, include_global)
+        if self.audit_repo is not None:
+            await self.audit_repo.record_event(
+                action="ROLE_PERMISSIONS_RESET",
+                tenant_id=tenant_id,
+                details={"role_id": normalized},
+            )
         users_count = await self.role_repo.count_role_assignments(normalized, tenant_id)
         refreshed = await self.role_repo.find_role(normalized, tenant_id)
         override_scope = await self.role_repo.role_override_scope(normalized, tenant_id)
@@ -205,8 +248,9 @@ class ResetRolePermissionsUseCase:
 class DeleteRoleUseCase:
     """Caso de uso de remoção de um perfil personalizado do tenant (sem utilizadores atribuídos)."""
 
-    def __init__(self, role_repo: IRoleRepository):
+    def __init__(self, role_repo: IRoleRepository, audit_repo: Optional[IAuditRepository] = None):
         self.role_repo = role_repo
+        self.audit_repo = audit_repo
 
     async def execute(self, role_id: str, tenant_id: uuid.UUID) -> None:
         normalized = _normalize_role_id(role_id)
@@ -216,3 +260,9 @@ class DeleteRoleUseCase:
         if await self.role_repo.count_role_assignments(normalized) > 0:
             raise ConflictError("Não é possível eliminar um perfil que está atribuído a utilizadores.")
         await self.role_repo.delete_role(normalized)
+        if self.audit_repo is not None:
+            await self.audit_repo.record_event(
+                action="ROLE_DELETED",
+                tenant_id=tenant_id,
+                details={"role_id": normalized},
+            )

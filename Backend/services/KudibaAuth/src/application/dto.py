@@ -179,6 +179,8 @@ class InviteUserCommand:
     branch_id: Optional[uuid.UUID] = None
     password: Optional[str] = None
     actor_user_id: Optional[uuid.UUID] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -187,6 +189,27 @@ class UpdateUserRolesCommand:
     target_user_id: uuid.UUID
     roles: List[str]
     actor_user_id: Optional[uuid.UUID] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class UpdateMemberStatusCommand:
+    tenant_id: uuid.UUID
+    target_user_id: uuid.UUID
+    status: str
+    actor_user_id: uuid.UUID
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class RemoveMemberCommand:
+    tenant_id: uuid.UUID
+    target_user_id: uuid.UUID
+    actor_user_id: uuid.UUID
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
 
 
 @dataclass(frozen=True)

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from src.application.dto import UpdateUserRolesCommand
 from src.domain.error import ConflictError, DomainError, EntityNotFoundError
+from src.domain.ports.audit_repository import IAuditRepository
 from src.domain.ports.cache_service import ICacheService
 from src.domain.ports.refresh_token_repository import IRefreshTokenRepository
 from src.domain.ports.role_repository import IRoleRepository
@@ -19,6 +20,7 @@ class UpdateUserRolesUseCase:
         cache_service: Optional[ICacheService] = None,
         session_revocation_ttl_seconds: int = 3600,
         role_repo: Optional[IRoleRepository] = None,
+        audit_repo: Optional[IAuditRepository] = None,
     ):
         self.uow_factory = uow_factory
         self.user_tenant_repo = user_tenant_repo
@@ -26,6 +28,7 @@ class UpdateUserRolesUseCase:
         self.cache_service = cache_service
         self.session_revocation_ttl_seconds = session_revocation_ttl_seconds
         self.role_repo = role_repo
+        self.audit_repo = audit_repo
 
     async def execute(self, cmd: UpdateUserRolesCommand) -> None:
         roles_changed = False
@@ -55,6 +58,19 @@ class UpdateUserRolesUseCase:
             await self.user_tenant_repo.update_roles(cmd.target_user_id, cmd.tenant_id, clean_roles)
 
         if roles_changed:
+            if self.audit_repo is not None:
+                await self.audit_repo.record_event(
+                    action="ROLES_UPDATED",
+                    user_id=cmd.target_user_id,
+                    tenant_id=cmd.tenant_id,
+                    ip_address=cmd.ip_address,
+                    user_agent=cmd.user_agent,
+                    details={
+                        "actor_user_id": str(cmd.actor_user_id) if cmd.actor_user_id else None,
+                        "new_roles": clean_roles,
+                        "previous_roles": current_roles,
+                    },
+                )
             await self._invalidate_existing_sessions(cmd)
 
     async def _invalidate_existing_sessions(self, cmd: UpdateUserRolesCommand) -> None:
