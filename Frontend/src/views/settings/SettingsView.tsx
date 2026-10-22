@@ -2205,7 +2205,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                 }`}
               >
                 <Activity className="w-3.5 h-3.5" />
-                Casos de Uso &amp; Operações ({systemAuditData?.total ?? 0})
+                Actividades no Sistema
               </button>
               <button
                 type="button"
@@ -2364,7 +2364,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                         <th className="w-8 px-3 py-3"></th>
                         <th className="px-4 py-3">Data / Hora</th>
                         <th className="px-4 py-3">Módulo</th>
-                        <th className="px-4 py-3">Ação / Caso de Uso</th>
+                        <th className="px-4 py-3">Actividade / Operação</th>
                         <th className="px-4 py-3">Documento Ref</th>
                         <th className="px-4 py-3">Operador / Entidade</th>
                         <th className="px-4 py-3 text-right">Ação</th>
@@ -2374,13 +2374,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                       {isSystemAuditLoading ? (
                         <tr>
                           <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                            A carregar trilha geral de casos de uso e operações...
+                            A carregar actividades no sistema...
                           </td>
                         </tr>
                       ) : (systemAuditData?.items || []).length === 0 ? (
                         <tr>
                           <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                            Nenhum caso de uso registado com os filtros actuais.
+                            Nenhuma actividade registada com os filtros actuais.
                           </td>
                         </tr>
                       ) : (
