@@ -378,6 +378,38 @@ impl JournalEntryRepository for PostgresJournalEntryRepository {
             .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
         }
 
+        let audit_details = serde_json::json!({
+            "entry_number": entry.entry_number,
+            "period": entry.period,
+            "total_debit": entry.total_debit.to_string(),
+            "total_credit": entry.total_credit.to_string(),
+            "lines_count": entry.lines.len(),
+            "source_service": entry.source_service,
+            "source_document_ref": entry.source_document_ref
+        });
+
+        let _ = sqlx::query(
+            r#"
+            INSERT INTO kudiba_audit.system_audit_trail
+                (tenant_id, module, action, entity_type, entity_id, document_reference, actor_user_id, actor_name, details, created_at)
+            VALUES ($1, 'CONTABILIDADE', 'LANCAMENTO_LIVRO_DIARIO', 'LANCAMENTO_CONTABILISTICO', $2, $3, 'contabilista_sistema', 'Contabilidade PGC', $4, NOW())
+            "#
+        )
+        .bind(entry.tenant_id)
+        .bind(entry.id.to_string())
+        .bind(entry.source_document_ref.as_deref().unwrap_or(&entry.description))
+        .bind(audit_details)
+        .execute(&mut *tx)
+        .await;
+
+        tracing::info!(
+            target: "audit::accounting",
+            entry_number = entry.entry_number,
+            total = %entry.total_debit,
+            source_ref = ?entry.source_document_ref,
+            "[AUDIT_ACCOUNTING] Lançamento contabilístico registado e auditado"
+        );
+
         tx.commit()
             .await
             .map_err(|e| DomainError::DatabaseError(e.to_string()))?;

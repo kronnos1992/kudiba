@@ -37,6 +37,7 @@ import {
   ChevronDown,
   ChevronRight,
   Database,
+  Activity,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge } from '../../components/common/StatusBadge';
@@ -253,14 +254,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
   });
 
   // Audit & Logs State
-  const [auditSubTab, setAuditSubTab] = useState<'fiscal' | 'security' | 'saft'>('fiscal');
+  const [auditSubTab, setAuditSubTab] = useState<'system' | 'fiscal' | 'security' | 'saft'>('system');
+  const [systemModuleFilter, setSystemModuleFilter] = useState<string>('ALL');
   const [fiscalActionFilter, setFiscalActionFilter] = useState<'ALL' | 'INSERT' | 'TAMPER'>('ALL');
   const [authActionFilter, setAuthActionFilter] = useState<string>('ALL');
   const [auditSearch, setAuditSearch] = useState<string>('');
+  const [expandedSystemAuditId, setExpandedSystemAuditId] = useState<string | null>(null);
   const [expandedFiscalAuditId, setExpandedFiscalAuditId] = useState<string | null>(null);
   const [expandedAuthLogId, setExpandedAuthLogId] = useState<string | null>(null);
   const [expandedMemberId, setExpandedMemberId] = useState<string | null>(null);
   const [expandedSeriesId, setExpandedSeriesId] = useState<string | null>(null);
+
+  const {
+    data: systemAuditData,
+    isLoading: isSystemAuditLoading,
+    refetch: refetchSystemAudit,
+  } = useQuery({
+    queryKey: ['system_audit_trail', activeTenant?.id, systemModuleFilter, auditSearch],
+    queryFn: () =>
+      invoicingApi.getSystemAuditTrail({
+        tenantId: activeTenant?.id,
+        module: systemModuleFilter,
+        search: auditSearch,
+        limit: 150,
+      }),
+    enabled: Boolean(activeTenant?.id),
+    refetchInterval: activeTab === 'saft' ? 3000 : false,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+  });
 
   const {
     data: fiscalAuditData,
@@ -759,7 +781,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
             }`}
           >
             <Shield className="w-4 h-4" />
-            Auditoria &amp; Logs ({(fiscalAuditData?.total ?? 0) + (authAuditData?.total ?? 0)})
+            Auditoria &amp; Logs ({(systemAuditData?.total ?? 0) + (fiscalAuditData?.total ?? 0) + (authAuditData?.total ?? 0)})
           </button>
 
           <button
@@ -2175,6 +2197,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                onClick={() => setAuditSubTab('system')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                  auditSubTab === 'system'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Activity className="w-3.5 h-3.5" />
+                Casos de Uso &amp; Operações ({systemAuditData?.total ?? 0})
+              </button>
+              <button
+                type="button"
                 onClick={() => setAuditSubTab('fiscal')}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
                   auditSubTab === 'fiscal'
@@ -2218,6 +2252,232 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
               </span>
             </div>
           </div>
+
+          {/* SUB-TAB 0: CASOS DE USO & OPERAÇÕES DO SISTEMA */}
+          {auditSubTab === 'system' && (
+            <div className="space-y-4">
+              {/* KPIs de Casos de Uso */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <GlassCard className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500">Total de Operações</div>
+                    <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+                      {systemAuditData?.total ?? 0}
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                    <Activity className="w-5 h-5" />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500">Tesouraria &amp; Caixa</div>
+                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                      {(systemAuditData?.items || []).filter((i) => i.module === 'TESOURARIA').length}
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500">Facturação &amp; Vendas</div>
+                    <div className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">
+                      {(systemAuditData?.items || []).filter((i) => i.module === 'FATURACAO').length}
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500">Contabilidade &amp; RH</div>
+                    <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1">
+                      {(systemAuditData?.items || []).filter((i) => ['CONTABILIDADE', 'RH_PAYROLL'].includes(i.module)).length}
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                </GlassCard>
+              </div>
+
+              {/* Filtros e Pesquisa */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  {[
+                    { key: 'ALL', label: 'Todos os Módulos' },
+                    { key: 'TESOURARIA', label: 'Tesouraria' },
+                    { key: 'FATURACAO', label: 'Facturação' },
+                    { key: 'CONTABILIDADE', label: 'Contabilidade' },
+                    { key: 'INVENTARIO', label: 'Stock' },
+                    { key: 'RH_PAYROLL', label: 'Salários/RH' },
+                  ].map((m) => (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => setSystemModuleFilter(m.key)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                        systemModuleFilter === m.key
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Pesquisar documento, ação, operador..."
+                      value={auditSearch}
+                      onChange={(e) => setAuditSearch(e.target.value)}
+                      className="pl-9 pr-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg w-64 text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => refetchSystemAudit()}
+                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
+                    title="Actualizar"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabela de Casos de Uso Auditados */}
+              <GlassCard className="overflow-hidden">
+                <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                  <table className="w-full text-left text-xs border-separate border-spacing-0">
+                    <thead className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md uppercase font-semibold text-slate-500 border-b border-slate-200 dark:border-slate-800 z-10">
+                      <tr>
+                        <th className="w-8 px-3 py-3"></th>
+                        <th className="px-4 py-3">Data / Hora</th>
+                        <th className="px-4 py-3">Módulo</th>
+                        <th className="px-4 py-3">Ação / Caso de Uso</th>
+                        <th className="px-4 py-3">Documento Ref</th>
+                        <th className="px-4 py-3">Operador / Entidade</th>
+                        <th className="px-4 py-3 text-right">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {isSystemAuditLoading ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                            A carregar trilha geral de casos de uso e operações...
+                          </td>
+                        </tr>
+                      ) : (systemAuditData?.items || []).length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                            Nenhum caso de uso registado com os filtros actuais.
+                          </td>
+                        </tr>
+                      ) : (
+                        (systemAuditData?.items || []).map((item) => {
+                          const isExpanded = expandedSystemAuditId === item.id;
+                          return (
+                            <React.Fragment key={item.id}>
+                              <tr
+                                onClick={() =>
+                                  setExpandedSystemAuditId(isExpanded ? null : item.id)
+                                }
+                                className={`cursor-pointer transition-colors ${
+                                  isExpanded
+                                    ? 'bg-blue-50/40 dark:bg-blue-950/20'
+                                    : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/40'
+                                }`}
+                              >
+                                <td className="px-3 py-3 text-center text-slate-400">
+                                  {isExpanded ? (
+                                    <ChevronDown className="w-4 h-4 text-blue-600 inline" />
+                                  ) : (
+                                    <ChevronRight className="w-4 h-4 inline" />
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-600 dark:text-slate-300">
+                                  {new Date(item.created_at).toLocaleString('pt-AO')}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span
+                                    className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold ${
+                                      item.module === 'TESOURARIA'
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                        : item.module === 'FATURACAO'
+                                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                        : item.module === 'CONTABILIDADE'
+                                        ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300'
+                                        : item.module === 'INVENTARIO'
+                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                        : 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
+                                    }`}
+                                  >
+                                    {item.module}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
+                                  {item.action}
+                                </td>
+                                <td className="px-4 py-3 font-mono font-bold text-slate-700 dark:text-slate-200">
+                                  {item.document_reference || '—'}
+                                </td>
+                                <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                                  {item.actor_name || item.actor_user_id || 'Sistema'}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setExpandedSystemAuditId(isExpanded ? null : item.id);
+                                    }}
+                                    className="text-xs text-blue-600 hover:text-blue-700 font-semibold"
+                                  >
+                                    {isExpanded ? 'Ocultar' : 'Detalhes'}
+                                  </button>
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr className="bg-slate-50/80 dark:bg-slate-900/60 border-y border-slate-200 dark:border-slate-800">
+                                  <td colSpan={7} className="px-6 py-4">
+                                    <div className="space-y-3">
+                                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 dark:border-slate-800 pb-2">
+                                        <div className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                                          Payload Auditável &amp; Metadados da Operação
+                                        </div>
+                                        <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
+                                          <span>UUID: {item.id}</span>
+                                          <span>Tipo Entidade: {item.entity_type}</span>
+                                          <span>ID Entidade: {item.entity_id || '—'}</span>
+                                        </div>
+                                      </div>
+                                      <pre className="p-3 rounded-lg bg-slate-900 text-emerald-400 font-mono text-xs overflow-x-auto max-h-60 border border-slate-800">
+                                        {JSON.stringify(item.details, null, 2)}
+                                      </pre>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </GlassCard>
+            </div>
+          )}
 
           {/* SUB-TAB 1: TRILHA FISCAL AGT */}
           {auditSubTab === 'fiscal' && (

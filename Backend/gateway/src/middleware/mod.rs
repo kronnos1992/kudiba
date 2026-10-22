@@ -1,3 +1,4 @@
+pub mod access_log;
 pub mod auth;
 pub mod contingency;
 pub mod correlation;

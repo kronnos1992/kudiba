@@ -119,6 +119,10 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/fiscal/audit-trail",
             get(fiscal_audit_trail_handler),
         )
+        .route(
+            "/api/v1/fiscal/system-audit-trail",
+            get(system_audit_trail_handler),
+        )
         .route("/api/v1/fiscal/reports/tax", get(fiscal_report_handler))
         .route(
             "/api/v1/fiscal/reports/tax/excel",
@@ -1636,6 +1640,171 @@ async fn fiscal_audit_trail_handler(
             ApiError::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Falha ao consultar registos de auditoria fiscal.",
+            )
+            .into_response()
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemAuditTrailQueryParams {
+    #[serde(rename = "tenantId")]
+    pub tenant_id: Option<Uuid>,
+    pub module: Option<String>,
+    pub action: Option<String>,
+    pub search: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemAuditTrailEntry {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub module: String,
+    pub action: String,
+    pub entity_type: String,
+    pub entity_id: Option<String>,
+    pub document_reference: Option<String>,
+    pub actor_user_id: Option<String>,
+    pub actor_name: Option<String>,
+    pub ip_address: Option<String>,
+    pub details: serde_json::Value,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+async fn system_audit_trail_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<SystemAuditTrailQueryParams>,
+) -> Response {
+    let allowed_roles = [
+        "ADMIN",
+        "ADMINISTRADOR",
+        "SUPER_ADMIN",
+        "AUDITOR",
+        "GESTOR",
+        "CONTABILISTA",
+    ];
+    let authorized_tenant = match authorized_tenant_id(&headers, &allowed_roles) {
+        Ok(t) => t,
+        Err(err) => return err.into_response(),
+    };
+
+    let target_tenant = params.tenant_id.unwrap_or(authorized_tenant);
+    if target_tenant != authorized_tenant {
+        return forbidden_tenant().into_response();
+    }
+
+    let limit = params.limit.unwrap_or(150).clamp(1, 500);
+    let offset = params.offset.unwrap_or(0).max(0);
+
+    let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+        r#"
+        SELECT 
+            id,
+            tenant_id,
+            module,
+            action,
+            entity_type,
+            entity_id,
+            document_reference,
+            actor_user_id,
+            actor_name,
+            ip_address::text AS ip_address,
+            details::text AS details,
+            created_at
+        FROM kudiba_audit.system_audit_trail
+        WHERE tenant_id = 
+        "#
+    );
+    builder.push_bind(target_tenant);
+
+    if let Some(ref m) = params.module {
+        if !m.trim().is_empty() && m.trim().to_uppercase() != "ALL" {
+            builder.push(" AND UPPER(module) = ");
+            builder.push_bind(m.trim().to_uppercase());
+        }
+    }
+
+    if let Some(ref a) = params.action {
+        if !a.trim().is_empty() && a.trim().to_uppercase() != "ALL" {
+            builder.push(" AND UPPER(action) = ");
+            builder.push_bind(a.trim().to_uppercase());
+        }
+    }
+
+    if let Some(ref q) = params.search {
+        let clean_q = q.trim();
+        if !clean_q.is_empty() {
+            builder.push(" AND (document_reference ILIKE ");
+            builder.push_bind(format!("%{}%", clean_q));
+            builder.push(" OR action ILIKE ");
+            builder.push_bind(format!("%{}%", clean_q));
+            builder.push(" OR actor_name ILIKE ");
+            builder.push_bind(format!("%{}%", clean_q));
+            builder.push(" OR entity_type ILIKE ");
+            builder.push_bind(format!("%{}%", clean_q));
+            builder.push(")");
+        }
+    }
+
+    builder.push(" ORDER BY created_at DESC LIMIT ");
+    builder.push_bind(limit);
+    builder.push(" OFFSET ");
+    builder.push_bind(offset);
+
+    let query_res = builder.build().fetch_all(&state.pool).await;
+
+    match query_res {
+        Ok(rows) => {
+            let items: Vec<SystemAuditTrailEntry> = rows
+                .iter()
+                .map(|r| {
+                    let details_str: String = r.get("details");
+                    let details: serde_json::Value =
+                        serde_json::from_str(&details_str).unwrap_or(serde_json::Value::Null);
+
+                    SystemAuditTrailEntry {
+                        id: r.get("id"),
+                        tenant_id: r.get("tenant_id"),
+                        module: r.get("module"),
+                        action: r.get("action"),
+                        entity_type: r.get("entity_type"),
+                        entity_id: r.get("entity_id"),
+                        document_reference: r.get("document_reference"),
+                        actor_user_id: r.get("actor_user_id"),
+                        actor_name: r.get("actor_name"),
+                        ip_address: r.get("ip_address"),
+                        details,
+                        created_at: r.get("created_at"),
+                    }
+                })
+                .collect();
+
+            let count_res: Result<(i64,), sqlx::Error> = sqlx::query_as(
+                "SELECT COUNT(*) FROM kudiba_audit.system_audit_trail WHERE tenant_id = $1"
+            )
+            .bind(target_tenant)
+            .fetch_one(&state.pool)
+            .await;
+
+            let total = count_res.map(|(c,)| c).unwrap_or(items.len() as i64);
+
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "items": items,
+                    "total": total
+                })),
+            )
+                .into_response()
+        }
+        Err(err) => {
+            tracing::error!("Erro ao consultar trilha geral de auditoria: {:?}", err);
+            ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Falha ao consultar registos da trilha geral de auditoria.",
             )
             .into_response()
         }

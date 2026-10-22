@@ -19,9 +19,10 @@ use tower_http::timeout::TimeoutLayer;
 use crate::config::Config;
 use crate::errors::ProblemDetail;
 use crate::middleware::{
-    auth::auth_middleware, contingency::agt_contingency_middleware,
-    correlation::correlation_id_middleware, idempotency::idempotency_middleware,
-    ratelimit::rate_limit_middleware, tenant::tenant_resolver_middleware,
+    access_log::access_log_middleware, auth::auth_middleware,
+    contingency::agt_contingency_middleware, correlation::correlation_id_middleware,
+    idempotency::idempotency_middleware, ratelimit::rate_limit_middleware,
+    tenant::tenant_resolver_middleware,
 };
 use crate::proxy::{
     forward_to_accounting, forward_to_auth, forward_to_auth_openapi, forward_to_backoffice,
@@ -256,6 +257,7 @@ pub fn create_router(
         .merge(api_routes)
         .with_state(state.clone())
         // Camadas globais de rede e transporte
+        .layer(axum_mw::from_fn(access_log_middleware))
         .layer(axum_mw::from_fn(correlation_id_middleware))
         .layer(TimeoutLayer::new(state.config.write_timeout))
         .layer(RequestBodyLimitLayer::new(state.config.max_body_bytes))

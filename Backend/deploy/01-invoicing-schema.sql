@@ -345,6 +345,26 @@ CREATE TABLE IF NOT EXISTS kudiba_audit.fiscal_audit_trail (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Trilha de auditoria global de ações e casos de uso do sistema ERP
+CREATE TABLE IF NOT EXISTS kudiba_audit.system_audit_trail (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    module VARCHAR(50) NOT NULL,
+    action VARCHAR(100) NOT NULL,
+    entity_type VARCHAR(50) NOT NULL,
+    entity_id VARCHAR(100),
+    document_reference VARCHAR(100),
+    actor_user_id VARCHAR(100) DEFAULT 'sistema',
+    actor_name VARCHAR(255) DEFAULT 'Sistema / Administrador',
+    ip_address INET,
+    details JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sys_audit_tenant_created ON kudiba_audit.system_audit_trail(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sys_audit_module ON kudiba_audit.system_audit_trail(tenant_id, module);
+CREATE INDEX IF NOT EXISTS idx_sys_audit_action ON kudiba_audit.system_audit_trail(tenant_id, action);
+CREATE INDEX IF NOT EXISTS idx_sys_audit_doc_ref ON kudiba_audit.system_audit_trail(tenant_id, document_reference);
+
 -- Trigger de segurança: impede DELETE ou UPDATE físico em faturas emitidas
 CREATE OR REPLACE FUNCTION kudiba_core.prevent_invoice_mutation()
 RETURNS TRIGGER AS $$

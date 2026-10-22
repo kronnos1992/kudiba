@@ -314,6 +314,40 @@ impl TreasuryReceiptRepository for PostgresTreasuryReceiptRepository {
             .execute(&mut *tx)
             .await
             .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+            if !line.invoice_id.trim().is_empty() || !line.invoice_number.trim().is_empty() {
+                let _ = sqlx::query(
+                    r#"
+                    UPDATE kudiba_treasury.invoice_receivables
+                    SET status = 'SETTLED', updated_at = NOW()
+                    WHERE tenant_id = $1 AND (invoice_id = $2 OR document_number = $3)
+                    "#,
+                )
+                .bind(receipt.tenant_id)
+                .bind(&line.invoice_id)
+                .bind(&line.invoice_number)
+                .execute(&mut *tx)
+                .await;
+            }
+        }
+
+        if let Some(ref notes) = receipt.notes {
+            if let Some(doc_num) = notes.strip_prefix("Liquidação da fatura ") {
+                let doc_num = doc_num.trim();
+                if !doc_num.is_empty() {
+                    let _ = sqlx::query(
+                        r#"
+                        UPDATE kudiba_treasury.invoice_receivables
+                        SET status = 'SETTLED', updated_at = NOW()
+                        WHERE tenant_id = $1 AND document_number = $2
+                        "#,
+                    )
+                    .bind(receipt.tenant_id)
+                    .bind(doc_num)
+                    .execute(&mut *tx)
+                    .await;
+                }
+            }
         }
 
         if let Some(movement) = cash_movement {
@@ -359,6 +393,40 @@ impl TreasuryReceiptRepository for PostgresTreasuryReceiptRepository {
                 ));
             }
         }
+
+        let audit_details = serde_json::json!({
+            "receipt_number": receipt.receipt_number,
+            "total_amount": receipt.total_amount.to_string(),
+            "payment_method": format!("{:?}", receipt.payment_method),
+            "customer_id": receipt.customer_id,
+            "customer_name": receipt.customer_name,
+            "bank_account_id": receipt.bank_account_id,
+            "lines_count": receipt.lines.len()
+        });
+
+        let _ = sqlx::query(
+            r#"
+            INSERT INTO kudiba_audit.system_audit_trail
+                (tenant_id, module, action, entity_type, entity_id, document_reference, actor_user_id, actor_name, details, created_at)
+            VALUES ($1, 'TESOURARIA', 'EMISSAO_RECIBO_RC', 'RECIBO_RC', $2, $3, 'operador_tesouraria', $4, $5, NOW())
+            "#
+        )
+        .bind(receipt.tenant_id)
+        .bind(receipt.id.to_string())
+        .bind(&receipt.receipt_number)
+        .bind(&receipt.customer_name)
+        .bind(audit_details)
+        .execute(&mut *tx)
+        .await;
+
+        tracing::info!(
+            target: "audit::treasury",
+            receipt_number = %receipt.receipt_number,
+            tenant_id = %receipt.tenant_id,
+            total = %receipt.total_amount,
+            customer = %receipt.customer_name,
+            "[AUDIT_TREASURY] Recibo de quitação RC emitido e auditado na trilha de operações"
+        );
 
         tx.commit()
             .await

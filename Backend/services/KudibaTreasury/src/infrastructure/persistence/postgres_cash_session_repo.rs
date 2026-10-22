@@ -146,6 +146,37 @@ impl CashSessionRepository for PostgresCashSessionRepository {
         .await
         .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
+        let audit_details = serde_json::json!({
+            "session_id": session.id.to_string(),
+            "register_id": session.register_id.to_string(),
+            "operator_user_id": session.operator_user_id,
+            "opening_balance": session.opening_balance.to_string(),
+            "notes": session.notes
+        });
+
+        let _ = sqlx::query(
+            r#"
+            INSERT INTO kudiba_audit.system_audit_trail
+                (tenant_id, module, action, entity_type, entity_id, document_reference, actor_user_id, actor_name, details, created_at)
+            VALUES ($1, 'TESOURARIA', 'ABERTURA_SESSAO_CAIXA', 'SESSAO_CAIXA', $2, $3, $4, $4, $5, NOW())
+            "#
+        )
+        .bind(session.tenant_id)
+        .bind(session.id.to_string())
+        .bind(format!("CX-SESSION-{}", &session.id.to_string()[..8]))
+        .bind(&session.operator_user_id)
+        .bind(audit_details)
+        .execute(&self.pool)
+        .await;
+
+        tracing::info!(
+            target: "audit::treasury",
+            session_id = %session.id,
+            register_id = %session.register_id,
+            operator = %session.operator_user_id,
+            "[AUDIT_TREASURY] Sessão de caixa aberta com sucesso"
+        );
+
         Ok(())
     }
 
@@ -170,6 +201,40 @@ impl CashSessionRepository for PostgresCashSessionRepository {
         .execute(&self.pool)
         .await
         .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+        let audit_details = serde_json::json!({
+            "session_id": session.id.to_string(),
+            "register_id": session.register_id.to_string(),
+            "operator_user_id": session.operator_user_id,
+            "closing_balance_counted": session.closing_balance_counted.map(|v| v.to_string()),
+            "closing_balance_system": session.closing_balance_system.map(|v| v.to_string()),
+            "discrepancy": session.discrepancy.map(|v| v.to_string()),
+            "status": format!("{:?}", session.status),
+            "notes": session.notes
+        });
+
+        let _ = sqlx::query(
+            r#"
+            INSERT INTO kudiba_audit.system_audit_trail
+                (tenant_id, module, action, entity_type, entity_id, document_reference, actor_user_id, actor_name, details, created_at)
+            VALUES ($1, 'TESOURARIA', 'FECHO_SESSAO_CAIXA', 'SESSAO_CAIXA', $2, $3, $4, $4, $5, NOW())
+            "#
+        )
+        .bind(session.tenant_id)
+        .bind(session.id.to_string())
+        .bind(format!("CX-SESSION-{}", &session.id.to_string()[..8]))
+        .bind(&session.operator_user_id)
+        .bind(audit_details)
+        .execute(&self.pool)
+        .await;
+
+        tracing::info!(
+            target: "audit::treasury",
+            session_id = %session.id,
+            register_id = %session.register_id,
+            discrepancy = ?session.discrepancy,
+            "[AUDIT_TREASURY] Sessão de caixa encerrada com sucesso"
+        );
 
         Ok(())
     }

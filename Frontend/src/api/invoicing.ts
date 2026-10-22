@@ -149,6 +149,26 @@ export interface FiscalAuditTrailResponse {
   total: number;
 }
 
+export interface SystemAuditTrailEntry {
+  id: string;
+  tenant_id: string;
+  module: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  document_reference: string | null;
+  actor_user_id: string | null;
+  actor_name: string | null;
+  ip_address: string | null;
+  details: Record<string, any>;
+  created_at: string;
+}
+
+export interface SystemAuditTrailResponse {
+  items: SystemAuditTrailEntry[];
+  total: number;
+}
+
 export interface PosPaymentBreakdown {
   paymentMethod: string;
   paymentMethodName: string;
@@ -424,6 +444,20 @@ export const invoicingApi = {
         offset: params?.offset,
         action: params?.action,
       },
+    });
+    return response.data;
+  },
+
+  getSystemAuditTrail: async (params?: {
+    tenantId?: string;
+    module?: string;
+    action?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<SystemAuditTrailResponse> => {
+    const response = await apiClient.get<SystemAuditTrailResponse>('/api/v1/fiscal/system-audit-trail', {
+      params,
     });
     return response.data;
   },
