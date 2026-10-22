@@ -14,14 +14,21 @@ END $$;
 
 DO $$ BEGIN
     CREATE TYPE kudiba_accounting.account_class AS ENUM (
-        'CLASS_1_MEIOS_FINANCEIROS',
+        'CLASS_0_CONTAS_DE_ORDEM',
+        'CLASS_1_MEIOS_FIXOS_INVESTIMENTOS',
         'CLASS_2_EXISTENCIAS',
         'CLASS_3_TERCEIROS',
+        'CLASS_4_MEIOS_MONETARIOS',
+        'CLASS_5_CAPITAL_RESERVAS',
+        'CLASS_6_PROVEITOS_POR_NATUREZA',
+        'CLASS_7_CUSTOS_POR_NATUREZA',
+        'CLASS_8_RESULTADOS',
+        -- Legado / compatibilidade
+        'CLASS_1_MEIOS_FINANCEIROS',
         'CLASS_4_IMOBILIZACOES',
         'CLASS_5_CAPITAL_PROPRIO',
         'CLASS_6_CUSTOS',
-        'CLASS_7_PROVEITOS',
-        'CLASS_8_RESULTADOS'
+        'CLASS_7_PROVEITOS'
     );
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;

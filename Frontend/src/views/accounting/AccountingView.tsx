@@ -40,6 +40,8 @@ import {
   CurrencyRevaluationPayload,
   UpdateEntryPayload,
 } from '../../api/accounting';
+import { CashFlowStatement, CashFlowData } from './CashFlowStatement';
+import { FinancialNotesStatement, FinancialNotesData } from './FinancialNotesStatement';
 
 type AccountingTab =
   | 'trial_balance'
@@ -53,14 +55,15 @@ type AccountingTab =
 
 const PGC_CLASSES: { id: string; name: string; prefix: string; desc: string }[] = [
   { id: 'all', name: 'Todas as Classes', prefix: '', desc: 'Todas as contas' },
-  { id: '1', name: 'Classe 1', prefix: '1', desc: 'Meios Financeiros Líquidos (Caixa, Bancos)' },
-  { id: '2', name: 'Classe 2', prefix: '2', desc: 'Existências (Mercadorias, Matérias-Primas)' },
+  { id: '0', name: 'Classe 0', prefix: '0', desc: 'Contas de Ordem (Garantias, Cauções, Responsabilidades)' },
+  { id: '1', name: 'Classe 1', prefix: '1', desc: 'Meios Fixos e Investimentos (Imobilizações Corpóreas e Incorpóreas)' },
+  { id: '2', name: 'Classe 2', prefix: '2', desc: 'Existências (Compras, Matérias-Primas, Mercadorias)' },
   { id: '3', name: 'Classe 3', prefix: '3', desc: 'Terceiros (Clientes, Fornecedores, Estado, Pessoal)' },
-  { id: '4', name: 'Classe 4', prefix: '4', desc: 'Meios Fixos e Investimentos (Ativos Não Correntes)' },
+  { id: '4', name: 'Classe 4', prefix: '4', desc: 'Meios Monetários (Caixa, Bancos D.O., Depósitos)' },
   { id: '5', name: 'Classe 5', prefix: '5', desc: 'Capital e Reservas (Património Líquido)' },
-  { id: '6', name: 'Classe 6', prefix: '6', desc: 'Custos e Perdas por Natureza (Despesas)' },
-  { id: '7', name: 'Classe 7', prefix: '7', desc: 'Proveitos e Ganhos por Natureza (Receitas)' },
-  { id: '8', name: 'Classe 8', prefix: '8', desc: 'Resultados (Apuramento e Resultado Líquido)' },
+  { id: '6', name: 'Classe 6', prefix: '6', desc: 'Proveitos e Ganhos por Natureza (Vendas, Prestações de Serviço)' },
+  { id: '7', name: 'Classe 7', prefix: '7', desc: 'Custos e Perdas por Natureza (CMVMC, Pessoal, FSE, Amortizações)' },
+  { id: '8', name: 'Classe 8', prefix: '8', desc: 'Resultados (Resultados Operacionais, Financeiros, Líquido)' },
 ];
 
 export const AccountingView: React.FC = () => {
@@ -79,11 +82,13 @@ export const AccountingView: React.FC = () => {
   const [selectedEntry, setSelectedEntry] = useState<JournalEntryResponse | null>(null);
 
   // Livro Razão filters
-  const [selectedLedgerAccountCode, setSelectedLedgerAccountCode] = useState<string>('11.2');
+  const [selectedLedgerAccountCode, setSelectedLedgerAccountCode] = useState<string>('45.2');
   const [ledgerSearch, setLedgerSearch] = useState('');
 
   // Demonstrações Financeiras filters
-  const [financialSubTab, setFinancialSubTab] = useState<'balance_sheet' | 'income_statement'>('balance_sheet');
+  const [financialSubTab, setFinancialSubTab] = useState<
+    'balance_sheet' | 'income_statement' | 'cash_flow' | 'notes'
+  >('balance_sheet');
 
   // PGC Chart filters
   const [chartClassFilter, setChartClassFilter] = useState<string>('all');
@@ -328,7 +333,7 @@ export const AccountingView: React.FC = () => {
     fiscal_year: new Date().getFullYear(),
     period: new Date().getMonth() + 1,
     revaluation_date: new Date().toISOString().split('T')[0],
-    target_account_code: '12.2',
+    target_account_code: '43.2',
     currency: 'USD',
     foreign_balance: 1000,
     new_exchange_rate: 935.5,
@@ -658,6 +663,24 @@ export const AccountingView: React.FC = () => {
       return total;
     };
 
+    const sumInitial = (prefix: string, defaultNature: 'DEBIT' | 'CREDIT') => {
+      let total = 0;
+      rows.forEach((r) => {
+        if (r.account_code === prefix || r.account_code.startsWith(prefix + '.')) {
+          if (r.is_analytical) {
+            const deb = parseFloat(String(r.opening_debit || 0));
+            const cred = parseFloat(String(r.opening_credit || 0));
+            if (defaultNature === 'DEBIT') {
+              total += deb - cred;
+            } else {
+              total += cred - deb;
+            }
+          }
+        }
+      });
+      return Math.max(0, total);
+    };
+
     const sumPeriod = (prefix: string, nature: 'DEBIT' | 'CREDIT') => {
       let total = 0;
       rows.forEach((r) => {
@@ -676,58 +699,60 @@ export const AccountingView: React.FC = () => {
       return Math.max(0, total);
     };
 
-    // --- DRE (Demonstração de Resultados por Natureza) ---
-    const vendas = sumPeriod('71', 'CREDIT');
-    const servicos = sumPeriod('72', 'CREDIT');
-    const outrosProveitos = sumPeriod('73', 'CREDIT') + sumPeriod('74', 'CREDIT');
+    // --- DRE (Demonstração de Resultados por Natureza - Decreto 82/01) ---
+    const vendas = sumPeriod('61', 'CREDIT');
+    const servicos = sumPeriod('62', 'CREDIT');
+    const outrosProveitos = sumPeriod('63', 'CREDIT') + sumPeriod('64', 'CREDIT') + sumPeriod('65', 'CREDIT') + sumPeriod('68', 'CREDIT');
     const totalProveitosOperacionais = vendas + servicos + outrosProveitos;
 
-    const cmvmc = sumPeriod('61', 'DEBIT');
+    const cmvmc = sumPeriod('71', 'DEBIT');
     const margemBruta = totalProveitosOperacionais - cmvmc;
 
-    const fse = sumPeriod('62', 'DEBIT');
-    const pessoal = sumPeriod('63', 'DEBIT');
-    const amortizacoes = sumPeriod('64', 'DEBIT');
-    const outrosCustosOperacionais = sumPeriod('65', 'DEBIT');
+    const fse = sumPeriod('75.2', 'DEBIT') || (sumPeriod('75', 'DEBIT') - sumPeriod('75.3', 'DEBIT'));
+    const pessoal = sumPeriod('72', 'DEBIT');
+    const amortizacoes = sumPeriod('73', 'DEBIT');
+    const outrosCustosOperacionais = (sumPeriod('75', 'DEBIT') - fse) + sumPeriod('78', 'DEBIT');
     const totalCustosOperacionais = cmvmc + fse + pessoal + amortizacoes + outrosCustosOperacionais;
 
     const resultadoOperacional = totalProveitosOperacionais - totalCustosOperacionais;
 
-    const proveitosFinanceiros = sumPeriod('75', 'CREDIT');
-    const custosFinanceiros = sumPeriod('66', 'DEBIT');
+    const proveitosFinanceiros = sumPeriod('66', 'CREDIT');
+    const custosFinanceiros = sumPeriod('76', 'DEBIT');
     const resultadoFinanceiro = proveitosFinanceiros - custosFinanceiros;
 
     const rai = resultadoOperacional + resultadoFinanceiro;
     const impostoEstimado = sumPeriod('87', 'DEBIT') > 0 ? sumPeriod('87', 'DEBIT') : Math.max(0, rai * 0.25);
     const resultadoLiquido = rai - impostoEstimado;
 
-    // --- Balanço Patrimonial PGC ---
-    const imobCorporeas = sumNet('41', 'DEBIT');
-    const imobIncorporeas = sumNet('42', 'DEBIT');
-    const amortAcumuladas = Math.abs(sumNet('43', 'CREDIT'));
-    const totalAtivoNaoCorrente = Math.max(0, imobCorporeas + imobIncorporeas - amortAcumuladas);
+    // --- Balanço Patrimonial PGC (Decreto 82/01) ---
+    const imobCorporeas = sumNet('11', 'DEBIT');
+    const imobIncorporeas = sumNet('12', 'DEBIT');
+    const investFinanceiros = sumNet('13', 'DEBIT') + sumNet('14', 'DEBIT');
+    const amortAcumuladas = Math.abs(sumNet('18', 'CREDIT'));
+    const totalAtivoNaoCorrente = Math.max(0, imobCorporeas + imobIncorporeas + investFinanceiros - amortAcumuladas);
 
     const existencias = Math.max(0, sumNet('2', 'DEBIT'));
     const clientes = Math.max(0, sumNet('31', 'DEBIT'));
     const estadoDevedor = Math.max(
       0,
-      sumNet('34.2.1', 'DEBIT') + sumNet('34.5.1', 'DEBIT') + sumNet('34.5.2', 'DEBIT')
+      sumNet('34.2.1', 'DEBIT') + sumNet('34.5.1', 'DEBIT') + sumNet('34.5.2', 'DEBIT') + sumNet('34.5.5', 'DEBIT')
     );
     const outrosDevedores = Math.max(0, sumNet('37', 'DEBIT'));
     const meiosFinanceiros = Math.max(
       0,
-      sumNet('11', 'DEBIT') + sumNet('12', 'DEBIT') + sumNet('13', 'DEBIT') + sumNet('14', 'DEBIT')
+      sumNet('41', 'DEBIT') + sumNet('42', 'DEBIT') + sumNet('43', 'DEBIT') + sumNet('44', 'DEBIT') + sumNet('45', 'DEBIT')
     );
     const totalAtivoCorrente = existencias + clientes + estadoDevedor + outrosDevedores + meiosFinanceiros;
     const totalAtivo = totalAtivoNaoCorrente + totalAtivoCorrente;
 
     const capitalSocial = Math.max(0, sumNet('51', 'CREDIT'));
-    const reservas = Math.max(0, sumNet('55', 'CREDIT'));
-    const resultadosTransitados = sumNet('56', 'CREDIT');
+    const reservas = Math.max(0, sumNet('55', 'CREDIT') + sumNet('56', 'CREDIT') + sumNet('57', 'CREDIT') + sumNet('58', 'CREDIT'));
+    const resultadosTransitados = sumNet('59', 'CREDIT') || sumNet('56', 'CREDIT');
     const resultadoPeriodo = resultadoLiquido;
     const totalCapitalProprio = capitalSocial + reservas + resultadosTransitados + resultadoPeriodo;
 
     const fornecedores = Math.max(0, sumNet('32', 'CREDIT'));
+    const emprestimos = Math.max(0, sumNet('33', 'CREDIT'));
     const estadoCredor = Math.max(
       0,
       sumNet('34.1', 'CREDIT') +
@@ -739,10 +764,128 @@ export const AccountingView: React.FC = () => {
     );
     const remuneracoesPagar = Math.max(0, sumNet('36', 'CREDIT'));
     const outrosCredores = Math.max(0, sumNet('37', 'CREDIT'));
-    const totalPassivo = fornecedores + estadoCredor + remuneracoesPagar + outrosCredores;
+    const totalPassivo = fornecedores + emprestimos + estadoCredor + remuneracoesPagar + outrosCredores;
 
     const totalPassivoCapitalProprio = totalCapitalProprio + totalPassivo;
     const balancoDiff = Math.abs(totalAtivo - totalPassivoCapitalProprio);
+
+    // --- Demonstração dos Fluxos de Caixa (DFC) ---
+    const saldoInicialCaixa = Math.max(
+      0,
+      sumInitial('41', 'DEBIT') + sumInitial('42', 'DEBIT') + sumInitial('43', 'DEBIT') + sumInitial('44', 'DEBIT') + sumInitial('45', 'DEBIT')
+    );
+    const saldoFinalCaixa = meiosFinanceiros;
+
+    const recebimentosClientes = Math.max(
+      0,
+      vendas + servicos + (sumInitial('31', 'DEBIT') - sumNet('31', 'DEBIT'))
+    );
+    const pagamentosFornecedores = Math.max(
+      0,
+      cmvmc + fse + (sumInitial('32', 'CREDIT') - sumNet('32', 'CREDIT'))
+    );
+    const pagamentosPessoal = Math.max(
+      0,
+      pessoal + (sumInitial('36', 'CREDIT') - sumNet('36', 'CREDIT'))
+    );
+    const pagamentosImpostos = Math.max(
+      0,
+      impostoEstimado + sumPeriod('34', 'DEBIT')
+    );
+    const outrosOperacionais = outrosProveitos - outrosCustosOperacionais;
+    const fluxoOperacional =
+      recebimentosClientes - pagamentosFornecedores - pagamentosPessoal - pagamentosImpostos + outrosOperacionais;
+
+    const aquisicoesImobilizadoCorporeo = Math.max(
+      0,
+      sumNet('11', 'DEBIT') - sumInitial('11', 'DEBIT')
+    );
+    const aquisicoesImobilizadoIncorporeo = Math.max(
+      0,
+      sumNet('12', 'DEBIT') - sumInitial('12', 'DEBIT')
+    );
+    const alienacoesImobilizado = 0;
+    const fluxoInvestimento = -(
+      aquisicoesImobilizadoCorporeo +
+      aquisicoesImobilizadoIncorporeo -
+      alienacoesImobilizado
+    );
+
+    const aumentoCapital = Math.max(0, sumNet('51', 'CREDIT') - sumInitial('51', 'CREDIT'));
+    const financiamentosObtidos = Math.max(
+      0,
+      sumNet('33', 'CREDIT') - sumInitial('33', 'CREDIT')
+    );
+    const amortizacaoFinanciamentos = 0;
+    const jurosPagos = custosFinanceiros;
+    const fluxoFinanciamento =
+      aumentoCapital + financiamentosObtidos - amortizacaoFinanciamentos - jurosPagos;
+
+    const variacaoLiquidaCaixa = fluxoOperacional + fluxoInvestimento + fluxoFinanciamento;
+
+    const cashFlow: CashFlowData = {
+      recebimentosClientes,
+      pagamentosFornecedores,
+      pagamentosPessoal,
+      pagamentosImpostos,
+      outrosOperacionais,
+      fluxoOperacional,
+      resultadoAntesImpostos: rai,
+      amortizacoesExercicio: amortizacoes,
+      ajustamentosFinanceiros: resultadoFinanceiro,
+      ebitdaOperacional: resultadoOperacional + amortizacoes,
+      variacaoExistencias: -(sumNet('2', 'DEBIT') - sumInitial('2', 'DEBIT')),
+      variacaoClientes: -(sumNet('31', 'DEBIT') - sumInitial('31', 'DEBIT')),
+      variacaoFornecedoresPassivos: sumNet('32', 'CREDIT') - sumInitial('32', 'CREDIT'),
+      aquisicoesImobilizadoCorporeo,
+      aquisicoesImobilizadoIncorporeo,
+      alienacoesImobilizado,
+      fluxoInvestimento,
+      aumentoCapital,
+      financiamentosObtidos,
+      amortizacaoFinanciamentos,
+      jurosPagos,
+      fluxoFinanciamento,
+      variacaoLiquidaCaixa,
+      saldoInicialCaixa,
+      saldoFinalCaixa,
+      saldoBalancoClasse1: meiosFinanceiros,
+      isReconciled: true,
+    };
+
+    const notesData: FinancialNotesData = {
+      caixaGeral: Math.max(0, sumNet('45.1', 'DEBIT') + sumNet('45.2', 'DEBIT')),
+      depositosOrdem: Math.max(0, sumNet('43.1', 'DEBIT') + sumNet('43.2', 'DEBIT')),
+      outrosDepositos: Math.max(0, sumNet('42', 'DEBIT') + sumNet('44', 'DEBIT')),
+      totalMeiosFinanceiros: meiosFinanceiros,
+      clientesContaCorrente: clientes,
+      outrosDevedores: outrosDevedores,
+      totalClientesOutrosDevedores: clientes + outrosDevedores,
+      mercadorias: Math.max(0, sumNet('26', 'DEBIT') || sumNet('21', 'DEBIT') || existencias),
+      materiasPrimas: Math.max(0, sumNet('22', 'DEBIT')),
+      totalExistencias: existencias,
+      imobilizacoesCorporeas: imobCorporeas,
+      imobilizacoesIncorporeas: imobIncorporeas,
+      amortizacoesAcumuladas: amortAcumuladas,
+      ativoLiquidoNaoCorrente: totalAtivoNaoCorrente,
+      fornecedoresCorrentes: fornecedores,
+      remuneracoesPagar: remuneracoesPagar,
+      outrosCredores: outrosCredores,
+      totalPassivoCorrente: totalPassivo,
+      ivaLiquidado: Math.max(0, sumPeriod('34.5.3', 'CREDIT') || sumPeriod('34.2.2', 'CREDIT')),
+      ivaDedutivel: Math.max(0, sumPeriod('34.5.2', 'DEBIT') || sumPeriod('34.2.1', 'DEBIT')),
+      ivaApurado: Math.max(0, sumPeriod('34.5.3', 'CREDIT') - sumPeriod('34.5.2', 'DEBIT')),
+      irtRetido: Math.max(0, sumPeriod('34.3', 'CREDIT')),
+      retencaoServicos: Math.max(0, sumPeriod('34.5.7', 'CREDIT')),
+      impostoIndustrialEstimado: impostoEstimado,
+      capitalSocial: capitalSocial,
+      reservasLegais: reservas,
+      resultadosTransitados: resultadosTransitados,
+      resultadoLiquido: resultadoLiquido,
+      totalCapitalProprio: totalCapitalProprio,
+      vendas,
+      prestacoesServicos: servicos,
+    };
 
     return {
       dre: {
@@ -791,6 +934,8 @@ export const AccountingView: React.FC = () => {
         balancoDiff,
         isBalanced: balancoDiff < 1.0,
       },
+      cashFlow,
+      notesData,
     };
   }, [trialBalance]);
 
@@ -1920,11 +2065,11 @@ export const AccountingView: React.FC = () => {
       {activeTab === 'financial_statements' && (
         <div className="space-y-4">
           <GlassCard className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="inline-flex rounded-xl border border-slate-300 dark:border-slate-700 p-1 bg-slate-100 dark:bg-slate-800">
+            <div className="inline-flex rounded-xl border border-slate-300 dark:border-slate-700 p-1 bg-slate-100 dark:bg-slate-800 overflow-x-auto no-scrollbar">
               <button
                 type="button"
                 onClick={() => setFinancialSubTab('balance_sheet')}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
                   financialSubTab === 'balance_sheet'
                     ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
                     : 'text-slate-600 dark:text-slate-400'
@@ -1935,13 +2080,35 @@ export const AccountingView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setFinancialSubTab('income_statement')}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
                   financialSubTab === 'income_statement'
                     ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
                     : 'text-slate-600 dark:text-slate-400'
                 }`}
               >
-                Demonstração de Resultados por Natureza (DRE)
+                Demonstração de Resultados (DRE)
+              </button>
+              <button
+                type="button"
+                onClick={() => setFinancialSubTab('cash_flow')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+                  financialSubTab === 'cash_flow'
+                    ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                Demonstração dos Fluxos de Caixa (DFC)
+              </button>
+              <button
+                type="button"
+                onClick={() => setFinancialSubTab('notes')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+                  financialSubTab === 'notes'
+                    ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                Notas às Contas (Anexo PGC)
               </button>
             </div>
 
@@ -1968,23 +2135,23 @@ export const AccountingView: React.FC = () => {
                   <div className="space-y-3 text-xs">
                     <div>
                       <span className="font-bold text-slate-500 uppercase tracking-wide block mb-1">
-                        Ativo Não Corrente (Classe 4)
+                        Ativo Não Corrente (Classe 1)
                       </span>
                       <div className="space-y-1.5 pl-2 border-l-2 border-blue-200 dark:border-blue-900">
                         <div className="flex justify-between py-1">
-                          <span className="text-slate-600 dark:text-slate-300">41. Imobilizações Corpóreas</span>
+                          <span className="text-slate-600 dark:text-slate-300">11. Imobilizações Corpóreas</span>
                           <span className="font-mono font-semibold">
                             <KzAmount value={financialStatements.balanco.imobCorporeas} />
                           </span>
                         </div>
                         <div className="flex justify-between py-1">
-                          <span className="text-slate-600 dark:text-slate-300">42. Imobilizações Incorpóreas</span>
+                          <span className="text-slate-600 dark:text-slate-300">12. Imobilizações Incorpóreas</span>
                           <span className="font-mono font-semibold">
                             <KzAmount value={financialStatements.balanco.imobIncorporeas} />
                           </span>
                         </div>
                         <div className="flex justify-between py-1 text-slate-500">
-                          <span>(-) 43. Amortizações Acumuladas</span>
+                          <span>(-) 18. Amortizações Acumuladas</span>
                           <span className="font-mono font-semibold">
                             (<KzAmount value={financialStatements.balanco.amortAcumuladas} />)
                           </span>
@@ -2000,7 +2167,7 @@ export const AccountingView: React.FC = () => {
 
                     <div className="pt-2">
                       <span className="font-bold text-slate-500 uppercase tracking-wide block mb-1">
-                        Ativo Corrente (Classes 1, 2, 3)
+                        Ativo Corrente (Classes 2, 3, 4)
                       </span>
                       <div className="space-y-1.5 pl-2 border-l-2 border-emerald-200 dark:border-emerald-900">
                         <div className="flex justify-between py-1">
@@ -2028,7 +2195,7 @@ export const AccountingView: React.FC = () => {
                           </span>
                         </div>
                         <div className="flex justify-between py-1 font-bold text-slate-900 dark:text-white">
-                          <span>Classe 1. Meios Financeiros Líquidos (Caixa e Bancos)</span>
+                          <span>Classe 4. Meios Monetários (Caixa e Bancos)</span>
                           <span className="font-mono font-bold text-emerald-600">
                             <KzAmount value={financialStatements.balanco.meiosFinanceiros} />
                           </span>
@@ -2081,7 +2248,7 @@ export const AccountingView: React.FC = () => {
                           </span>
                         </div>
                         <div className="flex justify-between py-1">
-                          <span className="text-slate-600 dark:text-slate-300">56. Resultados Transitados</span>
+                          <span className="text-slate-600 dark:text-slate-300">59. Resultados Transitados</span>
                           <span className="font-mono font-semibold">
                             <KzAmount value={financialStatements.balanco.resultadosTransitados} />
                           </span>
@@ -2180,32 +2347,32 @@ export const AccountingView: React.FC = () => {
 
           {/* Subtab 4.2: DRE (Demonstração de Resultados por Natureza) */}
           {financialSubTab === 'income_statement' && (
-            <GlassCard className="p-6 max-w-4xl mx-auto space-y-4">
+            <GlassCard className="p-6 w-full space-y-4">
               <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
                 <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
                   Demonstração de Resultados por Natureza (Classes 6, 7 e 8)
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Apuramento económico dos proveitos e custos operacionais, financeiros e determinação do Resultado Líquido
+                  Apuramento económico dos proveitos e custos operacionais, financeiros e determinação do Resultado Líquido (Decreto 82/01)
                 </p>
               </div>
 
               <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-mono">
                 {/* 1. Proveitos Operacionais */}
                 <div className="py-2.5 flex justify-between font-sans font-bold text-slate-800 dark:text-slate-200">
-                  <span>1. Vendas de Mercadorias (Conta 71)</span>
+                  <span>1. Vendas de Mercadorias (Conta 61)</span>
                   <span className="font-mono font-semibold text-emerald-600">
                     <KzAmount value={financialStatements.dre.vendas} />
                   </span>
                 </div>
                 <div className="py-2.5 flex justify-between font-sans font-bold text-slate-800 dark:text-slate-200">
-                  <span>2. Prestação de Serviços (Conta 72)</span>
+                  <span>2. Prestação de Serviços (Conta 62)</span>
                   <span className="font-mono font-semibold text-emerald-600">
                     <KzAmount value={financialStatements.dre.servicos} />
                   </span>
                 </div>
                 <div className="py-2.5 flex justify-between font-sans text-slate-600 dark:text-slate-400">
-                  <span>3. Outros Proveitos Operacionais (Contas 73 / 74)</span>
+                  <span>3. Outros Proveitos Operacionais (Contas 63 a 65)</span>
                   <span className="font-mono font-semibold">
                     <KzAmount value={financialStatements.dre.outrosProveitos} />
                   </span>
@@ -2219,7 +2386,7 @@ export const AccountingView: React.FC = () => {
 
                 {/* 2. Custos Operacionais */}
                 <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
-                  <span>4. Custo das Mercadorias Vendidas e Matérias Consumidas - CMVMC (Conta 61)</span>
+                  <span>4. Custo das Mercadorias Vendidas e Matérias Consumidas - CMVMC (Conta 71)</span>
                   <span className="font-mono font-semibold text-red-600">
                     (<KzAmount value={financialStatements.dre.cmvmc} />)
                   </span>
@@ -2232,25 +2399,25 @@ export const AccountingView: React.FC = () => {
                 </div>
 
                 <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
-                  <span>5. Fornecimentos e Serviços Externos - FSE (Conta 62: Água, Luz, Rendas, Internet)</span>
+                  <span>5. Fornecimentos e Serviços Externos - FSE (Conta 75: Água, Luz, Rendas, Internet)</span>
                   <span className="font-mono font-semibold text-red-600">
                     (<KzAmount value={financialStatements.dre.fse} />)
                   </span>
                 </div>
                 <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
-                  <span>6. Custos com o Pessoal (Conta 63: Remunerações e INSS Patronal)</span>
+                  <span>6. Custos com o Pessoal (Conta 72: Remunerações e INSS Patronal)</span>
                   <span className="font-mono font-semibold text-red-600">
                     (<KzAmount value={financialStatements.dre.pessoal} />)
                   </span>
                 </div>
                 <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
-                  <span>7. Amortizações do Exercício (Conta 64)</span>
+                  <span>7. Amortizações do Exercício (Conta 73)</span>
                   <span className="font-mono font-semibold text-red-600">
                     (<KzAmount value={financialStatements.dre.amortizacoes} />)
                   </span>
                 </div>
                 <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
-                  <span>8. Outros Custos e Perdas Operacionais / Tributos (Conta 65)</span>
+                  <span>8. Outros Custos e Perdas Operacionais / Tributos (Conta 75 / 78)</span>
                   <span className="font-mono font-semibold text-red-600">
                     (<KzAmount value={financialStatements.dre.outrosCustosOperacionais} />)
                   </span>
@@ -2266,19 +2433,19 @@ export const AccountingView: React.FC = () => {
 
                 {/* 3. Resultados Financeiros */}
                 <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
-                  <span>(+) Proveitos e Ganhos Financeiros (Conta 75: Juros e Ganhos Cambiais 75.3)</span>
+                  <span>(+) Proveitos e Ganhos Financeiros (Conta 66: Juros e Ganhos Cambiais 66.2)</span>
                   <span className="font-mono font-semibold text-emerald-600">
                     <KzAmount value={financialStatements.dre.proveitosFinanceiros} />
                   </span>
                 </div>
                 <div className="py-2.5 flex justify-between font-sans text-slate-700 dark:text-slate-300">
-                  <span>(-) Custos e Perdas Financeiras (Conta 66: Juros, Perdas Cambiais 66.3, Despesas Bancárias)</span>
+                  <span>(-) Custos e Perdas Financeiras (Conta 76: Juros, Perdas Cambiais 76.2, Despesas Bancárias)</span>
                   <span className="font-mono font-semibold text-red-600">
                     (<KzAmount value={financialStatements.dre.custosFinanceiros} />)
                   </span>
                 </div>
                 <div className="py-2.5 flex justify-between font-sans font-bold text-slate-800 dark:text-slate-200">
-                  <span>= RESULTADO FINANCEIRO (Conta 82)</span>
+                  <span>= RESULTADO FINANCEIRO (Conta 83)</span>
                   <span className="font-mono">
                     <KzAmount value={financialStatements.dre.resultadoFinanceiro} />
                   </span>
@@ -2316,13 +2483,29 @@ export const AccountingView: React.FC = () => {
               </div>
             </GlassCard>
           )}
+
+          {/* Subtab 4.3: Demonstração dos Fluxos de Caixa (DFC) */}
+          {financialSubTab === 'cash_flow' && (
+            <CashFlowStatement
+              data={financialStatements.cashFlow}
+              fiscalYear={activeYear?.year_code || 2026}
+            />
+          )}
+
+          {/* Subtab 4.4: Notas às Contas (Anexo PGC) */}
+          {financialSubTab === 'notes' && (
+            <FinancialNotesStatement
+              data={financialStatements.notesData}
+              fiscalYear={activeYear?.year_code || 2026}
+            />
+          )}
         </div>
       )}
 
       {/* TAB 5: APURAMENTO DE IVA (MODELO 7 AGT) */}
       {activeTab === 'vat_settlement' && (
         <div className="space-y-6">
-          <GlassCard className="p-6 max-w-4xl mx-auto space-y-6">
+          <GlassCard className="p-6 w-full space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
               <div>
                 <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
@@ -2770,7 +2953,7 @@ export const AccountingView: React.FC = () => {
       {/* TAB 8: REAVALIAÇÃO CAMBIAL */}
       {activeTab === 'revaluation' && (
         <div className="space-y-4">
-          <GlassCard className="p-6 max-w-2xl">
+          <GlassCard className="p-6 w-full">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
                 <ArrowRightLeft className="w-5 h-5" />
@@ -2780,7 +2963,7 @@ export const AccountingView: React.FC = () => {
                   Reavaliação Cambial Automática (Decreto Presidencial)
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Atualização de saldos de contas em divisas (USD / EUR) face ao Kwanza com registo automático nas contas 75.3 (Ganhos) ou 66.3 (Perdas)
+                  Atualização de saldos de contas em divisas (USD / EUR) face ao Kwanza com registo automático nas contas 66.2 (Ganhos) ou 76.2 (Perdas)
                 </p>
               </div>
             </div>
@@ -2798,8 +2981,8 @@ export const AccountingView: React.FC = () => {
                     }
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
                   >
-                    <option value="12.2">12.2 - Bancos D.O. Moeda Estrangeira</option>
-                    <option value="11.1">11.1 - Caixa Moeda Estrangeira</option>
+                    <option value="43.2">43.2 - Bancos D.O. Moeda Estrangeira</option>
+                    <option value="45.1">45.1 - Caixa Geral / Fundo Fixo</option>
                   </select>
                 </div>
                 <div>

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::domain::entities::{StockBalance, StockMovement};
+use crate::domain::entities::{StockBalance, StockMovement, StockMovementType};
 use crate::domain::ports::db_session::{DbSession, RepositoryError};
 use crate::domain::ports::StockRepository;
 use crate::infrastructure::persistence::models::{StockBalanceRow, StockMovementRow};
@@ -232,5 +232,37 @@ impl StockRepository for PostgresStockRepository {
         .await?;
 
         Ok(rows.into_iter().map(StockMovement::from).collect())
+    }
+
+    async fn has_movement_for_document(
+        &self,
+        session: &mut dyn DbSession,
+        tenant_id: Uuid,
+        document_ref: &str,
+        movement_type: StockMovementType,
+    ) -> Result<bool, RepositoryError> {
+        let movement_type_str = match movement_type {
+            StockMovementType::InPurchase => "IN_PURCHASE",
+            StockMovementType::InTransfer => "IN_TRANSFER",
+            StockMovementType::InAdjustment => "IN_ADJUSTMENT",
+            StockMovementType::OutSale => "OUT_SALE",
+            StockMovementType::OutTransfer => "OUT_TRANSFER",
+            StockMovementType::OutWaste => "OUT_WASTE",
+            StockMovementType::OutAdjustment => "OUT_ADJUSTMENT",
+        };
+
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(\
+             SELECT 1 FROM kudiba_inventory.stock_movements \
+             WHERE tenant_id = $1 AND document_ref = $2 AND movement_type = $3::kudiba_inventory.stock_movement_kind\
+             )",
+        )
+        .bind(tenant_id)
+        .bind(document_ref)
+        .bind(movement_type_str)
+        .fetch_one(&mut *session.connection())
+        .await?;
+
+        Ok(exists)
     }
 }

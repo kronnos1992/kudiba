@@ -27,13 +27,24 @@ pub struct AccountRow {
 impl AccountRow {
     pub fn into_domain(self) -> Account {
         let class = match self.account_class.as_str() {
-            "CLASS_1_MEIOS_FINANCEIROS" => AccountClass::Class1MeiosFinanceiros,
+            "CLASS_0_CONTAS_DE_ORDEM" => AccountClass::Class0ContasDeOrdem,
+            "CLASS_1_MEIOS_FIXOS_INVESTIMENTOS" | "CLASS_1_MEIOS_FINANCEIROS" => {
+                AccountClass::Class1MeiosFixosInvestimentos
+            }
             "CLASS_2_EXISTENCIAS" => AccountClass::Class2Existencias,
             "CLASS_3_TERCEIROS" => AccountClass::Class3Terceiros,
-            "CLASS_4_IMOBILIZACOES" => AccountClass::Class4Imobilizacoes,
-            "CLASS_5_CAPITAL_PROPRIO" => AccountClass::Class5CapitalProprio,
-            "CLASS_6_CUSTOS" => AccountClass::Class6Custos,
-            "CLASS_7_PROVEITOS" => AccountClass::Class7Proveitos,
+            "CLASS_4_MEIOS_MONETARIOS" | "CLASS_4_IMOBILIZACOES" => {
+                AccountClass::Class4MeiosMonetarios
+            }
+            "CLASS_5_CAPITAL_RESERVAS" | "CLASS_5_CAPITAL_PROPRIO" => {
+                AccountClass::Class5CapitalReservas
+            }
+            "CLASS_6_PROVEITOS_POR_NATUREZA" | "CLASS_6_CUSTOS" => {
+                AccountClass::Class6ProveitosPorNatureza
+            }
+            "CLASS_7_CUSTOS_POR_NATUREZA" | "CLASS_7_PROVEITOS" => {
+                AccountClass::Class7CustosPorNatureza
+            }
             _ => AccountClass::Class8Resultados,
         };
 

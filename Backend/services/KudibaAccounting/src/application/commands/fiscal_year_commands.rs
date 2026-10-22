@@ -102,9 +102,12 @@ impl CloseFiscalYearHandler {
             )
             .await?;
 
-        let mut class6_balances: std::collections::BTreeMap<String, Decimal> =
+        // Decreto n.º 82/01:
+        // Classe 7: Custos e Perdas por Natureza (Saldo Devedor normal: débito - crédito)
+        // Classe 6: Proveitos e Ganhos por Natureza (Saldo Credor normal: crédito - débito)
+        let mut class7_costs: std::collections::BTreeMap<String, Decimal> =
             std::collections::BTreeMap::new();
-        let mut class7_balances: std::collections::BTreeMap<String, Decimal> =
+        let mut class6_revs: std::collections::BTreeMap<String, Decimal> =
             std::collections::BTreeMap::new();
 
         for entry in &entries {
@@ -112,12 +115,12 @@ impl CloseFiscalYearHandler {
                 continue;
             }
             for line in &entry.lines {
-                if line.account_code.starts_with('6') {
-                    *class6_balances
+                if line.account_code.starts_with('7') {
+                    *class7_costs
                         .entry(line.account_code.clone())
                         .or_insert(Decimal::ZERO) += line.debit_amount - line.credit_amount;
-                } else if line.account_code.starts_with('7') {
-                    *class7_balances
+                } else if line.account_code.starts_with('6') {
+                    *class6_revs
                         .entry(line.account_code.clone())
                         .or_insert(Decimal::ZERO) += line.credit_amount - line.debit_amount;
                 }
@@ -133,9 +136,10 @@ impl CloseFiscalYearHandler {
         let mut total_operational_rev = Decimal::ZERO;
         let mut total_financial_rev = Decimal::ZERO;
 
-        for (code, net_cost) in &class6_balances {
+        // 1. ZERAR CONTAS DA CLASSE 7 (Custos) creditando-as
+        for (code, net_cost) in &class7_costs {
             if *net_cost > Decimal::ZERO {
-                if code.starts_with("66") {
+                if code.starts_with("76") {
                     total_financial_costs += *net_cost;
                 } else {
                     total_operational_costs += *net_cost;
@@ -162,7 +166,7 @@ impl CloseFiscalYearHandler {
                 tenant_id,
                 entry_id,
                 line_num,
-                "81".to_string(),
+                "82".to_string(), // Decreto 82/01: Resultados Operacionais
                 total_operational_costs,
                 Some("Transferência de custos operacionais para apuramento".to_string()),
                 None,
@@ -176,7 +180,7 @@ impl CloseFiscalYearHandler {
                 tenant_id,
                 entry_id,
                 line_num,
-                "82".to_string(),
+                "83".to_string(), // Decreto 82/01: Resultados Financeiros Gerais
                 total_financial_costs,
                 Some("Transferência de custos financeiros para apuramento".to_string()),
                 None,
@@ -185,9 +189,10 @@ impl CloseFiscalYearHandler {
             line_num += 1;
         }
 
-        for (code, net_rev) in &class7_balances {
+        // 2. ZERAR CONTAS DA CLASSE 6 (Proveitos) debitando-as
+        for (code, net_rev) in &class6_revs {
             if *net_rev > Decimal::ZERO {
-                if code.starts_with("75") {
+                if code.starts_with("66") {
                     total_financial_rev += *net_rev;
                 } else {
                     total_operational_rev += *net_rev;
@@ -214,7 +219,7 @@ impl CloseFiscalYearHandler {
                 tenant_id,
                 entry_id,
                 line_num,
-                "81".to_string(),
+                "82".to_string(), // Decreto 82/01: Resultados Operacionais
                 total_operational_rev,
                 Some("Transferência de proveitos operacionais para apuramento".to_string()),
                 None,
@@ -228,7 +233,7 @@ impl CloseFiscalYearHandler {
                 tenant_id,
                 entry_id,
                 line_num,
-                "82".to_string(),
+                "83".to_string(), // Decreto 82/01: Resultados Financeiros Gerais
                 total_financial_rev,
                 Some("Transferência de proveitos financeiros para apuramento".to_string()),
                 None,
@@ -243,7 +248,7 @@ impl CloseFiscalYearHandler {
                 tenant_id,
                 entry_id,
                 line_num,
-                "81".to_string(),
+                "82".to_string(),
                 net_operational,
                 Some("Transferência do lucro operacional para resultado líquido".to_string()),
                 None,
@@ -267,7 +272,7 @@ impl CloseFiscalYearHandler {
                 tenant_id,
                 entry_id,
                 line_num,
-                "81".to_string(),
+                "82".to_string(),
                 loss,
                 Some("Transferência do prejuízo operacional para resultado líquido".to_string()),
                 None,
@@ -293,7 +298,7 @@ impl CloseFiscalYearHandler {
                 tenant_id,
                 entry_id,
                 line_num,
-                "82".to_string(),
+                "83".to_string(), // Decreto 82/01: Resultados Financeiros Gerais
                 net_financial,
                 Some("Transferência do ganho financeiro para resultado líquido".to_string()),
                 None,
@@ -316,7 +321,7 @@ impl CloseFiscalYearHandler {
                 tenant_id,
                 entry_id,
                 line_num,
-                "82".to_string(),
+                "83".to_string(), // Decreto 82/01: Resultados Financeiros Gerais
                 fin_loss,
                 Some("Transferência da perda financeira para resultado líquido".to_string()),
                 None,

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::application::dto::{InvoiceIssuedPayload, ProcessInvoiceIssuedResult};
-use crate::domain::entities::{StockMovement, StockMovementType};
+use crate::domain::entities::{StockBalance, StockMovement, StockMovementType};
 use crate::domain::error::InventoryError;
 use crate::domain::ports::db_session::DbSession;
 use crate::domain::ports::unit_of_work::UnitOfWorkFactory;
@@ -108,6 +108,34 @@ impl ProcessInvoiceIssuedCommand {
         user_id: Uuid,
         payload: &InvoiceIssuedPayload,
     ) -> Result<(ProcessInvoiceIssuedResult, rust_decimal::Decimal), InventoryError> {
+        // Idempotência: verificar se este documento já teve saída de stock processada
+        if self
+            .stock_repo
+            .has_movement_for_document(
+                session,
+                tenant_id,
+                &payload.document_number,
+                StockMovementType::OutSale,
+            )
+            .await?
+        {
+            tracing::info!(
+                document = %payload.document_number,
+                "Movimento de stock para a fatura já processado anteriormente. Retornando resultado idempotente."
+            );
+            return Ok((
+                ProcessInvoiceIssuedResult {
+                    invoice_id: payload.invoice_id,
+                    document_number: payload.document_number.clone(),
+                    document_type: payload.document_type.clone(),
+                    processed: true,
+                    movements_recorded: 0,
+                    items_skipped_intangible: 0,
+                },
+                rust_decimal::Decimal::ZERO,
+            ));
+        }
+
         let mut movements_recorded = 0;
         let mut items_skipped_intangible = 0;
         let mut total_cmp_cost = rust_decimal::Decimal::ZERO;
@@ -117,16 +145,26 @@ impl ProcessInvoiceIssuedCommand {
             .iter()
             .any(|l| l.quantity > rust_decimal::Decimal::ZERO);
 
-        let default_warehouse = if has_stockable_lines {
-            let warehouses = self.warehouse_repo.list_all(session, tenant_id).await?;
-            warehouses
-                .iter()
-                .find(|w| w.is_default && w.is_active)
-                .cloned()
-                .or_else(|| warehouses.into_iter().find(|w| w.is_active))
+        let active_warehouses = if has_stockable_lines {
+            self.warehouse_repo
+                .list_all(session, tenant_id)
+                .await?
+                .into_iter()
+                .filter(|w| w.is_active)
+                .collect::<Vec<_>>()
         } else {
-            None
+            Vec::new()
         };
+
+        if has_stockable_lines && active_warehouses.is_empty() {
+            return Err(InventoryError::WarehouseNotFound(Uuid::nil()));
+        }
+
+        let default_warehouse = active_warehouses
+            .iter()
+            .find(|w| w.is_default)
+            .cloned()
+            .or_else(|| active_warehouses.first().cloned());
 
         for line in &payload.lines {
             let product = self
@@ -142,9 +180,71 @@ impl ProcessInvoiceIssuedCommand {
 
             StockPolicy::ensure_can_move_stock(&product)?;
 
-            let warehouse = default_warehouse
-                .as_ref()
-                .ok_or(InventoryError::WarehouseNotFound(Uuid::nil()))?;
+            // Resolução inteligente de armazém:
+            // 1. Se indicado na linha ou payload, respeitar
+            // 2. Se armazém padrão tiver stock suficiente, usar o padrão
+            // 3. Caso contrário, selecionar armazém activo que contenha stock suficiente
+            // 4. Se nenhum tiver o total, usar o que tiver maior saldo disponível ou o padrão
+            let warehouse = if let Some(wid) = line.warehouse_id {
+                active_warehouses
+                    .iter()
+                    .find(|w| w.id == wid)
+                    .cloned()
+                    .ok_or(InventoryError::WarehouseNotFound(wid))?
+            } else if let Some(wid) = payload.warehouse_id {
+                active_warehouses
+                    .iter()
+                    .find(|w| w.id == wid)
+                    .cloned()
+                    .ok_or(InventoryError::WarehouseNotFound(wid))?
+            } else {
+                let balances = self
+                    .stock_repo
+                    .list_balances_by_product(session, tenant_id, product.id)
+                    .await?;
+
+                let default_has_stock = default_warehouse.as_ref().is_some_and(|dw| {
+                    balances
+                        .iter()
+                        .any(|b| b.warehouse_id == dw.id && b.available_quantity() >= line.quantity)
+                });
+
+                if default_has_stock {
+                    default_warehouse.clone().unwrap()
+                } else {
+                    let wh_with_stock = balances
+                        .iter()
+                        .filter(|b| b.available_quantity() >= line.quantity)
+                        .filter_map(|b| {
+                            active_warehouses
+                                .iter()
+                                .find(|w| w.id == b.warehouse_id)
+                                .map(|w| (w, b.available_quantity()))
+                        })
+                        .max_by_key(|(_, avail)| *avail)
+                        .map(|(w, _)| w.clone());
+
+                    if let Some(wh) = wh_with_stock {
+                        wh
+                    } else {
+                        let wh_with_any_stock = balances
+                            .iter()
+                            .filter(|b| b.available_quantity() > rust_decimal::Decimal::ZERO)
+                            .filter_map(|b| {
+                                active_warehouses
+                                    .iter()
+                                    .find(|w| w.id == b.warehouse_id)
+                                    .map(|w| (w, b.available_quantity()))
+                            })
+                            .max_by_key(|(_, avail)| *avail)
+                            .map(|(w, _)| w.clone());
+
+                        wh_with_any_stock
+                            .or_else(|| default_warehouse.clone())
+                            .ok_or(InventoryError::WarehouseNotFound(Uuid::nil()))?
+                    }
+                }
+            };
 
             let batch_id = if product.track_lots {
                 if let Some(bid) = line.batch_id {
@@ -195,15 +295,14 @@ impl ProcessInvoiceIssuedCommand {
                 None
             };
 
-            let mut balance = self
+            let mut balance = match self
                 .stock_repo
                 .find_balance_for_update(session, tenant_id, warehouse.id, product.id)
                 .await?
-                .ok_or(InventoryError::InsufficientStock {
-                    product_id: product.id,
-                    available: rust_decimal::Decimal::ZERO,
-                    requested: line.quantity,
-                })?;
+            {
+                Some(b) => b,
+                None => StockBalance::new(tenant_id, warehouse.id, product.id, None),
+            };
 
             balance.apply_deduction(line.quantity, false)?;
             self.stock_repo.save_balance(session, &balance).await?;

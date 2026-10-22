@@ -8,7 +8,8 @@ use async_trait::async_trait;
 use uuid::Uuid;
 
 use crate::domain::entities::{
-    CommercialEntity, Product, ProductBatch, StockBalance, StockMovement, Warehouse,
+    CommercialEntity, Product, ProductBatch, StockBalance, StockMovement, StockMovementType,
+    Warehouse,
 };
 use crate::domain::ports::db_session::{DbSession, RepositoryError};
 
@@ -195,6 +196,16 @@ pub trait StockRepository: Send + Sync {
         warehouse_id: Option<Uuid>,
         limit: i64,
     ) -> Result<Vec<StockMovement>, RepositoryError>;
+
+    async fn has_movement_for_document(
+        &self,
+        _session: &mut dyn DbSession,
+        _tenant_id: Uuid,
+        _document_ref: &str,
+        _movement_type: StockMovementType,
+    ) -> Result<bool, RepositoryError> {
+        Ok(false)
+    }
 }
 
 #[async_trait]

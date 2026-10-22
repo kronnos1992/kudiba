@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ResponsiveContainer,
@@ -14,6 +14,8 @@ import {
   Pie,
   Cell,
   Legend,
+  ComposedChart,
+  Line,
 } from 'recharts';
 import {
   TrendingUp,
@@ -351,10 +353,48 @@ const PlatformDashboardView: React.FC<{
 
   const clientStats = platform?.clients;
   const licenseStats = platform?.licenses;
-  const moduleAdoption = (platform?.modules || []).map((m) => ({
-    name: m.name || m.key,
-    value: m.client_count,
-  }));
+
+  const [moduleTrendType, setModuleTrendType] = useState<'curve' | 'linear'>('curve');
+
+  const moduleAdoptionData = useMemo(() => {
+    const raw = (platform?.modules || []).map((m) => {
+      const fullName = m.name || m.key;
+      let shortName = fullName;
+      const lower = fullName.toLowerCase();
+      if (lower.includes('contabil')) shortName = 'Contabilidade';
+      else if (lower.includes('factur') || lower.includes('fatur')) shortName = 'Faturação';
+      else if (lower.includes('stock') || lower.includes('invent')) shortName = 'Stock';
+      else if (lower.includes('integra') || lower.includes('etl')) shortName = 'Integrações';
+      else if (lower.includes('recursos') || lower.includes('human') || lower.includes('rh'))
+        shortName = 'RH';
+      else if (lower.includes('tesour') || lower.includes('caixa')) shortName = 'Tesouraria';
+
+      return {
+        name: fullName,
+        shortName,
+        subscricoes: m.client_count,
+      };
+    });
+
+    if (raw.length === 0) return [];
+
+    const n = raw.length;
+    const xMean = (n - 1) / 2;
+    const yMean = raw.reduce((sum, d) => sum + d.subscricoes, 0) / n;
+    let numSum = 0;
+    let denSum = 0;
+    raw.forEach((d, i) => {
+      numSum += (i - xMean) * (d.subscricoes - yMean);
+      denSum += (i - xMean) * (i - xMean);
+    });
+    const slope = denSum !== 0 ? numSum / denSum : 0;
+    const intercept = yMean - slope * xMean;
+
+    return raw.map((m, i) => ({
+      ...m,
+      tendenciaLinear: Math.max(0, Math.round((slope * i + intercept) * 10) / 10),
+    }));
+  }, [platform?.modules]);
 
   const monthlyCommercial = (commercial?.monthly || []).map((b) => ({
     label: b.month,
@@ -450,11 +490,104 @@ const PlatformDashboardView: React.FC<{
           )}
         </ChartCard>
 
-        <ChartCard title="Adoção de Módulos" subtitle="Subscrições ativas por componente de negócio">
-          {moduleAdoption.length === 0 ? (
+        <ChartCard
+          title="Adoção de Módulos"
+          subtitle="Subscrições ativas por componente de negócio"
+          action={
+            moduleAdoptionData.length > 0 ? (
+              <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 text-[11px] font-medium">
+                <button
+                  type="button"
+                  onClick={() => setModuleTrendType('curve')}
+                  className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                    moduleTrendType === 'curve'
+                      ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-400 font-bold shadow-xs'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Linha de Tendência por Curva"
+                >
+                  Curva
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModuleTrendType('linear')}
+                  className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                    moduleTrendType === 'linear'
+                      ? 'bg-white dark:bg-slate-700 text-amber-700 dark:text-amber-400 font-bold shadow-xs'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Linha de Tendência Linear (Estatística)"
+                >
+                  Linear
+                </button>
+              </div>
+            ) : null
+          }
+        >
+          {moduleAdoptionData.length === 0 ? (
             <EmptyState message="Nenhuma informação de módulos disponível." />
           ) : (
-            <DonutChart data={moduleAdoption} />
+            <ResponsiveContainer width="100%" height={250}>
+              <ComposedChart
+                data={moduleAdoptionData}
+                margin={{ top: 12, right: 12, left: -20, bottom: 20 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" vertical={false} />
+                <XAxis
+                  dataKey="shortName"
+                  tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  axisLine={false}
+                  tickLine={false}
+                  interval={0}
+                  angle={-10}
+                  textAnchor="end"
+                />
+                <YAxis tick={axisTick} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  formatter={(val: any, name: any) => [
+                    `${val} ${Number(val) === 1 ? 'empresa' : 'empresas'}`,
+                    name === 'subscricoes'
+                      ? 'Subscrições Ativas'
+                      : moduleTrendType === 'curve'
+                      ? 'Linha de Tendência (Curva)'
+                      : 'Linha de Tendência (Linear)',
+                  ]}
+                  labelFormatter={(_label: any, payload: any) =>
+                    payload?.[0]?.payload?.name || _label
+                  }
+                />
+                <Legend
+                  wrapperStyle={{ fontSize: 11, paddingTop: 10 }}
+                  formatter={(val) =>
+                    val === 'subscricoes'
+                      ? 'Subscrições Ativas'
+                      : moduleTrendType === 'curve'
+                      ? 'Linha de Tendência'
+                      : 'Tendência Linear'
+                  }
+                />
+                <Bar
+                  dataKey="subscricoes"
+                  name="subscricoes"
+                  radius={[6, 6, 0, 0]}
+                  barSize={32}
+                >
+                  {moduleAdoptionData.map((entry, index) => (
+                    <Cell key={entry.name} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                  ))}
+                </Bar>
+                <Line
+                  type={moduleTrendType === 'curve' ? 'monotone' : 'linear'}
+                  dataKey={moduleTrendType === 'curve' ? 'subscricoes' : 'tendenciaLinear'}
+                  name="tendencia"
+                  stroke="#f59e0b"
+                  strokeWidth={3}
+                  dot={{ r: 4, fill: '#f59e0b', stroke: '#ffffff', strokeWidth: 1.5 }}
+                  activeDot={{ r: 6 }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
           )}
         </ChartCard>
       </div>

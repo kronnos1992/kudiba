@@ -475,6 +475,8 @@ pub struct InvoiceIssuedLine {
     #[serde(default, deserialize_with = "deserialize_decimal_flexible_opt")]
     pub unit_price: Option<Decimal>,
     #[serde(default)]
+    pub warehouse_id: Option<Uuid>,
+    #[serde(default)]
     pub batch_id: Option<Uuid>,
     #[serde(default)]
     pub batch_number: Option<String>,
@@ -487,6 +489,8 @@ pub struct InvoiceIssuedPayload {
     pub tenant_id: Uuid,
     pub document_number: String,
     pub document_type: String,
+    #[serde(default)]
+    pub warehouse_id: Option<Uuid>,
     #[serde(default)]
     pub lines: Vec<InvoiceIssuedLine>,
 }

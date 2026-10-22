@@ -317,6 +317,7 @@ async fn test_processamento_evento_ignora_guias_e_notas_de_credito() {
         tenant_id: Uuid::new_v4(),
         document_number: "GT 2026/1".to_string(),
         document_type: "GT".to_string(),
+        warehouse_id: None,
         lines: vec![],
     };
 
@@ -332,6 +333,7 @@ async fn test_processamento_evento_ignora_guias_e_notas_de_credito() {
         tenant_id: Uuid::new_v4(),
         document_number: "NC 2026/1".to_string(),
         document_type: "NC".to_string(),
+        warehouse_id: None,
         lines: vec![],
     };
 
@@ -601,7 +603,20 @@ async fn test_processamento_evento_fatura_com_produtos_fisicos_e_servicos() {
             _: Uuid,
             _: Uuid,
         ) -> Result<Vec<StockBalance>, RepositoryError> {
-            unreachable!()
+            let b = self.balance.lock().unwrap().clone();
+            Ok(vec![b])
+        }
+        async fn has_movement_for_document(
+            &self,
+            _: &mut dyn DbSession,
+            _: Uuid,
+            document_ref: &str,
+            movement_type: kudiba_inventory::domain::entities::StockMovementType,
+        ) -> Result<bool, RepositoryError> {
+            let moves = self.movements.lock().unwrap();
+            Ok(moves.iter().any(|m| {
+                m.document_ref.as_deref() == Some(document_ref) && m.movement_type == movement_type
+            }))
         }
         async fn list_movements(
             &self,
@@ -692,6 +707,7 @@ async fn test_processamento_evento_fatura_com_produtos_fisicos_e_servicos() {
         tenant_id,
         document_number: "FT 2026/100".into(),
         document_type: "FT".into(),
+        warehouse_id: None,
         lines: vec![
             InvoiceIssuedLine {
                 line_number: 1,
@@ -699,6 +715,7 @@ async fn test_processamento_evento_fatura_com_produtos_fisicos_e_servicos() {
                 description: "Cimento 50kg".into(),
                 quantity: dec!(3),
                 unit_price: Some(dec!(5000)),
+                warehouse_id: None,
                 batch_id: None,
                 batch_number: None,
             },
@@ -708,13 +725,17 @@ async fn test_processamento_evento_fatura_com_produtos_fisicos_e_servicos() {
                 description: "Transporte e Descarga".into(),
                 quantity: dec!(1),
                 unit_price: Some(dec!(10000)),
+                warehouse_id: None,
                 batch_id: None,
                 batch_number: None,
             },
         ],
     };
 
-    let outcome = cmd.execute(tenant_id, Uuid::nil(), event).await.unwrap();
+    let outcome = cmd
+        .execute(tenant_id, Uuid::nil(), event.clone())
+        .await
+        .unwrap();
     assert!(outcome.processed);
     assert_eq!(outcome.movements_recorded, 1);
     assert_eq!(outcome.items_skipped_intangible, 1);
@@ -737,6 +758,12 @@ async fn test_processamento_evento_fatura_com_produtos_fisicos_e_servicos() {
     assert_eq!(movs[0].quantity, dec!(3));
     assert_eq!(movs[0].movement_type, StockMovementType::OutSale);
     assert_eq!(movs[0].document_ref, Some("FT 2026/100".into()));
+
+    // Teste de Idempotência: reenvio do mesmo evento não deve duplicar movimentos nem deduzir novamente o saldo
+    let outcome_duplicate = cmd.execute(tenant_id, Uuid::nil(), event).await.unwrap();
+    assert!(outcome_duplicate.processed);
+    assert_eq!(outcome_duplicate.movements_recorded, 0);
+    assert_eq!(stock_repo.movements.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

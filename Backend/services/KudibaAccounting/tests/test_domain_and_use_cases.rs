@@ -328,11 +328,29 @@ impl JournalEntryRepository for MockJournalEntryRepository {
 fn test_account_creation_and_pgc_class_validation() {
     let tenant_id = Uuid::new_v4();
 
-    // Classe 1: Meios Financeiros (11 Caixa)
+    // Classe 1: Meios Fixos e Investimentos (11 Imobilizações Corpóreas) - Decreto 82/01
     let acc1 = Account::new(
         tenant_id,
         "11.1".to_string(),
         Some("11".to_string()),
+        "Edifícios e Outras Construções".to_string(),
+        None,
+        true,
+        false,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        acc1.account_class,
+        AccountClass::Class1MeiosFixosInvestimentos
+    );
+    assert_eq!(acc1.account_nature, AccountNature::Debit);
+
+    // Classe 4: Meios Monetários (45 Caixa) - Decreto 82/01
+    let acc4 = Account::new(
+        tenant_id,
+        "45.1".to_string(),
+        Some("45".to_string()),
         "Caixa Geral".to_string(),
         None,
         true,
@@ -340,23 +358,53 @@ fn test_account_creation_and_pgc_class_validation() {
         None,
     )
     .unwrap();
-    assert_eq!(acc1.account_class, AccountClass::Class1MeiosFinanceiros);
-    assert_eq!(acc1.account_nature, AccountNature::Debit);
+    assert_eq!(acc4.account_class, AccountClass::Class4MeiosMonetarios);
+    assert_eq!(acc4.account_nature, AccountNature::Debit);
 
-    // Classe 7: Proveitos (71 Vendas)
-    let acc7 = Account::new(
+    // Classe 6: Proveitos por Natureza (61 Vendas) - Decreto 82/01
+    let acc6 = Account::new(
         tenant_id,
-        "71.1".to_string(),
-        Some("71".to_string()),
-        "Vendas de Mercadorias".to_string(),
+        "61.1".to_string(),
+        Some("61".to_string()),
+        "Vendas de Produtos Acabados".to_string(),
         None,
         true,
         false,
         None,
     )
     .unwrap();
-    assert_eq!(acc7.account_class, AccountClass::Class7Proveitos);
-    assert_eq!(acc7.account_nature, AccountNature::Credit);
+    assert_eq!(acc6.account_class, AccountClass::Class6ProveitosPorNatureza);
+    assert_eq!(acc6.account_nature, AccountNature::Credit);
+
+    // Classe 7: Custos por Natureza (71 CMVMC) - Decreto 82/01
+    let acc7 = Account::new(
+        tenant_id,
+        "71.1".to_string(),
+        Some("71".to_string()),
+        "CMVMC - Matérias-Primas e Subsidiárias".to_string(),
+        None,
+        true,
+        false,
+        None,
+    )
+    .unwrap();
+    assert_eq!(acc7.account_class, AccountClass::Class7CustosPorNatureza);
+    assert_eq!(acc7.account_nature, AccountNature::Debit);
+
+    // Classe 0: Contas de Ordem (Decreto 82/01)
+    let acc0 = Account::new(
+        tenant_id,
+        "01.1".to_string(),
+        Some("01".to_string()),
+        "Garantias Bancárias Prestadas".to_string(),
+        None,
+        true,
+        false,
+        None,
+    )
+    .unwrap();
+    assert_eq!(acc0.account_class, AccountClass::Class0ContasDeOrdem);
+    assert_eq!(acc0.account_nature, AccountNature::Debit);
 
     // Conta Inválida (Classe inexistente no PGC)
     let invalid = Account::new(
@@ -551,12 +599,12 @@ fn test_accounting_rules_for_invoicing_events() {
     assert_eq!(entry.total_debit, dec!(114000));
     assert_eq!(entry.total_credit, dec!(114000));
 
-    // Débitos: 31.1.1 (107.500) + 34.2.1 (6.500) = 114.000
-    // Créditos: 71.1 (100.000) + 34.5.3.1 (14.000) = 114.000
+    // Débitos: 31.1.2.1 (107.500) + 34.2.1 (6.500) = 114.000
+    // Créditos: 61.3.1 (100.000) + 34.5.3.1 (14.000) = 114.000
     let client_line = entry
         .lines
         .iter()
-        .find(|l| l.account_code == "31.1.1")
+        .find(|l| l.account_code == "31.1.2.1")
         .unwrap();
     assert_eq!(client_line.debit_amount, dec!(107500));
 
@@ -587,8 +635,8 @@ fn test_accounting_rules_for_stock_cmp_dispatch() {
 
     assert_eq!(entry.total_debit, dec!(65000));
     assert_eq!(entry.total_credit, dec!(65000));
-    assert_eq!(entry.lines[0].account_code, "61.1");
-    assert_eq!(entry.lines[1].account_code, "22.1");
+    assert_eq!(entry.lines[0].account_code, "71.2");
+    assert_eq!(entry.lines[1].account_code, "26.1");
 }
 
 #[test]
@@ -599,7 +647,7 @@ fn test_trial_balance_calculation_4_and_6_columns() {
     let accounts = vec![
         Account::new(
             tenant_id,
-            "11.1".to_string(),
+            "45.1".to_string(),
             None,
             "Caixa Geral".to_string(),
             None,
@@ -610,7 +658,7 @@ fn test_trial_balance_calculation_4_and_6_columns() {
         .unwrap(),
         Account::new(
             tenant_id,
-            "11.2".to_string(),
+            "45.2".to_string(),
             None,
             "Caixas de Balcão".to_string(),
             None,
@@ -621,7 +669,7 @@ fn test_trial_balance_calculation_4_and_6_columns() {
         .unwrap(),
         Account::new(
             tenant_id,
-            "31.1.1".to_string(),
+            "31.1.2.1".to_string(),
             None,
             "Clientes".to_string(),
             None,
@@ -632,7 +680,7 @@ fn test_trial_balance_calculation_4_and_6_columns() {
         .unwrap(),
         Account::new(
             tenant_id,
-            "71.1".to_string(),
+            "61.3.1".to_string(),
             None,
             "Vendas".to_string(),
             None,
@@ -836,7 +884,7 @@ async fn test_full_application_use_case_flow() {
                 description: "Depósito de Capital Social".to_string(),
                 lines: vec![
                     ManualLineRequest {
-                        account_code: "12.1".to_string(),
+                        account_code: "43.1".to_string(),
                         description: Some("Entrada em Banco BFA".to_string()),
                         debit_amount: Some(dec!(5000000)),
                         credit_amount: None,
@@ -845,7 +893,7 @@ async fn test_full_application_use_case_flow() {
                         currency: None,
                     },
                     ManualLineRequest {
-                        account_code: "51".to_string(),
+                        account_code: "51.1".to_string(),
                         description: Some("Realização de Capital Social".to_string()),
                         debit_amount: None,
                         credit_amount: Some(dec!(5000000)),
@@ -1322,7 +1370,7 @@ async fn test_year_end_closing_classe_8_apuramento() {
     .unwrap();
     jrn_repo.save(&jrn).await.unwrap();
 
-    // 1. Registo de Proveitos (Vendas: 100.000 em 71.1)
+    // 1. Registo de Proveitos (Vendas: 100.000 em 61.3.1) - Decreto 82/01
     post_entry
         .execute(
             tenant_id,
@@ -1334,8 +1382,8 @@ async fn test_year_end_closing_classe_8_apuramento() {
                 description: "Vendas de Mercadorias".to_string(),
                 lines: vec![
                     ManualLineRequest {
-                        account_code: "11.1".to_string(),
-                        description: Some("Caixa".to_string()),
+                        account_code: "45.1".to_string(),
+                        description: Some("Caixa Geral".to_string()),
                         debit_amount: Some(dec!(100000)),
                         credit_amount: None,
                         entity_id: None,
@@ -1343,7 +1391,7 @@ async fn test_year_end_closing_classe_8_apuramento() {
                         currency: None,
                     },
                     ManualLineRequest {
-                        account_code: "71.1".to_string(),
+                        account_code: "61.3.1".to_string(),
                         description: Some("Vendas".to_string()),
                         debit_amount: None,
                         credit_amount: Some(dec!(100000)),
@@ -1358,7 +1406,7 @@ async fn test_year_end_closing_classe_8_apuramento() {
         .await
         .unwrap();
 
-    // 2. Registo de Custos (FSE: 40.000 em 62.1)
+    // 2. Registo de Custos (FSE: 40.000 em 75.2.11) - Decreto 82/01
     post_entry
         .execute(
             tenant_id,
@@ -1370,7 +1418,7 @@ async fn test_year_end_closing_classe_8_apuramento() {
                 description: "Consumo de Eletricidade".to_string(),
                 lines: vec![
                     ManualLineRequest {
-                        account_code: "62.1".to_string(),
+                        account_code: "75.2.11".to_string(),
                         description: Some("Eletricidade".to_string()),
                         debit_amount: Some(dec!(40000)),
                         credit_amount: None,
@@ -1379,8 +1427,8 @@ async fn test_year_end_closing_classe_8_apuramento() {
                         currency: None,
                     },
                     ManualLineRequest {
-                        account_code: "11.1".to_string(),
-                        description: Some("Caixa".to_string()),
+                        account_code: "45.1".to_string(),
+                        description: Some("Caixa Geral".to_string()),
                         debit_amount: None,
                         credit_amount: Some(dec!(40000)),
                         entity_id: None,
@@ -1477,7 +1525,7 @@ async fn test_currency_revaluation_favorable_and_unfavorable() {
         .unwrap();
     assert!(gain_res.is_gain);
     assert_eq!(gain_res.exchange_difference, dec!(50000));
-    assert_eq!(gain_res.offset_account_code, "75.3");
+    assert_eq!(gain_res.offset_account_code, "66.2");
     assert_eq!(gain_res.new_book_value_kz, dec!(950000));
 
     // 2. Revalorização com Perda Cambial (-100.000 Kz)
@@ -1499,7 +1547,7 @@ async fn test_currency_revaluation_favorable_and_unfavorable() {
         .unwrap();
     assert!(!loss_res.is_gain);
     assert_eq!(loss_res.exchange_difference, dec!(-100000));
-    assert_eq!(loss_res.offset_account_code, "66.3");
+    assert_eq!(loss_res.offset_account_code, "76.2");
     assert_eq!(loss_res.new_book_value_kz, dec!(850000));
 
     // Verificar se os lançamentos foram gerados em partidas dobradas perfeitamente equilibradas
@@ -1553,24 +1601,24 @@ async fn test_payroll_period_closed_accounting_entry() {
     assert_eq!(entry.total_debit, dec!(2696400.00));
     assert_eq!(entry.lines.len(), 5);
 
-    // D: 63.1.1 (2.510.000,00)
-    assert_eq!(entry.lines[0].account_code, "63.1.1");
+    // D: 72.2 (2.510.000,00)
+    assert_eq!(entry.lines[0].account_code, "72.2");
     assert_eq!(entry.lines[0].debit_amount, total_gross);
 
-    // D: 63.2.1 (186.400,00)
-    assert_eq!(entry.lines[1].account_code, "63.2.1");
+    // D: 72.5 (186.400,00)
+    assert_eq!(entry.lines[1].account_code, "72.5");
     assert_eq!(entry.lines[1].debit_amount, total_inss_employer);
 
     // C: 36.1.1 (2.053.645,50)
     assert_eq!(entry.lines[2].account_code, "36.1.1");
     assert_eq!(entry.lines[2].credit_amount, total_net);
 
-    // C: 34.1.1 (386.454,50)
-    assert_eq!(entry.lines[3].account_code, "34.1.1");
+    // C: 34.3.1 (386.454,50)
+    assert_eq!(entry.lines[3].account_code, "34.3.1");
     assert_eq!(entry.lines[3].credit_amount, total_irt);
 
-    // C: 34.3.1 (256.300,00 = 69.900 + 186.400)
-    assert_eq!(entry.lines[4].account_code, "34.3.1");
+    // C: 34.3.2 (256.300,00 = 69.900 + 186.400)
+    assert_eq!(entry.lines[4].account_code, "34.3.2");
     assert_eq!(
         entry.lines[4].credit_amount,
         total_inss_employee + total_inss_employer

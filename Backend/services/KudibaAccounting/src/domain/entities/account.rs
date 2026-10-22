@@ -48,27 +48,56 @@ impl Account {
 
         let account_class = AccountClass::from_account_code(code).ok_or_else(|| {
             DomainError::ValidationError(format!(
-                "Código de conta '{}' não pertence a nenhuma das 8 classes do PGC Angolano",
+                "Código de conta '{}' não pertence a nenhuma classe do PGC Angolano (Decreto 82/01)",
                 code
             ))
         })?;
 
-        // Natureza padrão com base na classe do PGC
+        // Natureza padrão com base na classe do PGC (Decreto 82/01)
         let nature = account_nature.unwrap_or_else(|| match account_class {
-            AccountClass::Class1MeiosFinanceiros
-            | AccountClass::Class2Existencias
-            | AccountClass::Class4Imobilizacoes
-            | AccountClass::Class6Custos => AccountNature::Debit,
+            AccountClass::Class0ContasDeOrdem => {
+                if code.starts_with("02") || code.starts_with("04") {
+                    AccountNature::Credit
+                } else {
+                    AccountNature::Debit
+                }
+            }
+            AccountClass::Class1MeiosFixosInvestimentos => {
+                // Conta 18 (Amortizações acumuladas) e 19 (Provisões) são rectificativas do activo (Credoras)
+                if code.starts_with("18") || code.starts_with("19") {
+                    AccountNature::Credit
+                } else {
+                    AccountNature::Debit
+                }
+            }
+            AccountClass::Class2Existencias => {
+                if code.starts_with("29") {
+                    AccountNature::Credit
+                } else {
+                    AccountNature::Debit
+                }
+            }
+            AccountClass::Class4MeiosMonetarios => {
+                if code.starts_with("49") {
+                    AccountNature::Credit
+                } else {
+                    AccountNature::Debit
+                }
+            }
+            AccountClass::Class7CustosPorNatureza => AccountNature::Debit,
             AccountClass::Class3Terceiros => {
-                // Clientes são tipicamente Débito (Activo); Fornecedores e Estado Crédito (Passivo)
-                if code.starts_with("31") {
+                if code.starts_with("31")
+                    || code.starts_with("34.2.1")
+                    || code.starts_with("34.5.1")
+                    || code.starts_with("34.5.2")
+                {
                     AccountNature::Debit
                 } else {
                     AccountNature::Credit
                 }
             }
-            AccountClass::Class5CapitalProprio
-            | AccountClass::Class7Proveitos
+            AccountClass::Class5CapitalReservas
+            | AccountClass::Class6ProveitosPorNatureza
             | AccountClass::Class8Resultados => AccountNature::Credit,
         });
 

@@ -37,7 +37,7 @@ impl AccountingRulesService {
                     tenant_id,
                     entry_id,
                     line_seq,
-                    "31.1.1".to_string(),
+                    "31.1.2.1".to_string(),
                     client_receivable,
                     Some(format!("Cliente: {} ({})", customer_name, doc_number)),
                     None,
@@ -60,12 +60,12 @@ impl AccountingRulesService {
                     line_seq += 1;
                 }
 
-                // 3. CRÉDITO: Vendas de Mercadorias / Produtos (ou Serviços)
+                // 3. CRÉDITO: Vendas de Mercadorias / Produtos (ou Serviços) - Decreto 82/01 Conta 61
                 lines.push(JournalLine::new_credit(
                     tenant_id,
                     entry_id,
                     line_seq,
-                    "71.1".to_string(),
+                    "61.3.1".to_string(),
                     net_total,
                     Some(format!("Vendas Faturadas ({})", doc_number)),
                     None,
@@ -88,12 +88,12 @@ impl AccountingRulesService {
                 }
             }
             "FR" => {
-                // Fatura-Recibo a Pronto Pagamento em Caixa
+                // Fatura-Recibo a Pronto Pagamento em Caixa - Decreto 82/01 Conta 45.2
                 lines.push(JournalLine::new_debit(
                     tenant_id,
                     entry_id,
                     line_seq,
-                    "11.2".to_string(),
+                    "45.2".to_string(),
                     gross_total,
                     Some(format!("Recebimento Balcão ({})", doc_number)),
                     None,
@@ -105,7 +105,7 @@ impl AccountingRulesService {
                     tenant_id,
                     entry_id,
                     line_seq,
-                    "71.1".to_string(),
+                    "61.3.1".to_string(),
                     net_total,
                     Some(format!("Venda Pronto Pagamento ({})", doc_number)),
                     None,
@@ -127,12 +127,12 @@ impl AccountingRulesService {
                 }
             }
             "NC" => {
-                // Nota de Crédito (Inversão / Rectificação de Venda)
+                // Nota de Crédito (Inversão / Rectificação de Venda) - Decreto 82/01 Conta 61
                 lines.push(JournalLine::new_debit(
                     tenant_id,
                     entry_id,
                     line_seq,
-                    "71.1".to_string(),
+                    "61.3.1".to_string(),
                     net_total,
                     Some(format!("Anulação / Devolução de Venda ({})", doc_number)),
                     None,
@@ -161,7 +161,7 @@ impl AccountingRulesService {
                     tenant_id,
                     entry_id,
                     line_seq,
-                    "31.1.1".to_string(),
+                    "31.1.2.1".to_string(),
                     gross_total,
                     Some(format!(
                         "Regularização Saldo Cliente: {} ({})",
@@ -196,7 +196,7 @@ impl AccountingRulesService {
         )
     }
 
-    /// Gera lançamento de Saída de Stock ao Custo Médio Ponderado (CMVMC)
+    /// Gera lançamento de Saída de Stock ao Custo Médio Ponderado (CMVMC) - Decreto 82/01
     pub fn create_stock_dispatch_entry(
         tenant_id: Uuid,
         fiscal_year_id: Uuid,
@@ -209,24 +209,24 @@ impl AccountingRulesService {
     ) -> Result<JournalEntry, DomainError> {
         let entry_id = Uuid::new_v4();
 
-        // 1. DÉBITO: 61.1 Custo das Mercadorias Vendidas (CMVMC)
+        // 1. DÉBITO: 71.2 Custo das Mercadorias Vendidas (CMVMC) - Decreto 82/01
         let line1 = JournalLine::new_debit(
             tenant_id,
             entry_id,
             1,
-            "61.1".to_string(),
+            "71.2".to_string(),
             cmp_total_cost,
             Some(format!("CMVMC ref. {}", doc_ref)),
             None,
             None,
         )?;
 
-        // 2. CRÉDITO: 22.1 Mercadorias em Armazém
+        // 2. CRÉDITO: 26.1 Mercadorias em Armazém - Decreto 82/01
         let line2 = JournalLine::new_credit(
             tenant_id,
             entry_id,
             2,
-            "22.1".to_string(),
+            "26.1".to_string(),
             cmp_total_cost,
             Some(format!("Baixa de Existências ao CMP ref. {}", doc_ref)),
             None,
@@ -250,7 +250,7 @@ impl AccountingRulesService {
         )
     }
 
-    /// Gera lançamento de Liquidação de Fatura a Prazo (Recibo de Quitação RC do KudibaTreasury)
+    /// Gera lançamento de Liquidação de Fatura a Prazo (Recibo de Quitação RC do KudibaTreasury) - Decreto 82/01
     pub fn create_treasury_receipt_entry(
         tenant_id: Uuid,
         fiscal_year_id: Uuid,
@@ -265,8 +265,8 @@ impl AccountingRulesService {
     ) -> Result<JournalEntry, DomainError> {
         let entry_id = Uuid::new_v4();
 
-        // Conta de destino: Banco 12.1 ou Caixa 11.1
-        let destination_account = if is_bank { "12.1" } else { "11.1" };
+        // Conta de destino: Banco 43.1 (D.O.) ou Caixa 45.1 (Caixa Geral) - Decreto 82/01
+        let destination_account = if is_bank { "43.1" } else { "45.1" };
 
         // 1. DÉBITO: Banco ou Caixa (Entrada Financeira)
         let line1 = JournalLine::new_debit(
@@ -280,12 +280,12 @@ impl AccountingRulesService {
             None,
         )?;
 
-        // 2. CRÉDITO: 31.1.1 Clientes Nacionais (Abatimento da Dívida Corrente)
+        // 2. CRÉDITO: 31.1.2.1 Clientes Não Grupo Nacionais (Abatimento da Dívida Corrente) - Decreto 82/01
         let line2 = JournalLine::new_credit(
             tenant_id,
             entry_id,
             2,
-            "31.1.1".to_string(),
+            "31.1.2.1".to_string(),
             amount,
             Some(format!("Quitação de Clientes conf. {}", receipt_number)),
             None,
@@ -309,7 +309,7 @@ impl AccountingRulesService {
         )
     }
 
-    /// Gera lançamento de Processamento de Salários / Folha Salarial (KudibaPayroll)
+    /// Gera lançamento de Processamento de Salários / Folha Salarial (KudibaPayroll) - Decreto 82/01
     pub fn create_payroll_entry(
         tenant_id: Uuid,
         fiscal_year_id: Uuid,
@@ -328,12 +328,12 @@ impl AccountingRulesService {
         let mut lines = Vec::new();
         let mut line_seq = 1;
 
-        // 1. DÉBITO: 63.1.1 - Custos com o Pessoal - Remunerações dos Órgãos Sociais / Pessoal (Salário Ilíquido)
+        // 1. DÉBITO: 72.2 - Custos com o Pessoal - Remunerações do Pessoal (Salário Ilíquido) - Decreto 82/01
         lines.push(JournalLine::new_debit(
             tenant_id,
             entry_id,
             line_seq,
-            "63.1.1".to_string(),
+            "72.2".to_string(),
             total_gross,
             Some(format!("Vencimentos Ilíquidos: {}", period_title)),
             None,
@@ -341,13 +341,13 @@ impl AccountingRulesService {
         )?);
         line_seq += 1;
 
-        // 2. DÉBITO: 63.2.1 - Encargos Sociais Patronais (INSS 8%)
+        // 2. DÉBITO: 72.5 - Encargos sobre Remunerações (INSS Patronal 8%) - Decreto 82/01
         if total_inss_employer > Decimal::ZERO {
             lines.push(JournalLine::new_debit(
                 tenant_id,
                 entry_id,
                 line_seq,
-                "63.2.1".to_string(),
+                "72.5".to_string(),
                 total_inss_employer,
                 Some(format!("INSS 8% Patronal: {}", period_title)),
                 None,
@@ -356,7 +356,7 @@ impl AccountingRulesService {
             line_seq += 1;
         }
 
-        // 3. CRÉDITO: 36.1.1 - Pessoal - Remunerações a Pagar (Salário Líquido)
+        // 3. CRÉDITO: 36.1.1 - Pessoal - Vencimentos a Pagar ao Pessoal (Salário Líquido) - Decreto 82/01
         lines.push(JournalLine::new_credit(
             tenant_id,
             entry_id,
@@ -369,13 +369,13 @@ impl AccountingRulesService {
         )?);
         line_seq += 1;
 
-        // 4. CRÉDITO: 34.1.1 - Estado e Outros Entes Públicos - IRT a Entregar
+        // 4. CRÉDITO: 34.3.1 - Estado e Outros Entes Públicos - IRT Retido ao Pessoal - Decreto 82/01
         if total_irt > Decimal::ZERO {
             lines.push(JournalLine::new_credit(
                 tenant_id,
                 entry_id,
                 line_seq,
-                "34.1.1".to_string(),
+                "34.3.1".to_string(),
                 total_irt,
                 Some(format!("Retenção na Fonte de IRT: {}", period_title)),
                 None,
@@ -384,14 +384,14 @@ impl AccountingRulesService {
             line_seq += 1;
         }
 
-        // 5. CRÉDITO: 34.3.1 - Segurança Social / INSS a Entregar (11% = 3% + 8%)
+        // 5. CRÉDITO: 34.3.2 - Segurança Social / INSS a Entregar (11% = 3% + 8%) - Decreto 82/01
         let inss_total = total_inss_employee + total_inss_employer;
         if inss_total > Decimal::ZERO {
             lines.push(JournalLine::new_credit(
                 tenant_id,
                 entry_id,
                 line_seq,
-                "34.3.1".to_string(),
+                "34.3.2".to_string(),
                 inss_total,
                 Some(format!("Encargos e Retenções INSS 11%: {}", period_title)),
                 None,

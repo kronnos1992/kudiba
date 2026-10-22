@@ -94,6 +94,16 @@ impl WarehouseRepository for PostgresWarehouseRepository {
         .execute(&mut *session.connection())
         .await?;
 
+        if w.is_default {
+            sqlx::query(
+                "UPDATE kudiba_inventory.warehouses SET is_default = FALSE WHERE tenant_id = $1 AND id != $2"
+            )
+            .bind(w.tenant_id)
+            .bind(w.id)
+            .execute(&mut *session.connection())
+            .await?;
+        }
+
         Ok(())
     }
 
@@ -122,6 +132,16 @@ impl WarehouseRepository for PostgresWarehouseRepository {
         .bind(w.id)
         .execute(&mut *session.connection())
         .await?;
+
+        if w.is_default {
+            sqlx::query(
+                "UPDATE kudiba_inventory.warehouses SET is_default = FALSE WHERE tenant_id = $1 AND id != $2"
+            )
+            .bind(w.tenant_id)
+            .bind(w.id)
+            .execute(&mut *session.connection())
+            .await?;
+        }
 
         Ok(())
     }

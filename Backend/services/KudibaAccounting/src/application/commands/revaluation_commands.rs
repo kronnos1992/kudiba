@@ -103,12 +103,12 @@ impl RevalueCurrencyBalancesHandler {
         let is_gain = diff > Decimal::ZERO;
         let diff_abs = diff.abs();
         let offset_account_code = if is_gain {
-            "75.3".to_string()
+            "66.2".to_string() // Decreto 82/01: Proveitos Financeiros - Diferenças de Câmbio Favoráveis
         } else {
-            "66.3".to_string()
+            "76.2".to_string() // Decreto 82/01: Custos Financeiros - Diferenças de Câmbio Desfavoráveis
         };
 
-        // Assegurar existência da conta de contrapartida (66.3 ou 75.3)
+        // Assegurar existência da conta de contrapartida (66.2 ou 76.2)
         let _ = self
             .account_repo
             .find_by_code(tenant_id, &offset_account_code)
