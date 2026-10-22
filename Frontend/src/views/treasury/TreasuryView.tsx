@@ -163,6 +163,19 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
     });
   };
 
+  const isReceivableSettled = React.useCallback(
+    (rec: InvoiceReceivable) => {
+      if (rec.status?.toUpperCase() === 'SETTLED') return true;
+      if (rec.document_type === 'NC') return true;
+      return receipts.some(
+        (rc) =>
+          rc.lines?.some((l) => l.invoice_id === rec.invoice_id || l.invoice_number === rec.document_number) ||
+          (rc.notes && rc.notes.includes(rec.document_number))
+      );
+    },
+    [receipts]
+  );
+
   const filteredReceivables = React.useMemo(() => {
     return receivables.filter(
       (rec) =>
@@ -302,7 +315,12 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
       queryClient.invalidateQueries({ queryKey: ['treasury_receipts'] });
       queryClient.invalidateQueries({ queryKey: ['treasury_bank_accounts'] });
       queryClient.invalidateQueries({ queryKey: ['treasury_receivables'] });
+      queryClient.invalidateQueries({ queryKey: ['treasury_dashboard_summary'] });
       setShowReceiptModal(false);
+      toast.success('Recibo de quitação RC emitido com sucesso.');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.error || err?.response?.data?.detail || 'Erro ao emitir recibo.');
     },
   });
 
@@ -1021,7 +1039,7 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                 </p>
               </div>
               <span className="text-xs text-slate-400">
-                {receivables.filter((r) => r.status === 'Outstanding').length} Pendentes
+                {receivables.filter((r) => !isReceivableSettled(r)).length} Pendentes
               </span>
             </div>
 
@@ -1128,18 +1146,30 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                               <KzAmount value={Number(rec.gross_total)} />
                             </td>
                             <td className="px-4 py-3 text-center">
-                              <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
-                                  rec.status === 'Outstanding'
-                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                }`}
-                              >
-                                {rec.status === 'Outstanding' ? 'Pendente' : 'Liquidada'}
-                              </span>
+                              {(() => {
+                                const settled = isReceivableSettled(rec);
+                                if (rec.document_type === 'NC') {
+                                  return (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                                      Crédito / Regularizada
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span
+                                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
+                                      !settled
+                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                    }`}
+                                  >
+                                    {!settled ? 'Pendente' : 'Liquidada'}
+                                  </span>
+                                );
+                              })()}
                             </td>
                             <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                              {rec.status === 'Outstanding' && (
+                              {!isReceivableSettled(rec) && rec.document_type !== 'NC' && (
                                 <button
                                   onClick={() => {
                                     const defaultEntity = entities.length > 0 ? entities[0] : null;
@@ -1195,8 +1225,12 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                                       <span className="font-semibold text-slate-900 dark:text-white">{rec.payment_mechanism || 'Crédito / A Prazo'}</span>
                                     </div>
                                     <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                                      <span className="text-slate-400 block text-[11px]">Total Pendente de Cobrança:</span>
-                                      <span className="font-bold text-amber-600"><KzAmount value={Number(rec.gross_total)} /></span>
+                                      <span className="text-slate-400 block text-[11px]">
+                                        {isReceivableSettled(rec) ? 'Total Liquidado / Regularizado:' : 'Total Pendente de Cobrança:'}
+                                      </span>
+                                      <span className={`font-bold ${isReceivableSettled(rec) ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                        <KzAmount value={Number(rec.gross_total)} />
+                                      </span>
                                     </div>
                                   </div>
                                 </div>
@@ -1917,14 +1951,22 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                     currency: receiptForm.currency,
                     bank_account_id: receiptForm.bank_account_id || undefined,
                     notes: receiptForm.notes || undefined,
-                    lines: [
-                      {
-                        invoice_id: 'b1000000-0000-0000-0000-000000000001',
-                        invoice_number: 'FT 2026A/000001',
-                        amount_settled: receiptForm.total_amount,
-                        notes: 'Liquidação integral',
-                      },
-                    ],
+                    lines:
+                      receiptForm.lines && receiptForm.lines.length > 0
+                        ? receiptForm.lines.map((l) => ({
+                            invoice_id: l.invoice_id,
+                            invoice_number: l.invoice_number,
+                            amount_settled: receiptForm.total_amount,
+                            notes: l.notes || 'Liquidação integral',
+                          }))
+                        : [
+                            {
+                              invoice_id: '',
+                              invoice_number: '',
+                              amount_settled: receiptForm.total_amount,
+                              notes: receiptForm.notes || 'Liquidação de fatura',
+                            },
+                          ],
                   })
                 }
                 className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50"

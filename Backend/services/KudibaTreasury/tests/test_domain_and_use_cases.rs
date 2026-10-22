@@ -1311,3 +1311,18 @@ async fn test_invoice_receivable_requires_document_number() {
 
     assert!(matches!(result, Err(DomainError::ValidationError(_))));
 }
+
+#[tokio::test]
+async fn test_credit_note_is_automatically_settled() {
+    let rec = InvoiceReceivable::new(
+        Uuid::new_v4(),
+        "inv-nc-001".to_string(),
+        "NC 2026A/000001".to_string(),
+        "NC".to_string(),
+        Some("NUMERARIO".to_string()),
+        dec!(28500.00),
+    )
+    .expect("NC receivable should be created");
+
+    assert_eq!(rec.status, ReceivableStatus::Settled);
+}

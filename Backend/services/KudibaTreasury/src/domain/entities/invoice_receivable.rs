@@ -65,7 +65,7 @@ impl InvoiceReceivable {
         }
 
         let document_type = document_type.trim().to_uppercase();
-        let status = if matches!(document_type.as_str(), "FR" | "VD") {
+        let status = if matches!(document_type.as_str(), "FR" | "VD" | "NC") {
             ReceivableStatus::Settled
         } else {
             ReceivableStatus::Outstanding
