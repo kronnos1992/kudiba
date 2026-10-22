@@ -156,65 +156,55 @@ class PostgresPayrollRepository(PayrollRepository):
     async def save_payslips(self, period_id: UUID, payslips: List[Payslip]) -> None:
         async with self.session_factory() as session:
             async with session.begin():
-                for payslip in payslips:
-                    stmt = select(PayslipModel).where(
-                        PayslipModel.tenant_id == payslip.tenant_id,
-                        PayslipModel.id == payslip.id,
+                existing_payslip_ids_stmt = select(PayslipModel.id).where(PayslipModel.period_id == period_id)
+                res = await session.execute(existing_payslip_ids_stmt)
+                existing_ids = res.scalars().all()
+
+                if existing_ids:
+                    await session.execute(
+                        delete(PayslipLineModel).where(PayslipLineModel.payslip_id.in_(existing_ids))
                     )
-                    res = await session.execute(stmt)
-                    model = res.scalar_one_or_none()
+                    await session.execute(
+                        delete(PayslipModel).where(PayslipModel.id.in_(existing_ids))
+                    )
 
-                    if model:
-                        model.days_worked = payslip.days_worked
-                        model.base_salary = payslip.base_salary
-                        model.total_gross = payslip.total_gross
-                        model.total_allowances = payslip.total_allowances
-                        model.total_overtime = payslip.total_overtime
-                        model.base_inss = payslip.base_inss
-                        model.inss_employee = payslip.inss_employee
-                        model.inss_employer = payslip.inss_employer
-                        model.materia_coletavel_irt = payslip.materia_coletavel_irt
-                        model.irt = payslip.irt
-                        model.total_deductions = payslip.total_deductions
-                        model.net_salary = payslip.net_salary
-                        model.status = payslip.status.value
-                    else:
-                        new_model = PayslipModel(
-                            id=payslip.id,
-                            tenant_id=payslip.tenant_id,
-                            period_id=payslip.period_id,
-                            employee_id=payslip.employee_id,
-                            contract_id=payslip.contract_id,
-                            days_worked=payslip.days_worked,
-                            base_salary=payslip.base_salary,
-                            total_gross=payslip.total_gross,
-                            total_allowances=payslip.total_allowances,
-                            total_overtime=payslip.total_overtime,
-                            base_inss=payslip.base_inss,
-                            inss_employee=payslip.inss_employee,
-                            inss_employer=payslip.inss_employer,
-                            materia_coletavel_irt=payslip.materia_coletavel_irt,
-                            irt=payslip.irt,
-                            total_deductions=payslip.total_deductions,
-                            net_salary=payslip.net_salary,
-                            status=payslip.status.value,
+                for payslip in payslips:
+                    new_model = PayslipModel(
+                        id=payslip.id,
+                        tenant_id=payslip.tenant_id,
+                        period_id=payslip.period_id,
+                        employee_id=payslip.employee_id,
+                        contract_id=payslip.contract_id,
+                        days_worked=payslip.days_worked,
+                        base_salary=payslip.base_salary,
+                        total_gross=payslip.total_gross,
+                        total_allowances=payslip.total_allowances,
+                        total_overtime=payslip.total_overtime,
+                        base_inss=payslip.base_inss,
+                        inss_employee=payslip.inss_employee,
+                        inss_employer=payslip.inss_employer,
+                        materia_coletavel_irt=payslip.materia_coletavel_irt,
+                        irt=payslip.irt,
+                        total_deductions=payslip.total_deductions,
+                        net_salary=payslip.net_salary,
+                        status=payslip.status.value,
+                    )
+                    session.add(new_model)
+
+                    for line in payslip.lines:
+                        line_model = PayslipLineModel(
+                            id=line.id,
+                            tenant_id=line.tenant_id,
+                            payslip_id=line.payslip_id,
+                            line_type=line.line_type.value,
+                            code=line.code,
+                            description=line.description,
+                            reference_value=line.reference_value,
+                            quantity=line.quantity,
+                            rate=line.rate,
+                            amount=line.amount,
                         )
-                        session.add(new_model)
-
-                        for line in payslip.lines:
-                            line_model = PayslipLineModel(
-                                id=line.id,
-                                tenant_id=line.tenant_id,
-                                payslip_id=line.payslip_id,
-                                line_type=line.line_type.value,
-                                code=line.code,
-                                description=line.description,
-                                reference_value=line.reference_value,
-                                quantity=line.quantity,
-                                rate=line.rate,
-                                amount=line.amount,
-                            )
-                            session.add(line_model)
+                        session.add(line_model)
 
     async def list_payslips_by_period(self, tenant_id: UUID, period_id: UUID) -> List[Payslip]:
         async with self.session_factory() as session:
