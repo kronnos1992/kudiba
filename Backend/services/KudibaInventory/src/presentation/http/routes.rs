@@ -728,6 +728,20 @@ async fn dashboard_summary_handler(
     Ok(Json(summary))
 }
 
+async fn tenant_scope_middleware(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let tenant = req
+        .headers()
+        .get("X-Resolved-Tenant-ID")
+        .or_else(|| req.headers().get("X-Tenant-ID"))
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value.trim()).ok());
+
+    crate::config::with_tenant_context(tenant, next.run(req)).await
+}
+
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
@@ -825,5 +839,6 @@ pub fn create_router(state: AppState) -> Router {
             "/api/v1/inventory/events/fiscal-document-issued",
             post(process_invoice_issued_handler),
         )
+        .layer(axum::middleware::from_fn(tenant_scope_middleware))
         .with_state(state)
 }

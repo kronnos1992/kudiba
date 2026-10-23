@@ -57,6 +57,7 @@ export interface IssueInvoicePayload {
   seriesCode: string;
   fiscalYear: number;
   cashSessionId?: string;
+  idempotencyKey?: string;
   customerName: string;
   customerNif?: string;
   customerAddress?: string;
@@ -245,6 +246,9 @@ export const invoicingApi = {
     const headers: Record<string, string> = {};
     if (payload.cashSessionId) {
       headers['X-Cash-Session-ID'] = payload.cashSessionId;
+    }
+    if (payload.idempotencyKey) {
+      headers['Idempotency-Key'] = payload.idempotencyKey;
     }
     const response = await apiClient.post<IssueInvoiceResult & Partial<Invoice>>(
       '/api/v1/fiscal/invoices',

@@ -1,11 +1,11 @@
 use futures_util::StreamExt;
 use lapin::{
     options::{
-        BasicAckOptions, BasicConsumeOptions, BasicNackOptions, ExchangeDeclareOptions,
-        QueueBindOptions, QueueDeclareOptions,
+        BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicPublishOptions,
+        ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions,
     },
-    types::{FieldTable, ShortString},
-    Connection, ConnectionProperties, ExchangeKind,
+    types::{AMQPValue, FieldTable, ShortString},
+    BasicProperties, Connection, ConnectionProperties, ExchangeKind,
 };
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch, Mutex};
@@ -68,11 +68,11 @@ impl InvoiceEventConsumer {
             );
 
             let rmq_url = rmq.clone();
-            let amqp_sender = self.sender.clone();
+            let command = self.command.clone();
             let mut amqp_shutdown_rx = shutdown_rx.clone();
 
             tokio::spawn(async move {
-                Self::run_rabbitmq_listener(rmq_url, amqp_sender, &mut amqp_shutdown_rx).await;
+                Self::run_rabbitmq_listener(rmq_url, command, &mut amqp_shutdown_rx).await;
             });
         } else {
             tracing::info!("Consumidor assíncrono de eventos fiscais iniciado no canal em memória");
@@ -94,7 +94,12 @@ impl InvoiceEventConsumer {
                         Some(event) => {
                             let tenant_id = event.tenant_id;
                             let doc_num = event.document_number.clone();
-                            match self.command.execute(tenant_id, Uuid::nil(), event).await {
+                            let result = crate::config::with_tenant_context(
+                                Some(tenant_id),
+                                self.command.execute(tenant_id, Uuid::nil(), event),
+                            )
+                            .await;
+                            match result {
                                 Ok(res) => {
                                     tracing::info!(
                                         document = %res.document_number,
@@ -124,7 +129,7 @@ impl InvoiceEventConsumer {
 
     async fn run_rabbitmq_listener(
         rmq_url: String,
-        sender: mpsc::Sender<InvoiceIssuedPayload>,
+        command: Arc<ProcessInvoiceIssuedCommand>,
         shutdown_rx: &mut watch::Receiver<bool>,
     ) {
         loop {
@@ -173,6 +178,8 @@ impl InvoiceEventConsumer {
                     _ = shutdown_rx.changed() => break,
                 }
             }
+
+            Self::declare_dlq(&channel).await;
 
             let queue = match channel
                 .queue_declare(
@@ -244,18 +251,53 @@ impl InvoiceEventConsumer {
                     delivery_opt = consumer.next() => {
                         match delivery_opt {
                             Some(Ok(delivery)) => {
+                                let routing_key = delivery.routing_key.to_string();
+                                let correlation_id = delivery
+                                    .properties
+                                    .correlation_id()
+                                    .as_ref()
+                                    .map(|v| v.as_str().to_string())
+                                    .unwrap_or_default();
                                 match Self::parse_invoice_event(&delivery.data) {
                                     Ok(payload) => {
-                                        if let Err(err) = sender.send(payload).await {
-                                            tracing::error!(error = %err, "Canal interno cheio; reenfileirando mensagem");
-                                            let _ = delivery.nack(BasicNackOptions { requeue: true, multiple: false }).await;
-                                        } else {
-                                            let _ = delivery.ack(BasicAckOptions::default()).await;
+                                        let document = payload.document_number.clone();
+                                        let tenant_id = payload.tenant_id;
+                                        let result = crate::config::with_tenant_context(
+                                            Some(tenant_id),
+                                            command.execute(tenant_id, Uuid::nil(), payload),
+                                        )
+                                        .await;
+                                        match result {
+                                            Ok(res) => {
+                                                tracing::info!(
+                                                    correlation_id = %correlation_id,
+                                                    document = %res.document_number,
+                                                    movements = res.movements_recorded,
+                                                    skipped_intangible = res.items_skipped_intangible,
+                                                    "Evento de faturação processado com sucesso"
+                                                );
+                                                if let Err(err) = delivery.ack(BasicAckOptions::default()).await {
+                                                    tracing::warn!(error = %err, "Falha ao confirmar (ack) mensagem AMQP");
+                                                }
+                                            }
+                                            Err(err) => {
+                                                tracing::error!(
+                                                    correlation_id = %correlation_id,
+                                                    document = %document,
+                                                    error = %err,
+                                                    "Falha ao processar evento de faturação; encaminhando para DLQ"
+                                                );
+                                                Self::handle_failure(&channel, &delivery, &routing_key, &err.to_string()).await;
+                                            }
                                         }
                                     }
                                     Err(err) => {
-                                        tracing::error!(error = %err, "Mensagem descartada por payload incompatível");
-                                        let _ = delivery.ack(BasicAckOptions::default()).await;
+                                        tracing::error!(
+                                            correlation_id = %correlation_id,
+                                            error = %err,
+                                            "Payload de evento fiscal inválido; encaminhando para DLQ"
+                                        );
+                                        Self::handle_failure(&channel, &delivery, &routing_key, &err.to_string()).await;
                                     }
                                 }
                             }
@@ -274,6 +316,120 @@ impl InvoiceEventConsumer {
                 }
             }
         }
+    }
+
+    async fn handle_failure(
+        channel: &lapin::Channel,
+        delivery: &lapin::message::Delivery,
+        routing_key: &str,
+        error: &str,
+    ) {
+        match Self::publish_to_dlq(channel, &delivery.data, routing_key, error).await {
+            Ok(()) => {
+                if let Err(err) = delivery.ack(BasicAckOptions::default()).await {
+                    tracing::warn!(error = %err, "Falha ao confirmar mensagem encaminhada para DLQ");
+                }
+            }
+            Err(err) => {
+                tracing::error!(error = %err, "Falha ao publicar na DLQ; mensagem será reenfileirada");
+                let _ = delivery
+                    .nack(BasicNackOptions {
+                        requeue: true,
+                        multiple: false,
+                    })
+                    .await;
+            }
+        }
+    }
+
+    async fn declare_dlq(channel: &lapin::Channel) {
+        if let Err(err) = channel
+            .exchange_declare(
+                ShortString::from("fiscal.events.dlx"),
+                ExchangeKind::Topic,
+                ExchangeDeclareOptions {
+                    durable: true,
+                    ..Default::default()
+                },
+                FieldTable::default(),
+            )
+            .await
+        {
+            tracing::warn!(error = %err, "Falha ao declarar exchange de dead-letter 'fiscal.events.dlx'");
+            return;
+        }
+
+        if let Err(err) = channel
+            .queue_declare(
+                ShortString::from("fiscal.events.dlq"),
+                QueueDeclareOptions {
+                    durable: true,
+                    ..Default::default()
+                },
+                FieldTable::default(),
+            )
+            .await
+        {
+            tracing::warn!(error = %err, "Falha ao declarar fila de dead-letter 'fiscal.events.dlq'");
+            return;
+        }
+
+        if let Err(err) = channel
+            .queue_bind(
+                ShortString::from("fiscal.events.dlq"),
+                ShortString::from("fiscal.events.dlx"),
+                ShortString::from("#"),
+                QueueBindOptions::default(),
+                FieldTable::default(),
+            )
+            .await
+        {
+            tracing::warn!(error = %err, "Falha ao associar fila de dead-letter 'fiscal.events.dlq'");
+        }
+    }
+
+    async fn publish_to_dlq(
+        channel: &lapin::Channel,
+        data: &[u8],
+        routing_key: &str,
+        error: &str,
+    ) -> Result<(), lapin::Error> {
+        let mut headers = FieldTable::default();
+        headers.insert(
+            ShortString::from("x-error"),
+            AMQPValue::LongString(error.to_string().into()),
+        );
+        headers.insert(
+            ShortString::from("x-original-routing-key"),
+            AMQPValue::LongString(routing_key.to_string().into()),
+        );
+        headers.insert(
+            ShortString::from("x-original-queue"),
+            AMQPValue::LongString("inventory.invoice_issued".into()),
+        );
+        headers.insert(
+            ShortString::from("x-compensation-hint"),
+            AMQPValue::LongString(
+                "Documento fiscal certificado: emitir Nota de Crédito (NC) ou ajuste de inventário assistido; não apagar a fatura."
+                    .into(),
+            ),
+        );
+
+        let properties = BasicProperties::default()
+            .with_content_type(ShortString::from("application/json"))
+            .with_headers(headers);
+
+        channel
+            .basic_publish(
+                ShortString::from("fiscal.events.dlx"),
+                ShortString::from("fiscal.event.failed"),
+                BasicPublishOptions::default(),
+                data,
+                properties,
+            )
+            .await?;
+
+        Ok(())
     }
 
     pub fn parse_invoice_event(data: &[u8]) -> Result<InvoiceIssuedPayload, InventoryError> {

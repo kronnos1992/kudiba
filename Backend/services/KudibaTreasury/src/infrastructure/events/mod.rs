@@ -1,11 +1,11 @@
 use futures_util::StreamExt;
 use lapin::{
     options::{
-        BasicAckOptions, BasicConsumeOptions, ExchangeDeclareOptions, QueueBindOptions,
-        QueueDeclareOptions,
+        BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicPublishOptions,
+        ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions,
     },
-    types::{FieldTable, ShortString},
-    Connection, ConnectionProperties, ExchangeKind,
+    types::{AMQPValue, FieldTable, ShortString},
+    BasicProperties, Connection, ConnectionProperties, ExchangeKind,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -70,11 +70,11 @@ impl TreasuryEventConsumer {
             );
 
             let rmq_url = rmq.clone();
-            let amqp_sender = self.sender.clone();
+            let command = self.register_receivable_cmd.clone();
             let mut amqp_shutdown_rx = shutdown_rx.clone();
 
             tokio::spawn(async move {
-                Self::run_rabbitmq_listener(rmq_url, amqp_sender, &mut amqp_shutdown_rx).await;
+                Self::run_rabbitmq_listener(rmq_url, command, &mut amqp_shutdown_rx).await;
             });
         }
 
@@ -92,18 +92,16 @@ impl TreasuryEventConsumer {
                 } => {
                     match event_opt {
                         Some(event) => {
-                            match self
-                                .register_receivable_cmd
-                                .execute(
-                                    event.tenant_id,
-                                    event.invoice_id.to_string(),
-                                    event.document_number.clone(),
-                                    event.document_type.clone(),
-                                    event.payment_mechanism.clone(),
-                                    event.gross_total,
-                                )
-                                .await
-                            {
+                            let tenant_id = event.tenant_id;
+                            let result = crate::config::with_tenant_context(
+                                Some(tenant_id),
+                                Self::register_invoice_receivable(
+                                    &self.register_receivable_cmd,
+                                    &event,
+                                ),
+                            )
+                            .await;
+                            match result {
                                 Ok(()) => tracing::info!(
                                     document = %event.document_number,
                                     total = %event.gross_total,
@@ -207,7 +205,7 @@ impl TreasuryEventConsumer {
 
     async fn run_rabbitmq_listener(
         rabbitmq_url: String,
-        sender: mpsc::Sender<InvoicePaymentEvent>,
+        command: Arc<RegisterInvoiceReceivableHandler>,
         shutdown_rx: &mut watch::Receiver<bool>,
     ) {
         let exchange_name = ShortString::from("fiscal.events");
@@ -234,6 +232,8 @@ impl TreasuryEventConsumer {
                                 FieldTable::default(),
                             )
                             .await;
+
+                        Self::declare_dlq(&channel).await;
 
                         let _ = channel
                             .queue_declare(
@@ -283,10 +283,40 @@ impl TreasuryEventConsumer {
                                 delivery_opt = consumer.next() => {
                                     match delivery_opt {
                                         Some(Ok(delivery)) => {
-                                            if let Some(event) = Self::parse_incoming_invoice(&delivery.data) {
-                                                let _ = sender.send(event).await;
+                                            let routing = delivery.routing_key.to_string();
+                                            match Self::parse_incoming_invoice(&delivery.data) {
+                                                Some(event) => {
+                                                    let result = crate::config::with_tenant_context(
+                                                        Some(event.tenant_id),
+                                                        Self::register_invoice_receivable(&command, &event),
+                                                    )
+                                                    .await;
+                                                    match result {
+                                                        Ok(()) => {
+                                                            tracing::info!(
+                                                                document = %event.document_number,
+                                                                total = %event.gross_total,
+                                                                "Fatura registada como crédito por liquidar na tesouraria"
+                                                            );
+                                                            if let Err(err) = delivery.ack(BasicAckOptions::default()).await {
+                                                                tracing::warn!(error = %err, "Falha ao confirmar (ack) mensagem AMQP");
+                                                            }
+                                                        }
+                                                        Err(err) => {
+                                                            tracing::warn!(
+                                                                document = %event.document_number,
+                                                                error = %err,
+                                                                "Falha ao registar crédito por liquidar; encaminhando para DLQ"
+                                                            );
+                                                            Self::handle_failure(&channel, &delivery, &routing, &err.to_string()).await;
+                                                        }
+                                                    }
+                                                }
+                                                None => {
+                                                    tracing::warn!("Mensagem AMQP inválida; encaminhando para DLQ");
+                                                    Self::handle_failure(&channel, &delivery, &routing, "payload de evento inválido").await;
+                                                }
                                             }
-                                            let _ = delivery.ack(BasicAckOptions::default()).await;
                                         }
                                         Some(Err(err)) => {
                                             tracing::warn!("Erro no stream AMQP: {}", err);
@@ -310,5 +340,137 @@ impl TreasuryEventConsumer {
                 }
             }
         }
+    }
+
+    async fn register_invoice_receivable(
+        command: &RegisterInvoiceReceivableHandler,
+        event: &InvoicePaymentEvent,
+    ) -> Result<(), DomainError> {
+        command
+            .execute(
+                event.tenant_id,
+                event.invoice_id.to_string(),
+                event.document_number.clone(),
+                event.document_type.clone(),
+                event.payment_mechanism.clone(),
+                event.gross_total,
+            )
+            .await
+            .map(|_| ())
+    }
+
+    async fn handle_failure(
+        channel: &lapin::Channel,
+        delivery: &lapin::message::Delivery,
+        routing_key: &str,
+        error: &str,
+    ) {
+        match Self::publish_to_dlq(channel, &delivery.data, routing_key, error).await {
+            Ok(()) => {
+                if let Err(err) = delivery.ack(BasicAckOptions::default()).await {
+                    tracing::warn!(error = %err, "Falha ao confirmar mensagem encaminhada para DLQ");
+                }
+            }
+            Err(err) => {
+                tracing::error!(error = %err, "Falha ao publicar na DLQ; mensagem será reenfileirada");
+                let _ = delivery
+                    .nack(BasicNackOptions {
+                        requeue: true,
+                        multiple: false,
+                    })
+                    .await;
+            }
+        }
+    }
+
+    async fn declare_dlq(channel: &lapin::Channel) {
+        if let Err(err) = channel
+            .exchange_declare(
+                ShortString::from("fiscal.events.dlx"),
+                ExchangeKind::Topic,
+                ExchangeDeclareOptions {
+                    durable: true,
+                    ..Default::default()
+                },
+                FieldTable::default(),
+            )
+            .await
+        {
+            tracing::warn!(error = %err, "Falha ao declarar exchange de dead-letter 'fiscal.events.dlx'");
+            return;
+        }
+
+        if let Err(err) = channel
+            .queue_declare(
+                ShortString::from("fiscal.events.dlq"),
+                QueueDeclareOptions {
+                    durable: true,
+                    ..Default::default()
+                },
+                FieldTable::default(),
+            )
+            .await
+        {
+            tracing::warn!(error = %err, "Falha ao declarar fila de dead-letter 'fiscal.events.dlq'");
+            return;
+        }
+
+        if let Err(err) = channel
+            .queue_bind(
+                ShortString::from("fiscal.events.dlq"),
+                ShortString::from("fiscal.events.dlx"),
+                ShortString::from("#"),
+                QueueBindOptions::default(),
+                FieldTable::default(),
+            )
+            .await
+        {
+            tracing::warn!(error = %err, "Falha ao associar fila de dead-letter 'fiscal.events.dlq'");
+        }
+    }
+
+    async fn publish_to_dlq(
+        channel: &lapin::Channel,
+        data: &[u8],
+        routing_key: &str,
+        error: &str,
+    ) -> Result<(), lapin::Error> {
+        let mut headers = FieldTable::default();
+        headers.insert(
+            ShortString::from("x-error"),
+            AMQPValue::LongString(error.to_string().into()),
+        );
+        headers.insert(
+            ShortString::from("x-original-routing-key"),
+            AMQPValue::LongString(routing_key.to_string().into()),
+        );
+        headers.insert(
+            ShortString::from("x-original-queue"),
+            AMQPValue::LongString("treasury.invoice_issued".into()),
+        );
+
+        headers.insert(
+            ShortString::from("x-compensation-hint"),
+            AMQPValue::LongString(
+                "Documento fiscal certificado: emitir Nota de Crédito (NC) ou ajuste de inventário assistido; não apagar a fatura."
+                    .into(),
+            ),
+        );
+
+        let properties = BasicProperties::default()
+            .with_content_type(ShortString::from("application/json"))
+            .with_headers(headers);
+
+        channel
+            .basic_publish(
+                ShortString::from("fiscal.events.dlx"),
+                ShortString::from("fiscal.event.failed"),
+                BasicPublishOptions::default(),
+                data,
+                properties,
+            )
+            .await?;
+
+        Ok(())
     }
 }

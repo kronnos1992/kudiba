@@ -50,6 +50,18 @@ apiClient.interceptors.request.use(
 
     config.headers['X-Correlation-ID'] = correlationId;
 
+    // Idempotência transversal: toda a mutação recebe uma chave única por tentativa.
+    // Chamadas que já definem a sua própria chave (ex.: reconciliação POS offline)
+    // mantêm a chave estável para permitir replay seguro após timeout de rede.
+    const method = (config.method || 'get').toLowerCase();
+    const isMutation = method === 'post' || method === 'put' || method === 'patch' || method === 'delete';
+    if (isMutation && !config.headers['Idempotency-Key']) {
+      config.headers['Idempotency-Key'] =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `idem-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    }
+
     return config;
   },
   (error) => Promise.reject(error)

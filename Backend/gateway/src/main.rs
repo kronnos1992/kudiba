@@ -6,6 +6,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 mod config;
 mod errors;
 pub mod health;
+mod metrics;
 mod middleware;
 mod proxy;
 mod server;

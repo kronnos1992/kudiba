@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use lapin::{
     options::{BasicPublishOptions, ExchangeDeclareOptions},
-    types::{FieldTable, ShortString},
+    types::{AMQPValue, FieldTable, LongString, ShortString},
     BasicProperties, Channel, Connection, ConnectionProperties, ExchangeKind,
 };
 use serde_json::Value;
@@ -121,9 +121,27 @@ impl EventPublisher for MultiChannelEventPublisher {
                 DomainError::Persistence(format!("Falha ao serializar evento: {}", e))
             })?;
 
+            let correlation = event.event_id.to_string();
+            let mut headers = FieldTable::default();
+            headers.insert(
+                ShortString::from("x-correlation-id"),
+                AMQPValue::LongString(LongString::from(correlation.clone())),
+            );
+            headers.insert(
+                ShortString::from("x-tenant-id"),
+                AMQPValue::LongString(LongString::from(event.tenant_id.to_string())),
+            );
+            headers.insert(
+                ShortString::from("x-invoice-id"),
+                AMQPValue::LongString(LongString::from(event.invoice_id.to_string())),
+            );
+
             let props = BasicProperties::default()
                 .with_content_type(ShortString::from("application/json"))
-                .with_delivery_mode(2);
+                .with_delivery_mode(2)
+                .with_message_id(ShortString::from(correlation.clone()))
+                .with_correlation_id(ShortString::from(correlation.clone()))
+                .with_headers(headers);
 
             let publish_res = channel
                 .basic_publish(

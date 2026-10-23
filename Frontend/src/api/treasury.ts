@@ -159,6 +159,7 @@ export interface IssueReceiptPayload {
   total_amount: string | number;
   currency: string;
   notes?: string;
+  idempotencyKey?: string;
   lines: IssueReceiptLinePayload[];
 }
 
@@ -343,7 +344,11 @@ export const treasuryApi = {
   },
 
   issueReceipt: async (payload: IssueReceiptPayload): Promise<TreasuryReceipt> => {
-    const res = await apiClient.post<TreasuryReceipt>('/api/v1/treasury/receipts', payload);
+    const headers: Record<string, string> = {};
+    if (payload.idempotencyKey) {
+      headers['Idempotency-Key'] = payload.idempotencyKey;
+    }
+    const res = await apiClient.post<TreasuryReceipt>('/api/v1/treasury/receipts', payload, { headers });
     return res.data;
   },
 

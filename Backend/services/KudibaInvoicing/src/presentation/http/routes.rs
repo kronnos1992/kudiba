@@ -23,6 +23,20 @@ use crate::domain::ports::crypto_signer::CryptoSigner;
 use crate::infrastructure::crypto::rsa_signer::generate_agt_keypair;
 use crate::state::AppState;
 
+async fn tenant_scope_middleware(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let tenant = req
+        .headers()
+        .get("X-Resolved-Tenant-ID")
+        .or_else(|| req.headers().get("X-Tenant-ID"))
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value.trim()).ok());
+
+    crate::config::with_tenant_context(tenant, next.run(req)).await
+}
+
 /// Constrói o router REST interno do motor fiscal
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -163,6 +177,7 @@ pub fn router(state: AppState) -> Router {
             get(get_fiscal_tenant_handler).put(upsert_fiscal_tenant_handler),
         )
         .merge(crate::presentation::http::swagger::router::<AppState>())
+        .layer(axum::middleware::from_fn(tenant_scope_middleware))
         .with_state(state)
 }
 
@@ -1716,7 +1731,7 @@ async fn system_audit_trail_handler(
             created_at
         FROM kudiba_audit.system_audit_trail
         WHERE tenant_id = 
-        "#
+        "#,
     );
     builder.push_bind(target_tenant);
 
@@ -1783,7 +1798,7 @@ async fn system_audit_trail_handler(
                 .collect();
 
             let count_res: Result<(i64,), sqlx::Error> = sqlx::query_as(
-                "SELECT COUNT(*) FROM kudiba_audit.system_audit_trail WHERE tenant_id = $1"
+                "SELECT COUNT(*) FROM kudiba_audit.system_audit_trail WHERE tenant_id = $1",
             )
             .bind(target_tenant)
             .fetch_one(&state.pool)

@@ -300,10 +300,7 @@ async fn ready_handler(State(state): State<AppState>) -> (StatusCode, Json<serde
 }
 
 async fn metrics_handler() -> String {
-    "# HELP http_requests_total Total number of HTTP requests processed.\n\
-     # TYPE http_requests_total counter\n\
-     http_requests_total{status=\"200\"} 0\n"
-        .to_string()
+    crate::metrics::render()
 }
 
 /// Handler consolidado de diagnóstico e saúde de todos os serviços do ecossistema Kudiba

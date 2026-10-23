@@ -42,6 +42,10 @@ import {
   CreateBatchPayload,
 } from '../../api/inventory';
 import { invoicingApi, IssueInvoicePayload } from '../../api/invoicing';
+import { WarehousesTab } from './WarehousesTab';
+import { MovementsTab } from './MovementsTab';
+import { BatchesTab } from './BatchesTab';
+import { EntitiesTab } from './EntitiesTab';
 
 type InventoryTab = 'products' | 'warehouses' | 'movements' | 'batches' | 'entities';
 
@@ -1384,332 +1388,31 @@ export const InventoryView: React.FC = () => {
         </div>
       )}
 
-      {/* Conteúdo da Tab 2: Armazéns */}
       {activeTab === 'warehouses' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {warehousesLoading ? (
-              <div className="col-span-full py-8 text-center text-slate-500">
-                A carregar armazéns...
-              </div>
-            ) : warehouses.length === 0 ? (
-              <div className="col-span-full py-8 text-center text-slate-500">
-                Nenhum armazém registado. Clique em "Novo Armazém" para começar.
-              </div>
-            ) : (
-              warehouses.map((w) => (
-                <GlassCard key={w.id} className="p-5 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded">
-                        {w.code}
-                      </span>
-                      {w.is_default && (
-                        <span className="text-xs font-semibold px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 rounded">
-                          Principal / Padrão
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                      {w.name}
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {w.address_detail || 'Sem endereço especificado'}
-                    </p>
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <StatusBadge status={w.is_active ? 'ok' : 'acompanhar'} label={w.is_active ? 'Operacional' : 'Inativo'} />
-                    <span className="text-xs text-slate-400">Filial {activeBranch?.name || 'Sede'}</span>
-                  </div>
-                </GlassCard>
-              ))
-            )}
-          </div>
-        </div>
+        <WarehousesTab
+          warehouses={warehouses}
+          warehousesLoading={warehousesLoading}
+          activeBranchName={activeBranch?.name}
+        />
       )}
 
-      {/* Conteúdo da Tab 3: Movimentos & Operações */}
       {activeTab === 'movements' && (
-        <div className="space-y-4">
-          <GlassCard className="overflow-hidden">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <History className="w-4 h-4 text-emerald-600" />
-                Histórico Auditável de Movimentos de Stock
-              </h3>
-              <span className="text-xs text-slate-400">Últimos movimentos registados</span>
-            </div>
-            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-              <table className="w-full text-left text-sm border-separate border-spacing-0">
-                <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs text-xs text-slate-500 uppercase font-semibold">
-                  <tr>
-                    <SortableHeader field="created_at" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
-                      Data / Hora
-                    </SortableHeader>
-                    <SortableHeader field="movement_type" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
-                      Tipo Movimento
-                    </SortableHeader>
-                    <SortableHeader field="document_ref" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
-                      Doc Ref
-                    </SortableHeader>
-                    <SortableHeader field="quantity" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} align="right" className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
-                      Quantidade
-                    </SortableHeader>
-                    <SortableHeader field="unit_cost" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} align="right" className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
-                      Custo Unitário
-                    </SortableHeader>
-                    <SortableHeader field="total_cost" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} align="right" className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
-                      Custo Total
-                    </SortableHeader>
-                    <SortableHeader field="resulting_cmp" currentSortField={movementsSort?.key} sortDirection={movementsSort?.direction} onSort={requestMovementsSort} align="right" className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
-                      CMP Resultante
-                    </SortableHeader>
-                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3">Observações</th>
-                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-center">Guia / Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {movementsLoading ? (
-                    <tr>
-                      <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
-                        A carregar histórico de movimentos...
-                      </td>
-                    </tr>
-                  ) : sortedMovements.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
-                        Nenhum movimento registado. Utilize os botões acima para registar Entradas, Transferências ou Ajustes.
-                      </td>
-                    </tr>
-                  ) : (
-                    sortedMovements.map((m) => {
-                      const qty = Number(m.quantity) || 0;
-                      const unitCost = Number(m.unit_cost) || 0;
-                      const totalCost = Number(m.total_cost) || 0;
-                      const resultingCmp = Number(m.resulting_cmp) || 0;
-                      const isEntry = m.movement_type.includes('In') || m.movement_type.includes('Purchase');
-
-                      return (
-                        <tr key={m.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                          <td className="px-4 py-3 text-xs text-slate-500 font-mono">
-                            {new Date(m.created_at).toLocaleString('pt-AO')}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
-                                isEntry
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                  : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                              }`}
-                            >
-                              {m.movement_type}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 font-medium text-slate-900 dark:text-white font-mono text-xs">
-                            {m.document_ref || '—'}
-                          </td>
-                          <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
-                            {qty}
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">
-                            <KzAmount value={unitCost} />
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold text-slate-900 dark:text-white">
-                            <KzAmount value={totalCost} />
-                          </td>
-                          <td className="px-4 py-3 text-right text-emerald-600 font-bold">
-                            <KzAmount value={resultingCmp} />
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500 truncate max-w-xs">
-                            {m.notes || '—'}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            {m.document_ref || m.movement_type.includes('Transfer') ? (
-                              <button
-                                type="button"
-                                onClick={() => handlePrintTransferGuide(m)}
-                                disabled={printingDocRef === m.id}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 transition shadow-xs disabled:opacity-50"
-                                title="Imprimir Guia Oficial de Transporte (GT)"
-                              >
-                                {printingDocRef === m.id ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                                ) : (
-                                  <Printer className="w-3.5 h-3.5" />
-                                )}
-                                <span>{m.document_ref?.startsWith('GT') ? 'Guia GT' : 'Imprimir Guia'}</span>
-                              </button>
-                            ) : (
-                              <span className="text-2xs text-slate-400">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </GlassCard>
-        </div>
+        <MovementsTab
+          sortedMovements={sortedMovements}
+          movementsLoading={movementsLoading}
+          movementsSort={movementsSort}
+          requestMovementsSort={requestMovementsSort}
+          printingDocRef={printingDocRef}
+          onPrintTransferGuide={handlePrintTransferGuide}
+        />
       )}
 
-      {/* Conteúdo da Tab 4: Lotes & Validades */}
       {activeTab === 'batches' && (
-        <div className="space-y-4">
-          <GlassCard className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  Controlo de Lotes &amp; Validades (FIFO / FEFO)
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Garantia de rastreabilidade de mercadorias perecíveis e controlo de validade para efeitos fiscais
-                </p>
-              </div>
-              <button
-                onClick={() => setShowBatchModal(true)}
-                className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg"
-              >
-                <PlusCircle className="w-3.5 h-3.5" />
-                Criar Novo Lote
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase font-semibold">
-                  <tr>
-                    <th className="px-4 py-3">Artigo Associado</th>
-                    <th className="px-4 py-3">Número do Lote</th>
-                    <th className="px-4 py-3">Data Fabrico</th>
-                    <th className="px-4 py-3">Data Validade</th>
-                    <th className="px-4 py-3 text-center">Estado Validade</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {products.filter((p) => p.track_lots).length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
-                        Nenhum artigo com controlo de lotes ativo configurado.
-                      </td>
-                    </tr>
-                  ) : (
-                    products
-                      .filter((p) => p.track_lots)
-                      .map((p) => (
-                        <tr key={p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                          <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
-                            {p.name} ({p.code})
-                          </td>
-                          <td className="px-4 py-3 font-mono font-medium text-emerald-600">
-                            LT-2026-001
-                          </td>
-                          <td className="px-4 py-3 text-slate-500">2026-01-10</td>
-                          <td className="px-4 py-3 text-slate-500">2027-01-10</td>
-                          <td className="px-4 py-3 text-center">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                              Válido (FEFO Conforme)
-                            </span>
-                          </td>
-                        </tr>
-                      ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </GlassCard>
-        </div>
+        <BatchesTab products={products} onCreateBatch={() => setShowBatchModal(true)} />
       )}
 
-      {/* Conteúdo da Tab 5: Clientes & Fornecedores */}
       {activeTab === 'entities' && (
-        <div className="space-y-4">
-          <GlassCard className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase font-semibold">
-                  <tr>
-                    <th className="px-4 py-3">NIF / Identificador</th>
-                    <th className="px-4 py-3">Razão Social / Nome</th>
-                    <th className="px-4 py-3">Tipo</th>
-                    <th className="px-4 py-3">Contacto / Email</th>
-                    <th className="px-4 py-3">Localidade</th>
-                    <th className="px-4 py-3 text-center">Agente Retenção</th>
-                    <th className="px-4 py-3">IBAN AO06</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {entitiesLoading ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                        A carregar entidades...
-                      </td>
-                    </tr>
-                  ) : entities.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                        Nenhuma entidade registada. Clique em "Registar Entidade" para adicionar clientes ou fornecedores.
-                      </td>
-                    </tr>
-                  ) : (
-                    entities.map((e) => (
-                      <tr key={e.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                        <td className="px-4 py-3 font-mono font-semibold text-slate-900 dark:text-white">
-                          {e.tax_id}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="font-semibold text-slate-900 dark:text-white block">
-                            {e.name}
-                          </span>
-                          {e.trade_name && (
-                            <span className="text-xs text-slate-400 block">{e.trade_name}</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
-                              e.entity_type === 'CUSTOMER'
-                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                                : e.entity_type === 'SUPPLIER'
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                                : 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
-                            }`}
-                          >
-                            {e.entity_type === 'CUSTOMER'
-                              ? 'Cliente'
-                              : e.entity_type === 'SUPPLIER'
-                              ? 'Fornecedor'
-                              : 'Cliente / Fornecedor'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-500">
-                          <div>{e.phone || '—'}</div>
-                          <div>{e.email || '—'}</div>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-500">
-                          {e.city ? `${e.city}, ${e.province || 'Angola'}` : 'Angola'}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {e.is_withholding_agent ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                              Sim (Cativo)
-                            </span>
-                          ) : (
-                            <span className="text-xs text-slate-400">Não</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-400">
-                          {e.iban || '—'}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </GlassCard>
-        </div>
+        <EntitiesTab entities={entities} entitiesLoading={entitiesLoading} />
       )}
 
       {/* Modal: Novo Artigo / Serviço */}

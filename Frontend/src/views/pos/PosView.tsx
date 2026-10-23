@@ -23,6 +23,8 @@ import {
   Users,
   Coins,
   Banknote,
+  WifiOff,
+  CloudUpload,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { toast } from '../../stores/toastStore';
@@ -32,6 +34,15 @@ import { inventoryApi, Product } from '../../api/inventory';
 import { invoicingApi, Invoice, PosDailyReportResult, PosZReportSummary } from '../../api/invoicing';
 import { treasuryApi, MovementType, PosPanelResponse } from '../../api/treasury';
 import { authApi, TenantMember } from '../../api/auth';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus';
+import {
+  cachePosProducts,
+  getCachedPosProducts,
+  getNextOfflineSequence,
+  saveOfflineSale,
+  type CachedPosProduct,
+  type OfflinePosSale,
+} from '../../services/posOfflineDb';
 
 interface CartItem {
   productId: string;
@@ -47,6 +58,19 @@ interface CartItem {
 export const PosView: React.FC = () => {
   const { activeTenant, user } = useAuthStore();
   const queryClient = useQueryClient();
+
+  const {
+    isContingencyMode,
+    isBackendReachable,
+    pendingOfflineCount,
+    isSyncing,
+    syncPendingSales,
+    refreshPendingCount,
+  } = useNetworkStatus();
+
+  const [offlineCatalog, setOfflineCatalog] = useState<CachedPosProduct[]>([]);
+  const [offlineReceipt, setOfflineReceipt] = useState<OfflinePosSale | null>(null);
+  const [offlineTicketModalOpen, setOfflineTicketModalOpen] = useState(false);
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [productSearch, setProductSearch] = useState('');
@@ -98,6 +122,47 @@ export const PosView: React.FC = () => {
     queryFn: () => inventoryApi.listProducts({ limit: 150 }),
     enabled: Boolean(activeTenant?.id),
   });
+
+  // Catálogo de contingência: espelha produtos em IndexedDB para permitir venda offline.
+  React.useEffect(() => {
+    if (!products.length) return;
+    cachePosProducts(
+      products.map((p) => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        description: p.description ?? undefined,
+        unit_of_measure: p.unit_of_measure,
+        sale_price: p.sale_price,
+        cost_price: p.cost_price,
+        tax_percentage: p.tax_percentage,
+        tax_exemption_code: p.exemption_reason_code ?? undefined,
+        is_stockable: p.is_stockable,
+        barcode: p.barcode ?? undefined,
+        product_type: p.product_type,
+        exemption_reason_code: p.exemption_reason_code,
+      }))
+    ).catch(() => {
+      // IndexedDB indisponível (modo privado): o POS continua a operar online.
+    });
+  }, [products]);
+
+  // Carrega o catálogo local quando o serviço central está inacessível.
+  React.useEffect(() => {
+    let active = true;
+    getCachedPosProducts()
+      .then((cached) => {
+        if (active && cached.length) setOfflineCatalog(cached);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const catalogProducts: Product[] =
+    products.length > 0 ? products : (offlineCatalog as unknown as Product[]);
+  const isCatalogLoading = isLoadingProducts && catalogProducts.length === 0;
 
   const { data: stockBalances = [] } = useQuery({
     queryKey: ['pos_stock_balances', activeTenant?.id],
@@ -188,6 +253,7 @@ export const PosView: React.FC = () => {
       : 0;
 
   const cartStockErrors = React.useMemo(() => {
+    if (isContingencyMode) return [];
     const errors: string[] = [];
     for (const item of cart) {
       if (!item.isService) {
@@ -200,10 +266,10 @@ export const PosView: React.FC = () => {
       }
     }
     return errors;
-  }, [cart, productStockMap]);
+  }, [cart, productStockMap, isContingencyMode]);
 
   // Filtragem de catálogo
-  const filteredProducts = products.filter(
+  const filteredProducts = catalogProducts.filter(
     (p) =>
       p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
       p.code.toLowerCase().includes(productSearch.toLowerCase()) ||
@@ -217,7 +283,7 @@ export const PosView: React.FC = () => {
       if (!query) return;
 
       const exactMatch =
-        products.find(
+        catalogProducts.find(
           (p) =>
             (p.barcode && p.barcode.toLowerCase() === query) ||
             p.code.toLowerCase() === query ||
@@ -237,7 +303,7 @@ export const PosView: React.FC = () => {
     const existing = cart.find((item) => item.productId === product.id);
     const requested = (existing?.qty || 0) + 1;
 
-    if (!isService && requested > available) {
+    if (!isService && !isContingencyMode && requested > available) {
       toast.error(
         available <= 0
           ? `Artigo "${product.name}" sem stock em armazém (0 un. disponível).`
@@ -279,7 +345,7 @@ export const PosView: React.FC = () => {
     if (!item) return;
     const isService = item.isService;
     const available = getProductStock(productId);
-    if (delta > 0 && !isService && item.qty + delta > available) {
+    if (delta > 0 && !isService && !isContingencyMode && item.qty + delta > available) {
       toast.error(`Stock máximo disponível para "${item.name}": ${available} un.`);
       return;
     }
@@ -391,7 +457,7 @@ export const PosView: React.FC = () => {
   const issueFrMutation = useMutation({
     mutationFn: async () => {
       setErrorMessage(null);
-      if (!isCashSessionOpen) {
+      if (!isCashSessionOpen && !isContingencyMode) {
         const msg = 'Não é possível emitir faturas com o turno de caixa fechado. Abra o turno de caixa primeiro.';
         setErrorMessage(msg);
         throw new Error(msg);
@@ -403,14 +469,16 @@ export const PosView: React.FC = () => {
         '2026A';
 
       const cartSnapshot = [...cart];
-      for (const item of cartSnapshot) {
-        if (!item.isService) {
-          const available = getProductStock(item.productId);
-          if (item.qty > available) {
-            const msg = `Stock insuficiente: "${item.name}" tem apenas ${available} un. em stock (solicitado: ${item.qty} un.).`;
-            setErrorMessage(msg);
-            toast.error(msg);
-            throw new Error(msg);
+      if (!isContingencyMode) {
+        for (const item of cartSnapshot) {
+          if (!item.isService) {
+            const available = getProductStock(item.productId);
+            if (item.qty > available) {
+              const msg = `Stock insuficiente: "${item.name}" tem apenas ${available} un. em stock (solicitado: ${item.qty} un.).`;
+              setErrorMessage(msg);
+              toast.error(msg);
+              throw new Error(msg);
+            }
           }
         }
       }
@@ -440,78 +508,38 @@ export const PosView: React.FC = () => {
         })),
       };
 
-      const issued = await invoicingApi.issueInvoice(payload);
-      const invoiceId = issued.invoiceId || issued.id || '';
+      const idempotencyKey =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `pos-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-      // 1. Registar entrada na Sessão de Caixa aberta (Tesouraria)
-      if (currentSession?.status === 'OPEN') {
-        try {
-          await treasuryApi.recordMovement({
-            session_id: currentSession.id,
-            movement_type: 'SALE_RECEIPT',
-            amount: Number(issued.grossTotal || totalGross).toFixed(2),
-            reason: `Venda POS ${issued.documentNumber} (${selectedPaymentMethod})`,
-            operator_user_id: user?.id || user?.email || 'pos-operator',
-          });
-        } catch {
-          // Segue sem bloquear o talão fiscal já assinado
-        }
-      }
-
-      // 2. Abater stock no Inventário para artigos movimentáveis
-      try {
-        await inventoryApi.processInvoiceIssued({
-          invoiceId,
+      const persistOfflineSale = async (saleId?: string): Promise<OfflinePosSale> => {
+        const { sequenceNumber, documentNumber } = await getNextOfflineSequence(
+          activeSeries,
+          currentYear
+        );
+        return saveOfflineSale({
+          id: saleId || idempotencyKey,
+          offlineDocumentNumber: documentNumber,
+          sequenceNumber,
+          seriesCode: activeSeries,
+          fiscalYear: currentYear,
+          createdAt: new Date().toISOString(),
           tenantId: activeTenant!.id,
-          documentNumber: issued.documentNumber,
-          documentType: 'FR',
-          lines: cartSnapshot.map((item, idx) => ({
-            lineNumber: idx + 1,
-            productCode: item.code,
-            description: item.name,
-            quantity: item.qty,
-            unitPrice: item.unitPrice,
-          })),
-        });
-      } catch {
-        // Segue sem bloquear o talão fiscal já assinado
-      }
-
-      // 3. Obter o documento fiscal completo (ou construir fallback completo com linhas)
-      let fullInvoice: Invoice;
-      try {
-        fullInvoice = await invoicingApi.getInvoice(invoiceId);
-      } catch {
-        fullInvoice = {
-          id: invoiceId,
-          tenantId: activeTenant!.id,
-          issuerNif: activeTenant?.taxId || '',
-          issuerAddress: activeTenant?.address_detail || 'Luanda, Angola',
-          issuerCity: activeTenant?.city || 'Luanda',
-          issuerCountry: activeTenant?.country || 'AO',
-          seriesId: '',
-          documentNumber: issued.documentNumber,
-          sequenceNumber: issued.sequenceNumber,
-          documentType: 'FR',
+          cashierName:
+            user?.fullName || user?.full_name || user?.email || 'Operador de Caixa',
+          posTerminalCode: activeRegister?.code || 'POS-01',
           customerName: customerNameVal,
           customerNif: customerNifVal,
-          paymentMethods: [selectedPaymentMethod],
-          currency: 'AOA',
-          netTotal: issued.netTotal,
-          taxTotal: issued.taxTotal,
-          grossTotal: issued.grossTotal,
-          withholdingTotal: issued.withholdingTotal,
-          stampDutyTotal: issued.stampDutyTotal,
-          amountDue: issued.amountDue,
-          hashSha256: issued.hashSha256,
-          signatureRsaBase64: issued.signatureRsaBase64,
-          validationChars: issued.validationChars,
-          keyVersion: '1',
-          isContingency: issued.isContingency,
-          taxRegimeCode: 'GERAL',
-          issuedAt: issued.issuedAt,
-          systemEntryDate: issued.systemEntryDate,
-          createdAt: issued.issuedAt,
+          paymentMethod: selectedPaymentMethod,
+          amountTendered:
+            selectedPaymentMethod === 'NUMERARIO' && tenderedNum > 0
+              ? tenderedNum
+              : totalGross,
+          changeDue: Number(changeDue.toFixed(2)),
+          netTotal: Number(subtotal.toFixed(2)),
+          taxTotal: Number(totalTax.toFixed(2)),
+          grossTotal: Number(totalGross.toFixed(2)),
           lines: cartSnapshot.map((item, idx) => ({
             lineNumber: idx + 1,
             productCode: item.code,
@@ -519,16 +547,125 @@ export const PosView: React.FC = () => {
             quantity: item.qty,
             unitPrice: item.unitPrice,
             taxRate: item.taxRate,
-            lineTotal: item.unitPrice * item.qty * (1 + item.taxRate / 100),
+            lineTotal: Number(
+              (item.unitPrice * item.qty * (1 + item.taxRate / 100)).toFixed(2)
+            ),
           })),
-        };
+        });
+      };
+
+      if (isContingencyMode) {
+        const offlineSale = await persistOfflineSale();
+        await refreshPendingCount();
+        return { kind: 'offline' as const, sale: offlineSale };
       }
 
-      return fullInvoice;
+      try {
+        const issued = await invoicingApi.issueInvoice({
+          ...payload,
+          idempotencyKey,
+        });
+        const invoiceId = issued.invoiceId || issued.id || '';
+
+        // 1. Registar entrada na Sessão de Caixa aberta (Tesouraria)
+        if (currentSession?.status === 'OPEN') {
+          try {
+            await treasuryApi.recordMovement({
+              session_id: currentSession.id,
+              movement_type: 'SALE_RECEIPT',
+              amount: Number(issued.grossTotal || totalGross).toFixed(2),
+              reason: `Venda POS ${issued.documentNumber} (${selectedPaymentMethod})`,
+              operator_user_id: user?.id || user?.email || 'pos-operator',
+            });
+          } catch {
+            // Segue sem bloquear o talão fiscal já assinado
+          }
+        }
+
+        // 2. Abater stock no Inventário para artigos movimentáveis
+        try {
+          await inventoryApi.processInvoiceIssued({
+            invoiceId,
+            tenantId: activeTenant!.id,
+            documentNumber: issued.documentNumber,
+            documentType: 'FR',
+            lines: cartSnapshot.map((item, idx) => ({
+              lineNumber: idx + 1,
+              productCode: item.code,
+              description: item.name,
+              quantity: item.qty,
+              unitPrice: item.unitPrice,
+            })),
+          });
+        } catch {
+          // Segue sem bloquear o talão fiscal já assinado
+        }
+
+        // 3. Obter o documento fiscal completo (ou construir fallback completo com linhas)
+        let fullInvoice: Invoice;
+        try {
+          fullInvoice = await invoicingApi.getInvoice(invoiceId);
+        } catch {
+          fullInvoice = {
+            id: invoiceId,
+            tenantId: activeTenant!.id,
+            issuerNif: activeTenant?.taxId || '',
+            issuerAddress: activeTenant?.address_detail || 'Luanda, Angola',
+            issuerCity: activeTenant?.city || 'Luanda',
+            issuerCountry: activeTenant?.country || 'AO',
+            seriesId: '',
+            documentNumber: issued.documentNumber,
+            sequenceNumber: issued.sequenceNumber,
+            documentType: 'FR',
+            customerName: customerNameVal,
+            customerNif: customerNifVal,
+            paymentMethods: [selectedPaymentMethod],
+            currency: 'AOA',
+            netTotal: issued.netTotal,
+            taxTotal: issued.taxTotal,
+            grossTotal: issued.grossTotal,
+            withholdingTotal: issued.withholdingTotal,
+            stampDutyTotal: issued.stampDutyTotal,
+            amountDue: issued.amountDue,
+            hashSha256: issued.hashSha256,
+            signatureRsaBase64: issued.signatureRsaBase64,
+            validationChars: issued.validationChars,
+            keyVersion: '1',
+            isContingency: issued.isContingency,
+            taxRegimeCode: 'GERAL',
+            issuedAt: issued.issuedAt,
+            systemEntryDate: issued.systemEntryDate,
+            createdAt: issued.issuedAt,
+            lines: cartSnapshot.map((item, idx) => ({
+              lineNumber: idx + 1,
+              productCode: item.code,
+              description: item.name,
+              quantity: item.qty,
+              unitPrice: item.unitPrice,
+              taxRate: item.taxRate,
+              lineTotal: item.unitPrice * item.qty * (1 + item.taxRate / 100),
+            })),
+          };
+        }
+
+        return { kind: 'online' as const, invoice: fullInvoice };
+      } catch (err: any) {
+        const isNetworkFailure =
+          !err?.response || [502, 503, 504].includes(Number(err?.response?.status));
+        if (!isNetworkFailure) throw err;
+
+        // A resposta perdeu-se após o envio: reutilizar a mesma chave garante replay
+        // idempotente caso o documento já tenha sido assinado no servidor.
+        const offlineSale = await persistOfflineSale(idempotencyKey);
+        await refreshPendingCount();
+        return { kind: 'offline' as const, sale: offlineSale };
+      }
     },
-    onSuccess: (data) => {
-      setIssuedInvoice(data);
-      const gross = Number(data.grossTotal || totalGross);
+    onSuccess: (result) => {
+      const gross =
+        result.kind === 'online'
+          ? Number(result.invoice.grossTotal || totalGross)
+          : Number(result.sale.grossTotal || totalGross);
       const tenderedForSummary =
         selectedPaymentMethod === 'NUMERARIO'
           ? (tenderedNum >= gross ? tenderedNum : gross)
@@ -542,7 +679,18 @@ export const PosView: React.FC = () => {
         tendered: tenderedForSummary,
         change: changeForSummary,
       });
-      setTicketModalOpen(true);
+
+      if (result.kind === 'online') {
+        setIssuedInvoice(result.invoice);
+        setTicketModalOpen(true);
+      } else {
+        setOfflineReceipt(result.sale);
+        setOfflineTicketModalOpen(true);
+        toast.warning(
+          `Venda registada em contingência: ${result.sale.offlineDocumentNumber}. Será sincronizada quando a rede regressar.`
+        );
+      }
+
       setCart([]);
       setAmountTendered('');
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
@@ -842,6 +990,36 @@ export const PosView: React.FC = () => {
         </div>
       )}
 
+      {(isContingencyMode || pendingOfflineCount > 0) && (
+        <div className="no-print flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 text-xs">
+          <div className="flex items-start sm:items-center gap-2 min-w-0">
+            <WifiOff className="w-4 h-4 flex-shrink-0 text-amber-600" />
+            <div className="min-w-0">
+              <span className="font-bold block">
+                {isContingencyMode
+                  ? 'Modo de Contingência Ativo — vendas guardadas localmente'
+                  : 'Existem vendas de contingência por sincronizar'}
+              </span>
+              <span className="text-[11px] opacity-90">
+                {pendingOfflineCount > 0
+                  ? `${pendingOfflineCount} documento(s) pendente(s). A sequência fiscal local é preservada e reconciliada automaticamente.`
+                  : 'A ligação ao servidor central está indisponível. As vendas serão reconciliadas quando a rede regressar.'}
+              </span>
+            </div>
+          </div>
+          {pendingOfflineCount > 0 && (
+            <button
+              onClick={() => syncPendingSales()}
+              disabled={isSyncing || !isBackendReachable}
+              className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'A sincronizar...' : 'Sincronizar agora'}</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Grid Principal do POS */}
       {posTab === 'venda' && (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 no-print">
@@ -865,7 +1043,7 @@ export const PosView: React.FC = () => {
           </GlassCard>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3 max-h-[380px] sm:max-h-[480px] lg:max-h-[580px] overflow-y-auto pr-1">
-            {isLoadingProducts ? (
+            {isCatalogLoading ? (
               <div className="col-span-full py-16 text-center text-slate-400">
                 <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
                 <span>A carregar catálogo de artigos...</span>
@@ -1147,7 +1325,7 @@ export const PosView: React.FC = () => {
                 </div>
               </div>
 
-              {!isCashSessionOpen && (
+              {!isCashSessionOpen && !isContingencyMode && (
                 <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-300 space-y-2">
                   <div className="flex items-center gap-1.5 font-bold">
                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -1191,7 +1369,7 @@ export const PosView: React.FC = () => {
                 disabled={
                   cart.length === 0 ||
                   issueFrMutation.isPending ||
-                  !isCashSessionOpen ||
+                  (!isCashSessionOpen && !isContingencyMode) ||
                   cartStockErrors.length > 0 ||
                   (selectedPaymentMethod === 'NUMERARIO' &&
                     tenderedNum > 0 &&
@@ -1203,7 +1381,12 @@ export const PosView: React.FC = () => {
                 {issueFrMutation.isPending ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>A Certificar...</span>
+                    <span>{isContingencyMode ? 'A Guardar em Contingência...' : 'A Certificar...'}</span>
+                  </>
+                ) : isContingencyMode ? (
+                  <>
+                    <CloudUpload className="w-4 h-4" />
+                    <span>Emitir FR em Contingência &amp; Finalizar</span>
                   </>
                 ) : !isCashSessionOpen ? (
                   <>
@@ -1944,6 +2127,117 @@ export const PosView: React.FC = () => {
               >
                 <Printer className="w-4 h-4" />
                 <span>Imprimir Talão Fiscal</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Talão de Contingência (POS Offline) */}
+      {offlineTicketModalOpen && offlineReceipt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-slate-900 relative">
+            <button
+              onClick={() => setOfflineTicketModalOpen(false)}
+              className="no-print absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="ticket-80mm font-mono text-xs text-black border border-dashed border-slate-300 p-4 rounded-lg bg-white my-2">
+              <div className="text-center mb-3">
+                <p className="font-extrabold text-sm uppercase">
+                  {activeTenant?.trade_name || activeTenant?.name || 'KUDIBA COMÉRCIO GERAL'}
+                </p>
+                <p>NIF: {activeTenant?.taxId || activeTenant?.nif}</p>
+                <p className="font-bold text-xs mt-2 text-amber-700">
+                  FATURA-RECIBO (CONTINGÊNCIA): {offlineReceipt.offlineDocumentNumber}
+                </p>
+                <p className="text-[10px]">
+                  Data: {new Date(offlineReceipt.createdAt).toLocaleString()}
+                </p>
+              </div>
+
+              <div className="border-t border-dashed border-black my-2" />
+
+              <div className="text-[11px] mb-2">
+                <p>Cliente: {offlineReceipt.customerName}</p>
+                <p>NIF: {offlineReceipt.customerNif || '999999999'}</p>
+                <p>Operador: {offlineReceipt.cashierName}</p>
+              </div>
+
+              <div className="border-t border-dashed border-black my-2" />
+
+              <div className="space-y-1 text-[11px]">
+                {offlineReceipt.lines.map((line, idx) => (
+                  <div key={idx} className="flex justify-between">
+                    <span className="truncate pr-2">
+                      {line.quantity}x {line.description}
+                    </span>
+                    <span>
+                      {(Number(line.unitPrice) * Number(line.quantity)).toLocaleString('pt-AO', {
+                        minimumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-t border-dashed border-black my-2" />
+
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span>Total Líquido:</span>
+                  <span>{Number(offlineReceipt.netTotal).toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>IVA Total:</span>
+                  <span>{Number(offlineReceipt.taxTotal).toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</span>
+                </div>
+                <div className="flex justify-between font-extrabold text-sm pt-1 border-t border-dashed border-black">
+                  <span>TOTAL AOA:</span>
+                  <span>{Number(offlineReceipt.grossTotal).toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</span>
+                </div>
+                <div className="pt-1.5 border-t border-dashed border-slate-400 text-[11px] space-y-0.5">
+                  <div className="flex justify-between">
+                    <span>Meio Pagamento:</span>
+                    <span className="font-bold">{offlineReceipt.paymentMethod}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Valor Entregue:</span>
+                    <span>{Number(offlineReceipt.amountTendered).toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</span>
+                  </div>
+                  <div className="flex justify-between font-extrabold">
+                    <span>Troco Devolvido:</span>
+                    <span>{Number(offlineReceipt.changeDue).toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-dashed border-black my-2" />
+
+              <div className="text-center text-[10px] space-y-1">
+                <p className="font-bold text-amber-700">DOCUMENTO EMITIDO EM CONTINGÊNCIA</p>
+                <p>Será reconciliado e certificado quando a ligação ao servidor central for restabelecida.</p>
+                <p className="font-mono text-[9px] text-slate-500 break-all">
+                  Ref. local: {offlineReceipt.id.substring(0, 18)}...
+                </p>
+              </div>
+            </div>
+
+            <div className="no-print flex items-center justify-end gap-2 mt-4">
+              <button
+                onClick={() => setOfflineTicketModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Imprimir Comprovativo</span>
               </button>
             </div>
           </div>

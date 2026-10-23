@@ -3,6 +3,47 @@ use std::time::Duration;
 
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use uuid::Uuid;
+
+tokio::task_local! {
+    pub static TENANT_CONTEXT: Option<Uuid>;
+}
+
+pub fn current_tenant() -> Option<Uuid> {
+    TENANT_CONTEXT.try_with(|tenant| *tenant).ok().flatten()
+}
+
+pub async fn with_tenant_context<F>(tenant: Option<Uuid>, future: F) -> F::Output
+where
+    F: std::future::Future,
+{
+    TENANT_CONTEXT.scope(tenant, future).await
+}
+
+async fn set_tenant_on_connection(
+    conn: &mut sqlx::PgConnection,
+    tenant: Option<Uuid>,
+) -> Result<(), sqlx::Error> {
+    let value = tenant.map(|id| id.to_string()).unwrap_or_default();
+    sqlx::query("SELECT set_config('app.current_tenant', $1, false)")
+        .bind(value)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
+}
+
+fn with_tenant_hooks(options: PgPoolOptions) -> PgPoolOptions {
+    options
+        .after_connect(|conn, _meta| {
+            Box::pin(async move { set_tenant_on_connection(conn, current_tenant()).await })
+        })
+        .before_acquire(|conn, _meta| {
+            Box::pin(async move {
+                set_tenant_on_connection(conn, current_tenant()).await?;
+                Ok(true)
+            })
+        })
+}
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -49,17 +90,21 @@ impl Config {
     }
 
     pub async fn create_db_pool(&self) -> Result<PgPool, sqlx::Error> {
-        PgPoolOptions::new()
-            .max_connections(self.db_max_connections)
-            .acquire_timeout(Duration::from_secs(5))
-            .connect(&self.database_url)
-            .await
+        with_tenant_hooks(
+            PgPoolOptions::new()
+                .max_connections(self.db_max_connections)
+                .acquire_timeout(Duration::from_secs(5)),
+        )
+        .connect(&self.database_url)
+        .await
     }
 
     pub fn create_lazy_db_pool(&self) -> Result<PgPool, sqlx::Error> {
-        PgPoolOptions::new()
-            .max_connections(self.db_max_connections)
-            .acquire_timeout(Duration::from_secs(5))
-            .connect_lazy(&self.database_url)
+        with_tenant_hooks(
+            PgPoolOptions::new()
+                .max_connections(self.db_max_connections)
+                .acquire_timeout(Duration::from_secs(5)),
+        )
+        .connect_lazy(&self.database_url)
     }
 }

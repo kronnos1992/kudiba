@@ -9,6 +9,7 @@ use std::time::Instant;
 /// Middleware de auditoria e logging perimétrico de todas as ações e requisições HTTP
 pub async fn access_log_middleware(req: Request, next: Next) -> Response {
     let start = Instant::now();
+    crate::metrics::request_started();
     let method = req.method().clone();
     let uri = req.uri().clone();
     let path = uri.path().to_string();
@@ -49,8 +50,10 @@ pub async fn access_log_middleware(req: Request, next: Next) -> Response {
     let use_case = classify_use_case(method.as_str(), &path);
 
     let response = next.run(req).await;
-    let elapsed = start.elapsed().as_millis();
+    let elapsed_duration = start.elapsed();
+    let elapsed = elapsed_duration.as_millis();
     let status = response.status().as_u16();
+    crate::metrics::record(status, elapsed_duration);
 
     if status >= 500 {
         tracing::error!(

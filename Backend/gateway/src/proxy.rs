@@ -6,6 +6,7 @@ use axum::{
 };
 use reqwest::Client;
 use std::net::SocketAddr;
+use uuid::Uuid;
 
 use crate::errors::ProblemDetail;
 use crate::server::AppState;
@@ -209,15 +210,29 @@ async fn forward_request(
     let method = parts.method;
     let mut builder = client.request(method.clone(), &target_url);
 
-    // Copia headers, filtrando host
+    // Copia headers, filtrando host e o traceparent (injetado de forma canónica abaixo)
     for (k, v) in &parts.headers {
-        if k != "host" && k != "content-length" && k != "x-forwarded-for" {
+        if k != "host" && k != "content-length" && k != "x-forwarded-for" && k != "traceparent" {
             builder = builder.header(k.as_str(), v.as_bytes());
         }
     }
     if let Some(client_ip) = client_ip {
         builder = builder.header("X-Forwarded-For", client_ip);
     }
+
+    // Contexto de rastreabilidade W3C (OpenTelemetry): reutiliza o traceparent
+    // recebido ou gera um novo trace/span para a chamada ao microsserviço.
+    let traceparent = parts
+        .headers
+        .get("traceparent")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            let trace_id = Uuid::new_v4().simple().to_string();
+            let span_id = Uuid::new_v4().simple().to_string();
+            format!("00-{}-{}-01", trace_id, &span_id[..16])
+        });
+    builder = builder.header("traceparent", traceparent);
 
     let timestamp = chrono::Utc::now().timestamp().to_string();
     let uri_path = parts.uri.path();

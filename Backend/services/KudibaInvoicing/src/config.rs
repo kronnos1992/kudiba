@@ -4,6 +4,47 @@ use std::time::Duration;
 
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::PgPool;
+use uuid::Uuid;
+
+tokio::task_local! {
+    pub static TENANT_CONTEXT: Option<Uuid>;
+}
+
+pub fn current_tenant() -> Option<Uuid> {
+    TENANT_CONTEXT.try_with(|tenant| *tenant).ok().flatten()
+}
+
+pub async fn with_tenant_context<F>(tenant: Option<Uuid>, future: F) -> F::Output
+where
+    F: std::future::Future,
+{
+    TENANT_CONTEXT.scope(tenant, future).await
+}
+
+async fn set_tenant_on_connection(
+    conn: &mut sqlx::PgConnection,
+    tenant: Option<Uuid>,
+) -> Result<(), sqlx::Error> {
+    let value = tenant.map(|id| id.to_string()).unwrap_or_default();
+    sqlx::query("SELECT set_config('app.current_tenant', $1, false)")
+        .bind(value)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
+}
+
+fn with_tenant_hooks(options: PgPoolOptions) -> PgPoolOptions {
+    options
+        .after_connect(|conn, _meta| {
+            Box::pin(async move { set_tenant_on_connection(conn, current_tenant()).await })
+        })
+        .before_acquire(|conn, _meta| {
+            Box::pin(async move {
+                set_tenant_on_connection(conn, current_tenant()).await?;
+                Ok(true)
+            })
+        })
+}
 
 /// Configuração do Motor Fiscal carregada do ambiente
 #[derive(Debug, Clone)]
@@ -148,12 +189,14 @@ impl Config {
     pub fn connect_pool(&self) -> Result<PgPool, sqlx::Error> {
         let options = parse_connect_options(&self.database_url)?;
 
-        let pool = PgPoolOptions::new()
-            .max_connections(self.db_max_connections)
-            .acquire_timeout(Duration::from_secs(10))
-            .idle_timeout(Duration::from_secs(600))
-            .max_lifetime(Duration::from_secs(1800))
-            .connect_lazy_with(options);
+        let pool = with_tenant_hooks(
+            PgPoolOptions::new()
+                .max_connections(self.db_max_connections)
+                .acquire_timeout(Duration::from_secs(10))
+                .idle_timeout(Duration::from_secs(600))
+                .max_lifetime(Duration::from_secs(1800)),
+        )
+        .connect_lazy_with(options);
 
         Ok(pool)
     }
@@ -166,12 +209,14 @@ impl Config {
             .unwrap_or(&self.database_url);
         let options = parse_connect_options(read_url)?;
 
-        let pool = PgPoolOptions::new()
-            .max_connections(self.db_max_connections)
-            .acquire_timeout(Duration::from_secs(10))
-            .idle_timeout(Duration::from_secs(600))
-            .max_lifetime(Duration::from_secs(1800))
-            .connect_lazy_with(options);
+        let pool = with_tenant_hooks(
+            PgPoolOptions::new()
+                .max_connections(self.db_max_connections)
+                .acquire_timeout(Duration::from_secs(10))
+                .idle_timeout(Duration::from_secs(600))
+                .max_lifetime(Duration::from_secs(1800)),
+        )
+        .connect_lazy_with(options);
 
         Ok(pool)
     }

@@ -57,13 +57,15 @@ def mint_jwt_token(tenant_id: str, branch_id: str, roles: list[str]) -> str:
     signature = b64url(hmac.new(JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
     return f"{encoded_header}.{encoded_claims}.{signature}"
 
-def api_request(method: str, path: str, token: str = None, body: dict = None, expected_status: int = 200) -> dict:
+def api_request(method: str, path: str, token: str = None, body: dict = None, expected_status: int = 200, extra_headers: dict = None) -> dict:
     url = f"{GATEWAY_URL}{path}"
     headers = {"Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
         headers["X-Tenant-ID"] = TENANT_ID
         headers["X-Branch-ID"] = BRANCH_ID
+    if extra_headers:
+        headers.update(extra_headers)
     data = None
     if body is not None:
         headers["Content-Type"] = "application/json"
@@ -86,6 +88,26 @@ def api_request(method: str, path: str, token: str = None, body: dict = None, ex
     except Exception as e:
         raise RuntimeError(f"Erro de ligacao em {method} {path}: {e}")
 
+def api_request_raw(method: str, path: str, token: str = None, expected_status: int = 200) -> tuple[int, str]:
+    url = f"{GATEWAY_URL}{path}"
+    headers = {"Accept": "application/xml, text/xml, */*"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+        headers["X-Tenant-ID"] = TENANT_ID
+        headers["X-Branch-ID"] = BRANCH_ID
+
+    req = urllib.request.Request(url, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            status = resp.status
+            content = resp.read().decode("utf-8")
+            if status != expected_status:
+                raise RuntimeError(f"HTTP {status} diferente do esperado {expected_status}")
+            return status, content
+    except urllib.error.HTTPError as e:
+        err_content = e.read().decode("utf-8")
+        raise RuntimeError(f"Falha na requisicao {method} {path} (HTTP {e.code}): {err_content}")
+
 def main():
     print(f"\n{BOLD}{CYAN}======================================================================{RESET}")
     print(f"{BOLD}{CYAN}   Kudiba ERP — Validação Ponta-a-Ponta (E2E Integration & Events)   {RESET}")
@@ -97,7 +119,7 @@ def main():
     test_suffix = int(time.time()) % 100000
 
     # 1. Healthcheck do Gateway
-    print(f"[{BOLD}1/7{RESET}] Verificando saúde do API Gateway...", end=" ")
+    print(f"[{BOLD}1/9{RESET}] Verificando saúde do API Gateway...", end=" ")
     try:
         health = api_request("GET", "/health", expected_status=200)
         print(f"{GREEN}OK ({health.get('status', 'UP')}){RESET}")
@@ -106,13 +128,13 @@ def main():
         sys.exit(1)
 
     # 2. Emissão de Token de Autenticação
-    print(f"[{BOLD}2/7{RESET}] Gerando token de autenticação JWT...", end=" ")
+    print(f"[{BOLD}2/9{RESET}] Gerando token de autenticação JWT...", end=" ")
     token = mint_jwt_token(TENANT_ID, BRANCH_ID, ["ADMIN", "CONTABILISTA", "GESTOR_STOCK"])
     print(f"{GREEN}OK (HMAC-SHA256 gerado){RESET}")
 
     # 3. Criação de Armazém no KudibaInventory
     wh_code = f"ARM-{test_suffix}"
-    print(f"[{BOLD}3/7{RESET}] Criando armazém '{wh_code}' via Gateway...", end=" ")
+    print(f"[{BOLD}3/9{RESET}] Criando armazém '{wh_code}' via Gateway...", end=" ")
     try:
         wh_payload = {
             "branch_id": BRANCH_ID,
@@ -130,7 +152,7 @@ def main():
 
     # 4. Cadastro de Artigo no KudibaInventory
     prod_code = f"PROD-{test_suffix}"
-    print(f"[{BOLD}4/7{RESET}] Cadastrando artigo '{prod_code}' no inventário...", end=" ")
+    print(f"[{BOLD}4/9{RESET}] Cadastrando artigo '{prod_code}' no inventário...", end=" ")
     try:
         prod_payload = {
             "code": prod_code,
@@ -151,7 +173,7 @@ def main():
         sys.exit(1)
 
     # 5. Entrada de Stock / Compra Inicial
-    print(f"[{BOLD}5/7{RESET}] Registando compra de stock (+100 unidades)...", end=" ")
+    print(f"[{BOLD}5/9{RESET}] Registando compra de stock (+100 unidades)...", end=" ")
     try:
         purchase_payload = {
             "warehouse_id": warehouse_id,
@@ -174,7 +196,7 @@ def main():
         sys.exit(1)
 
     # 6. Emissão de Fatura Fiscal no KudibaInvoicing
-    print(f"[{BOLD}6/7{RESET}] Emitindo Fatura FT de 10 unidades via KudibaInvoicing...", end=" ")
+    print(f"[{BOLD}6/9{RESET}] Emitindo Fatura FT de 10 unidades via KudibaInvoicing...", end=" ")
     try:
         invoice_payload = {
             "tenantId": TENANT_ID,
@@ -206,7 +228,7 @@ def main():
         sys.exit(1)
 
     # 7. Verificação de Propagação Assíncrona e Baixa de Stock
-    print(f"[{BOLD}7/7{RESET}] Aguardando propagação do evento para baixa de stock...", end=" ")
+    print(f"[{BOLD}7/9{RESET}] Aguardando propagação do evento para baixa de stock...", end=" ")
     updated_stock = None
     for attempt in range(1, 15):
         time.sleep(1)
@@ -222,9 +244,77 @@ def main():
     if updated_stock == 90.0:
         print(f"{GREEN}SUCESSO! (Stock baixou de 100.0 para 90.0 automaticamente){RESET}")
     else:
-        # Tenta verificar se o canal interno ou consumidor recebeu
         print(f"{YELLOW}AVISO (Stock atual: {stock_info.get('quantity_on_hand')}){RESET}")
         print(f"    Nota: Em ambiente sem RabbitMQ ou com polling longo da outbox, a sincronização pode ocorrer na próxima iteração.")
+
+    # 8. Emissão de Recibo de Quitação RC na Tesouraria com Validação de Idempotência
+    print(f"[{BOLD}8/9{RESET}] Emitindo Recibo RC com chave de Idempotência...", end=" ")
+    try:
+        idemp_key = f"idemp-rc-{test_suffix}"
+        receipt_payload = {
+            "customer_id": "a0000000-0000-0000-0000-000000000001",
+            "customer_name": "Cliente de Teste Integrado E2E",
+            "customer_nif": "5000123456",
+            "payment_method": "TRANSFERENCIA",
+            "bank_account_id": "6c1282c3-1d67-42ed-85c4-17281fb4efb9",
+            "total_amount": "28500.00",
+            "currency": "AOA",
+            "notes": f"Quitação E2E da fatura {doc_num}",
+            "lines": [
+                {
+                    "invoice_id": str(inv_id),
+                    "invoice_number": doc_num,
+                    "amount_settled": "28500.00",
+                }
+            ],
+        }
+        rc_res = api_request(
+            "POST",
+            "/api/v1/treasury/receipts",
+            token=token,
+            body=receipt_payload,
+            extra_headers={"Idempotency-Key": idemp_key},
+            expected_status=201,
+        )
+        rc_num = rc_res.get("receipt_number") or rc_res.get("id")
+
+        # Teste de Replay Idempotente: reenviar mesma chave e payload
+        replay_res = api_request(
+            "POST",
+            "/api/v1/treasury/receipts",
+            token=token,
+            body=receipt_payload,
+            extra_headers={"Idempotency-Key": idemp_key},
+            expected_status=201,
+        )
+        replay_num = replay_res.get("receipt_number") or replay_res.get("id")
+        if rc_num != replay_num:
+            raise RuntimeError(f"Idempotência falhou: {rc_num} != {replay_num}")
+        print(f"{GREEN}OK ({rc_num} | Replay Idempotente validado){RESET}")
+    except Exception as e:
+        print(f"{RED}FALHA{RESET}\n    Erro: {e}")
+        sys.exit(1)
+
+    # 9. Exportação e Validação do SAF-T (AO)
+    print(f"[{BOLD}9/9{RESET}] Exportando ficheiro fiscal SAF-T (AO) XML...", end=" ")
+    try:
+        curr_year = int(time.strftime("%Y"))
+        _, saft_xml = api_request_raw(
+            "GET",
+            f"/api/v1/fiscal/saft?tenantId={TENANT_ID}&year={curr_year}",
+            token=token,
+            expected_status=200,
+        )
+        if "<?xml" not in saft_xml or "<AuditFile" not in saft_xml:
+            raise RuntimeError("O SAF-T devolvido não é um documento XML AuditFile válido.")
+        if "urn:OECD:StandardAuditFile-Tax:AO_1.01_01" not in saft_xml:
+            raise RuntimeError("O SAF-T não declara o namespace oficial da AGT (AO_1.01_01).")
+        if f'<InvoiceNo>{doc_num}</InvoiceNo>' not in saft_xml:
+            raise RuntimeError(f"A fatura E2E {doc_num} não foi encontrada no SAF-T exportado.")
+        print(f"{GREEN}OK ({len(saft_xml)} bytes, namespace AO_1.01_01 e fatura {doc_num} validados){RESET}")
+    except Exception as e:
+        print(f"{RED}FALHA{RESET}\n    Erro: {e}")
+        sys.exit(1)
 
     print(f"\n{BOLD}{GREEN}✔ Ciclo de Teste E2E concluído com êxito!{RESET}\n")
 
