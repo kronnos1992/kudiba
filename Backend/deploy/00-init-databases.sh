@@ -94,6 +94,27 @@ EOSQL
 echo "Provisionando utilizador inicial SYSADMIN no banco 'kudiba_auth'..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_auth" -f /docker-entrypoint-initdb.d/15-bootstrap-sysadmin.sql
 
+# 8e. Papéis de aplicação sem privilégios de superutilizador ou bypass de RLS
+echo "Provisionando papéis de aplicação para os serviços Rust..."
+APP_PASSWORD="${KUDIBA_APP_PASSWORD:-kudiba_app_secret}"
+while IFS=' ' read -r DB_TARGET APP_ROLE; do
+    psql -v ON_ERROR_STOP=1 \
+        --username "$POSTGRES_USER" \
+        --dbname "$DB_TARGET" \
+        -f /opt/kudiba/16-row-level-security.sql
+    psql -v ON_ERROR_STOP=1 \
+        --username "$POSTGRES_USER" \
+        --dbname "$DB_TARGET" \
+        --set=owner_role="$POSTGRES_USER" \
+        --set=app_role="$APP_ROLE" \
+        --set=app_password="$APP_PASSWORD" \
+        -f /opt/kudiba/17-application-role.sql
+done <<'ROLES'
+kudiba_invoicing kudiba_invoicing_app
+kudiba_inventory kudiba_inventory_app
+kudiba_treasury kudiba_treasury_app
+kudiba_accounting kudiba_accounting_app
+ROLES
 
 # 9. Compatibilidade regressiva para o banco padrão kudiba_erp
 echo "Aplicando schema no banco padrão '$POSTGRES_DB'..."

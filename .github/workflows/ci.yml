@@ -5,16 +5,41 @@ on:
     branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**', 'inventory/**', 'treasury/**', 'accounting/**', 'payroll/**' ]
     paths:
       - 'Backend/**'
+      - 'Frontend/**'
+      - 'scripts/test-e2e-flow.py'
       - 'proto/**'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**', 'inventory/**', 'treasury/**', 'accounting/**', 'payroll/**' ]
     paths:
       - 'Backend/**'
+      - 'Frontend/**'
+      - 'scripts/test-e2e-flow.py'
       - 'proto/**'
       - '.github/workflows/ci.yml'
 
 jobs:
+  frontend-build:
+    name: Frontend - Type Check & Production Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --prefix Frontend
+
+      - name: Build frontend
+        run: npm --prefix Frontend run build
+
   rust-check-and-build:
     name: Rust - Check, Lint & Build
     runs-on: ubuntu-latest

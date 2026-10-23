@@ -224,7 +224,7 @@ O servidor gRPC roda concorrentemente na porta configurada (`GRPC_PORT`, padrão
 | `DB_MAX_CONNECTIONS` | `20` | Dimensão máxima do pool de conexões com o PostgreSQL |
 | `ENVIRONMENT` | `development` | Ambiente de execução (`development`, `staging`, `production`) |
 | `AGT_KEY_VERSION` | `1` | Versão da chave privada RSA registada no portal da AGT |
-| `AGT_SOFTWARE_CERT` | `999/AGT/2026` | Número de validação / certificação do software junto da AGT |
+| `AGT_SOFTWARE_CERT` | *(não definido)* | Número de validação atribuído pela AGT; manter vazio até à aprovação |
 | `AGT_RSA_PRIVATE_KEY_PATH` | *(opcional)* | Caminho absoluto no disco para o arquivo PEM da chave privada RSA |
 | `AGT_RSA_PRIVATE_KEY_PEM` | *(opcional)* | Conteúdo textual direto em PEM da chave privada RSA-2048 |
 | `AGT_PLATFORM_URL` | `https://webservices.agt.minfin.gov.ao/...` | URL base dos webservices de faturação eletrónica da AGT |
@@ -234,6 +234,8 @@ O servidor gRPC roda concorrentemente na porta configurada (`GRPC_PORT`, padrão
 | `OUTBOX_BATCH_SIZE` | `50` | Quantidade máxima de eventos fiscais a despachar por ciclo |
 | `RABBITMQ_URL` | *(opcional)* | URL de ligação ao RabbitMQ (ex: `amqp://guest:guest@localhost:5672`) |
 | `KAFKA_BROKERS` | *(opcional)* | Lista de brokers Kafka / Redpanda (ex: `localhost:9092`) |
+
+**Estado AGT:** o URL base predefinido é o endpoint REST de homologação (`https://sifphml.minfin.gov.ao/sigt/fe/v1`). A submissão está bloqueada até à implementação do contrato oficial; `AGT_API_TOKEN` não autoriza chamadas válidas, pois a AGT documenta Basic Authentication. Não configure um número de certificação até este ser atribuído pela AGT.
 
 ---
 

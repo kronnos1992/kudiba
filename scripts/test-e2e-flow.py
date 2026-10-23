@@ -4,11 +4,15 @@ Kudiba ERP — End-to-End Integration & Event-Driven Smoke Test
 Testa o ciclo completo através do API Gateway (:8080):
   1. Conectividade e Saúde do Gateway (/health e /ready)
   2. Autenticação e Emissão de Token JWT Seguro (claims Kudiba)
-  3. Cadastro de Armazém e Artigo Físico no KudibaInventory
-  4. Entrada de Stock / Compra (Recebimento) e conferência de CMP
-  5. Emissão de Fatura Fiscal (FT) no KudibaInvoicing com Assinatura RSA
-  6. Propagação Assíncrona de Eventos via Outbox/RabbitMQ e Baixa de Stock
-  7. Consulta e Validação de Movimento de Stock Registado
+  3. Criação de série fiscal isolada para esta execução
+  4. Cadastro de Armazém no KudibaInventory
+  5. Cadastro de Artigo Físico
+  6. Entrada de Stock / Compra (Recebimento) e conferência de CMP
+  7. Emissão de Fatura Fiscal (FT) no KudibaInvoicing com Assinatura RSA
+  8. Propagação assíncrona e baixa de stock via Outbox/RabbitMQ
+  9. Lançamento contabilístico automático e balancete equilibrado
+ 10. Recibo RC idempotente e respetiva contabilização
+ 11. Exportação e validação fiscal do SAF-T (AO)
 """
 
 import sys
@@ -119,7 +123,7 @@ def main():
     test_suffix = int(time.time()) % 100000
 
     # 1. Healthcheck do Gateway
-    print(f"[{BOLD}1/9{RESET}] Verificando saúde do API Gateway...", end=" ")
+    print(f"[{BOLD}1/11{RESET}] Verificando saúde do API Gateway...", end=" ")
     try:
         health = api_request("GET", "/health", expected_status=200)
         print(f"{GREEN}OK ({health.get('status', 'UP')}){RESET}")
@@ -128,13 +132,33 @@ def main():
         sys.exit(1)
 
     # 2. Emissão de Token de Autenticação
-    print(f"[{BOLD}2/9{RESET}] Gerando token de autenticação JWT...", end=" ")
+    print(f"[{BOLD}2/11{RESET}] Gerando token de autenticação JWT...", end=" ")
     token = mint_jwt_token(TENANT_ID, BRANCH_ID, ["ADMIN", "CONTABILISTA", "GESTOR_STOCK"])
     print(f"{GREEN}OK (HMAC-SHA256 gerado){RESET}")
 
-    # 3. Criação de Armazém no KudibaInventory
+    series_code = f"E2E{test_suffix}"
+    print(f"[{BOLD}3/11{RESET}] Criando série fiscal isolada '{series_code}'...", end=" ")
+    try:
+        api_request(
+            "POST",
+            "/api/v1/fiscal/series",
+            token=token,
+            body={
+                "tenantId": TENANT_ID,
+                "documentType": "FT",
+                "seriesCode": series_code,
+                "fiscalYear": int(time.strftime("%Y")),
+            },
+            expected_status=201,
+        )
+        print(f"{GREEN}OK{RESET}")
+    except Exception as e:
+        print(f"{RED}FALHA{RESET}\n    Erro: {e}")
+        sys.exit(1)
+
+    # 4. Criação de Armazém no KudibaInventory
     wh_code = f"ARM-{test_suffix}"
-    print(f"[{BOLD}3/9{RESET}] Criando armazém '{wh_code}' via Gateway...", end=" ")
+    print(f"[{BOLD}4/11{RESET}] Criando armazém '{wh_code}' via Gateway...", end=" ")
     try:
         wh_payload = {
             "branch_id": BRANCH_ID,
@@ -150,9 +174,9 @@ def main():
         print(f"{RED}FALHA{RESET}\n    Erro: {e}")
         sys.exit(1)
 
-    # 4. Cadastro de Artigo no KudibaInventory
+    # 5. Cadastro de Artigo no KudibaInventory
     prod_code = f"PROD-{test_suffix}"
-    print(f"[{BOLD}4/9{RESET}] Cadastrando artigo '{prod_code}' no inventário...", end=" ")
+    print(f"[{BOLD}5/11{RESET}] Cadastrando artigo '{prod_code}' no inventário...", end=" ")
     try:
         prod_payload = {
             "code": prod_code,
@@ -173,7 +197,7 @@ def main():
         sys.exit(1)
 
     # 5. Entrada de Stock / Compra Inicial
-    print(f"[{BOLD}5/9{RESET}] Registando compra de stock (+100 unidades)...", end=" ")
+    print(f"[{BOLD}6/11{RESET}] Registando compra de stock (+100 unidades)...", end=" ")
     try:
         purchase_payload = {
             "warehouse_id": warehouse_id,
@@ -196,12 +220,12 @@ def main():
         sys.exit(1)
 
     # 6. Emissão de Fatura Fiscal no KudibaInvoicing
-    print(f"[{BOLD}6/9{RESET}] Emitindo Fatura FT de 10 unidades via KudibaInvoicing...", end=" ")
+    print(f"[{BOLD}7/11{RESET}] Emitindo Fatura FT de 10 unidades via KudibaInvoicing...", end=" ")
     try:
         invoice_payload = {
             "tenantId": TENANT_ID,
             "documentType": "FT",
-            "seriesCode": "2026A",
+            "seriesCode": series_code,
             "fiscalYear": int(time.strftime("%Y")),
             "customerName": "Cliente de Teste Integrado E2E",
             "customerAddress": "Rua Principal 10, Luanda",
@@ -228,7 +252,7 @@ def main():
         sys.exit(1)
 
     # 7. Verificação de Propagação Assíncrona e Baixa de Stock
-    print(f"[{BOLD}7/9{RESET}] Aguardando propagação do evento para baixa de stock...", end=" ")
+    print(f"[{BOLD}8/11{RESET}] Aguardando propagação do evento para baixa de stock...", end=" ")
     updated_stock = None
     for attempt in range(1, 15):
         time.sleep(1)
@@ -244,11 +268,60 @@ def main():
     if updated_stock == 90.0:
         print(f"{GREEN}SUCESSO! (Stock baixou de 100.0 para 90.0 automaticamente){RESET}")
     else:
-        print(f"{YELLOW}AVISO (Stock atual: {stock_info.get('quantity_on_hand')}){RESET}")
-        print(f"    Nota: Em ambiente sem RabbitMQ ou com polling longo da outbox, a sincronização pode ocorrer na próxima iteração.")
+        current_stock = stock_info.get("quantity_on_hand", "indisponível")
+        print(f"{RED}FALHA (Stock atual: {current_stock}; esperado: 90.0){RESET}")
+        sys.exit(1)
 
-    # 8. Emissão de Recibo de Quitação RC na Tesouraria com Validação de Idempotência
-    print(f"[{BOLD}8/9{RESET}] Emitindo Recibo RC com chave de Idempotência...", end=" ")
+    # 8. Validar lançamento automático da fatura na Contabilidade
+    print(f"[{BOLD}9/11{RESET}] Aguardando lançamento contabilístico da fatura...", end=" ")
+    invoice_entry = None
+    for _ in range(30):
+        entries = api_request(
+            "GET",
+            "/api/v1/accounting/entries?limit=250",
+            token=token,
+            expected_status=200,
+        )
+        invoice_entry = next(
+            (
+                entry
+                for entry in entries
+                if entry.get("source_document_ref") == doc_num
+                or doc_num in entry.get("description", "")
+            ),
+            None,
+        )
+        if invoice_entry:
+            break
+        time.sleep(1)
+
+    if not invoice_entry:
+        print(f"{RED}FALHA (nenhum lançamento contabilístico para {doc_num}){RESET}")
+        sys.exit(1)
+
+    debit = float(invoice_entry.get("total_debit", 0))
+    credit = float(invoice_entry.get("total_credit", 0))
+    if abs(debit - credit) > 0.01:
+        print(f"{RED}FALHA (lançamento desequilibrado: débito {debit}, crédito {credit}){RESET}")
+        sys.exit(1)
+    print(f"{GREEN}OK ({doc_num} | débito e crédito equilibrados){RESET}")
+
+    trial_balance = api_request(
+        "GET",
+        "/api/v1/accounting/reports/trial-balance",
+        token=token,
+        expected_status=200,
+    )
+    total_debit = float(trial_balance.get("total_period_debit", 0))
+    total_credit = float(trial_balance.get("total_period_credit", 0))
+    if not trial_balance.get("is_balanced") or abs(total_debit - total_credit) > 0.01:
+        print(
+            f"{RED}FALHA (balancete desequilibrado: débito {total_debit}, crédito {total_credit}){RESET}"
+        )
+        sys.exit(1)
+
+    # 9. Emissão de Recibo de Quitação RC na Tesouraria com Validação de Idempotência
+    print(f"[{BOLD}10/11{RESET}] Emitindo Recibo RC com chave de Idempotência...", end=" ")
     try:
         idemp_key = f"idemp-rc-{test_suffix}"
         receipt_payload = {
@@ -290,13 +363,44 @@ def main():
         replay_num = replay_res.get("receipt_number") or replay_res.get("id")
         if rc_num != replay_num:
             raise RuntimeError(f"Idempotência falhou: {rc_num} != {replay_num}")
-        print(f"{GREEN}OK ({rc_num} | Replay Idempotente validado){RESET}")
+
+        receipt_entry = None
+        for _ in range(30):
+            entries = api_request(
+                "GET",
+                "/api/v1/accounting/entries?limit=250",
+                token=token,
+                expected_status=200,
+            )
+            receipt_entry = next(
+                (
+                    entry
+                    for entry in entries
+                    if entry.get("source_document_ref") == rc_num
+                ),
+                None,
+            )
+            if receipt_entry:
+                break
+            time.sleep(1)
+
+        if not receipt_entry:
+            raise RuntimeError(f"Recibo {rc_num} não foi contabilizado.")
+        receipt_debit = float(receipt_entry.get("total_debit", 0))
+        receipt_credit = float(receipt_entry.get("total_credit", 0))
+        if abs(receipt_debit - receipt_credit) > 0.01:
+            raise RuntimeError(
+                f"Lançamento do recibo desequilibrado: {receipt_debit} != {receipt_credit}"
+            )
+        print(
+            f"{GREEN}OK ({rc_num} | replay idempotente e lançamento contabilístico validados){RESET}"
+        )
     except Exception as e:
         print(f"{RED}FALHA{RESET}\n    Erro: {e}")
         sys.exit(1)
 
-    # 9. Exportação e Validação do SAF-T (AO)
-    print(f"[{BOLD}9/9{RESET}] Exportando ficheiro fiscal SAF-T (AO) XML...", end=" ")
+    # 10. Exportação e Validação do SAF-T (AO)
+    print(f"[{BOLD}11/11{RESET}] Exportando ficheiro fiscal SAF-T (AO) XML...", end=" ")
     try:
         curr_year = int(time.strftime("%Y"))
         _, saft_xml = api_request_raw(
@@ -316,7 +420,7 @@ def main():
         print(f"{RED}FALHA{RESET}\n    Erro: {e}")
         sys.exit(1)
 
-    print(f"\n{BOLD}{GREEN}✔ Ciclo de Teste E2E concluído com êxito!{RESET}\n")
+    print(f"\n{BOLD}{GREEN}✔ Ciclo E2E fiscal, stock, tesouraria e contabilidade concluído!{RESET}\n")
 
 if __name__ == "__main__":
     main()

@@ -97,7 +97,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
 
   const [taxRegimeCode, setTaxRegimeCode] = useState('REGIME_GERAL');
   const [taxOfficeCode, setTaxOfficeCode] = useState('1.ª Repartição Fiscal de Luanda');
-  const [agtCertNumber, setAgtCertNumber] = useState('AGT/2026/0042');
+  const [agtCertNumber, setAgtCertNumber] = useState('');
   const [defaultWithholdingRate, setDefaultWithholdingRate] = useState<number>(6.5);
   const [invoiceFooterNotes, setInvoiceFooterNotes] = useState(
     'Os bens ou serviços foram colocados à disposição do adquirente na data e local do presente documento.'
@@ -133,7 +133,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
     setWebsite(activeTenant.website || '');
     setTaxRegimeCode(activeTenant.tax_regime_code || 'REGIME_GERAL');
     setTaxOfficeCode(activeTenant.tax_office_code || '1.ª Repartição Fiscal de Luanda');
-    setAgtCertNumber(activeTenant.agt_cert_number || 'AGT/2026/0042');
+    setAgtCertNumber(activeTenant.agt_cert_number || '');
     setDefaultWithholdingRate(activeTenant.default_withholding_rate ?? 6.5);
     setInvoiceFooterNotes(
       activeTenant.invoice_footer_notes ||
@@ -735,7 +735,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
                     type="text"
                     value={agtCertNumber}
                     onChange={(e) => setAgtCertNumber(e.target.value)}
-                    placeholder="Ex: AGT/2026/0042"
+                    placeholder="Número atribuído pela AGT"
                     className="input-field font-mono"
                   />
                 </div>
@@ -941,7 +941,9 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
                   <div className="text-[11px] text-slate-500 border-t border-slate-200 pt-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                     <span className="italic">{invoiceFooterNotes}</span>
                     <span className="font-mono text-[10px] text-slate-600 shrink-0">
-                      Processado por programa validado n.º {agtCertNumber || 'AGT/2026/0042'} • Kudiba ERP
+                      {agtCertNumber
+                        ? `Processado por programa validado n.º ${agtCertNumber} • Kudiba ERP`
+                        : 'Software sem validação AGT • Kudiba ERP'}
                     </span>
                   </div>
                 </div>

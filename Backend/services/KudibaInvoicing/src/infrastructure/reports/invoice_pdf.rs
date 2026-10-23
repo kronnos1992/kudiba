@@ -1025,10 +1025,14 @@ impl InvoicePdfGenerator {
         }
 
         // 5.2 Menção Legal Mandatória da AGT (Decreto Presidencial n.º 71/25)
-        let legal_mention = format!(
-            "{}-Processado por programa validado n.º {} Kudiba ERP",
-            invoice.validation_chars, software_cert
-        );
+        let legal_mention = if software_cert.trim().is_empty() {
+            format!("{}-Software sem validação AGT", invoice.validation_chars)
+        } else {
+            format!(
+                "{}-Processado por programa validado n.º {} Kudiba ERP",
+                invoice.validation_chars, software_cert
+            )
+        };
         Self::add_text(
             &mut operations,
             "F2",

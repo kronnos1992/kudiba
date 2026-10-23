@@ -63,7 +63,7 @@ check: lint test ## Lint + todos os testes
 # -----------------------------------------------------------------------------
 # Testes
 # -----------------------------------------------------------------------------
-.PHONY: test test-rust test-gateway test-invoicing test-inventory test-auth test-payroll test-integrations test-backoffice
+.PHONY: test test-rust test-gateway test-invoicing test-inventory test-auth test-payroll test-integrations test-backoffice test-e2e apply-rls apply-application-roles
 test: test-rust test-auth test-payroll test-integrations test-backoffice ## Corre todos os testes (Rust + Python)
 
 test-rust: ## Testes do workspace Rust (Gateway + Invoicing + Inventory)
@@ -92,6 +92,12 @@ test-backoffice: ## Testes do KudibaBackoffice (pytest)
 
 test-e2e: ## Corre o teste de integracao ponta-a-ponta (E2E smoke test via Gateway)
 	bash scripts/test-e2e-flow.sh
+
+apply-rls: ## Aplica Row-Level Security às bases multi-tenant
+	bash Backend/deploy/apply-rls.sh
+
+apply-application-roles: ## Configura papéis PostgreSQL sem bypass de RLS
+	bash Backend/deploy/apply-application-roles.sh
 
 # -----------------------------------------------------------------------------
 # KudibaAuth (Python)

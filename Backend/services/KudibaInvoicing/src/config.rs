@@ -61,7 +61,7 @@ pub struct Config {
     pub db_max_connections: u32,
     /// Versão da chave privada RSA registada na AGT
     pub agt_key_version: String,
-    /// Número de validação / certificação do software na AGT (ex: 999/AGT/2026)
+    /// Número de validação atribuído pela AGT ao software; vazio até aprovação
     pub agt_software_cert: String,
     /// Caminho opcional do ficheiro PEM da chave privada RSA da AGT
     pub agt_private_key_path: Option<String>,
@@ -117,16 +117,17 @@ impl Config {
                 .unwrap_or(20),
             agt_key_version: env::var("AGT_KEY_VERSION").unwrap_or_else(|_| "1".to_string()),
             agt_software_cert: env::var("AGT_SOFTWARE_CERT")
-                .unwrap_or_else(|_| "999/AGT/2026".to_string()),
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
             agt_private_key_path: env::var("AGT_RSA_PRIVATE_KEY_PATH")
                 .ok()
                 .filter(|s| !s.trim().is_empty()),
             agt_private_key_pem: env::var("AGT_RSA_PRIVATE_KEY_PEM")
                 .ok()
                 .filter(|s| !s.trim().is_empty()),
-            agt_platform_url: env::var("AGT_PLATFORM_URL").unwrap_or_else(|_| {
-                "https://webservices.agt.minfin.gov.ao/facturacao-electronica".to_string()
-            }),
+            agt_platform_url: env::var("AGT_PLATFORM_URL")
+                .unwrap_or_else(|_| "https://sifphml.minfin.gov.ao/sigt/fe/v1".to_string()),
             outbox_poll_interval_ms: env::var("OUTBOX_POLL_INTERVAL_MS")
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())

@@ -42,6 +42,7 @@ import {
   CreateVacationPayload,
   ContractType,
 } from '../../api/payroll';
+import { PayrollOrganizationTab } from './PayrollOrganizationTab';
 
 type PayrollTab = 'periods' | 'employees' | 'contracts' | 'organization' | 'vacations' | 'absences';
 
@@ -1572,60 +1573,7 @@ export const PayrollView: React.FC = () => {
 
       {/* Tab 4: Departamentos & Cargos */}
       {activeTab === 'organization' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <GlassCard className="p-5">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-emerald-600" />
-              Departamentos da Empresa
-            </h3>
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {departments.length === 0 ? (
-                <div className="py-4 text-xs text-slate-500">Nenhum departamento registado.</div>
-              ) : (
-                departments.map((d) => (
-                  <div key={d.id} className="py-2.5 flex items-center justify-between">
-                    <div>
-                      <span className="font-semibold text-sm text-slate-900 dark:text-white block">
-                        {d.name}
-                      </span>
-                      <span className="font-mono text-xs text-slate-400">{d.code}</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </GlassCard>
-
-          <GlassCard className="p-5">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-              <Briefcase className="w-5 h-5 text-blue-600" />
-              Cargos &amp; Carreiras
-            </h3>
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {jobPositions.length === 0 ? (
-                <div className="py-4 text-xs text-slate-500">Nenhum cargo registado.</div>
-              ) : (
-                jobPositions.map((j) => (
-                  <div key={j.id} className="py-2.5 flex items-center justify-between">
-                    <div>
-                      <span className="font-semibold text-sm text-slate-900 dark:text-white block">
-                        {j.title}
-                      </span>
-                      <span className="font-mono text-xs text-slate-400">{j.code}</span>
-                    </div>
-                    <div className="text-right text-xs">
-                      <span className="text-slate-400 block">Faixa Salarial:</span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">
-                        {Number(j.base_salary_min).toLocaleString('pt-AO')} -{' '}
-                        {Number(j.base_salary_max).toLocaleString('pt-AO')} Kz
-                      </span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </GlassCard>
-        </div>
+        <PayrollOrganizationTab departments={departments} jobPositions={jobPositions} />
       )}
 
       {/* Tab 5: Férias & Ausências */}

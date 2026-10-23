@@ -44,14 +44,38 @@ impl OutboxWorker {
             Err(e) => return Err(DomainError::Persistence(e.to_string())),
         };
 
-        // 1. Obter lote de eventos não publicados
+        let tenant_ids = sqlx::query_scalar::<_, Uuid>("SELECT id FROM kudiba_core.tenants")
+            .fetch_all(session.connection())
+            .await
+            .map_err(|e| DomainError::Persistence(e.to_string()))?;
+        drop(session);
+
+        let mut published_count = 0;
+        for tenant_id in tenant_ids {
+            published_count += crate::config::with_tenant_context(
+                Some(tenant_id),
+                self.process_tenant_batch(tenant_id),
+            )
+            .await?;
+        }
+
+        Ok(published_count)
+    }
+
+    async fn process_tenant_batch(&self, tenant_id: Uuid) -> Result<usize, DomainError> {
+        let mut session = match self.session_factory.open().await {
+            Ok(s) => s,
+            Err(e) => return Err(DomainError::Persistence(e.to_string())),
+        };
+
         let rows = sqlx::query(
             "SELECT event_id, tenant_id, invoice_id, event_type, payload::text AS payload_text, created_at \
              FROM kudiba_core.accounting_outbox \
-             WHERE published_at IS NULL \
+             WHERE tenant_id = $1 AND published_at IS NULL \
              ORDER BY created_at ASC \
-             LIMIT $1",
+             LIMIT $2",
         )
+        .bind(tenant_id)
         .bind(self.batch_size)
         .fetch_all(session.connection())
         .await
@@ -122,11 +146,13 @@ impl OutboxWorker {
                 let _ = sqlx::query(
                     "UPDATE kudiba_core.accounting_outbox \
                      SET published_at = NOW() \
-                     WHERE event_id = $1",
+                     WHERE tenant_id = $1 AND event_id = $2",
                 )
+                .bind(tenant_id)
                 .bind(id)
                 .execute(update_session.connection())
-                .await;
+                .await
+                .map_err(|e| DomainError::Persistence(e.to_string()))?;
             }
         }
 

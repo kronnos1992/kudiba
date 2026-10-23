@@ -5,8 +5,7 @@
 -- Idempotente: seguro aplicar em cada base (invoicing, treasury, inventory,
 -- accounting). Blocos que não encontram o schema/tabela são ignorados.
 --
--- Política: se app.current_tenant estiver vazio (jobs de sistema / migrações),
--- o acesso não é filtrado. Com tenant definido, apenas linhas desse tenant.
+-- Política: sem app.current_tenant, nenhuma linha tenant-scoped é acessível.
 -- FORCE ROW LEVEL SECURITY impede bypass pelo role proprietário das tabelas.
 -- =============================================================================
 
@@ -26,21 +25,31 @@ DECLARE
         'kudiba_core.invoices',
         'kudiba_core.series_fiscais',
         'kudiba_core.pos_z_reports',
+        'kudiba_core.accounting_outbox',
+        'kudiba_audit.fiscal_audit_trail',
+        'kudiba_audit.system_audit_trail',
         'kudiba_treasury.cash_registers',
         'kudiba_treasury.cash_sessions',
+        'kudiba_treasury.pos_sessions',
         'kudiba_treasury.cash_movements',
         'kudiba_treasury.treasury_receipts',
         'kudiba_treasury.invoice_receivables',
         'kudiba_treasury.bank_accounts',
+        'kudiba_treasury.treasury_sequences',
         'kudiba_inventory.warehouses',
         'kudiba_inventory.products',
         'kudiba_inventory.stock_balances',
         'kudiba_inventory.stock_movements',
+        'kudiba_inventory.product_batches',
         'kudiba_inventory.entities',
         'kudiba_accounting.chart_of_accounts',
         'kudiba_accounting.journal_entries',
+        'kudiba_accounting.journal_lines',
         'kudiba_accounting.journals',
-        'kudiba_accounting.fiscal_years'
+        'kudiba_accounting.fiscal_years',
+        'kudiba_accounting.cost_centers',
+        'kudiba_accounting.accounting_sequences',
+        'kudiba_accounting.processed_events'
     ];
     full_name text;
 BEGIN
@@ -60,8 +69,8 @@ BEGIN
         EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_policy ON %I.%I', sch, tbl);
         EXECUTE format(
             'CREATE POLICY tenant_isolation_policy ON %I.%I FOR ALL '
-            'USING (get_current_tenant_id() IS NULL OR tenant_id = get_current_tenant_id()) '
-            'WITH CHECK (get_current_tenant_id() IS NULL OR tenant_id = get_current_tenant_id())',
+            'USING (tenant_id = get_current_tenant_id()) '
+            'WITH CHECK (tenant_id = get_current_tenant_id())',
             sch, tbl
         );
     END LOOP;

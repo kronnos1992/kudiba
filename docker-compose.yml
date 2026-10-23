@@ -60,11 +60,11 @@ services:
       - PORT=9090
       - GRPC_PORT=9091
       - RUST_LOG=info,kudiba_invoicing=debug
-      - DATABASE_URL=postgres://kudiba:kudiba_secret_pass@postgres:5432/kudiba_invoicing
+      - DATABASE_URL=postgres://kudiba_invoicing_app:${KUDIBA_APP_PASSWORD:-kudiba_app_secret}@postgres:5432/kudiba_invoicing
       # Chave privada RSA-2048 registada na AGT (em produção exige chave oficial)
       - AGT_RSA_PRIVATE_KEY_PEM=
       - AGT_RSA_PRIVATE_KEY_PATH=
-      - AGT_PLATFORM_URL=https://webservices.agt.minfin.gov.ao/facturacao-electronica
+      - AGT_PLATFORM_URL=https://sifphml.minfin.gov.ao/sigt/fe/v1
       - ENVIRONMENT=development
       - AGT_KEY_VERSION=1
       - DB_MAX_CONNECTIONS=20
@@ -123,7 +123,7 @@ services:
     environment:
       - PORT=8083
       - RUST_LOG=info,kudiba_inventory=debug
-      - DATABASE_URL=postgres://kudiba:kudiba_secret_pass@postgres:5432/kudiba_inventory
+      - DATABASE_URL=postgres://kudiba_inventory_app:${KUDIBA_APP_PASSWORD:-kudiba_app_secret}@postgres:5432/kudiba_inventory
       - ENVIRONMENT=development
       - DB_MAX_CONNECTIONS=20
       - RABBITMQ_URL=amqp://kudiba:kudiba_rabbit_pass@rabbitmq:5672/%2f
@@ -148,7 +148,7 @@ services:
     environment:
       - PORT=8084
       - RUST_LOG=info,kudiba_treasury=debug
-      - DATABASE_URL=postgres://kudiba:kudiba_secret_pass@postgres:5432/kudiba_treasury
+      - DATABASE_URL=postgres://kudiba_treasury_app:${KUDIBA_APP_PASSWORD:-kudiba_app_secret}@postgres:5432/kudiba_treasury
       - ENVIRONMENT=development
       - DB_MAX_CONNECTIONS=20
       - RABBITMQ_URL=amqp://kudiba:kudiba_rabbit_pass@rabbitmq:5672/%2f
@@ -173,7 +173,7 @@ services:
     environment:
       - PORT=8085
       - RUST_LOG=info,kudiba_accounting=debug
-      - DATABASE_URL=postgres://kudiba:kudiba_secret_pass@postgres:5432/kudiba_accounting
+      - DATABASE_URL=postgres://kudiba_accounting_app:${KUDIBA_APP_PASSWORD:-kudiba_app_secret}@postgres:5432/kudiba_accounting
       - ENVIRONMENT=development
       - DB_MAX_CONNECTIONS=20
       - RABBITMQ_URL=amqp://kudiba:kudiba_rabbit_pass@rabbitmq:5672/%2f
@@ -298,6 +298,7 @@ services:
       - POSTGRES_DB=kudiba_erp
       - POSTGRES_USER=kudiba
       - POSTGRES_PASSWORD=kudiba_secret_pass
+      - KUDIBA_APP_PASSWORD=${KUDIBA_APP_PASSWORD:-kudiba_app_secret}
     ports:
       - "5432:5432"
     volumes:
@@ -313,6 +314,8 @@ services:
       - ./Backend/deploy/08-integrations-schema.sql:/docker-entrypoint-initdb.d/08-integrations-schema.sql:ro
       - ./Backend/deploy/09-backoffice-schema.sql:/docker-entrypoint-initdb.d/09-backoffice-schema.sql:ro
       - ./Backend/deploy/15-bootstrap-sysadmin.sql:/docker-entrypoint-initdb.d/15-bootstrap-sysadmin.sql:ro
+      - ./Backend/deploy/16-row-level-security.sql:/opt/kudiba/16-row-level-security.sql:ro
+      - ./Backend/deploy/17-application-role.sql:/opt/kudiba/17-application-role.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kudiba -d kudiba_erp"]
       interval: 5s

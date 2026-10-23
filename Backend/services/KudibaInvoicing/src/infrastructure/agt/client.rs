@@ -5,9 +5,9 @@
 //!   • Canal Webservices AGT (REST / SOAP)
 //!
 //! Responsabilidades:
-//!   1. Heartbeat / Verificação de conectividade e liveness dos webservices da AGT
-//!   2. Despacho em tempo real e por lotes de faturas e documentos fiscais emitidos
-//!   3. Detecção automática de quebra de comunicação para activaçao de contingência fiscal
+//!   1. Configuração do ambiente de homologação ou produção
+//!   2. Submissão e acompanhamento de documentos fiscais pela API oficial
+//!   3. Sinalização explícita de capacidades ainda não configuradas
 
 use std::time::{Duration, Instant};
 
@@ -16,7 +16,6 @@ use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, USER_
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use uuid::Uuid;
 
 use crate::config::Config;
 use crate::domain::entities::invoice::Invoice;
@@ -25,14 +24,8 @@ use crate::domain::entities::tenant::Tenant;
 /// Erros decorrentes da comunicação directa com os webservices da AGT
 #[derive(Debug, Error)]
 pub enum AgtClientError {
-    #[error("Falha de rede ao contactar o webservice fiscal: {0}")]
+    #[error("Falha de rede ao construir o cliente fiscal: {0}")]
     Network(String),
-
-    #[error("Canal fiscal indisponível (HTTP {status}). Recomendado modo de contingência fiscal.")]
-    ContingencyRequired { status: u16, message: String },
-
-    #[error("Falha de autenticação com o serviço fiscal (credencial/certificado rejeitado): {0}")]
-    AuthenticationFailed(String),
 
     #[allow(dead_code)]
     #[error("Resposta inválida dos webservices fiscais: {0}")]
@@ -68,6 +61,7 @@ pub struct AgtSubmissionResult {
 /// Carga de documento individual no lote da AGT
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct AgtDocumentItem {
     pub document_number: String,
     pub document_type: String,
@@ -90,6 +84,7 @@ struct AgtDocumentItem {
 /// Carga completa de submissão de lote para a AGT
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct AgtBatchPayload {
     pub batch_id: String,
     pub producer_nif: String,
@@ -101,6 +96,7 @@ struct AgtBatchPayload {
 /// Cliente de comunicação com os webservices da AGT
 #[derive(Clone)]
 pub struct AgtClient {
+    #[allow(dead_code)]
     client: Client,
     base_url: String,
     #[allow(dead_code)]
@@ -169,12 +165,10 @@ impl AgtClient {
         )
     }
 
-    /// Executa um teste de conectividade (Heartbeat) contra o canal da AGT.
+    /// A documentação AGT não define um endpoint de health-check.
     ///
-    /// O resultado é memoizado durante [`HEARTBEAT_CACHE_TTL`]: o canal é
-    /// governamental e não deve ser sondado a cada pedido de estado. O bloqueio
-    /// é mantido durante a sondagem para que pedidos concorrentes partilhem a
-    /// mesma chamada em vez de dispararem uma onda contra a AGT.
+    /// O estado indica que a conectividade só pode ser confirmada através de uma
+    /// chamada autenticada a um serviço documentado, não por um `/health` fictício.
     pub async fn check_heartbeat(&self) -> AgtHeartbeatStatus {
         let mut cache = self.heartbeat_cache.lock().await;
 
@@ -189,163 +183,34 @@ impl AgtClient {
         status
     }
 
-    /// Sonda efectiva ao canal AGT (sem memoização)
+    /// Não contacta um caminho de health-check que não consta da especificação AGT.
     async fn probe_heartbeat(&self) -> AgtHeartbeatStatus {
-        let heartbeat_url = format!("{}/health", self.base_url);
-        let start = Instant::now();
-
-        match self.client.get(&heartbeat_url).send().await {
-            Ok(response) => {
-                let latency_ms = start.elapsed().as_millis() as u64;
-                let status_code = response.status();
-
-                if status_code.is_success() {
-                    AgtHeartbeatStatus {
-                        is_online: true,
-                        endpoint: self.base_url.clone(),
-                        latency_ms,
-                        checked_at: Utc::now(),
-                        contingency_active: false,
-                        message: "Comunicação com o serviço fiscal operacional.".to_string(),
-                    }
-                } else {
-                    AgtHeartbeatStatus {
-                        is_online: false,
-                        endpoint: self.base_url.clone(),
-                        latency_ms,
-                        checked_at: Utc::now(),
-                        contingency_active: true,
-                        message: format!("O serviço fiscal respondeu com HTTP {status_code}. Modo de contingência recomendado."),
-                    }
-                }
-            }
-            Err(err) => {
-                let latency_ms = start.elapsed().as_millis() as u64;
-                AgtHeartbeatStatus {
-                    is_online: false,
-                    endpoint: self.base_url.clone(),
-                    latency_ms,
-                    checked_at: Utc::now(),
-                    contingency_active: true,
-                    message: format!(
-                        "Falha de ligação ao serviço fiscal ({err}). Motor em modo de contingência fiscal."
-                    ),
-                }
-            }
+        AgtHeartbeatStatus {
+            is_online: false,
+            endpoint: self.base_url.clone(),
+            latency_ms: 0,
+            checked_at: Utc::now(),
+            contingency_active: false,
+            message: "A especificação AGT não define um health-check. A conectividade só será confirmada numa chamada autenticada a um serviço documentado.".to_string(),
         }
     }
 
     /// Submete um lote de faturas aos webservices da AGT
     pub async fn submit_invoice_batch(
         &self,
-        tenant: &Tenant,
-        invoices: &[Invoice],
+        _tenant: &Tenant,
+        _invoices: &[Invoice],
     ) -> Result<AgtSubmissionResult, AgtClientError> {
-        if invoices.is_empty() {
-            return Ok(AgtSubmissionResult {
-                batch_id: Uuid::new_v4().to_string(),
-                protocol_number: "AGT-EMPTY".to_string(),
-                status: "ACCEPTED".to_string(),
-                total_documents: 0,
-                accepted_count: 0,
-                rejected_count: 0,
-                processed_at: Utc::now(),
-                details: Some("Nenhum documento para submeter.".to_string()),
-            });
-        }
-
-        let batch_id = Uuid::new_v4().to_string();
-        let cert_number = tenant
-            .agt_cert_number
-            .as_deref()
-            .unwrap_or("42/AGT/2026")
-            .to_string();
-
-        let documents: Vec<AgtDocumentItem> = invoices
-            .iter()
-            .map(|inv| AgtDocumentItem {
-                document_number: inv.document_number.clone(),
-                document_type: inv.document_type.clone(),
-                hash_sha256: inv.hash_sha256.clone(),
-                signature_rsa_base64: inv.signature_rsa_base64.clone(),
-                validation_chars: inv.validation_chars.clone(),
-                key_version: inv.key_version.clone(),
-                customer_nif: inv.customer_nif.clone(),
-                customer_name: inv.customer_name.clone(),
-                net_total: inv.net_total.to_string().parse::<f64>().unwrap_or(0.0),
-                tax_total: inv.tax_total.to_string().parse::<f64>().unwrap_or(0.0),
-                gross_total: inv.gross_total.to_string().parse::<f64>().unwrap_or(0.0),
-                currency: inv.currency.clone(),
-                is_contingency: inv.is_contingency,
-                tax_regime_code: inv.tax_regime_code.clone(),
-                issued_at: inv.issued_at.to_rfc3339(),
-                line_count: inv.lines.len(),
-            })
-            .collect();
-
-        let payload = AgtBatchPayload {
-            batch_id: batch_id.clone(),
-            producer_nif: tenant.nif.clone(),
-            cert_number,
-            submission_timestamp: Utc::now().to_rfc3339(),
-            documents,
-        };
-
-        let submit_url = format!("{}/api/v1/invoices/batch", self.base_url);
-
-        let response = match self.client.post(&submit_url).json(&payload).send().await {
-            Ok(resp) => resp,
-            Err(err) => {
-                tracing::warn!(
-                    batch_id = %batch_id,
-                    error = %err,
-                    "Falha ao enviar lote ao serviço fiscal. Documentos mantidos na fila de contingência."
-                );
-                return Err(AgtClientError::ContingencyRequired {
-                    status: 503,
-                    message: format!("Falha de comunicação: {err}"),
-                });
-            }
-        };
-
-        let status = response.status();
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            return Err(AgtClientError::AuthenticationFailed(
-                "Credencial ou token fiscal inválido ou expirado.".to_string(),
-            ));
-        }
-
-        if !status.is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(AgtClientError::ContingencyRequired {
-                status: status.as_u16(),
-                message: error_text,
-            });
-        }
-
-        // Simula ou mapeia o protocolo oficial retornado pela AGT
-        let protocol_number = format!("AGT-REC-{}-{}", Utc::now().format("%Y%m%d"), &batch_id[..8]);
-
-        Ok(AgtSubmissionResult {
-            batch_id,
-            protocol_number,
-            status: "ACCEPTED".to_string(),
-            total_documents: invoices.len(),
-            accepted_count: invoices.len(),
-            rejected_count: 0,
-            processed_at: Utc::now(),
-            details: Some(
-                "Lote submetido e aceite pela plataforma fiscal com sucesso.".to_string(),
-            ),
-        })
+        Err(AgtClientError::InvalidResponse(
+            "Submissão AGT bloqueada: o conector anterior utilizava um endpoint e um protocolo não documentados. A emissão mantém-se local até ser configurada a integração oficial com credenciais e chaves por contribuinte.".to_string(),
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use uuid::Uuid;
 
     #[test]
     fn inicializa_cliente_com_headers_corretos() {
@@ -358,61 +223,62 @@ mod tests {
         assert_eq!(client.base_url, "https://webservices.agt.minfin.gov.ao");
     }
 
-    /// Sobe um servidor de teste que devolve 200 em `/health` e conta os pedidos
-    async fn spawn_fake_agt(counter: Arc<AtomicUsize>) -> String {
-        use axum::{routing::get, Router};
-
-        let app = Router::new().route(
-            "/health",
-            get(move || {
-                let counter = counter.clone();
-                async move {
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    axum::Json(serde_json::json!({ "status": "ok" }))
-                }
-            }),
-        );
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind do servidor de teste");
-        let addr = listener.local_addr().expect("endereço local");
-
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("servidor de teste");
-        });
-
-        format!("http://{addr}")
-    }
-
     #[tokio::test]
-    async fn heartbeat_e_memoizado_entre_pedidos_concorrentes() {
-        let counter = Arc::new(AtomicUsize::new(0));
-        let base_url = spawn_fake_agt(counter.clone()).await;
-
-        let client = AgtClient::new(&base_url, Duration::from_secs(5), None).expect("cliente AGT");
-
-        let primeiro = client.check_heartbeat().await;
-        let segundo = client.check_heartbeat().await;
-
-        assert!(primeiro.is_online, "primeiro heartbeat deveria ter sucesso");
-        assert!(segundo.is_online);
-        assert_eq!(
-            counter.load(Ordering::SeqCst),
-            1,
-            "o canal AGT só deve ser sondado uma vez dentro da janela de cache"
-        );
-    }
-
-    #[tokio::test]
-    async fn heartbeat_reporta_contingencia_quando_o_canal_falha() {
-        let client = AgtClient::new("http://127.0.0.1:1", Duration::from_millis(200), None)
-            .expect("cliente AGT");
+    async fn heartbeat_nao_afirma_conectividade_sem_endpoint_documentado() {
+        let client = AgtClient::new(
+            "https://sifphml.minfin.gov.ao/sigt/fe/v1",
+            Duration::from_secs(5),
+            None,
+        )
+        .expect("cliente AGT");
 
         let status = client.check_heartbeat().await;
 
         assert!(!status.is_online);
-        assert!(status.contingency_active);
-        assert!(!status.message.is_empty());
+        assert!(!status.contingency_active);
+        assert!(status.message.contains("não define um health-check"));
+    }
+
+    #[tokio::test]
+    async fn sincronizacao_nao_simula_aceitacao_da_agt() {
+        let client = AgtClient::new(
+            "https://sifphml.minfin.gov.ao/sigt/fe/v1",
+            Duration::from_secs(5),
+            None,
+        )
+        .expect("cliente AGT");
+
+        let result = client
+            .submit_invoice_batch(
+                &Tenant {
+                    id: Uuid::new_v4(),
+                    slug: "test".to_string(),
+                    company_name: "Test".to_string(),
+                    trade_name: None,
+                    nif: "5000000000".to_string(),
+                    address_detail: None,
+                    city: None,
+                    province: None,
+                    postal_code: None,
+                    country: Some("AO".to_string()),
+                    phone: None,
+                    email: None,
+                    website: None,
+                    commercial_registry: None,
+                    share_capital: None,
+                    currency: Some("AOA".to_string()),
+                    tax_office_code: None,
+                    agt_cert_number: None,
+                    invoice_footer_notes: None,
+                    bank_accounts: vec![],
+                    status: "ACTIVE".to_string(),
+                    tax_regime_code: "REGIME_GERAL".to_string(),
+                    contingency_started_at: None,
+                },
+                &[],
+            )
+            .await;
+
+        assert!(matches!(result, Err(AgtClientError::InvalidResponse(_))));
     }
 }

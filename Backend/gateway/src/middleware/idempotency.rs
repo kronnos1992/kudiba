@@ -19,6 +19,18 @@ struct CachedIdempotentResponse {
     body: Vec<u8>,
 }
 
+fn idempotency_unavailable_response(path: &str) -> Response {
+    ProblemDetail::new(
+        "https://api.kudiba.ao/errors/idempotency-unavailable",
+        "Serviço de Idempotência Indisponível",
+        StatusCode::SERVICE_UNAVAILABLE,
+        "O serviço de idempotência está indisponível e a operação foi bloqueada para evitar duplicação de transações fiscais ou financeiras.",
+        path,
+        "IDEMPOTENCY_UNAVAILABLE",
+    )
+    .into_response()
+}
+
 pub async fn idempotency_middleware(
     State(state): State<AppState>,
     req: Request,
@@ -48,7 +60,7 @@ pub async fn idempotency_middleware(
 
     let mut redis_conn = match state.get_redis_conn().await {
         Some(c) => c,
-        None => return next.run(req).await, // Fail-open se o Redis falhar para não bloquear vendas
+        None => return idempotency_unavailable_response(path),
     };
 
     // 1. Tentar adquirir lock exclusivo para esta chave (TTL de 120 segundos)
@@ -62,7 +74,7 @@ pub async fn idempotency_middleware(
         .await
     {
         Ok(val) => val,
-        Err(_) => return next.run(req).await,
+        Err(_) => return idempotency_unavailable_response(path),
     };
 
     if !acquired {

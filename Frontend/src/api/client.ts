@@ -36,11 +36,16 @@ apiClient.interceptors.request.use(
       config.headers.Authorization = `Bearer ${accessToken}`;
     }
 
-    if (activeTenant?.id) {
+    const requestedTenantId = config.headers['X-Tenant-ID'];
+    if (typeof requestedTenantId === 'string' && requestedTenantId) {
+      if (requestedTenantId !== activeTenant?.id) {
+        delete config.headers['X-Branch-ID'];
+      }
+    } else if (activeTenant?.id) {
       config.headers['X-Tenant-ID'] = activeTenant.id;
     }
 
-    if (activeBranch?.id) {
+    if (activeBranch?.id && (!requestedTenantId || requestedTenantId === activeTenant?.id)) {
       config.headers['X-Branch-ID'] = activeBranch.id;
     }
 

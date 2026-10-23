@@ -243,7 +243,7 @@ export const invoicingApi = {
   },
 
   issueInvoice: async (payload: IssueInvoicePayload): Promise<IssueInvoiceResult & Partial<Invoice>> => {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { 'X-Tenant-ID': payload.tenantId };
     if (payload.cashSessionId) {
       headers['X-Cash-Session-ID'] = payload.cashSessionId;
     }
@@ -466,4 +466,3 @@ export const invoicingApi = {
     return response.data;
   },
 };
-

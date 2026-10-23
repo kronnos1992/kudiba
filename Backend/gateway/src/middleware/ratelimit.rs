@@ -31,6 +31,18 @@ else
 end
 "#;
 
+fn rate_limit_unavailable_response(path: String) -> Response {
+    ProblemDetail::new(
+        "https://api.kudiba.ao/errors/rate-limit-unavailable",
+        "Protecção de Taxa de Requisições Indisponível",
+        StatusCode::SERVICE_UNAVAILABLE,
+        "O serviço de rate limiting não está disponível e a operação foi bloqueada para preservar a segurança e a estabilidade do gateway.",
+        path,
+        "RATE_LIMIT_UNAVAILABLE",
+    )
+    .into_response()
+}
+
 pub async fn rate_limit_middleware(
     State(state): State<AppState>,
     req: Request,
@@ -68,13 +80,7 @@ pub async fn rate_limit_middleware(
     // Reutiliza a conexão multiplexada do Redis do AppState
     let mut redis_conn = match state.get_redis_conn().await {
         Some(conn) => conn,
-        None => {
-            if is_auth_path(&path) {
-                return rate_limit_unavailable(path);
-            }
-            // Fail-open resiliente: se o Redis falhar, permite a passagem para não derrubar as vendas
-            return next.run(req).await;
-        }
+        None => return rate_limit_unavailable_response(path),
     };
 
     let script = redis::Script::new(SLIDING_WINDOW_LUA);
@@ -118,8 +124,7 @@ pub async fn rate_limit_middleware(
                 problem_resp
             }
         }
-        Err(_) if is_auth_path(&path) => rate_limit_unavailable(path),
-        Err(_) => next.run(req).await,
+        Err(_) => rate_limit_unavailable_response(path),
     }
 }
 
@@ -153,20 +158,9 @@ fn sanitize_path(path: &str) -> &'static str {
     }
 }
 
+#[cfg(test)]
 fn is_auth_path(path: &str) -> bool {
     is_login_or_refresh_path(path)
-}
-
-fn rate_limit_unavailable(path: String) -> Response {
-    ProblemDetail::new(
-        "https://api.kudiba.ao/errors/rate-limit-unavailable",
-        "Protecção de Autenticação Indisponível",
-        StatusCode::SERVICE_UNAVAILABLE,
-        "O serviço de limite de tentativas está indisponível; a operação de autenticação foi bloqueada.",
-        path,
-        "RATE_LIMIT_UNAVAILABLE",
-    )
-    .into_response()
 }
 
 fn is_probe(path: &str) -> bool {

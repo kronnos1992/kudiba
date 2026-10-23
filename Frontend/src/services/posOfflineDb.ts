@@ -1,9 +1,5 @@
-// =============================================================================
-// Kudiba ERP: Motor IndexedDB de Faturação e Vendas POS em Modo Offline (PWA)
-// Conformidade legal com regime de contingência: Decreto Presidencial n.º 71/25
-// =============================================================================
-
 export interface CachedPosProduct {
+  tenantId: string;
   id: string;
   code: string;
   name: string;
@@ -47,7 +43,8 @@ export interface OfflinePosSale {
     taxRate: number;
     lineTotal: number;
   }>;
-  status: 'PENDING' | 'SYNCED' | 'FAILED';
+  status: 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
+  syncStartedAt?: string;
   syncedAt?: string;
   serverInvoiceId?: string;
   serverDocumentNumber?: string;
@@ -55,7 +52,7 @@ export interface OfflinePosSale {
 }
 
 const DB_NAME = 'KudibaPOS_OfflineDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -72,6 +69,13 @@ function openDb(): Promise<IDBDatabase> {
         const productStore = db.createObjectStore('cached_products', { keyPath: 'id' });
         productStore.createIndex('code', 'code', { unique: false });
         productStore.createIndex('name', 'name', { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains('cached_products_by_tenant')) {
+        const productStore = db.createObjectStore('cached_products_by_tenant', {
+          keyPath: ['tenantId', 'id'],
+        });
+        productStore.createIndex('tenantId', 'tenantId', { unique: false });
       }
 
       if (!db.objectStoreNames.contains('offline_sales')) {
@@ -91,80 +95,125 @@ function openDb(): Promise<IDBDatabase> {
 }
 
 // 1. Catálogo Offline
-export async function cachePosProducts(products: CachedPosProduct[]): Promise<void> {
+export async function cachePosProducts(
+  tenantId: string,
+  products: Omit<CachedPosProduct, 'tenantId'>[]
+): Promise<void> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(['cached_products', 'pos_meta'], 'readwrite');
-    const store = tx.objectStore('cached_products');
+    const tx = db.transaction(['cached_products_by_tenant', 'pos_meta'], 'readwrite');
+    const store = tx.objectStore('cached_products_by_tenant');
     const meta = tx.objectStore('pos_meta');
 
-    store.clear();
-    for (const prod of products) {
-      store.put(prod);
-    }
+    const previous = store.index('tenantId').openKeyCursor(IDBKeyRange.only(tenantId));
+    previous.onsuccess = () => {
+      const cursor = previous.result;
+      if (cursor) {
+        cursor.delete();
+        cursor.continue();
+        return;
+      }
 
-    meta.put({ key: 'last_catalog_sync', timestamp: new Date().toISOString() });
+      for (const prod of products) {
+        store.put({ ...prod, tenantId });
+      }
+
+      meta.put({
+        key: `last_catalog_sync_${tenantId}`,
+        timestamp: new Date().toISOString(),
+      });
+    };
 
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Falha ao guardar o catálogo offline.'));
+    tx.onerror = () => reject(tx.error ?? new Error('Falha ao guardar o catálogo offline.'));
   });
 }
 
-export async function getCachedPosProducts(): Promise<CachedPosProduct[]> {
+export async function getCachedPosProducts(tenantId: string): Promise<CachedPosProduct[]> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction('cached_products', 'readonly');
-    const store = tx.objectStore('cached_products');
-    const request = store.getAll();
+    const tx = db.transaction('cached_products_by_tenant', 'readonly');
+    const store = tx.objectStore('cached_products_by_tenant');
+    const request = store.index('tenantId').getAll(IDBKeyRange.only(tenantId));
 
     request.onsuccess = () => resolve(request.result || []);
     request.onerror = () => reject(request.error);
   });
 }
 
-// 2. Numeração Sequencial Local de Contingência (DP 71/25)
-export async function getNextOfflineSequence(seriesCode = '2026A', fiscalYear = 2026): Promise<{ sequenceNumber: number; documentNumber: string }> {
+function createLocalId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    return Array.from(crypto.getRandomValues(new Uint8Array(16)))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  throw new Error('Este navegador não suporta geração segura de identificadores offline.');
+}
+
+export async function saveOfflineSale(
+  sale: Omit<OfflinePosSale, 'status' | 'sequenceNumber' | 'offlineDocumentNumber'> & {
+    id?: string;
+  },
+  seriesCode: string,
+  fiscalYear: number
+): Promise<OfflinePosSale> {
   const db = await openDb();
+
   return new Promise((resolve, reject) => {
-    const tx = db.transaction('pos_meta', 'readwrite');
-    const store = tx.objectStore('pos_meta');
-    const key = `seq_${seriesCode}_${fiscalYear}`;
+    const tx = db.transaction(['pos_meta', 'offline_sales'], 'readwrite');
+    const meta = tx.objectStore('pos_meta');
+    const sales = tx.objectStore('offline_sales');
+    const sequenceKey = `seq_${sale.tenantId}_${seriesCode}_${fiscalYear}`;
+    let saleRecord: OfflinePosSale | undefined;
 
-    const getReq = store.get(key);
-    getReq.onsuccess = () => {
-      const current = getReq.result?.value || 0;
-      const nextSeq = current + 1;
-      store.put({ key, value: nextSeq });
-
-      const padded = String(nextSeq).padStart(6, '0');
-      const docNum = `FR ${seriesCode}/OFF-${padded}`;
-      resolve({ sequenceNumber: nextSeq, documentNumber: docNum });
+    const persistWithSequence = (currentValue: number) => {
+      const sequenceNumber = currentValue + 1;
+      saleRecord = {
+        ...sale,
+        id: sale.id || createLocalId(),
+        sequenceNumber,
+        offlineDocumentNumber: `FR ${seriesCode}/OFF-${String(sequenceNumber).padStart(6, '0')}`,
+        seriesCode,
+        fiscalYear,
+        status: 'PENDING',
+      };
+      meta.put({ key: sequenceKey, value: sequenceNumber });
+      sales.put(saleRecord);
     };
-    getReq.onerror = () => reject(getReq.error);
+
+    const getSequence = meta.get(sequenceKey);
+    getSequence.onsuccess = () => {
+      if (getSequence.result?.value !== undefined) {
+        persistWithSequence(Number(getSequence.result.value));
+        return;
+      }
+
+      const legacySequence = meta.get(`seq_${seriesCode}_${fiscalYear}`);
+      legacySequence.onsuccess = () =>
+        persistWithSequence(Number(legacySequence.result?.value || 0));
+      legacySequence.onerror = () => tx.abort();
+    };
+    getSequence.onerror = () => tx.abort();
+
+    tx.oncomplete = () => {
+      if (saleRecord) resolve(saleRecord);
+      else reject(new Error('A venda offline não foi guardada.'));
+    };
+    tx.onabort = () => reject(tx.error ?? new Error('Falha ao guardar a venda offline.'));
+    tx.onerror = () => reject(tx.error ?? new Error('Falha ao guardar a venda offline.'));
   });
 }
 
-// 3. Registo de Venda Offline
-export async function saveOfflineSale(sale: Omit<OfflinePosSale, 'status' | 'id'> & { id?: string }): Promise<OfflinePosSale> {
-  const db = await openDb();
-  const saleRecord: OfflinePosSale = {
-    ...sale,
-    id: sale.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `off_${Date.now()}`),
-    status: 'PENDING',
-  };
+const SYNC_LEASE_MS = 5 * 60 * 1000;
 
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('offline_sales', 'readwrite');
-    const store = tx.objectStore('offline_sales');
-    store.put(saleRecord);
-
-    tx.oncomplete = () => resolve(saleRecord);
-    tx.onerror = () => reject(tx.error);
-  });
+function isSyncLeaseExpired(sale: OfflinePosSale, now = Date.now()): boolean {
+  const startedAt = Date.parse(sale.syncStartedAt || '');
+  return now - (Number.isFinite(startedAt) ? startedAt : 0) > SYNC_LEASE_MS;
 }
 
-// 4. Consulta de Vendas Pendentes
-export async function getPendingOfflineSales(): Promise<OfflinePosSale[]> {
+export async function getPendingOfflineSales(tenantId: string): Promise<OfflinePosSale[]> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('offline_sales', 'readonly');
@@ -173,21 +222,56 @@ export async function getPendingOfflineSales(): Promise<OfflinePosSale[]> {
 
     request.onsuccess = () => {
       const all: OfflinePosSale[] = request.result || [];
-      const pending = all.filter((s) => s.status === 'PENDING' || s.status === 'FAILED');
+      const now = Date.now();
+      const pending = all.filter(
+        (sale) =>
+          sale.tenantId === tenantId &&
+          (sale.status === 'PENDING' ||
+            sale.status === 'FAILED' ||
+            (sale.status === 'SYNCING' && isSyncLeaseExpired(sale, now)))
+      );
       resolve(pending);
     };
     request.onerror = () => reject(request.error);
   });
 }
 
-export async function countPendingOfflineSales(): Promise<number> {
-  const pending = await getPendingOfflineSales();
+export async function claimOfflineSale(id: string, tenantId: string): Promise<boolean> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('offline_sales', 'readwrite');
+    const store = tx.objectStore('offline_sales');
+    const request = store.get(id);
+    let claimed = false;
+
+    request.onsuccess = () => {
+      const sale = request.result as OfflinePosSale | undefined;
+      if (!sale || sale.tenantId !== tenantId) return;
+      const staleSync = sale.status === 'SYNCING' && isSyncLeaseExpired(sale);
+      if (sale.status !== 'PENDING' && sale.status !== 'FAILED' && !staleSync) return;
+      store.put({
+        ...sale,
+        status: 'SYNCING',
+        syncStartedAt: new Date().toISOString(),
+      });
+      claimed = true;
+    };
+    request.onerror = () => tx.abort();
+
+    tx.oncomplete = () => resolve(claimed);
+    tx.onabort = () => reject(tx.error ?? new Error('Falha ao reservar a venda para sincronização.'));
+    tx.onerror = () => reject(tx.error ?? new Error('Falha ao reservar a venda para sincronização.'));
+  });
+}
+
+export async function countPendingOfflineSales(tenantId: string): Promise<number> {
+  const pending = await getPendingOfflineSales(tenantId);
   return pending.length;
 }
 
-// 5. Marcação de Sincronização
 export async function markOfflineSaleSynced(
   id: string,
+  tenantId: string,
   serverInvoiceId: string,
   serverDocumentNumber: string
 ): Promise<void> {
@@ -198,11 +282,13 @@ export async function markOfflineSaleSynced(
     const getReq = store.get(id);
 
     getReq.onsuccess = () => {
-      if (!getReq.result) return resolve();
+      const sale = getReq.result as OfflinePosSale | undefined;
+      if (!sale || sale.tenantId !== tenantId) return;
       const record: OfflinePosSale = {
-        ...getReq.result,
+        ...sale,
         status: 'SYNCED',
         syncedAt: new Date().toISOString(),
+        syncStartedAt: undefined,
         serverInvoiceId,
         serverDocumentNumber,
         syncError: undefined,
@@ -211,11 +297,16 @@ export async function markOfflineSaleSynced(
     };
 
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Falha ao concluir a sincronização offline.'));
+    tx.onerror = () => reject(tx.error ?? new Error('Falha ao concluir a sincronização offline.'));
   });
 }
 
-export async function markOfflineSaleFailed(id: string, errorMessage: string): Promise<void> {
+export async function markOfflineSaleFailed(
+  id: string,
+  tenantId: string,
+  errorMessage: string
+): Promise<void> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('offline_sales', 'readwrite');
@@ -223,16 +314,19 @@ export async function markOfflineSaleFailed(id: string, errorMessage: string): P
     const getReq = store.get(id);
 
     getReq.onsuccess = () => {
-      if (!getReq.result) return resolve();
+      const sale = getReq.result as OfflinePosSale | undefined;
+      if (!sale || sale.tenantId !== tenantId) return;
       const record: OfflinePosSale = {
-        ...getReq.result,
+        ...sale,
         status: 'FAILED',
+        syncStartedAt: undefined,
         syncError: errorMessage,
       };
       store.put(record);
     };
 
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Falha ao guardar o erro de sincronização.'));
+    tx.onerror = () => reject(tx.error ?? new Error('Falha ao guardar o erro de sincronização.'));
   });
 }

@@ -299,8 +299,11 @@ async fn ready_handler(State(state): State<AppState>) -> (StatusCode, Json<serde
     }
 }
 
-async fn metrics_handler() -> String {
-    crate::metrics::render()
+async fn metrics_handler() -> impl IntoResponse {
+    (
+        [(CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        crate::metrics::render(),
+    )
 }
 
 /// Handler consolidado de diagnóstico e saúde de todos os serviços do ecossistema Kudiba

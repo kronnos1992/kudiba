@@ -1,23 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { Sparkles, ArrowRight } from 'lucide-react';
 import { useAuthStore } from './stores/authStore';
 import { useUiStore } from './stores/uiStore';
 import { authApi } from './api/auth';
-import { LoginView } from './views/auth/LoginView';
 import { AppLayout } from './components/layout/AppLayout';
 import { SessionIdleWatcher } from './components/session/SessionIdleWatcher';
 import { ModuleKey } from './components/layout/Sidebar';
-import { DashboardView } from './views/dashboard/DashboardView';
-import { PosView } from './views/pos/PosView';
-import { InvoicingView } from './views/invoicing/InvoicingView';
-import { InventoryView } from './views/inventory/InventoryView';
-import { TreasuryView } from './views/treasury/TreasuryView';
-import { PayrollView } from './views/payroll/PayrollView';
-import { AccountingView } from './views/accounting/AccountingView';
-import { IntegrationsView } from './views/integrations/IntegrationsView';
-import { SettingsView } from './views/settings/SettingsView';
-import { ClientesView } from './views/backoffice/ClientesView';
 import { CompanyOnboardingModal } from './components/onboarding/CompanyOnboardingModal';
+
+const LoginView = lazy(() => import('./views/auth/LoginView').then((module) => ({ default: module.LoginView })));
+const DashboardView = lazy(() => import('./views/dashboard/DashboardView').then((module) => ({ default: module.DashboardView })));
+const PosView = lazy(() => import('./views/pos/PosView').then((module) => ({ default: module.PosView })));
+const InvoicingView = lazy(() => import('./views/invoicing/InvoicingView').then((module) => ({ default: module.InvoicingView })));
+const InventoryView = lazy(() => import('./views/inventory/InventoryView').then((module) => ({ default: module.InventoryView })));
+const TreasuryView = lazy(() => import('./views/treasury/TreasuryView').then((module) => ({ default: module.TreasuryView })));
+const PayrollView = lazy(() => import('./views/payroll/PayrollView').then((module) => ({ default: module.PayrollView })));
+const AccountingView = lazy(() => import('./views/accounting/AccountingView').then((module) => ({ default: module.AccountingView })));
+const IntegrationsView = lazy(() => import('./views/integrations/IntegrationsView').then((module) => ({ default: module.IntegrationsView })));
+const SettingsView = lazy(() => import('./views/settings/SettingsView').then((module) => ({ default: module.SettingsView })));
+const ClientesView = lazy(() => import('./views/backoffice/ClientesView').then((module) => ({ default: module.ClientesView })));
+
+const ModuleLoading: React.FC = () => (
+  <div className="flex min-h-48 items-center justify-center text-sm text-slate-500" role="status">
+    A carregar módulo...
+  </div>
+);
 
 const isCashierOnly = (roles?: string[]): boolean =>
   Boolean(roles && roles.length > 0 && roles.every((r) => r.toUpperCase() === 'OPERADOR_CAIXA'));
@@ -38,6 +45,12 @@ export const App: React.FC = () => {
   useEffect(() => {
     setActiveModule(isCashier ? 'pos' : 'dashboard');
   }, [user?.id, isCashier]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      void import('./views/pos/PosView');
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (themeMode === 'dark') {
@@ -74,7 +87,11 @@ export const App: React.FC = () => {
   }, [isAuthenticated, activeTenant?.id, isCashier]);
 
   if (!isAuthenticated) {
-    return <LoginView />;
+    return (
+      <Suspense fallback={<ModuleLoading />}>
+        <LoginView />
+      </Suspense>
+    );
   }
 
   const needsOnboarding = !isCashier && activeTenant?.onboarding_completed === false;
@@ -137,7 +154,7 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {renderActiveModule()}
+      <Suspense fallback={<ModuleLoading />}>{renderActiveModule()}</Suspense>
 
       <SessionIdleWatcher />
 
@@ -154,4 +171,3 @@ export const App: React.FC = () => {
     </AppLayout>
   );
 };
-

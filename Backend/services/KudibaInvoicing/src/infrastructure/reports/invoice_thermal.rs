@@ -361,11 +361,20 @@ impl InvoiceThermalGenerator {
         }
 
         // Menção Legal Mandatória da AGT
-        let legal_str = format!(
-            "{}-Processado por programa validado",
-            invoice.validation_chars
-        );
-        let cert_str = format!("n.º {} Kudiba ERP", software_cert);
+        let (legal_str, cert_str) = if software_cert.trim().is_empty() {
+            (
+                format!("{}-Software sem validação AGT", invoice.validation_chars),
+                None,
+            )
+        } else {
+            (
+                format!(
+                    "{}-Processado por programa validado",
+                    invoice.validation_chars
+                ),
+                Some(format!("n.º {} Kudiba ERP", software_cert)),
+            )
+        };
         Self::add_centered_text(
             &mut operations,
             "F2",
@@ -376,16 +385,18 @@ impl InvoiceThermalGenerator {
             (0.0, 0.0, 0.0),
         );
         y -= 9.0;
-        Self::add_centered_text(
-            &mut operations,
-            "F1",
-            7.0,
-            y,
-            &cert_str,
-            page_width,
-            (0.2, 0.2, 0.2),
-        );
-        y -= 12.0;
+        if let Some(cert_str) = cert_str {
+            Self::add_centered_text(
+                &mut operations,
+                "F1",
+                7.0,
+                y,
+                &cert_str,
+                page_width,
+                (0.2, 0.2, 0.2),
+            );
+            y -= 12.0;
+        }
 
         Self::add_centered_text(
             &mut operations,
@@ -543,15 +554,26 @@ impl InvoiceThermalGenerator {
             out.push('\n');
         }
 
-        let legal_str = format!(
-            "{}-Processado por programa validado",
-            invoice.validation_chars
-        );
-        let cert_str = format!("n.º {} Kudiba ERP", software_cert);
+        let (legal_str, cert_str) = if software_cert.trim().is_empty() {
+            (
+                format!("{}-Software sem validação AGT", invoice.validation_chars),
+                None,
+            )
+        } else {
+            (
+                format!(
+                    "{}-Processado por programa validado",
+                    invoice.validation_chars
+                ),
+                Some(format!("n.º {} Kudiba ERP", software_cert)),
+            )
+        };
         out.push_str(&Self::center_text(&legal_str, width));
         out.push('\n');
-        out.push_str(&Self::center_text(&cert_str, width));
-        out.push('\n');
+        if let Some(cert_str) = cert_str {
+            out.push_str(&Self::center_text(&cert_str, width));
+            out.push('\n');
+        }
         out.push_str(&Self::center_text("Obrigado pela preferência!", width));
         out.push('\n');
 
@@ -725,5 +747,16 @@ mod tests {
         assert!(text.contains("TOTAL A PAGAR:"));
         assert!(text.contains("k1m4-Processado por programa validado"));
         assert!(text.contains("n.º 999/AGT/2026 Kudiba ERP"));
+    }
+
+    #[test]
+    fn nao_afirma_homologacao_sem_numero_atribuido_pela_agt() {
+        let invoice = sample_thermal_invoice();
+        let text = InvoiceThermalGenerator::generate_text(&invoice, "Pastelaria Luanda", "")
+            .expect("talao sem certificação");
+
+        assert!(text.contains("Software sem validação AGT"));
+        assert!(!text.contains("Processado por programa validado"));
+        assert!(!text.contains("n.º  Kudiba ERP"));
     }
 }

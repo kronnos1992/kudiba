@@ -405,12 +405,12 @@ impl PosReportsUseCase {
                 row.try_get("nif")
                     .unwrap_or_else(|_| "999999999".to_string()),
                 row.try_get("agt_cert_number")
-                    .unwrap_or_else(|_| "42/AGT/2026".to_string()),
+                    .unwrap_or_else(|_| "Não homologado pela AGT".to_string()),
             ),
             None => (
                 "Kudiba ERP".to_string(),
                 "999999999".to_string(),
-                "42/AGT/2026".to_string(),
+                "Não homologado pela AGT".to_string(),
             ),
         };
 
@@ -712,7 +712,11 @@ impl PosReportsUseCase {
             out.push('\n');
         }
 
-        let cert_info = format!("Validado: {}", report.agt_cert_number);
+        let cert_info = if report.agt_cert_number == "Não homologado pela AGT" {
+            "Software sem validação AGT".to_string()
+        } else {
+            format!("Validado: {}", report.agt_cert_number)
+        };
         out.push_str(&center_text(&cert_info, width));
         out.push('\n');
         let footer = if report.report_type == "FECHO_Z" {
@@ -989,12 +993,17 @@ impl PosReportsUseCase {
             (0.1, 0.1, 0.1),
         );
         y -= 10.0;
+        let cert_info = if report.agt_cert_number == "Não homologado pela AGT" {
+            "Software sem validação AGT".to_string()
+        } else {
+            format!("Software certificado: {}", report.agt_cert_number)
+        };
         add_centered_pdf_text(
             &mut operations,
             "F1",
             6.5,
             y,
-            &format!("Software Certificado: {}", report.agt_cert_number),
+            &cert_info,
             page_width,
             (0.4, 0.4, 0.4),
         );
@@ -1153,7 +1162,7 @@ mod tests {
             tenant_id: Uuid::new_v4(),
             company_name: "Supermercado Kudiba Lda".to_string(),
             company_nif: "5412345678".to_string(),
-            agt_cert_number: "42/AGT/2026".to_string(),
+            agt_cert_number: "Não homologado pela AGT".to_string(),
             date: NaiveDate::from_ymd_opt(2026, 10, 7).unwrap(),
             generated_at: Utc::now(),
             z_report_sequence: Some(15),

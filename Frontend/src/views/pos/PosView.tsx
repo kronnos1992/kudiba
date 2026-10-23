@@ -38,7 +38,6 @@ import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import {
   cachePosProducts,
   getCachedPosProducts,
-  getNextOfflineSequence,
   saveOfflineSale,
   type CachedPosProduct,
   type OfflinePosSale,
@@ -125,8 +124,8 @@ export const PosView: React.FC = () => {
 
   // Catálogo de contingência: espelha produtos em IndexedDB para permitir venda offline.
   React.useEffect(() => {
-    if (!products.length) return;
-    cachePosProducts(
+    if (!activeTenant?.id || !products.length) return;
+    cachePosProducts(activeTenant.id,
       products.map((p) => ({
         id: p.id,
         code: p.code,
@@ -145,12 +144,15 @@ export const PosView: React.FC = () => {
     ).catch(() => {
       // IndexedDB indisponível (modo privado): o POS continua a operar online.
     });
-  }, [products]);
+  }, [products, activeTenant?.id]);
 
   // Carrega o catálogo local quando o serviço central está inacessível.
   React.useEffect(() => {
+    setOfflineCatalog([]);
+    if (!activeTenant?.id) return;
     let active = true;
-    getCachedPosProducts()
+    if (!activeTenant?.id) return;
+    getCachedPosProducts(activeTenant.id)
       .then((cached) => {
         if (active && cached.length) setOfflineCatalog(cached);
       })
@@ -158,7 +160,7 @@ export const PosView: React.FC = () => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [activeTenant?.id]);
 
   const catalogProducts: Product[] =
     products.length > 0 ? products : (offlineCatalog as unknown as Product[]);
@@ -514,14 +516,8 @@ export const PosView: React.FC = () => {
           : `pos-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
       const persistOfflineSale = async (saleId?: string): Promise<OfflinePosSale> => {
-        const { sequenceNumber, documentNumber } = await getNextOfflineSequence(
-          activeSeries,
-          currentYear
-        );
         return saveOfflineSale({
           id: saleId || idempotencyKey,
-          offlineDocumentNumber: documentNumber,
-          sequenceNumber,
           seriesCode: activeSeries,
           fiscalYear: currentYear,
           createdAt: new Date().toISOString(),
@@ -551,7 +547,7 @@ export const PosView: React.FC = () => {
               (item.unitPrice * item.qty * (1 + item.taxRate / 100)).toFixed(2)
             ),
           })),
-        });
+        }, activeSeries, currentYear);
       };
 
       if (isContingencyMode) {
@@ -1002,8 +998,8 @@ export const PosView: React.FC = () => {
               </span>
               <span className="text-[11px] opacity-90">
                 {pendingOfflineCount > 0
-                  ? `${pendingOfflineCount} documento(s) pendente(s). A sequência fiscal local é preservada e reconciliada automaticamente.`
-                  : 'A ligação ao servidor central está indisponível. As vendas serão reconciliadas quando a rede regressar.'}
+                  ? `${pendingOfflineCount} venda(s) pendente(s). A referência local não é um número fiscal reservado; o documento será emitido pelo servidor durante a sincronização.`
+                  : 'Sem ligação ao servidor central. As vendas serão guardadas como comprovativos provisórios até poderem ser sincronizadas.'}
               </span>
             </div>
           </div>
@@ -2151,7 +2147,7 @@ export const PosView: React.FC = () => {
                 </p>
                 <p>NIF: {activeTenant?.taxId || activeTenant?.nif}</p>
                 <p className="font-bold text-xs mt-2 text-amber-700">
-                  FATURA-RECIBO (CONTINGÊNCIA): {offlineReceipt.offlineDocumentNumber}
+                  COMPROVATIVO OFFLINE (NÃO FISCAL): {offlineReceipt.offlineDocumentNumber}
                 </p>
                 <p className="text-[10px]">
                   Data: {new Date(offlineReceipt.createdAt).toLocaleString()}
@@ -2217,8 +2213,8 @@ export const PosView: React.FC = () => {
               <div className="border-t border-dashed border-black my-2" />
 
               <div className="text-center text-[10px] space-y-1">
-                <p className="font-bold text-amber-700">DOCUMENTO EMITIDO EM CONTINGÊNCIA</p>
-                <p>Será reconciliado e certificado quando a ligação ao servidor central for restabelecida.</p>
+                <p className="font-bold text-amber-700">COMPROVATIVO PROVISÓRIO — NÃO É DOCUMENTO FISCAL</p>
+                <p>O servidor emitirá o documento fiscal após a sincronização. Esta referência local não reserva numeração fiscal.</p>
                 <p className="font-mono text-[9px] text-slate-500 break-all">
                   Ref. local: {offlineReceipt.id.substring(0, 18)}...
                 </p>
@@ -2342,4 +2338,3 @@ export const PosView: React.FC = () => {
     </div>
   );
 };
-
