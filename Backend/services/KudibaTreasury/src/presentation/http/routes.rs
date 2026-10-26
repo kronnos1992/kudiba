@@ -9,11 +9,14 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::application::dto::{
-    BankAccountResponse, CashMovementResponse, CashRegisterResponse, CashSessionResponse,
-    CloseCashSessionRequest, ClosePosSessionRequest, CreateBankAccountRequest,
-    CreateCashRegisterRequest, InvoiceReceivableResponse, IssueTreasuryReceiptRequest,
-    OpenCashSessionRequest, OpenPosSessionRequest, PosSessionResponse, RecordCashMovementRequest,
-    SessionReportResponse, TreasuryReceiptResponse,
+    BankAccountResponse, BankStatementLineResponse, BankStatementResponse, CashMovementResponse,
+    CashRegisterResponse, CashSessionResponse, CashTransferResponse, CloseCashSessionRequest,
+    ClosePosSessionRequest, CreateBankAccountRequest, CreateBankStatementLineRequest,
+    CreateBankStatementRequest, CreateCashRegisterRequest, CreateCashTransferRequest,
+    CreatePayableRequest, InvoicePayableResponse, InvoiceReceivableResponse,
+    IssueTreasuryReceiptRequest, OpenCashSessionRequest, OpenPosSessionRequest,
+    PayableSettlementResponse, PosSessionResponse, ReconcileLineRequest, RecordCashMovementRequest,
+    SessionReportResponse, SettlePayableRequest, TreasuryReceiptResponse,
 };
 use crate::domain::error::DomainError;
 use crate::state::AppState;
@@ -591,6 +594,224 @@ pub async fn list_receivables_handler(
 // Dashboard Executivo
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// Dashboard Executivo & Fluxo de Caixa
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct CashFlowQuery {
+    pub start_date: Option<chrono::NaiveDate>,
+    pub end_date: Option<chrono::NaiveDate>,
+}
+
+pub async fn cash_flow_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<CashFlowQuery>,
+) -> Result<Json<crate::application::queries::cash_flow::CashFlowReport>, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let report = crate::application::queries::cash_flow::fetch(
+        &state.db_pool,
+        tenant_id,
+        query.start_date,
+        query.end_date,
+    )
+    .await
+    .map_err(map_domain_error)?;
+
+    Ok(Json(report))
+}
+
+// -----------------------------------------------------------------------------
+// Contas a Pagar (Payables) Handlers
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct PayablesQuery {
+    pub status: Option<String>,
+    pub activity_type: Option<String>,
+}
+
+pub async fn list_payables_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<PayablesQuery>,
+) -> Result<Json<Vec<InvoicePayableResponse>>, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let payables = state
+        .payable_cmd
+        .list_payables(tenant_id, query.status.as_deref(), query.activity_type.as_deref())
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok(Json(payables))
+}
+
+pub async fn create_payable_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreatePayableRequest>,
+) -> Result<(StatusCode, Json<InvoicePayableResponse>), (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let payable = state
+        .payable_cmd
+        .create_payable(tenant_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok((StatusCode::CREATED, Json(payable)))
+}
+
+pub async fn settle_payable_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<SettlePayableRequest>,
+) -> Result<(StatusCode, Json<PayableSettlementResponse>), (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let user_id = extract_user_id(&headers)?;
+    let settlement = state
+        .payable_cmd
+        .settle_payable(tenant_id, id, &user_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok((StatusCode::CREATED, Json(settlement)))
+}
+
+pub async fn list_settlements_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<PayableSettlementResponse>>, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let settlements = state
+        .payable_cmd
+        .list_settlements_for_payable(tenant_id, id)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok(Json(settlements))
+}
+
+// -----------------------------------------------------------------------------
+// Transferências Internas (Transfers) Handlers
+// -----------------------------------------------------------------------------
+
+pub async fn list_transfers_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<CashTransferResponse>>, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let transfers = state
+        .transfer_cmd
+        .list_transfers(tenant_id)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok(Json(transfers))
+}
+
+pub async fn execute_transfer_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateCashTransferRequest>,
+) -> Result<(StatusCode, Json<CashTransferResponse>), (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let user_id = extract_user_id(&headers)?;
+    let transfer = state
+        .transfer_cmd
+        .execute_transfer(tenant_id, &user_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok((StatusCode::CREATED, Json(transfer)))
+}
+
+// -----------------------------------------------------------------------------
+// Extratos Bancários e Conciliação Handlers
+// -----------------------------------------------------------------------------
+
+pub async fn list_bank_statements_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(bank_id): Path<Uuid>,
+) -> Result<Json<Vec<BankStatementResponse>>, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let statements = state
+        .statement_cmd
+        .list_statements(tenant_id, Some(bank_id))
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok(Json(statements))
+}
+
+pub async fn create_bank_statement_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(bank_id): Path<Uuid>,
+    Json(mut payload): Json<CreateBankStatementRequest>,
+) -> Result<(StatusCode, Json<BankStatementResponse>), (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    payload.bank_account_id = bank_id;
+    let statement = state
+        .statement_cmd
+        .create_statement(tenant_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok((StatusCode::CREATED, Json(statement)))
+}
+
+pub async fn list_statement_lines_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(statement_id): Path<Uuid>,
+) -> Result<Json<Vec<BankStatementLineResponse>>, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let lines = state
+        .statement_cmd
+        .list_statement_lines(tenant_id, statement_id)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok(Json(lines))
+}
+
+pub async fn add_statement_line_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(statement_id): Path<Uuid>,
+    Json(payload): Json<CreateBankStatementLineRequest>,
+) -> Result<(StatusCode, Json<BankStatementLineResponse>), (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let line = state
+        .statement_cmd
+        .add_statement_line(tenant_id, statement_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok((StatusCode::CREATED, Json(line)))
+}
+
+pub async fn reconcile_line_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(line_id): Path<Uuid>,
+    Json(payload): Json<ReconcileLineRequest>,
+) -> Result<Json<BankStatementLineResponse>, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let user_id = extract_user_id(&headers)?;
+    let line = state
+        .statement_cmd
+        .reconcile_line(tenant_id, line_id, &user_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok(Json(line))
+}
+
 pub async fn dashboard_summary_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -623,10 +844,42 @@ pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
         .route("/ready", get(ready_handler))
-        // Dashboard Executivo
+        // Dashboard Executivo & Fluxo de Caixa
         .route(
             "/api/v1/treasury/dashboard/summary",
             get(dashboard_summary_handler),
+        )
+        .route("/api/v1/treasury/cash-flow", get(cash_flow_handler))
+        // Contas a Pagar (Payables)
+        .route(
+            "/api/v1/treasury/payables",
+            post(create_payable_handler).get(list_payables_handler),
+        )
+        .route(
+            "/api/v1/treasury/payables/{id}/settle",
+            post(settle_payable_handler),
+        )
+        .route(
+            "/api/v1/treasury/payables/{id}/settlements",
+            get(list_settlements_handler),
+        )
+        // Transferências Internas (Transfers)
+        .route(
+            "/api/v1/treasury/transfers",
+            post(execute_transfer_handler).get(list_transfers_handler),
+        )
+        // Extratos Bancários e Conciliação
+        .route(
+            "/api/v1/treasury/bank-accounts/{id}/statements",
+            post(create_bank_statement_handler).get(list_bank_statements_handler),
+        )
+        .route(
+            "/api/v1/treasury/statements/{id}/lines",
+            post(add_statement_line_handler).get(list_statement_lines_handler),
+        )
+        .route(
+            "/api/v1/treasury/statements/lines/{id}/reconcile",
+            post(reconcile_line_handler),
         )
         // Cash Registers
         .route(

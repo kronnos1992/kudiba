@@ -74,8 +74,22 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$DB_TARGET" <<-EOS
         ADD COLUMN IF NOT EXISTS bank_accounts JSONB NOT NULL DEFAULT '[]'::jsonb,
         ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS license_valid_until TIMESTAMPTZ,
-        ADD COLUMN IF NOT EXISTS subscribed_modules TEXT[];
+        ADD COLUMN IF NOT EXISTS subscribed_modules TEXT[],
+        ADD COLUMN IF NOT EXISTS database_connections JSONB NOT NULL DEFAULT '{}'::jsonb;
 EOSQL
+done
+
+# 8c1. Migrações RBAC e parametrização avançada no banco 'kudiba_auth'
+echo "Aplicando migrações 10 a 14 no banco 'kudiba_auth'..."
+for MIGRATION_FILE in \
+    /docker-entrypoint-initdb.d/10-roles-per-tenant.sql \
+    /docker-entrypoint-initdb.d/11-tenants-contingency.sql \
+    /docker-entrypoint-initdb.d/12-role-permission-overrides.sql \
+    /docker-entrypoint-initdb.d/13-expand-full-permissions-matrix.sql \
+    /docker-entrypoint-initdb.d/14-tenant-database-connections.sql; do
+    if [ -f "$MIGRATION_FILE" ]; then
+        psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_auth" -f "$MIGRATION_FILE"
+    fi
 done
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_auth" <<-EOSQL

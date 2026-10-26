@@ -16,6 +16,9 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronRight,
+  TrendingUp,
+  ArrowLeftRight,
+  ArrowUpCircle,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
@@ -40,8 +43,19 @@ import {
 } from '../../api/treasury';
 import { toast } from '../../stores/toastStore';
 import { inventoryApi } from '../../api/inventory';
+import { CashFlowTab } from './components/CashFlowTab';
+import { PayablesTab } from './components/PayablesTab';
+import { TransfersTab } from './components/TransfersTab';
+import { BankAccountsTab } from './components/BankAccountsTab';
 
-type TreasuryTab = 'registers' | 'receipts' | 'bank_accounts' | 'receivables';
+type TreasuryTab =
+  | 'cash_flow'
+  | 'payables'
+  | 'receivables'
+  | 'transfers'
+  | 'bank_accounts'
+  | 'registers'
+  | 'receipts';
 
 interface TreasuryViewProps {
   onNavigate?: (module: string) => void;
@@ -51,7 +65,7 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
   const { activeTenant, activeBranch, user } = useAuthStore();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<TreasuryTab>('registers');
+  const [activeTab, setActiveTab] = useState<TreasuryTab>('cash_flow');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Modais de Caixa
@@ -99,7 +113,7 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
     enabled: Boolean(activeTenant?.id) && registers.length > 0,
   });
 
-  const { data: bankAccounts = [], isLoading: banksLoading } = useQuery({
+  const { data: bankAccounts = [] } = useQuery({
     queryKey: ['treasury_bank_accounts', activeTenant?.id],
     queryFn: () => treasuryApi.listBankAccounts(),
     enabled: Boolean(activeTenant?.id),
@@ -548,6 +562,66 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
       {/* Tabs */}
       <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-1 overflow-x-auto no-scrollbar">
         <button
+          onClick={() => setActiveTab('cash_flow')}
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'cash_flow'
+              ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <TrendingUp className="w-4 h-4 shrink-0" />
+          <span>Fluxo de Caixa</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('payables')}
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'payables'
+              ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <ArrowUpCircle className="w-4 h-4 shrink-0" />
+          <span>Contas a Pagar</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('receivables')}
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'receivables'
+              ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <ArrowDownCircle className="w-4 h-4 shrink-0" />
+          <span>Contas a Receber</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('transfers')}
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'transfers'
+              ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <ArrowLeftRight className="w-4 h-4 shrink-0" />
+          <span>Transferências Internas</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('bank_accounts')}
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'bank_accounts'
+              ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <Building2 className="w-4 h-4 shrink-0" />
+          <span>Bancos &amp; Conciliação</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('registers')}
           className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'registers'
@@ -568,33 +642,36 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
           }`}
         >
           <Receipt className="w-4 h-4 shrink-0" />
-          <span>Recibos de Quitação (RC)</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('bank_accounts')}
-          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'bank_accounts'
-              ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-          }`}
-        >
-          <Building2 className="w-4 h-4 shrink-0" />
-          <span>Contas Bancárias (AO06)</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('receivables')}
-          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'receivables'
-              ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-          }`}
-        >
-          <FileCheck2 className="w-4 h-4 shrink-0" />
-          <span>Faturas a Prazo (A Receber)</span>
+          <span>Recibos Emitidos (RC)</span>
         </button>
       </div>
+
+      {/* Tab: Fluxo de Caixa */}
+      {activeTab === 'cash_flow' && (
+        <CashFlowTab
+          tenantId={activeTenant?.id}
+          onNavigateTab={(tab) => setActiveTab(tab as TreasuryTab)}
+        />
+      )}
+
+      {/* Tab: Contas a Pagar */}
+      {activeTab === 'payables' && (
+        <PayablesTab tenantId={activeTenant?.id} bankAccounts={bankAccounts} />
+      )}
+
+      {/* Tab: Transferências Internas */}
+      {activeTab === 'transfers' && (
+        <TransfersTab
+          tenantId={activeTenant?.id}
+          bankAccounts={bankAccounts}
+          registers={registers}
+        />
+      )}
+
+      {/* Tab: Bancos & Conciliação */}
+      {activeTab === 'bank_accounts' && (
+        <BankAccountsTab tenantId={activeTenant?.id} bankAccounts={bankAccounts} />
+      )}
 
       {/* Tab 1: Caixas Físicos & Sessões */}
       {activeTab === 'registers' && (
@@ -976,54 +1053,7 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
         </div>
       )}
 
-      {/* Tab 3: Contas Bancárias (AO06) */}
-      {activeTab === 'bank_accounts' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {banksLoading ? (
-              <div className="col-span-full py-8 text-center text-slate-500">
-                A carregar contas bancárias...
-              </div>
-            ) : bankAccounts.length === 0 ? (
-              <div className="col-span-full py-8 text-center text-slate-500">
-                Nenhuma conta bancária registada. Adicione uma conta com o IBAN angolano.
-              </div>
-            ) : (
-              bankAccounts.map((b) => (
-                <GlassCard key={b.id} className="p-5 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold text-slate-500 uppercase">
-                        {b.currency}
-                      </span>
-                      <StatusBadge status={b.is_active ? 'ok' : 'acompanhar'} label={b.is_active ? 'Ativa' : 'Inativa'} />
-                    </div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                      {b.bank_name}
-                    </h3>
-                    <div className="mt-3 space-y-1">
-                      <div className="text-xs text-slate-400">IBAN Oficial:</div>
-                      <div className="font-mono text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 p-1.5 rounded">
-                        {b.iban}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        Conta N.º: <span className="font-mono">{b.account_number}</span>
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <span className="text-xs text-slate-500 block mb-1">Saldo em Conta:</span>
-                    <span className="text-xl font-extrabold text-slate-900 dark:text-white">
-                      <KzAmount value={Number(b.current_balance)} />
-                    </span>
-                  </div>
-                </GlassCard>
-              ))
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Tab 4: Faturas a Prazo (Contas a Receber) */}
       {activeTab === 'receivables' && (

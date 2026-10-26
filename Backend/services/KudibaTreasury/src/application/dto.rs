@@ -349,3 +349,183 @@ impl From<InvoiceReceivable> for InvoiceReceivableResponse {
         }
     }
 }
+
+// -----------------------------------------------------------------------------
+// Contas a Pagar (Payables)
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvoicePayableResponse {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub supplier_id: Option<String>,
+    pub supplier_name: String,
+    pub supplier_nif: Option<String>,
+    pub invoice_number: String,
+    pub activity_type: String,
+    pub category: String,
+    pub currency: String,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub gross_total: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub withholding_rate: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub withholding_amount: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub net_payable: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub amount_paid: Decimal,
+    pub due_date: chrono::NaiveDate,
+    pub issue_date: chrono::NaiveDate,
+    pub payment_method: Option<String>,
+    pub status: String,
+    pub notes: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreatePayableRequest {
+    pub supplier_id: Option<String>,
+    pub supplier_name: String,
+    pub supplier_nif: Option<String>,
+    pub invoice_number: String,
+    pub activity_type: Option<String>,
+    pub category: Option<String>,
+    pub currency: Option<String>,
+    pub gross_total: Decimal,
+    pub withholding_rate: Option<Decimal>,
+    pub due_date: chrono::NaiveDate,
+    pub issue_date: Option<chrono::NaiveDate>,
+    pub payment_method: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SettlePayableRequest {
+    pub bank_account_id: Option<Uuid>,
+    pub session_id: Option<Uuid>,
+    pub amount_paid: Decimal,
+    pub payment_method: PaymentMethod,
+    pub payment_reference: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayableSettlementResponse {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub payable_id: Uuid,
+    pub bank_account_id: Option<Uuid>,
+    pub session_id: Option<Uuid>,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub amount_paid: Decimal,
+    pub payment_method: String,
+    pub payment_reference: Option<String>,
+    pub settled_at: DateTime<Utc>,
+    pub operator_user_id: String,
+    pub notes: Option<String>,
+}
+
+// -----------------------------------------------------------------------------
+// Transferências Internas (Cash Transfers)
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CashTransferResponse {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub transfer_number: String,
+    pub source_type: String,
+    pub source_id: Uuid,
+    pub source_name: Option<String>,
+    pub target_type: String,
+    pub target_id: Uuid,
+    pub target_name: Option<String>,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub amount: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub fee_amount: Decimal,
+    pub currency: String,
+    pub status: String,
+    pub operator_user_id: String,
+    pub notes: Option<String>,
+    pub transferred_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateCashTransferRequest {
+    pub source_type: String,
+    pub source_id: Uuid,
+    pub target_type: String,
+    pub target_id: Uuid,
+    pub amount: Decimal,
+    pub fee_amount: Option<Decimal>,
+    pub currency: Option<String>,
+    pub notes: Option<String>,
+}
+
+// -----------------------------------------------------------------------------
+// Conciliação e Extratos Bancários (Bank Statements)
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BankStatementResponse {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub bank_account_id: Uuid,
+    pub bank_name: Option<String>,
+    pub reference_period: String,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub start_balance: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub end_balance: Decimal,
+    pub statement_date: chrono::NaiveDate,
+    pub file_name: Option<String>,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BankStatementLineResponse {
+    pub id: Uuid,
+    pub statement_id: Uuid,
+    pub tenant_id: Uuid,
+    pub line_date: chrono::NaiveDate,
+    pub description: String,
+    pub document_ref: Option<String>,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub amount: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub balance_after: Decimal,
+    pub movement_type: String,
+    pub is_reconciled: bool,
+    pub matched_type: Option<String>,
+    pub matched_id: Option<Uuid>,
+    pub reconciled_at: Option<DateTime<Utc>>,
+    pub reconciled_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateBankStatementRequest {
+    pub bank_account_id: Uuid,
+    pub reference_period: String,
+    pub start_balance: Decimal,
+    pub end_balance: Decimal,
+    pub statement_date: chrono::NaiveDate,
+    pub file_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateBankStatementLineRequest {
+    pub line_date: chrono::NaiveDate,
+    pub description: String,
+    pub document_ref: Option<String>,
+    pub amount: Decimal,
+    pub balance_after: Decimal,
+    pub movement_type: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReconcileLineRequest {
+    pub matched_type: String,
+    pub matched_id: Option<Uuid>,
+}

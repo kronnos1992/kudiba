@@ -4,6 +4,7 @@ from src.infrastructure.persistence.postgres_contract_repo import PostgresContra
 from src.infrastructure.persistence.postgres_payroll_repo import PostgresPayrollRepository
 from src.infrastructure.persistence.postgres_organization_repo import PostgresOrganizationRepository
 from src.infrastructure.persistence.postgres_hr_repo import PostgresHrRepository
+from src.infrastructure.persistence.postgres_conflict_repo import PostgresConflictRepository
 
 __all__ = [
     "Base",
@@ -12,4 +13,5 @@ __all__ = [
     "PostgresPayrollRepository",
     "PostgresOrganizationRepository",
     "PostgresHrRepository",
+    "PostgresConflictRepository",
 ]

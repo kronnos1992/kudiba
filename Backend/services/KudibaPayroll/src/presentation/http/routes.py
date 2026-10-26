@@ -1,7 +1,7 @@
 from datetime import date
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from src.application.dto import (
     AbsenceResponse,
     AddSalaryComponentRequest,
@@ -30,6 +30,21 @@ from src.application.dto import (
     VacationBalanceResponse,
     VacationDecisionRequest,
     VacationResponse,
+    AddParticipantRequest,
+    ConflictActionResponse,
+    ConflictCaseDetailResponse,
+    ConflictCaseSummaryResponse,
+    ConflictDashboardResponse,
+    ConflictFollowUpResponse,
+    ConflictMeetingResponse,
+    ConflictParticipantResponse,
+    CreateActionRequest,
+    CreateConflictCaseRequest,
+    CreateFollowUpRequest,
+    CreateMeetingRequest,
+    TriageConflictCaseRequest,
+    UpdateActionRequest,
+    UpdateConflictStatusRequest,
 )
 from src.presentation.http.dependencies import get_app_state, get_current_tenant_id
 
@@ -374,5 +389,166 @@ def create_payroll_router() -> APIRouter:
         app_state=Depends(get_app_state),
     ):
         return await app_state.get_dashboard_summary.execute(tenant_id, year)
+
+    # =========================================================================
+    # GESTÃO DE CONFLITOS & MEDIAÇÃO LABORAL
+    # =========================================================================
+    @router.get(
+        "/conflicts/dashboard",
+        response_model=ConflictDashboardResponse,
+        tags=["Gestão de Conflitos"],
+    )
+    async def get_conflict_dashboard(
+        tenant_id: UUID = Depends(get_current_tenant_id),
+        app_state=Depends(get_app_state),
+    ):
+        return await app_state.conflict_repo.get_dashboard(tenant_id)
+
+    @router.get(
+        "/conflicts",
+        response_model=List[ConflictCaseSummaryResponse],
+        tags=["Gestão de Conflitos"],
+    )
+    async def list_conflict_cases(
+        status: Optional[str] = Query(None),
+        severity: Optional[str] = Query(None),
+        conflict_type: Optional[str] = Query(None),
+        search: Optional[str] = Query(None),
+        tenant_id: UUID = Depends(get_current_tenant_id),
+        app_state=Depends(get_app_state),
+    ):
+        return await app_state.conflict_repo.list_cases(
+            tenant_id=tenant_id,
+            status=status,
+            severity=severity,
+            conflict_type=conflict_type,
+            search=search,
+        )
+
+    @router.post(
+        "/conflicts",
+        response_model=ConflictCaseDetailResponse,
+        status_code=status.HTTP_201_CREATED,
+        tags=["Gestão de Conflitos"],
+    )
+    async def create_conflict_case(
+        req: CreateConflictCaseRequest,
+        tenant_id: UUID = Depends(get_current_tenant_id),
+        app_state=Depends(get_app_state),
+    ):
+        return await app_state.conflict_repo.create_case(tenant_id, req)
+
+    @router.get(
+        "/conflicts/{case_id}",
+        response_model=ConflictCaseDetailResponse,
+        tags=["Gestão de Conflitos"],
+    )
+    async def get_conflict_case(
+        case_id: UUID,
+        tenant_id: UUID = Depends(get_current_tenant_id),
+        app_state=Depends(get_app_state),
+    ):
+        case = await app_state.conflict_repo.get_case_by_id(tenant_id, case_id)
+        if not case:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Caso de conflito '{case_id}' não encontrado.",
+            )
+        return case
+
+    @router.patch(
+        "/conflicts/{case_id}/status",
+        response_model=ConflictCaseDetailResponse,
+        tags=["Gestão de Conflitos"],
+    )
+    async def update_conflict_status(
+        case_id: UUID,
+        req: UpdateConflictStatusRequest,
+        tenant_id: UUID = Depends(get_current_tenant_id),
+        app_state=Depends(get_app_state),
+    ):
+        return await app_state.conflict_repo.update_status(tenant_id, case_id, req)
+
+    @router.post(
+        "/conflicts/{case_id}/triage",
+        response_model=ConflictCaseDetailResponse,
+        tags=["Gestão de Conflitos"],
+    )
+    async def triage_conflict_case(
+        case_id: UUID,
+        req: TriageConflictCaseRequest,
+        tenant_id: UUID = Depends(get_current_tenant_id),
+        app_state=Depends(get_app_state),
+    ):
+        return await app_state.conflict_repo.triage_case(tenant_id, case_id, req)
+
+    @router.post(
+        "/conflicts/{case_id}/participants",
+        response_model=ConflictParticipantResponse,
+        status_code=status.HTTP_201_CREATED,
+        tags=["Gestão de Conflitos"],
+    )
+    async def add_conflict_participant(
+        case_id: UUID,
+        req: AddParticipantRequest,
+        tenant_id: UUID = Depends(get_current_tenant_id),
+        app_state=Depends(get_app_state),
+    ):
+        return await app_state.conflict_repo.add_participant(tenant_id, case_id, req)
+
+    @router.post(
+        "/conflicts/{case_id}/meetings",
+        response_model=ConflictMeetingResponse,
+        status_code=status.HTTP_201_CREATED,
+        tags=["Gestão de Conflitos"],
+    )
+    async def create_conflict_meeting(
+        case_id: UUID,
+        req: CreateMeetingRequest,
+        tenant_id: UUID = Depends(get_current_tenant_id),
+        app_state=Depends(get_app_state),
+    ):
+        return await app_state.conflict_repo.create_meeting(tenant_id, case_id, req)
+
+    @router.post(
+        "/conflicts/{case_id}/actions",
+        response_model=ConflictActionResponse,
+        status_code=status.HTTP_201_CREATED,
+        tags=["Gestão de Conflitos"],
+    )
+    async def create_conflict_action(
+        case_id: UUID,
+        req: CreateActionRequest,
+        tenant_id: UUID = Depends(get_current_tenant_id),
+        app_state=Depends(get_app_state),
+    ):
+        return await app_state.conflict_repo.create_action(tenant_id, case_id, req)
+
+    @router.patch(
+        "/conflicts/actions/{action_id}",
+        response_model=ConflictActionResponse,
+        tags=["Gestão de Conflitos"],
+    )
+    async def update_conflict_action(
+        action_id: UUID,
+        req: UpdateActionRequest,
+        tenant_id: UUID = Depends(get_current_tenant_id),
+        app_state=Depends(get_app_state),
+    ):
+        return await app_state.conflict_repo.update_action(tenant_id, action_id, req)
+
+    @router.post(
+        "/conflicts/{case_id}/follow-ups",
+        response_model=ConflictFollowUpResponse,
+        status_code=status.HTTP_201_CREATED,
+        tags=["Gestão de Conflitos"],
+    )
+    async def create_conflict_follow_up(
+        case_id: UUID,
+        req: CreateFollowUpRequest,
+        tenant_id: UUID = Depends(get_current_tenant_id),
+        app_state=Depends(get_app_state),
+    ):
+        return await app_state.conflict_repo.create_follow_up(tenant_id, case_id, req)
 
     return router

@@ -46,6 +46,7 @@ from src.infrastructure.persistence import (
     PostgresPayrollRepository,
     PostgresOrganizationRepository,
     PostgresHrRepository,
+    PostgresConflictRepository,
 )
 from src.infrastructure.events.rabbitmq_publisher import RabbitMqEventPublisher
 from src.infrastructure.events.rabbitmq_consumer import RabbitMqEventConsumer
@@ -94,6 +95,7 @@ class AppState:
     list_attendance: ListAttendanceUseCase
     generate_payslip_pdf: GeneratePayslipPdfUseCase
     export_ps2: ExportPs2UseCase
+    conflict_repo: PostgresConflictRepository
 
 
 def create_app_state(
@@ -106,6 +108,7 @@ def create_app_state(
     payroll_repo = PostgresPayrollRepository(session_factory)
     org_repo = PostgresOrganizationRepository(session_factory)
     hr_repo = PostgresHrRepository(session_factory)
+    conflict_repo = PostgresConflictRepository(session_factory)
     pub = publisher or RabbitMqEventPublisher(config.rabbitmq_url)
 
     register_employee = RegisterEmployeeUseCase(employee_repo)
@@ -205,4 +208,5 @@ def create_app_state(
         list_attendance=list_attendance,
         generate_payslip_pdf=generate_payslip_pdf,
         export_ps2=export_ps2,
+        conflict_repo=conflict_repo,
     )

@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  ShieldAlert,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
@@ -43,8 +44,9 @@ import {
   ContractType,
 } from '../../api/payroll';
 import { PayrollOrganizationTab } from './PayrollOrganizationTab';
+import { ConflictManagementTab } from './ConflictManagementTab';
 
-type PayrollTab = 'periods' | 'employees' | 'contracts' | 'organization' | 'vacations' | 'absences';
+type PayrollTab = 'periods' | 'employees' | 'contracts' | 'organization' | 'vacations' | 'absences' | 'conflicts';
 
 export const PayrollView: React.FC = () => {
   const { activeTenant } = useAuthStore();
@@ -928,6 +930,18 @@ export const PayrollView: React.FC = () => {
           <Clock className="w-4 h-4 shrink-0" />
           <span>Assiduidade &amp; Faltas</span>
         </button>
+
+        <button
+          onClick={() => setActiveTab('conflicts')}
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'conflicts'
+              ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold'
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <ShieldAlert className="w-4 h-4 shrink-0" />
+          <span>Gestão de Conflitos &amp; Clima</span>
+        </button>
       </div>
 
       {/* Tab 1: Períodos Salariais */}
@@ -1792,6 +1806,14 @@ export const PayrollView: React.FC = () => {
             </div>
           </GlassCard>
         </div>
+      )}
+
+      {/* Tab 7: Gestão de Conflitos & Clima Laboral */}
+      {activeTab === 'conflicts' && (
+        <ConflictManagementTab
+          departments={departments}
+          employees={employees}
+        />
       )}
 
       {/* Modal: Abrir Novo Período Salarial */}

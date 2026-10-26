@@ -207,6 +207,21 @@ else
 fi
 wait_for_health "http://127.0.0.1:8080/health" "Kudiba Gateway" 60 || true
 
+# 10. Frontend (HTTP :3000)
+if lsof -i :3000 >/dev/null 2>&1 || nc -z 127.0.0.1 3000 2>/dev/null; then
+    echo "[-] Frontend já está em execução (porta 3000 ocupada)."
+else
+    echo "[+] Iniciando Frontend (HTTP :3000)..."
+    pushd "$ROOT_DIR/Frontend" >/dev/null
+    setsid nohup ./node_modules/.bin/vite --host 0.0.0.0 </dev/null > "$LOGS_DIR/frontend.log" 2>&1 &
+    FRONTEND_PID=$!
+    disown $FRONTEND_PID 2>/dev/null || true
+    popd >/dev/null
+    echo $FRONTEND_PID > "$LOGS_DIR/frontend.pid"
+    echo "    Frontend iniciado com PID $FRONTEND_PID (logs em $LOGS_DIR/frontend.log)"
+fi
+wait_for_health "http://127.0.0.1:3000/" "Frontend" 30 || true
+
 echo ""
 echo "=== Estado dos Servidores ==="
 "$SCRIPT_DIR/status-local.sh"

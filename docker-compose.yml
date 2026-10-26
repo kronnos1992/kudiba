@@ -313,6 +313,11 @@ services:
       - ./Backend/deploy/07-payroll-schema.sql:/docker-entrypoint-initdb.d/07-payroll-schema.sql:ro
       - ./Backend/deploy/08-integrations-schema.sql:/docker-entrypoint-initdb.d/08-integrations-schema.sql:ro
       - ./Backend/deploy/09-backoffice-schema.sql:/docker-entrypoint-initdb.d/09-backoffice-schema.sql:ro
+      - ./Backend/deploy/10-roles-per-tenant.sql:/docker-entrypoint-initdb.d/10-roles-per-tenant.sql:ro
+      - ./Backend/deploy/11-tenants-contingency.sql:/docker-entrypoint-initdb.d/11-tenants-contingency.sql:ro
+      - ./Backend/deploy/12-role-permission-overrides.sql:/docker-entrypoint-initdb.d/12-role-permission-overrides.sql:ro
+      - ./Backend/deploy/13-expand-full-permissions-matrix.sql:/docker-entrypoint-initdb.d/13-expand-full-permissions-matrix.sql:ro
+      - ./Backend/deploy/14-tenant-database-connections.sql:/docker-entrypoint-initdb.d/14-tenant-database-connections.sql:ro
       - ./Backend/deploy/15-bootstrap-sysadmin.sql:/docker-entrypoint-initdb.d/15-bootstrap-sysadmin.sql:ro
       - ./Backend/deploy/16-row-level-security.sql:/opt/kudiba/16-row-level-security.sql:ro
       - ./Backend/deploy/17-application-role.sql:/opt/kudiba/17-application-role.sql:ro

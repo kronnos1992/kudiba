@@ -403,3 +403,182 @@ class PayrollOutboxModel(Base):
     )
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+
+class ConflictCaseModel(Base):
+    __tablename__ = "conflict_cases"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "reference_code", name="uq_conflict_case_ref"),
+        {"schema": "kudiba_payroll"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    reference_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    conflict_type: Mapped[str] = mapped_column(String(50), nullable=False, default="INTERPESSOAL")
+    severity: Mapped[str] = mapped_column(String(30), nullable=False, default="MEDIA")
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="EM_TRIAGEM")
+    department_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.departments.id"), nullable=True
+    )
+    department_name: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    incident_date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    reported_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    is_confidential: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    complainant_employee_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.employees.id"), nullable=True
+    )
+    complainant_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    respondent_employee_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.employees.id"), nullable=True
+    )
+    respondent_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    assigned_mediator_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    assigned_mediator_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    resolution_route: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, default="MEDIACAO")
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    retaliation_risk: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    urgent_protection_measures: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    closure_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    participants: Mapped[List["ConflictParticipantModel"]] = relationship(
+        "ConflictParticipantModel", back_populates="case", cascade="all, delete-orphan", lazy="selectin"
+    )
+    meetings: Mapped[List["ConflictMeetingModel"]] = relationship(
+        "ConflictMeetingModel", back_populates="case", cascade="all, delete-orphan", lazy="selectin"
+    )
+    actions: Mapped[List["ConflictActionModel"]] = relationship(
+        "ConflictActionModel", back_populates="case", cascade="all, delete-orphan", lazy="selectin"
+    )
+    follow_ups: Mapped[List["ConflictFollowUpModel"]] = relationship(
+        "ConflictFollowUpModel", back_populates="case", cascade="all, delete-orphan", lazy="selectin"
+    )
+    audit_logs: Mapped[List["ConflictAuditLogModel"]] = relationship(
+        "ConflictAuditLogModel", back_populates="case", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class ConflictParticipantModel(Base):
+    __tablename__ = "conflict_participants"
+    __table_args__ = {"schema": "kudiba_payroll"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.conflict_cases.id"), nullable=False, index=True
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    employee_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.employees.id"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(40), nullable=False)
+    statement: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    statement_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    has_conflict_of_interest: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    conflict_of_interest_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    case: Mapped["ConflictCaseModel"] = relationship("ConflictCaseModel", back_populates="participants")
+
+
+class ConflictMeetingModel(Base):
+    __tablename__ = "conflict_meetings"
+    __table_args__ = {"schema": "kudiba_payroll"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.conflict_cases.id"), nullable=False, index=True
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    meeting_type: Mapped[str] = mapped_column(String(50), nullable=False, default="INDIVIDUAL_HEARING")
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    location: Mapped[str] = mapped_column(String(200), nullable=False, default="Gabinete RH Confidencial")
+    conducted_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    attendees: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    minutes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    agreed_points: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="SCHEDULED")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    case: Mapped["ConflictCaseModel"] = relationship("ConflictCaseModel", back_populates="meetings")
+
+
+class ConflictActionModel(Base):
+    __tablename__ = "conflict_actions"
+    __table_args__ = {"schema": "kudiba_payroll"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.conflict_cases.id"), nullable=False, index=True
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    action_type: Mapped[str] = mapped_column(String(50), nullable=False, default="COMPROMISSO_CONDUTA")
+    assigned_to: Mapped[str] = mapped_column(String(255), nullable=False)
+    due_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING")
+    completion_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    case: Mapped["ConflictCaseModel"] = relationship("ConflictCaseModel", back_populates="actions")
+
+
+class ConflictFollowUpModel(Base):
+    __tablename__ = "conflict_follow_ups"
+    __table_args__ = {"schema": "kudiba_payroll"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.conflict_cases.id"), nullable=False, index=True
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    review_date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    reviewed_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    feedback_complainant: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    feedback_respondent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    retaliation_detected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_stable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    case: Mapped["ConflictCaseModel"] = relationship("ConflictCaseModel", back_populates="follow_ups")
+
+
+class ConflictAuditLogModel(Base):
+    __tablename__ = "conflict_audit_logs"
+    __table_args__ = {"schema": "kudiba_payroll"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kudiba_payroll.conflict_cases.id"), nullable=False, index=True
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(50), nullable=False)
+    performed_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    case: Mapped["ConflictCaseModel"] = relationship("ConflictCaseModel", back_populates="audit_logs")
+
+

@@ -260,6 +260,236 @@ export interface PosPanelResponse {
   operators: PosOperatorPanel[];
 }
 
+export interface ForeignCurrencyAccount {
+  bank_name: string;
+  currency: string;
+  balance_original: number;
+  exchange_rate_to_aoa: number;
+  converted_aoa: number;
+}
+
+export interface CurrentLiquidityBreakdown {
+  total_available_aoa: number;
+  cash_in_hand_aoa: number;
+  bank_balances_aoa: number;
+  reconciled_balance_aoa: number;
+  pending_clearance_aoa: number;
+  foreign_reserves: ForeignCurrencyAccount[];
+}
+
+export interface ActivityFlow {
+  inflows: number;
+  outflows: number;
+  net: number;
+}
+
+export interface MethodBreakdown {
+  method: string;
+  amount: number;
+  count: number;
+}
+
+export interface CategoryBreakdown {
+  category: string;
+  amount: number;
+}
+
+export interface RealizedCashFlow {
+  total_inflows: number;
+  total_outflows: number;
+  net_cash_flow: number;
+  operational: ActivityFlow;
+  investment: ActivityFlow;
+  financing: ActivityFlow;
+  inflows_by_method: MethodBreakdown[];
+  outflows_by_category: CategoryBreakdown[];
+}
+
+export interface TaxObligationForecast {
+  tax_type: string;
+  due_date: string;
+  estimated_amount: number;
+  description: string;
+}
+
+export interface ForecastCashFlow {
+  receivables_due: number;
+  payables_due: number;
+  estimated_taxes: number;
+  estimated_payroll: number;
+  total_expected_inflows: number;
+  total_expected_outflows: number;
+  net_expected_flow: number;
+  tax_obligations: TaxObligationForecast[];
+}
+
+export interface DailyProjectionPoint {
+  date: string;
+  starting_balance: number;
+  expected_inflows: number;
+  expected_outflows: number;
+  ending_balance: number;
+  is_deficit_risk: boolean;
+}
+
+export interface TreasuryAlert {
+  severity: 'DANGER' | 'WARNING' | 'INFO';
+  title: string;
+  message: string;
+  due_date?: string | null;
+}
+
+export interface CashFlowReport {
+  tenant_id: string;
+  generated_at: string;
+  base_currency: string;
+  period_start: string;
+  period_end: string;
+  current_liquidity: CurrentLiquidityBreakdown;
+  realized: RealizedCashFlow;
+  forecast: ForecastCashFlow;
+  projections: DailyProjectionPoint[];
+  alerts: TreasuryAlert[];
+}
+
+export interface InvoicePayable {
+  id: string;
+  tenant_id: string;
+  supplier_id?: string | null;
+  supplier_name: string;
+  supplier_nif?: string | null;
+  invoice_number: string;
+  activity_type: 'OPERATIONAL' | 'INVESTMENT' | 'FINANCING' | string;
+  category: string;
+  currency: string;
+  gross_total: number;
+  withholding_rate: number;
+  withholding_amount: number;
+  net_payable: number;
+  amount_paid: number;
+  due_date: string;
+  issue_date: string;
+  payment_method?: string | null;
+  status: 'OUTSTANDING' | 'PARTIALLY_PAID' | 'SETTLED' | 'OVERDUE' | string;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePayablePayload {
+  supplier_id?: string;
+  supplier_name: string;
+  supplier_nif?: string;
+  invoice_number: string;
+  activity_type?: string;
+  category?: string;
+  currency?: string;
+  gross_total: number;
+  withholding_rate?: number;
+  due_date: string;
+  issue_date?: string;
+  payment_method?: string;
+  notes?: string;
+}
+
+export interface SettlePayablePayload {
+  bank_account_id?: string;
+  session_id?: string;
+  amount_paid: number;
+  payment_method: PaymentMethodType;
+  payment_reference?: string;
+  notes?: string;
+}
+
+export interface PayableSettlement {
+  id: string;
+  tenant_id: string;
+  payable_id: string;
+  bank_account_id?: string | null;
+  session_id?: string | null;
+  amount_paid: number;
+  payment_method: string;
+  payment_reference?: string | null;
+  settled_at: string;
+  operator_user_id: string;
+  notes?: string | null;
+}
+
+export interface CashTransfer {
+  id: string;
+  tenant_id: string;
+  transfer_number: string;
+  source_type: 'BANK' | 'REGISTER' | string;
+  source_id: string;
+  source_name?: string | null;
+  target_type: 'BANK' | 'REGISTER' | string;
+  target_id: string;
+  target_name?: string | null;
+  amount: number;
+  fee_amount: number;
+  currency: string;
+  status: string;
+  operator_user_id: string;
+  notes?: string | null;
+  transferred_at: string;
+  created_at: string;
+}
+
+export interface CreateCashTransferPayload {
+  source_type: 'BANK' | 'REGISTER';
+  source_id: string;
+  target_type: 'BANK' | 'REGISTER';
+  target_id: string;
+  amount: number;
+  fee_amount?: number;
+  currency?: string;
+  notes?: string;
+}
+
+export interface BankStatement {
+  id: string;
+  tenant_id: string;
+  bank_account_id: string;
+  bank_name?: string | null;
+  reference_period: string;
+  start_balance: number;
+  end_balance: number;
+  statement_date: string;
+  file_name?: string | null;
+  status: string;
+  created_at: string;
+}
+
+export interface BankStatementLine {
+  id: string;
+  statement_id: string;
+  tenant_id: string;
+  line_date: string;
+  description: string;
+  document_ref?: string | null;
+  amount: number;
+  balance_after: number;
+  movement_type: 'CREDIT' | 'DEBIT' | string;
+  is_reconciled: boolean;
+  matched_type?: string | null;
+  matched_id?: string | null;
+  reconciled_at?: string | null;
+  reconciled_by?: string | null;
+}
+
+export interface CreateBankStatementPayload {
+  reference_period: string;
+  start_balance: number;
+  end_balance: number;
+  statement_date: string;
+  file_name?: string;
+}
+
+export interface ReconcileLinePayload {
+  matched_type: string;
+  matched_id?: string;
+}
+
 export const treasuryApi = {
   // Caixas Físicos
   listRegisters: async (): Promise<CashRegister[]> => {
@@ -386,6 +616,65 @@ export const treasuryApi = {
   // Painel dos POS (KPIs do dia, por caixa e por usuário)
   getPosPanel: async (params?: { register_id?: string; date?: string }): Promise<PosPanelResponse> => {
     const res = await apiClient.get<PosPanelResponse>('/api/v1/treasury/pos/panel', { params });
+    return res.data;
+  },
+
+  // Fluxo de Caixa (Realizado, Previsto, Projetado)
+  getCashFlow: async (params?: { start_date?: string; end_date?: string }): Promise<CashFlowReport> => {
+    const res = await apiClient.get<CashFlowReport>('/api/v1/treasury/cash-flow', { params });
+    return res.data;
+  },
+
+  // Contas a Pagar (Fornecedores)
+  listPayables: async (params?: { status?: string; activity_type?: string }): Promise<InvoicePayable[]> => {
+    const res = await apiClient.get<InvoicePayable[]>('/api/v1/treasury/payables', { params });
+    return res.data;
+  },
+
+  createPayable: async (payload: CreatePayablePayload): Promise<InvoicePayable> => {
+    const res = await apiClient.post<InvoicePayable>('/api/v1/treasury/payables', payload);
+    return res.data;
+  },
+
+  settlePayable: async (id: string, payload: SettlePayablePayload): Promise<PayableSettlement> => {
+    const res = await apiClient.post<PayableSettlement>(`/api/v1/treasury/payables/${id}/settle`, payload);
+    return res.data;
+  },
+
+  listPayableSettlements: async (payableId: string): Promise<PayableSettlement[]> => {
+    const res = await apiClient.get<PayableSettlement[]>(`/api/v1/treasury/payables/${payableId}/settlements`);
+    return res.data;
+  },
+
+  // Transferências Internas
+  listTransfers: async (): Promise<CashTransfer[]> => {
+    const res = await apiClient.get<CashTransfer[]>('/api/v1/treasury/transfers');
+    return res.data;
+  },
+
+  executeTransfer: async (payload: CreateCashTransferPayload): Promise<CashTransfer> => {
+    const res = await apiClient.post<CashTransfer>('/api/v1/treasury/transfers', payload);
+    return res.data;
+  },
+
+  // Extratos e Conciliação Bancária
+  listBankStatements: async (bankAccountId: string): Promise<BankStatement[]> => {
+    const res = await apiClient.get<BankStatement[]>(`/api/v1/treasury/bank-accounts/${bankAccountId}/statements`);
+    return res.data;
+  },
+
+  createBankStatement: async (bankAccountId: string, payload: CreateBankStatementPayload): Promise<BankStatement> => {
+    const res = await apiClient.post<BankStatement>(`/api/v1/treasury/bank-accounts/${bankAccountId}/statements`, payload);
+    return res.data;
+  },
+
+  listStatementLines: async (statementId: string): Promise<BankStatementLine[]> => {
+    const res = await apiClient.get<BankStatementLine[]>(`/api/v1/treasury/statements/${statementId}/lines`);
+    return res.data;
+  },
+
+  reconcileLine: async (lineId: string, payload: ReconcileLinePayload): Promise<BankStatementLine> => {
+    const res = await apiClient.post<BankStatementLine>(`/api/v1/treasury/statements/lines/${lineId}/reconcile`, payload);
     return res.data;
   },
 };

@@ -32,6 +32,8 @@ stop_service "KudibaInvoicing" "invoicing.pid" "kudiba-invoicing"
 stop_service "KudibaInventory" "inventory.pid" "kudiba-inventory"
 stop_service "KudibaTreasury" "treasury.pid" "kudiba-treasury"
 stop_service "KudibaAccounting" "accounting.pid" "kudiba-accounting"
+stop_service "Frontend" "frontend.pid" "vite"
+fuser -k 3000/tcp 2>/dev/null || true
 if [ -f "$LOGS_DIR/gateway.pid" ]; then
     PID=$(cat "$LOGS_DIR/gateway.pid")
     if kill -0 "$PID" 2>/dev/null; then

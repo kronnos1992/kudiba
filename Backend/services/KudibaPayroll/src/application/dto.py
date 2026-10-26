@@ -405,3 +405,211 @@ class PayrollDashboardSummaryResponse(BaseModel):
     organization: OrganizationSummary
     latest_period: Optional[PayrollPeriodTotals] = None
     annual: AnnualPayrollSummary
+
+
+class ConflictParticipantResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    case_id: UUID
+    tenant_id: UUID
+    employee_id: Optional[UUID] = None
+    name: str
+    role: str
+    statement: Optional[str] = None
+    statement_date: Optional[datetime] = None
+    has_conflict_of_interest: bool = False
+    conflict_of_interest_details: Optional[str] = None
+    created_at: datetime
+
+
+class AddParticipantRequest(BaseModel):
+    employee_id: Optional[UUID] = None
+    name: str = Field(..., max_length=255)
+    role: str = Field(..., max_length=40)
+    statement: Optional[str] = None
+    has_conflict_of_interest: bool = False
+    conflict_of_interest_details: Optional[str] = None
+
+
+class ConflictMeetingResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    case_id: UUID
+    tenant_id: UUID
+    meeting_type: str
+    scheduled_at: datetime
+    location: str
+    conducted_by: str
+    attendees: Optional[str] = None
+    minutes: Optional[str] = None
+    agreed_points: Optional[str] = None
+    status: str
+    created_at: datetime
+
+
+class CreateMeetingRequest(BaseModel):
+    meeting_type: str = "INDIVIDUAL_HEARING"
+    scheduled_at: datetime
+    location: str = "Gabinete RH Confidencial"
+    conducted_by: str = Field(..., max_length=255)
+    attendees: Optional[str] = None
+    minutes: Optional[str] = None
+    agreed_points: Optional[str] = None
+    status: str = "SCHEDULED"
+
+
+class ConflictActionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    case_id: UUID
+    tenant_id: UUID
+    title: str
+    description: str
+    action_type: str
+    assigned_to: str
+    due_date: date
+    status: str
+    completion_notes: Optional[str] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class CreateActionRequest(BaseModel):
+    title: str = Field(..., max_length=255)
+    description: str
+    action_type: str = "COMPROMISSO_CONDUTA"
+    assigned_to: str = Field(..., max_length=255)
+    due_date: date
+
+
+class UpdateActionRequest(BaseModel):
+    status: str
+    completion_notes: Optional[str] = None
+
+
+class ConflictFollowUpResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    case_id: UUID
+    tenant_id: UUID
+    review_date: date
+    reviewed_by: str
+    feedback_complainant: Optional[str] = None
+    feedback_respondent: Optional[str] = None
+    retaliation_detected: bool = False
+    is_stable: bool = True
+    notes: str
+    created_at: datetime
+
+
+class CreateFollowUpRequest(BaseModel):
+    review_date: date = Field(default_factory=date.today)
+    reviewed_by: str = Field(..., max_length=255)
+    feedback_complainant: Optional[str] = None
+    feedback_respondent: Optional[str] = None
+    retaliation_detected: bool = False
+    is_stable: bool = True
+    notes: str
+
+
+class ConflictAuditLogResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    case_id: UUID
+    tenant_id: UUID
+    action: str
+    performed_by: str
+    details: Optional[str] = None
+    created_at: datetime
+
+
+class ConflictCaseSummaryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    reference_code: str
+    title: str
+    conflict_type: str
+    severity: str
+    status: str
+    department_id: Optional[UUID] = None
+    department_name: Optional[str] = None
+    incident_date: date
+    reported_at: datetime
+    is_confidential: bool
+    complainant_employee_id: Optional[UUID] = None
+    complainant_name: Optional[str] = None
+    respondent_employee_id: Optional[UUID] = None
+    respondent_name: Optional[str] = None
+    assigned_mediator_id: Optional[str] = None
+    assigned_mediator_name: Optional[str] = None
+    resolution_route: Optional[str] = None
+    summary: str
+    retaliation_risk: bool
+    urgent_protection_measures: Optional[str] = None
+    closure_reason: Optional[str] = None
+    closed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    participants_count: int = 0
+    meetings_count: int = 0
+    actions_count: int = 0
+
+
+class ConflictCaseDetailResponse(ConflictCaseSummaryResponse):
+    participants: List[ConflictParticipantResponse] = Field(default_factory=list)
+    meetings: List[ConflictMeetingResponse] = Field(default_factory=list)
+    actions: List[ConflictActionResponse] = Field(default_factory=list)
+    follow_ups: List[ConflictFollowUpResponse] = Field(default_factory=list)
+    audit_logs: List[ConflictAuditLogResponse] = Field(default_factory=list)
+
+
+class CreateConflictCaseRequest(BaseModel):
+    title: str = Field(..., max_length=255)
+    conflict_type: str = "INTERPESSOAL"
+    severity: str = "MEDIA"
+    department_id: Optional[UUID] = None
+    incident_date: date = Field(default_factory=date.today)
+    is_confidential: bool = False
+    complainant_employee_id: Optional[UUID] = None
+    complainant_name: Optional[str] = None
+    respondent_employee_id: Optional[UUID] = None
+    respondent_name: Optional[str] = None
+    summary: str
+    retaliation_risk: bool = False
+    urgent_protection_measures: Optional[str] = None
+
+
+class TriageConflictCaseRequest(BaseModel):
+    severity: str
+    resolution_route: str
+    assigned_mediator_id: Optional[str] = None
+    assigned_mediator_name: Optional[str] = None
+    retaliation_risk: bool = False
+    urgent_protection_measures: Optional[str] = None
+    status: Optional[str] = None
+
+
+class UpdateConflictStatusRequest(BaseModel):
+    status: str
+    closure_reason: Optional[str] = None
+
+
+class ConflictDashboardResponse(BaseModel):
+    total_cases: int
+    open_cases: int
+    in_mediation: int
+    in_investigation: int
+    resolved: int
+    high_retaliation_risk: int
+    avg_resolution_days: float
+    by_type: dict[str, int]
+    by_severity: dict[str, int]
+    by_department: dict[str, int]
+

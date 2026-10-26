@@ -19,6 +19,10 @@ pub enum PaymentMethod {
     Transferencia,
     #[serde(rename = "GPO_REFERENCE")]
     GpoReference,
+    #[serde(rename = "MULTICAIXA_EXPRESS")]
+    MulticaixaExpress,
+    #[serde(rename = "CHEQUE")]
+    Cheque,
 }
 
 impl fmt::Display for PaymentMethod {
@@ -28,6 +32,8 @@ impl fmt::Display for PaymentMethod {
             Self::Multicaixa => write!(f, "MULTICAIXA"),
             Self::Transferencia => write!(f, "TRANSFERENCIA"),
             Self::GpoReference => write!(f, "GPO_REFERENCE"),
+            Self::MulticaixaExpress => write!(f, "MULTICAIXA_EXPRESS"),
+            Self::Cheque => write!(f, "CHEQUE"),
         }
     }
 }
@@ -41,6 +47,8 @@ impl FromStr for PaymentMethod {
             "MULTICAIXA" | "TPA" | "CARD" | "CC" | "CD" => Ok(Self::Multicaixa),
             "TRANSFERENCIA" | "TB" | "BANK_TRANSFER" => Ok(Self::Transferencia),
             "GPO_REFERENCE" | "REF" | "PAGAMENTO_REFERENCIA" | "PR" => Ok(Self::GpoReference),
+            "MULTICAIXA_EXPRESS" | "MCX_EXPRESS" | "MCX" => Ok(Self::MulticaixaExpress),
+            "CHEQUE" | "CHQ" => Ok(Self::Cheque),
             other => Err(DomainError::ValidationError(format!(
                 "Forma de pagamento não suportada: {}",
                 other

@@ -4,7 +4,8 @@ use std::sync::Arc;
 use crate::application::commands::{
     CloseCashSessionHandler, ClosePosSessionHandler, CreateBankAccountHandler,
     CreateCashRegisterHandler, IssueTreasuryReceiptHandler, OpenCashSessionHandler,
-    OpenPosSessionHandler, RecordCashMovementHandler, RegisterInvoiceReceivableHandler,
+    OpenPosSessionHandler, PayableCommands, RecordCashMovementHandler,
+    RegisterInvoiceReceivableHandler, StatementCommands, TransferCommands,
 };
 use crate::application::queries::TreasuryQueries;
 use crate::config::Config;
@@ -33,6 +34,9 @@ pub struct AppState {
     pub receivable_repo: Arc<dyn InvoiceReceivableRepository>,
     pub pos_session_repo: Arc<dyn PosSessionRepository>,
     pub queries: Arc<TreasuryQueries>,
+    pub payable_cmd: Arc<PayableCommands>,
+    pub transfer_cmd: Arc<TransferCommands>,
+    pub statement_cmd: Arc<StatementCommands>,
     pub event_consumer: Arc<TreasuryEventConsumer>,
     pub event_publisher: Arc<dyn TreasuryEventPublisher>,
 }
@@ -87,6 +91,10 @@ impl AppState {
             receivable_repo.clone(),
         ));
 
+        let payable_cmd = Arc::new(PayableCommands::new(pool.clone()));
+        let transfer_cmd = Arc::new(TransferCommands::new(pool.clone()));
+        let statement_cmd = Arc::new(StatementCommands::new(pool.clone()));
+
         let queries = Arc::new(TreasuryQueries::new(
             register_repo,
             session_repo,
@@ -114,6 +122,9 @@ impl AppState {
             receivable_repo,
             pos_session_repo,
             queries,
+            payable_cmd,
+            transfer_cmd,
+            statement_cmd,
             event_consumer,
             event_publisher,
         }

@@ -379,4 +379,338 @@ export const payrollApi = {
     });
     return res.data;
   },
+
+  // =========================================================================
+  // GESTÃO DE CONFLITOS & MEDIAÇÃO LABORAL
+  // =========================================================================
+  getConflictDashboard: async (): Promise<ConflictDashboard> => {
+    const res = await apiClient.get<ConflictDashboard>('/api/v1/payroll/conflicts/dashboard');
+    return res.data;
+  },
+
+  listConflicts: async (params?: {
+    status?: string;
+    severity?: string;
+    conflict_type?: string;
+    search?: string;
+  }): Promise<ConflictCaseSummary[]> => {
+    const res = await apiClient.get<ConflictCaseSummary[]>('/api/v1/payroll/conflicts', { params });
+    return res.data;
+  },
+
+  getConflict: async (id: string): Promise<ConflictCaseDetail> => {
+    const res = await apiClient.get<ConflictCaseDetail>(`/api/v1/payroll/conflicts/${id}`);
+    return res.data;
+  },
+
+  createConflict: async (payload: CreateConflictPayload): Promise<ConflictCaseDetail> => {
+    const res = await apiClient.post<ConflictCaseDetail>('/api/v1/payroll/conflicts', payload);
+    return res.data;
+  },
+
+  updateConflictStatus: async (
+    id: string,
+    payload: UpdateConflictStatusPayload
+  ): Promise<ConflictCaseDetail> => {
+    const res = await apiClient.patch<ConflictCaseDetail>(`/api/v1/payroll/conflicts/${id}/status`, payload);
+    return res.data;
+  },
+
+  triageConflict: async (id: string, payload: TriageConflictPayload): Promise<ConflictCaseDetail> => {
+    const res = await apiClient.post<ConflictCaseDetail>(`/api/v1/payroll/conflicts/${id}/triage`, payload);
+    return res.data;
+  },
+
+  addConflictParticipant: async (
+    id: string,
+    payload: AddParticipantPayload
+  ): Promise<ConflictParticipant> => {
+    const res = await apiClient.post<ConflictParticipant>(
+      `/api/v1/payroll/conflicts/${id}/participants`,
+      payload
+    );
+    return res.data;
+  },
+
+  createConflictMeeting: async (
+    id: string,
+    payload: CreateMeetingPayload
+  ): Promise<ConflictMeeting> => {
+    const res = await apiClient.post<ConflictMeeting>(
+      `/api/v1/payroll/conflicts/${id}/meetings`,
+      payload
+    );
+    return res.data;
+  },
+
+  createConflictAction: async (
+    id: string,
+    payload: CreateActionPayload
+  ): Promise<ConflictAction> => {
+    const res = await apiClient.post<ConflictAction>(
+      `/api/v1/payroll/conflicts/${id}/actions`,
+      payload
+    );
+    return res.data;
+  },
+
+  updateConflictAction: async (
+    actionId: string,
+    payload: UpdateActionPayload
+  ): Promise<ConflictAction> => {
+    const res = await apiClient.patch<ConflictAction>(
+      `/api/v1/payroll/conflicts/actions/${actionId}`,
+      payload
+    );
+    return res.data;
+  },
+
+  createConflictFollowUp: async (
+    id: string,
+    payload: CreateFollowUpPayload
+  ): Promise<ConflictFollowUp> => {
+    const res = await apiClient.post<ConflictFollowUp>(
+      `/api/v1/payroll/conflicts/${id}/follow-ups`,
+      payload
+    );
+    return res.data;
+  },
 };
+
+export type ConflictType =
+  | 'INTERPESSOAL'
+  | 'ASSEDIO_MORAL'
+  | 'ASSEDIO_SEXUAL'
+  | 'CONDICOES_TRABALHO'
+  | 'SALARIAL'
+  | 'DISCIPLINAR'
+  | 'OUTRO';
+
+export type ConflictSeverity = 'BAIXA' | 'MEDIA' | 'ALTA' | 'CRITICA';
+
+export type ConflictStatus =
+  | 'EM_TRIAGEM'
+  | 'EM_MEDIACAO'
+  | 'EM_INVESTIGACAO'
+  | 'EM_ACOMPANHAMENTO'
+  | 'RESOLVIDO'
+  | 'ENCAMINHADO_DISCIPLINAR'
+  | 'ENCERRADO';
+
+export type ConflictParticipantRole =
+  | 'COMPLAINANT'
+  | 'RESPONDENT'
+  | 'WITNESS'
+  | 'MEDIATOR'
+  | 'INVESTIGATOR'
+  | 'DEPARTMENT_HEAD';
+
+export type ConflictMeetingType =
+  | 'INDIVIDUAL_HEARING'
+  | 'JOINT_MEDIATION'
+  | 'CONCILIATION_SESSION'
+  | 'PRELIMINARY_INTERVIEW';
+
+export type ConflictActionType =
+  | 'COMPROMISSO_CONDUTA'
+  | 'MUDANCA_EQUIPA'
+  | 'FORMACAO_SENSIBILIZACAO'
+  | 'AJUSTE_CARGA'
+  | 'PROCESSO_DISCIPLINAR'
+  | 'MELHORIA_PROCESSO';
+
+export interface ConflictParticipant {
+  id: string;
+  case_id: string;
+  tenant_id: string;
+  employee_id?: string | null;
+  name: string;
+  role: string;
+  statement?: string | null;
+  statement_date?: string | null;
+  has_conflict_of_interest: boolean;
+  conflict_of_interest_details?: string | null;
+  created_at: string;
+}
+
+export interface ConflictMeeting {
+  id: string;
+  case_id: string;
+  tenant_id: string;
+  meeting_type: string;
+  scheduled_at: string;
+  location: string;
+  conducted_by: string;
+  attendees?: string | null;
+  minutes?: string | null;
+  agreed_points?: string | null;
+  status: string;
+  created_at: string;
+}
+
+export interface ConflictAction {
+  id: string;
+  case_id: string;
+  tenant_id: string;
+  title: string;
+  description: string;
+  action_type: string;
+  assigned_to: string;
+  due_date: string;
+  status: string;
+  completion_notes?: string | null;
+  completed_at?: string | null;
+  created_at: string;
+}
+
+export interface ConflictFollowUp {
+  id: string;
+  case_id: string;
+  tenant_id: string;
+  review_date: string;
+  reviewed_by: string;
+  feedback_complainant?: string | null;
+  feedback_respondent?: string | null;
+  retaliation_detected: boolean;
+  is_stable: boolean;
+  notes: string;
+  created_at: string;
+}
+
+export interface ConflictAuditLog {
+  id: string;
+  case_id: string;
+  tenant_id: string;
+  action: string;
+  performed_by: string;
+  details?: string | null;
+  created_at: string;
+}
+
+export interface ConflictCaseSummary {
+  id: string;
+  tenant_id: string;
+  reference_code: string;
+  title: string;
+  conflict_type: string;
+  severity: string;
+  status: string;
+  department_id?: string | null;
+  department_name?: string | null;
+  incident_date: string;
+  reported_at: string;
+  is_confidential: boolean;
+  complainant_employee_id?: string | null;
+  complainant_name?: string | null;
+  respondent_employee_id?: string | null;
+  respondent_name?: string | null;
+  assigned_mediator_id?: string | null;
+  assigned_mediator_name?: string | null;
+  resolution_route?: string | null;
+  summary: string;
+  retaliation_risk: boolean;
+  urgent_protection_measures?: string | null;
+  closure_reason?: string | null;
+  closed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  participants_count: number;
+  meetings_count: number;
+  actions_count: number;
+}
+
+export interface ConflictCaseDetail extends ConflictCaseSummary {
+  participants: ConflictParticipant[];
+  meetings: ConflictMeeting[];
+  actions: ConflictAction[];
+  follow_ups: ConflictFollowUp[];
+  audit_logs: ConflictAuditLog[];
+}
+
+export interface ConflictDashboard {
+  total_cases: number;
+  open_cases: number;
+  in_mediation: number;
+  in_investigation: number;
+  resolved: number;
+  high_retaliation_risk: number;
+  avg_resolution_days: number;
+  by_type: Record<string, number>;
+  by_severity: Record<string, number>;
+  by_department: Record<string, number>;
+}
+
+export interface CreateConflictPayload {
+  title: string;
+  conflict_type?: string;
+  severity?: string;
+  department_id?: string;
+  incident_date?: string;
+  is_confidential?: boolean;
+  complainant_employee_id?: string;
+  complainant_name?: string;
+  respondent_employee_id?: string;
+  respondent_name?: string;
+  summary: string;
+  retaliation_risk?: boolean;
+  urgent_protection_measures?: string;
+}
+
+export interface TriageConflictPayload {
+  severity: string;
+  resolution_route: string;
+  assigned_mediator_id?: string;
+  assigned_mediator_name?: string;
+  retaliation_risk?: boolean;
+  urgent_protection_measures?: string;
+  status?: string;
+}
+
+export interface UpdateConflictStatusPayload {
+  status: string;
+  closure_reason?: string;
+}
+
+export interface AddParticipantPayload {
+  employee_id?: string;
+  name: string;
+  role: string;
+  statement?: string;
+  has_conflict_of_interest?: boolean;
+  conflict_of_interest_details?: string;
+}
+
+export interface CreateMeetingPayload {
+  meeting_type?: string;
+  scheduled_at: string;
+  location?: string;
+  conducted_by: string;
+  attendees?: string;
+  minutes?: string;
+  agreed_points?: string;
+  status?: string;
+}
+
+export interface CreateActionPayload {
+  title: string;
+  description: string;
+  action_type?: string;
+  assigned_to: string;
+  due_date: string;
+}
+
+export interface UpdateActionPayload {
+  status: string;
+  completion_notes?: string;
+}
+
+export interface CreateFollowUpPayload {
+  review_date?: string;
+  reviewed_by: string;
+  feedback_complainant?: string;
+  feedback_respondent?: string;
+  retaliation_detected?: boolean;
+  is_stable?: boolean;
+  notes: string;
+}
+

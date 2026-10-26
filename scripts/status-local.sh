@@ -61,3 +61,11 @@ if curl -s -f http://127.0.0.1:8080/health >/dev/null 2>&1; then
 else
     echo "  Status:      OFFLINE"
 fi
+echo ""
+
+echo "--- Frontend (HTTP :3000) ---"
+if curl -s -f http://127.0.0.1:3000/ >/dev/null 2>&1; then
+    echo "  Status:      ONLINE (http://localhost:3000)"
+else
+    echo "  Status:      OFFLINE"
+fi

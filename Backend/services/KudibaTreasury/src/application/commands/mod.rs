@@ -1,15 +1,21 @@
 pub mod bank_account_commands;
 pub mod invoice_receivable_commands;
 pub mod movement_commands;
+pub mod payable_commands;
 pub mod pos_session_commands;
 pub mod receipt_commands;
 pub mod register_commands;
 pub mod session_commands;
+pub mod statement_commands;
+pub mod transfer_commands;
 
 pub use bank_account_commands::CreateBankAccountHandler;
 pub use invoice_receivable_commands::RegisterInvoiceReceivableHandler;
 pub use movement_commands::RecordCashMovementHandler;
+pub use payable_commands::PayableCommands;
 pub use pos_session_commands::{ClosePosSessionHandler, OpenPosSessionHandler};
 pub use receipt_commands::IssueTreasuryReceiptHandler;
 pub use register_commands::CreateCashRegisterHandler;
 pub use session_commands::{CloseCashSessionHandler, OpenCashSessionHandler};
+pub use statement_commands::StatementCommands;
+pub use transfer_commands::TransferCommands;

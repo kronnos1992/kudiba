@@ -9,6 +9,9 @@ export default defineConfig({
       '@': path.resolve(import.meta.dirname, './src'),
     },
   },
+  optimizeDeps: {
+    include: ['recharts', '@reduxjs/toolkit', 'react-redux'],
+  },
   server: {
     port: 3000,
     proxy: {
