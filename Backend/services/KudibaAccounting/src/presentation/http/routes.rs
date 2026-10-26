@@ -9,6 +9,10 @@ use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::application::commands::cost_center_commands::{
+    AllocateExpenseRequest, CreateAllocationRuleRequest, CreateCostCenterRequest,
+    ReclassifyCostAllocationRequest, UpdateCostCenterRequest,
+};
 use crate::application::dto::{
     AccountResponse, CreateAccountRequest, CreateFiscalYearRequest, CreateJournalRequest,
     CurrencyRevaluationRequest, JournalEntryResponse, JournalLineResponse, PostManualEntryRequest,
@@ -683,6 +687,134 @@ pub async fn revalue_currency_handler(
     Ok((StatusCode::CREATED, Json(resp)))
 }
 
+pub async fn get_cost_centers_dashboard_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let dash = state
+        .cost_centers
+        .get_dashboard(tenant_id)
+        .await
+        .map_err(map_domain_error)?;
+    Ok(Json(dash))
+}
+
+pub async fn list_cost_centers_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let list = state
+        .cost_centers
+        .list_cost_centers(tenant_id)
+        .await
+        .map_err(map_domain_error)?;
+    Ok(Json(list))
+}
+
+pub async fn create_cost_center_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateCostCenterRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let created = state
+        .cost_centers
+        .create_cost_center(tenant_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+    Ok((StatusCode::CREATED, Json(created)))
+}
+
+pub async fn update_cost_center_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateCostCenterRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let updated = state
+        .cost_centers
+        .update_cost_center(tenant_id, id, payload)
+        .await
+        .map_err(map_domain_error)?;
+    Ok(Json(updated))
+}
+
+pub async fn seed_cost_centers_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    state
+        .cost_centers
+        .seed_default_structure(tenant_id)
+        .await
+        .map_err(map_domain_error)?;
+    let dash = state
+        .cost_centers
+        .get_dashboard(tenant_id)
+        .await
+        .map_err(map_domain_error)?;
+    Ok((StatusCode::CREATED, Json(dash)))
+}
+
+pub async fn list_allocation_rules_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let rules = state
+        .cost_centers
+        .list_allocation_rules(tenant_id)
+        .await
+        .map_err(map_domain_error)?;
+    Ok(Json(rules))
+}
+
+pub async fn create_allocation_rule_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateAllocationRuleRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let created = state
+        .cost_centers
+        .create_allocation_rule(tenant_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+    Ok((StatusCode::CREATED, Json(created)))
+}
+
+pub async fn allocate_expense_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<AllocateExpenseRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let allocations = state
+        .cost_centers
+        .allocate_expense(tenant_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+    Ok((StatusCode::CREATED, Json(allocations)))
+}
+
+pub async fn reclassify_allocation_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<ReclassifyCostAllocationRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    let res = state
+        .cost_centers
+        .reclassify_allocation(tenant_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+    Ok((StatusCode::CREATED, Json(res)))
+}
+
 async fn tenant_scope_middleware(
     req: axum::extract::Request,
     next: axum::middleware::Next,
@@ -741,6 +873,34 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/v1/accounting/currency-revaluation",
             post(revalue_currency_handler),
+        )
+        .route(
+            "/api/v1/accounting/cost-centers/dashboard",
+            get(get_cost_centers_dashboard_handler),
+        )
+        .route(
+            "/api/v1/accounting/cost-centers",
+            get(list_cost_centers_handler).post(create_cost_center_handler),
+        )
+        .route(
+            "/api/v1/accounting/cost-centers/{id}",
+            axum::routing::put(update_cost_center_handler),
+        )
+        .route(
+            "/api/v1/accounting/cost-centers/seed",
+            post(seed_cost_centers_handler),
+        )
+        .route(
+            "/api/v1/accounting/cost-centers/allocation-rules",
+            get(list_allocation_rules_handler).post(create_allocation_rule_handler),
+        )
+        .route(
+            "/api/v1/accounting/cost-centers/allocate-expense",
+            post(allocate_expense_handler),
+        )
+        .route(
+            "/api/v1/accounting/cost-centers/reclassify",
+            post(reclassify_allocation_handler),
         )
         .layer(axum::middleware::from_fn(tenant_scope_middleware))
         .with_state(state)

@@ -29,6 +29,7 @@ import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { SortableHeader } from '../../components/common/SortableHeader';
 import { useTableSort } from '../../hooks/useTableSort';
+import { useAuthStore } from '../../stores/authStore';
 import {
   accountingApi,
   JournalEntryResponse,
@@ -45,12 +46,20 @@ import { FinancialNotesStatement, FinancialNotesData } from './FinancialNotesSta
 import { VatSettlementTab } from './VatSettlementTab';
 import { TrialBalanceTab } from './TrialBalanceTab';
 import { GeneralLedgerTab } from './GeneralLedgerTab';
+import { CostCentersTab } from './CostCentersTab';
+import {
+  exportFinancialStatementCsv,
+  exportFinancialStatementExcel,
+  exportFinancialStatementPdf,
+  StatementExportTarget,
+} from './financialStatementsExporter';
 
 type AccountingTab =
   | 'trial_balance'
   | 'entries'
   | 'ledger'
   | 'financial_statements'
+  | 'cost_centers'
   | 'vat_settlement'
   | 'chart'
   | 'journals_years'
@@ -70,6 +79,7 @@ const PGC_CLASSES: { id: string; name: string; prefix: string; desc: string }[] 
 ];
 
 export const AccountingView: React.FC = () => {
+  const { activeTenant } = useAuthStore();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<AccountingTab>('trial_balance');
 
@@ -140,6 +150,11 @@ export const AccountingView: React.FC = () => {
     queryFn: accountingApi.listFiscalYears,
   });
 
+  const { data: costCentersList = [] } = useQuery({
+    queryKey: ['accounting_cost_centers_list'],
+    queryFn: accountingApi.listCostCenters,
+  });
+
   // Mutations
   const seedPgcMutation = useMutation({
     mutationFn: accountingApi.seedStandardPgc,
@@ -189,6 +204,7 @@ export const AccountingView: React.FC = () => {
     description: string;
     lines: Array<{
       account_code: string;
+      cost_center_id?: string;
       description: string;
       debit_amount: string;
       credit_amount: string;
@@ -200,8 +216,8 @@ export const AccountingView: React.FC = () => {
     period: new Date().getMonth() + 1,
     description: '',
     lines: [
-      { account_code: '', description: '', debit_amount: '', credit_amount: '' },
-      { account_code: '', description: '', debit_amount: '', credit_amount: '' },
+      { account_code: '', cost_center_id: '', description: '', debit_amount: '', credit_amount: '' },
+      { account_code: '', cost_center_id: '', description: '', debit_amount: '', credit_amount: '' },
     ],
   });
 
@@ -210,6 +226,7 @@ export const AccountingView: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounting_entries'] });
       queryClient.invalidateQueries({ queryKey: ['accounting_trial_balance'] });
+      queryClient.invalidateQueries({ queryKey: ['accounting_cost_centers_dashboard'] });
       setIsPostEntryModalOpen(false);
       setManualEntryForm({
         fiscal_year: new Date().getFullYear(),
@@ -218,8 +235,8 @@ export const AccountingView: React.FC = () => {
         period: new Date().getMonth() + 1,
         description: '',
         lines: [
-          { account_code: '', description: '', debit_amount: '', credit_amount: '' },
-          { account_code: '', description: '', debit_amount: '', credit_amount: '' },
+          { account_code: '', cost_center_id: '', description: '', debit_amount: '', credit_amount: '' },
+          { account_code: '', cost_center_id: '', description: '', debit_amount: '', credit_amount: '' },
         ],
       });
     },
@@ -914,6 +931,7 @@ export const AccountingView: React.FC = () => {
       balanco: {
         imobCorporeas,
         imobIncorporeas,
+        investFinanceiros,
         amortAcumuladas,
         totalAtivoNaoCorrente,
         existencias,
@@ -928,6 +946,7 @@ export const AccountingView: React.FC = () => {
         resultadosTransitados,
         resultadoPeriodo,
         totalCapitalProprio,
+        emprestimos,
         fornecedores,
         estadoCredor,
         remuneracoesPagar,
@@ -941,6 +960,44 @@ export const AccountingView: React.FC = () => {
       notesData,
     };
   }, [trialBalance]);
+
+  const corporateMeta = useMemo(
+    () => ({
+      companyName: activeTenant?.company_name || 'Kudiba Comércio & Serviços, Lda.',
+      nif: activeTenant?.nif || '5417281902',
+      fiscalYear: activeYear?.year_code || new Date().getFullYear(),
+      currency: 'AOA',
+    }),
+    [activeTenant, activeYear]
+  );
+
+  const handleExportStatements = (
+    format: 'pdf' | 'excel' | 'csv',
+    target: StatementExportTarget
+  ) => {
+    if (format === 'pdf') {
+      exportFinancialStatementPdf(
+        target,
+        corporateMeta,
+        financialStatements.balanco,
+        financialStatements.dre
+      );
+    } else if (format === 'excel') {
+      exportFinancialStatementExcel(
+        target,
+        corporateMeta,
+        financialStatements.balanco,
+        financialStatements.dre
+      );
+    } else {
+      exportFinancialStatementCsv(
+        target,
+        corporateMeta,
+        financialStatements.balanco,
+        financialStatements.dre
+      );
+    }
+  };
 
   // Apuramento Periódico de IVA (Modelo 7 AGT)
   const vatSettlement = useMemo(() => {
@@ -1211,6 +1268,18 @@ export const AccountingView: React.FC = () => {
           >
             <TrendingUp className="w-4 h-4" />
             Demonstrações Financeiras (Balanço &amp; DRE)
+          </button>
+
+          <button
+            onClick={() => setActiveTab('cost_centers')}
+            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
+              activeTab === 'cost_centers'
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            Centros de Custos &amp; Orçamentos
           </button>
 
           <button
@@ -1638,14 +1707,91 @@ export const AccountingView: React.FC = () => {
               </button>
             </div>
 
-            <div className="text-xs text-slate-500">
-              Exercício Fiscal: <span className="font-bold text-slate-800 dark:text-slate-200">{activeYear?.year_code || 2026}</span> (Angola - Classes 1 a 8)
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="text-xs text-slate-500">
+                Exercício Fiscal:{' '}
+                <span className="font-bold text-slate-800 dark:text-slate-200">
+                  {activeYear?.year_code || 2026}
+                </span>{' '}
+                (PGC Angola - Decreto n.º 82/01)
+              </div>
+
+              {(financialSubTab === 'balance_sheet' || financialSubTab === 'income_statement') && (
+                <div className="flex flex-wrap items-center gap-1.5 border-l border-slate-200 dark:border-slate-700 pl-3">
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mr-1">
+                    Pacote Completo (Balanço + DR):
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleExportStatements('pdf', 'both')}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition"
+                    title="Exportar Relatório Corporativo Completo (Balanço + Demonstração de Resultados) em PDF A4"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    PDF Corporativo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportStatements('excel', 'both')}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition"
+                    title="Exportar Relatório Corporativo Completo (Balanço + Demonstração de Resultados) em Excel formatado (.xls)"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    Excel (.xls)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportStatements('csv', 'both')}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition"
+                    title="Exportar Relatório Corporativo Completo (Balanço + Demonstração de Resultados) em CSV"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    CSV
+                  </button>
+                </div>
+              )}
             </div>
           </GlassCard>
 
           {/* Subtab 4.1: Balanço Patrimonial */}
           {financialSubTab === 'balance_sheet' && (
             <div className="space-y-4">
+              <GlassCard className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/70 dark:bg-slate-900/50">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                    Balanço Patrimonial Corporativo — Modelo Oficial PGC (Decreto n.º 82/01)
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Posição financeira patrimonial (Activo, Capital Próprio e Passivo) com notas explicativas e estrutura percentual
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleExportStatements('pdf', 'balance_sheet')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-700 text-white text-xs font-bold transition"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    Exportar Balanço (PDF)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportStatements('excel', 'balance_sheet')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    Excel (.xls)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportStatements('csv', 'balance_sheet')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    CSV
+                  </button>
+                </div>
+              </GlassCard>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Ativo */}
                 <GlassCard className="p-5 space-y-4">
@@ -1874,13 +2020,41 @@ export const AccountingView: React.FC = () => {
           {/* Subtab 4.2: DRE (Demonstração de Resultados por Natureza) */}
           {financialSubTab === 'income_statement' && (
             <GlassCard className="p-6 w-full space-y-4">
-              <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
-                <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                  Demonstração de Resultados por Natureza (Classes 6, 7 e 8)
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Apuramento económico dos proveitos e custos operacionais, financeiros e determinação do Resultado Líquido (Decreto 82/01)
-                </p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                    Demonstração de Resultados por Natureza (Classes 6, 7 e 8)
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Apuramento económico dos proveitos e custos operacionais, financeiros e determinação do Resultado Líquido (Decreto 82/01)
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleExportStatements('pdf', 'income_statement')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-700 text-white text-xs font-bold transition"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    Exportar DR (PDF)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportStatements('excel', 'income_statement')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    Excel (.xls)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportStatements('csv', 'income_statement')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    CSV
+                  </button>
+                </div>
               </div>
 
               <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-mono">
@@ -2027,6 +2201,9 @@ export const AccountingView: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* TAB 4.5: CENTROS DE CUSTOS, CONTABILIDADE ANALÍTICA & ORÇAMENTOS */}
+      {activeTab === 'cost_centers' && <CostCentersTab />}
 
       {/* TAB 5: APURAMENTO DE IVA (MODELO 7 AGT) */}
       {activeTab === 'vat_settlement' && (
@@ -2469,7 +2646,7 @@ export const AccountingView: React.FC = () => {
                         }`}
                       >
                         {isGain ? '+' : ''}
-                        <KzAmount value={diff} /> ({isGain ? 'Ganho Cambial - 75.3' : 'Perda Cambial - 66.3'})
+                        <KzAmount value={diff} /> ({isGain ? 'Ganho Cambial - 66.2' : 'Perda Cambial - 76.2'})
                       </span>
                     </div>
                   </div>
@@ -2622,10 +2799,11 @@ export const AccountingView: React.FC = () => {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 dark:bg-slate-800/60 font-bold text-slate-600 dark:text-slate-300">
                     <tr>
-                      <th className="p-2.5 w-72">Conta Analítica</th>
+                      <th className="p-2.5 w-60">Conta Analítica</th>
+                      <th className="p-2.5 w-48">Centro de Custos</th>
                       <th className="p-2.5">Histórico da Linha</th>
-                      <th className="p-2.5 w-36 text-right">Débito (Kz)</th>
-                      <th className="p-2.5 w-36 text-right">Crédito (Kz)</th>
+                      <th className="p-2.5 w-32 text-right">Débito (Kz)</th>
+                      <th className="p-2.5 w-32 text-right">Crédito (Kz)</th>
                       <th className="p-2.5 w-10"></th>
                     </tr>
                   </thead>
@@ -2648,6 +2826,26 @@ export const AccountingView: React.FC = () => {
                                 {acc.account_code} - {acc.account_name}
                               </option>
                             ))}
+                          </select>
+                        </td>
+                        <td className="p-2">
+                          <select
+                            value={l.cost_center_id || ''}
+                            onChange={(e) => {
+                              const newLines = [...manualEntryForm.lines];
+                              newLines[idx].cost_center_id = e.target.value;
+                              setManualEntryForm({ ...manualEntryForm, lines: newLines });
+                            }}
+                            className="w-full px-2 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
+                          >
+                            <option value="">Sem Centro (Geral)</option>
+                            {costCentersList
+                              .filter((cc) => cc.is_active)
+                              .map((cc) => (
+                                <option key={cc.id} value={cc.id}>
+                                  {cc.code} - {cc.name}
+                                </option>
+                              ))}
                           </select>
                         </td>
                         <td className="p-2">
@@ -2712,7 +2910,7 @@ export const AccountingView: React.FC = () => {
                   </tbody>
                   <tfoot>
                     <tr className="bg-slate-100 dark:bg-slate-900 font-mono font-bold text-xs">
-                      <td colSpan={2} className="p-2.5 text-right font-sans">
+                      <td colSpan={3} className="p-2.5 text-right font-sans">
                         Totais:
                       </td>
                       <td className="p-2.5 text-right text-blue-600">
@@ -2781,6 +2979,7 @@ export const AccountingView: React.FC = () => {
                       .filter((l) => l.account_code)
                       .map((l) => ({
                         account_code: l.account_code,
+                        cost_center_id: l.cost_center_id || undefined,
                         description: l.description || manualEntryForm.description,
                         debit_amount: l.debit_amount ? parseFloat(l.debit_amount) : 0,
                         credit_amount: l.credit_amount ? parseFloat(l.credit_amount) : 0,
@@ -3451,7 +3650,7 @@ export const AccountingView: React.FC = () => {
                   </tbody>
                   <tfoot>
                     <tr className="bg-slate-100 dark:bg-slate-900 font-mono font-bold text-xs">
-                      <td colSpan={2} className="p-2.5 text-right font-sans">
+                      <td colSpan={3} className="p-2.5 text-right font-sans">
                         Totais:
                       </td>
                       <td className="p-2.5 text-right text-blue-600">

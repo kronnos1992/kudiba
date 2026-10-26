@@ -59,28 +59,23 @@ flowchart TD
 O **Plano Geral de Contabilidade (PGC)** angolano organiza as contas em 8 classes fundamentais. O `KudibaAccounting` implementará a árvore do PGC nativamente:
 
 ### 2.1 Estrutura das Classes do PGC
-- **Classe 1: Meios Financeiros Líquidos**
-  - `11`: Caixa (Subcontas: `11.1` Caixa Geral, `11.2` Caixas de Balcão / Lojas).
-  - `12`: Bancos - Depósitos à Ordem (Subcontas por banco: BFA, BAI, BMA, etc. em AOA/USD/EUR).
-  - `13`: Bancos - Depósitos a Prazo.
-  - `14`: Outros Meios Financeiros Líquidos.
+- **Classe 1: Meios Fixos e Investimentos**
+  - `11`: Imobilizações Corpóreas (Terrenos, Edifícios, Equipamento de Transporte, Equipamento Administrativo/Informático).
+  - `12`: Imobilizações Incorpóreas (Software, Marcas, Licenças, Trespasses).
+  - `18`: Amortizações Acumuladas.
 - **Classe 2: Existências**
   - `21`: Compras de Mercadorias e Matérias.
-  - `22`: Mercadorias em Armazém.
-  - `23`: Matérias-Primas e Subsidiárias.
-  - `26`: Produtos Acabados e Intermédios.
+  - `22`: Matérias-Primas, Subsidiárias e de Consumo.
+  - `24`: Produtos Acabados e Intermédios.
+  - `26`: Mercadorias em Armazém.
   - `28`: Regularização de Existências (Inventários físicos / Quebras e Sobras).
 - **Classe 3: Terceiros**
   - `31`: Clientes (`31.1` Clientes Nacionais - Conta Corrente, `31.2` Clientes Títulos a Receber).
   - `32`: Fornecedores (`32.1` Fornecedores Nacionais - Conta Corrente).
   - `34`: Estado e Outros Entes Públicos:
-    - `34.1`: Imposto Industrial (Estimativa de Imposto do Exercício / Pagamento Provisório).
-    - `34.2`: Retenções na Fonte de Imposto Industrial (6,5% s/ Serviços):
-      - `34.2.1`: Retenção Suportada (Ativo — retida pelos clientes sobre as nossas vendas).
-      - `34.2.2`: Retenção Efetuada a Terceiros (Passivo — retida aos fornecedores a entregar ao Estado).
-    - `34.3`: Segurança Social / INSS:
-      - `34.3.1`: INSS Retido ao Pessoal (3% encargo do trabalhador).
-      - `34.3.2`: INSS Encargo Patronal (8% encargo da entidade patronal).
+    - `34.1`: Imposto sobre os Lucros / Imposto Industrial (Estimativa de Imposto do Exercício / Pagamento Provisório).
+    - `34.2`: Imposto de Produção e Consumo.
+    - `34.3`: Imposto sobre o Rendimento do Trabalho (IRT).
     - `34.5`: IVA (Lei n.º 42/20 e Diretrizes OCPCA):
       - `34.5.1`: IVA Suportado (`34.5.1.1` Operações Correntes, `34.5.1.2` Ativos Fixos).
       - `34.5.2`: IVA Dedutível (com apuramento de afetação real ou pro-rata).
@@ -90,40 +85,51 @@ O **Plano Geral de Contabilidade (PGC)** angolano organiza as contas em 8 classe
       - `34.5.6`: IVA — Apuramento (Fecho mensal de IVA).
       - `34.5.7`: IVA a Pagar.
       - `34.5.8`: IVA a Recuperar / Compensar.
-    - `34.6`: Imposto de Selo (0,7% Operações Financeiras / 1% Recibo de Quitação).
+    - `34.8`: Subsídios / Retenções na Fonte de Imposto Industrial (6,5% s/ Serviços):
+      - `34.8.1`: Retenção de Imposto Industrial Suportada (Ativo — retida pelos clientes sobre as nossas vendas).
+      - `34.8.2`: Retenção de Imposto Industrial Efetuada a Terceiros (Passivo — retida aos fornecedores a entregar ao Estado).
+    - `34.9`: Outros Impostos e Segurança Social:
+      - `34.9.1`: Segurança Social / INSS (`34.9.1.1` INSS Retido ao Pessoal 3%, `34.9.1.2` INSS Encargo Patronal 8%).
+      - `34.9.2`: Imposto de Selo (0,7% Operações Financeiras / 1% Recibo de Quitação).
   - `36`: Pessoal (Remunerações a Pagar, Adiantamentos).
-  - `37`: Outros Devedores e Outros Credores.
-- **Classe 4: Imobilizações (Ativos Fixos)**
-  - `41`: Imobilizações Corpóreas (Edifícios, Equipamento de Transporte, Equipamento Informático).
-  - `42`: Imobilizações Incorpóreas (Software, Marcas, Licenças).
-  - `43`: Amortizações Acumuladas.
-- **Classe 5: Capital Próprio**
-  - `51`: Capital Social.
-  - `55`: Reservas Legais e Livres.
-  - `56`: Resultados Transitados.
-- **Classe 6: Custos por Natureza**
-  - `61`: Custo das Mercadorias Vendidas e Matérias Consumidas (**CMVMC**).
-  - `62`: Fornecimentos e Serviços Externos (**FSE**: Eletricidade, Água, Telecomunicações, Rendas).
-  - `63`: Custos com o Pessoal (Salários, Encargos Sociais INSS 8%).
-  - `64`: Amortizações do Exercício.
-  - `65`: Tributos e Impostos Não Retidos.
-  - `66`: Custos Financeiros:
-    - `66.1`: Juros Suportados.
-    - `66.2`: Descontos de Pronto Pagamento Concedidos.
-    - `66.3`: Diferenças de Câmbio Desfavoráveis (Perdas Cambiais Realizadas e Não Realizadas).
-    - `66.4`: Comissões e Despesas Bancárias.
-- **Classe 7: Proveitos por Natureza**
-  - `71`: Vendas (`71.1` Vendas de Mercadorias, `71.2` Vendas de Produtos Acabados).
-  - `72`: Prestações de Serviços (`72.1` Serviços Prestados no Mercado Nacional).
-  - `75`: Proveitos Financeiros:
-    - `75.1`: Juros Obtidos.
-    - `75.2`: Descontos de Pronto Pagamento Obtidos.
-    - `75.3`: Diferenças de Câmbio Favoráveis (Ganhos Cambiais Realizados e Não Realizados).
+  - `37`: Outros Valores a Receber e a Pagar.
+- **Classe 4: Meios Monetários**
+  - `41`: Títulos Negociáveis.
+  - `42`: Depósitos a Prazo.
+  - `43`: Depósitos à Ordem (`43.1` Moeda Nacional AOA, `43.2` Moeda Estrangeira USD/EUR).
+  - `45`: Caixa (`45.1` Caixa Geral / Fundo Fixo, `45.2` Caixas de Balcão / Valores para Depositar).
+- **Classe 5: Capital e Reservas**
+  - `51`: Capital (`51.1` Capital Social Subscrito e Realizado).
+  - `55`: Reservas Legais.
+  - `58`: Reservas Livres.
+  - `59`: Resultados Transitados.
+- **Classe 6: Proveitos e Ganhos por Natureza**
+  - `61`: Vendas (`61.1` Vendas de Produtos Acabados e Intermédios, `61.3` Vendas de Mercadorias).
+  - `62`: Prestações de Serviço (`62.1` Serviços Prestados no Mercado Nacional, `62.2` Mercado Estrangeiro).
+  - `63`: Outros Proveitos Operacionais.
+  - `66`: Proveitos e Ganhos Financeiros Gerais:
+    - `66.1`: Juros Obtidos.
+    - `66.2`: Diferenças de Câmbio Favoráveis (Ganhos Cambiais Realizados e Não Realizados).
+    - `66.3`: Descontos de Pronto Pagamento Obtidos.
+- **Classe 7: Custos e Perdas por Natureza**
+  - `71`: Custo das Mercadorias Vendidas e Matérias Consumidas (**CMVMC**).
+  - `72`: Custos com o Pessoal (`72.2` Remunerações do Pessoal, `72.5` Encargos sobre Remunerações - INSS Patronal 8%).
+  - `73`: Amortizações do Exercício.
+  - `75`: Outros Custos e Perdas Operacionais:
+    - `75.2`: Fornecimentos e Serviços de Terceiros (**FSE**: Água, Eletricidade, Comunicações, Rendas, Conservação).
+    - `75.3`: Impostos e Tributos (`75.3.1.1` Imposto de Selo Suportado).
+  - `76`: Custos e Perdas Financeiros Gerais:
+    - `76.1`: Juros Suportados.
+    - `76.2`: Diferenças de Câmbio Desfavoráveis (Perdas Cambiais Realizadas e Não Realizadas).
+    - `76.3`: Descontos de Pronto Pagamento Concedidos.
+    - `76.4`: Comissões e Despesas Bancárias.
 - **Classe 8: Resultados**
-  - `81`: Resultados Operacionais.
-  - `82`: Resultados Financeiros.
-  - `83`: Resultados Extraordinários.
-  - `87`: Imposto sobre os Rendimentos (Imposto Industrial do Exercício).
+  - `82`: Resultados Operacionais.
+  - `83`: Resultados Financeiros.
+  - `84`: Resultados em Filiais e Associadas.
+  - `85`: Resultados Não Operacionais.
+  - `86`: Resultados Extraordinários.
+  - `87`: Imposto sobre os Lucros (Imposto Industrial do Exercício).
   - `88`: Resultado Líquido do Exercício.
 
 ---
@@ -175,60 +181,60 @@ classDiagram
 ### 3.1 Venda a Prazo (Fatura FT de Mercadorias com IVA 14%)
 * **Evento:** `fiscal.document.issued` (`doc_type = 'FT'`)
 * **Lançamento:**
-  - **DÉBITO:** `31.1.1` Clientes Nacionais (Valor Bruto Total da Fatura)
-  - **CRÉDITO:** `71.1` Vendas de Mercadorias (Valor Líquido sem Imposto)
-  - **CRÉDITO:** `34.5.3.1` Estado - IVA Liquidado Geral 14% (Valor do IVA a 14%)
+  - **DÉBITO:** `31.1.2.1` Clientes Correntes — Nacionais (Valor Bruto Total da Fatura)
+  - **CRÉDITO:** `61.3.1` Vendas de Mercadorias — Mercado Nacional (Valor Líquido sem Imposto)
+  - **CRÉDITO:** `34.5.3.1` Estado — IVA Liquidado Geral 14% (Valor do IVA a 14%)
 
 ### 3.2 Venda de Serviços com Retenção na Fonte de 6,5% (Art. 12.º Decreto 71/25)
 * **Evento:** `fiscal.document.issued` (`doc_type = 'FT'`, serviços com retenção)
 * **Lançamento:**
-  - **DÉBITO:** `31.1.1` Clientes Nacionais (Valor a Receber Líquido da Retenção)
-  - **DÉBITO:** `34.2.1` Estado - Retenção de Imposto Industrial Suportada (6,5% Ativo)
-  - **CRÉDITO:** `72.1` Prestação de Serviços (Valor Bruto dos Honorários)
-  - **CRÉDITO:** `34.5.3.1` Estado - IVA Liquidado Geral 14%
+  - **DÉBITO:** `31.1.2.1` Clientes Correntes — Nacionais (Valor a Receber Líquido da Retenção)
+  - **DÉBITO:** `34.8.1` Estado — Retenção de Imposto Industrial Suportada (6,5% Ativo)
+  - **CRÉDITO:** `62.1` Serviços Prestados no Mercado Nacional (Valor Bruto dos Honorários)
+  - **CRÉDITO:** `34.5.3.1` Estado — IVA Liquidado Geral 14%
 
 ### 3.3 Venda a Pronto Pagamento no Balcão (Fatura-Recibo FR em Numerário)
 * **Evento:** `fiscal.document.issued` (`doc_type = 'FR'`)
 * **Lançamento:**
-  - **DÉBITO:** `11.2` Caixa de Balcão (Total recebido)
-  - **CRÉDITO:** `71.1` Vendas de Mercadorias (Valor Líquido)
-  - **CRÉDITO:** `34.5.3.1` Estado - IVA Liquidado Geral 14%
+  - **DÉBITO:** `45.2` Caixas de Balcão / Valores para Depositar (Total recebido)
+  - **CRÉDITO:** `61.3.1` Vendas de Mercadorias — Mercado Nacional (Valor Líquido)
+  - **CRÉDITO:** `34.5.3.1` Estado — IVA Liquidado Geral 14%
 
 ### 3.4 Despacho de Stock / Custo da Mercadoria Vendida (CMVMC)
 * **Evento:** `inventory.stock_movement.dispatched` (Calculado pelo CMP do KudibaInventory)
 * **Lançamento:**
-  - **DÉBITO:** `61.1` Custo das Mercadorias Vendidas (Valor CMP $\times$ Qtd)
-  - **CRÉDITO:** `22.1` Mercadorias em Armazém (Valor CMP $\times$ Qtd)
+  - **DÉBITO:** `71.2` CMVMC — Mercadorias (Valor CMP $\times$ Qtd)
+  - **CRÉDITO:** `26.1` Mercadorias em Armazém (Valor CMP $\times$ Qtd)
 
 ### 3.5 Liquidação / Recibo de Quitação de Fatura a Prazo (RC do KudibaTreasury)
 * **Evento:** `treasury.receipt.issued`
   - Se liquidado por **Transferência Bancária**:
-    - **DÉBITO:** `12.1.x` Banco Depósitos à Ordem (Valor creditado na conta bancária)
-    - **CRÉDITO:** `31.1.1` Clientes Nacionais (Quitação do saldo pendente)
+    - **DÉBITO:** `43.1` Bancos Depósitos à Ordem — Moeda Nacional (Valor creditado na conta bancária)
+    - **CRÉDITO:** `31.1.2.1` Clientes Correntes — Nacionais (Quitação do saldo pendente)
   - Se liquidado em **Numerário**:
-    - **DÉBITO:** `11.1` Caixa Geral / Balcão
-    - **CRÉDITO:** `31.1.1` Clientes Nacionais
+    - **DÉBITO:** `45.1` Caixa Geral / `45.2` Caixa de Balcão
+    - **CRÉDITO:** `31.1.2.1` Clientes Correntes — Nacionais
 
 ### 3.6 Movimento de Sangria de Caixa para Cofre/Banco
 * **Evento:** `treasury.cash_movement.bleed`
-  - **DÉBITO:** `12.1` Bancos / `11.1` Cofre Central
-  - **CRÉDITO:** `11.2` Caixa de Balcão (Saída física de numerário)
+  - **DÉBITO:** `43.1` Bancos D.O. / `45.1` Caixa Geral
+  - **CRÉDITO:** `45.2` Caixas de Balcão (Saída física de numerário)
 
 ### 3.7 Compra de Serviços Externos com Retenção na Fonte de 6,5% a Terceiros
 * **Evento:** Registo de Fatura de Fornecedor de Serviços (`FSE`)
 * **Lançamento:**
-  - **DÉBITO:** `62.2` Serviços Especializados (Valor Bruto dos Serviços)
+  - **DÉBITO:** `75.2` Fornecimentos e Serviços de Terceiros (Valor Bruto dos Serviços)
   - **DÉBITO:** `34.5.2` IVA Dedutível — Operações Correntes (IVA suportado dedutível)
-  - **CRÉDITO:** `32.1.1` Fornecedores Nacionais (Valor Líquido a Pagar ao Fornecedor)
-  - **CRÉDITO:** `34.2.2` Estado — Retenção de Imposto Industrial Efetuada a Terceiros (6,5% Passivo a entregar à AGT)
+  - **CRÉDITO:** `32.1.2.1` Fornecedores Correntes — Nacionais (Valor Líquido a Pagar ao Fornecedor)
+  - **CRÉDITO:** `34.8.2` Estado — Retenção de Imposto Industrial Efetuada a Terceiros (6,5% Passivo a entregar à AGT)
 
 ### 3.8 Liquidação Multimoeda com Diferença de Câmbio (AOA vs USD/EUR)
 * **Cenário:** Fatura emitida em USD (ex: \$1.000 ao câmbio de 900 AOA/USD = 900.000 AOA) liquidada posteriormente quando o câmbio oficial está a 920 AOA/USD (920.000 AOA).
 * **Lançamento (Ganho Cambial na cobrança de Cliente):**
-  - **DÉBITO:** `12.1.USD` Banco Depósitos à Ordem (920.000 AOA equivalente a \$1.000)
-  - **CRÉDITO:** `31.1.1` Clientes Nacionais (900.000 AOA — baixa do título original)
-  - **CRÉDITO:** `75.3` Diferenças de Câmbio Favoráveis Realizadas (20.000 AOA)
-* *Caso o câmbio descesse para 880 AOA/USD, debitar-se-ia `66.3` Diferenças de Câmbio Desfavoráveis (20.000 AOA).*
+  - **DÉBITO:** `43.2` Bancos Depósitos à Ordem — Moeda Estrangeira (920.000 AOA equivalente a \$1.000)
+  - **CRÉDITO:** `31.1.2.2` Clientes Correntes — Estrangeiros (900.000 AOA — baixa do título original)
+  - **CRÉDITO:** `66.2` Diferenças de Câmbio Favoráveis (20.000 AOA)
+* *Caso o câmbio descesse para 880 AOA/USD, debitar-se-ia `76.2` Diferenças de Câmbio Desfavoráveis (20.000 AOA).*
 
 ### 3.9 Imutabilidade e Lançamento de Estorno Contabilístico (Reversal)
 * **Cenário:** Cancelamento ou anulação de uma Fatura/Recibo previamente integrada no razão (`POSTED`). Para cumprir o Decreto Executivo 385/20 e o RJFDE, **o registo original permanece intacto**; gera-se um lançamento espelho invertido:
@@ -491,17 +497,17 @@ O Decreto Executivo 385/20 exige no ficheiro de Contabilidade:
 
 O fecho de contas no `KudibaAccounting` (acionado via `/api/v1/accounting/fiscal-years/close`) executa uma rotina transacional atómica no **Período 14 (Diário de Fecho `CLOSING`)** estruturada em 4 fases:
 
-1. **Fase 1 — Transferência das Contas de Custos e Proveitos (Zerar Classes 6 e 7):**
-   - **Resultados Operacionais (Conta `81`):**
-     - Credita-se cada subconta de custos operacionais com saldo devedor (`61` a `65`) e debita-se a conta `81`.
-     - Debita-se cada subconta de proveitos operacionais com saldo credor (`71` a `73`) e credita-se a conta `81`.
-   - **Resultados Financeiros (Conta `82`):**
-     - Credita-se custos financeiros (`66.1` a `66.4`) contra débito na conta `82`.
-     - Debita-se proveitos financeiros (`75.1` a `75.3`) contra crédito na conta `82`.
+1. **Fase 1 — Transferência das Contas de Proveitos e Custos (Zerar Classes 6 e 7):**
+   - **Resultados Operacionais (Conta `82`):**
+     - Debita-se cada subconta de proveitos operacionais com saldo credor (`61` a `65`) e credita-se a conta `82`.
+     - Credita-se cada subconta de custos operacionais com saldo devedor (`71` a `75`) e debita-se a conta `82`.
+   - **Resultados Financeiros (Conta `83`):**
+     - Debita-se proveitos financeiros (`66.1` a `66.3`) contra crédito na conta `83`.
+     - Credita-se custos financeiros (`76.1` a `76.4`) contra débito na conta `83`.
    - As contas das Classes 6 e 7 ficam com saldo nulo ($0,00$).
 
 2. **Fase 2 — Apuramento do Resultado Antes de Impostos (RAI):**
-   - Transfere-se o saldo apurado em `81` (Resultados Operacionais), `82` (Resultados Financeiros) e `83` (Resultados Extraordinários) para a conta agregadora **`88` (Resultado Líquido do Exercício)**.
+   - Transfere-se o saldo apurado em `82` (Resultados Operacionais), `83` (Resultados Financeiros), `85` (Resultados Não Operacionais) e `86` (Resultados Extraordinários) para a conta agregadora **`88` (Resultado Líquido do Exercício)**.
 
 3. **Fase 3 — Estimativa de Imposto Industrial e Apuramento Líquido Final:**
    - Se o resultado antes de impostos for positivo (lucro tributável), calcula-se a provisão para Imposto Industrial (taxa nominal do regime geral de 25%):

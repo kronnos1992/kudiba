@@ -2,10 +2,11 @@ use sqlx::PgPool;
 use std::sync::Arc;
 
 use crate::application::commands::{
-    CloseFiscalYearHandler, CreateAccountHandler, CreateJournalHandler, OpenFiscalYearHandler,
-    PostManualEntryHandler, ProcessInvoiceIssuedCommand, ProcessPayrollPeriodClosedCommand,
-    ProcessStockDispatchCommand, ProcessTreasuryReceiptCommand, RevalueCurrencyBalancesHandler,
-    ReverseEntryHandler, SeedStandardPgcHandler, UpdateEntryHandler,
+    CloseFiscalYearHandler, CostCenterService, CreateAccountHandler, CreateJournalHandler,
+    OpenFiscalYearHandler, PostManualEntryHandler, ProcessInvoiceIssuedCommand,
+    ProcessPayrollPeriodClosedCommand, ProcessStockDispatchCommand, ProcessTreasuryReceiptCommand,
+    RevalueCurrencyBalancesHandler, ReverseEntryHandler, SeedStandardPgcHandler,
+    UpdateEntryHandler,
 };
 use crate::application::queries::AccountingQueries;
 use crate::config::Config;
@@ -28,6 +29,7 @@ pub struct AppState {
     pub reverse_entry: Arc<ReverseEntryHandler>,
     pub update_entry: Arc<UpdateEntryHandler>,
     pub revalue_currency: Arc<RevalueCurrencyBalancesHandler>,
+    pub cost_centers: Arc<CostCenterService>,
     pub queries: Arc<AccountingQueries>,
     pub event_consumer: Arc<AccountingEventConsumer>,
 }
@@ -38,6 +40,7 @@ impl AppState {
         let year_repo = Arc::new(PostgresFiscalYearRepository::new(pool.clone()));
         let journal_repo = Arc::new(PostgresJournalRepository::new(pool.clone()));
         let entry_repo = Arc::new(PostgresJournalEntryRepository::new(pool.clone()));
+        let cost_centers = Arc::new(CostCenterService::new(pool.clone()));
 
         let create_account = Arc::new(CreateAccountHandler::new(account_repo.clone()));
         let seed_standard_pgc = Arc::new(SeedStandardPgcHandler::with_journals(
@@ -129,6 +132,7 @@ impl AppState {
             reverse_entry,
             update_entry,
             revalue_currency,
+            cost_centers,
             queries,
             event_consumer,
         }
