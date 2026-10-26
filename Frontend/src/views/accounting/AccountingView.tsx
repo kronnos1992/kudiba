@@ -88,6 +88,8 @@ export const AccountingView: React.FC = () => {
   const [trialBalanceFilterClass, setTrialBalanceFilterClass] = useState<string>('all');
   const [trialBalanceSearch, setTrialBalanceSearch] = useState('');
   const [onlyMovedAccounts, setOnlyMovedAccounts] = useState(false);
+  const [showVerticalAnalysis, setShowVerticalAnalysis] = useState<boolean>(false);
+  const [verticalAnalysisBase, setVerticalAnalysisBase] = useState<'class' | 'global'>('class');
 
   // Livro Diário filters
   const [entriesJournalFilter, setEntriesJournalFilter] = useState<string>('all');
@@ -524,22 +526,53 @@ export const AccountingView: React.FC = () => {
   const handleExportTrialBalanceCsv = () => {
     if (!trialBalance?.rows) return;
     const is6Col = trialBalanceColumns === 6;
+
+    // Totais para Análise Vertical
+    const analyticalRows = trialBalance.rows.filter((r) => r.is_analytical);
+    const rowsToUse = analyticalRows.length > 0 ? analyticalRows : trialBalance.rows;
+    const classTotals: Record<string, number> = {};
+    let globalTotal = 0;
+    for (const r of rowsToUse) {
+      const prefix = r.account_code.charAt(0);
+      const deb = parseFloat(String(r.closing_debit || 0));
+      const cred = parseFloat(String(r.closing_credit || 0));
+      const bal = Math.max(deb, cred);
+      classTotals[prefix] = (classTotals[prefix] || 0) + bal;
+      globalTotal += bal;
+    }
+
+    const avColHeader = showVerticalAnalysis
+      ? `;AV % (${verticalAnalysisBase === 'class' ? 'Massa PGC' : 'Global'})`
+      : '';
+
     const header = is6Col
-      ? 'Código;Designação da Conta;Tipo;S. Inicial Débito (Kz);S. Inicial Crédito (Kz);Mov. Débito (Kz);Mov. Crédito (Kz);Saldo Final Devedor (Kz);Saldo Final Credor (Kz)'
-      : 'Código;Designação da Conta;Tipo;Mov. Débito (Kz);Mov. Crédito (Kz);Saldo Final Devedor (Kz);Saldo Final Credor (Kz)';
+      ? `Código;Designação da Conta;Tipo;S. Inicial Débito (Kz);S. Inicial Crédito (Kz);Mov. Débito (Kz);Mov. Crédito (Kz);Saldo Devedor (Kz);Saldo Credor (Kz)${avColHeader}`
+      : `Código;Designação da Conta;Tipo;Mov. Débito (Kz);Mov. Crédito (Kz);Saldo Devedor (Kz);Saldo Credor (Kz)${avColHeader}`;
 
     const lines = filteredTrialBalanceRows.map((r) => {
       const isAnalytical = r.is_analytical ? 'Analítica' : 'Sintética';
       const cleanName = `"${r.account_name.replace(/"/g, '""')}"`;
-      if (is6Col) {
-        return `${r.account_code};${cleanName};${isAnalytical};${r.opening_debit};${r.opening_credit};${r.period_debit};${r.period_credit};${r.closing_debit};${r.closing_credit}`;
+
+      let avCol = '';
+      if (showVerticalAnalysis) {
+        const prefix = r.account_code.charAt(0);
+        const deb = parseFloat(String(r.closing_debit || 0));
+        const cred = parseFloat(String(r.closing_credit || 0));
+        const bal = Math.max(deb, cred);
+        const base = verticalAnalysisBase === 'class' ? (classTotals[prefix] || 0) : globalTotal;
+        const pct = base > 0 ? (bal / base) * 100 : 0;
+        avCol = `;${pct.toFixed(2)}%`;
       }
-      return `${r.account_code};${cleanName};${isAnalytical};${r.period_debit};${r.period_credit};${r.closing_debit};${r.closing_credit}`;
+
+      if (is6Col) {
+        return `${r.account_code};${cleanName};${isAnalytical};${r.opening_debit};${r.opening_credit};${r.period_debit};${r.period_credit};${r.closing_debit};${r.closing_credit}${avCol}`;
+      }
+      return `${r.account_code};${cleanName};${isAnalytical};${r.period_debit};${r.period_credit};${r.closing_debit};${r.closing_credit}${avCol}`;
     });
 
     const totalLine = is6Col
-      ? `TOTAIS;Totais Gerais do Balancete;;${trialBalance.total_opening_debit};${trialBalance.total_opening_credit};${trialBalance.total_period_debit};${trialBalance.total_period_credit};${trialBalance.total_closing_debit};${trialBalance.total_closing_credit}`
-      : `TOTAIS;Totais Gerais do Balancete;;${trialBalance.total_period_debit};${trialBalance.total_period_credit};${trialBalance.total_closing_debit};${trialBalance.total_closing_credit}`;
+      ? `TOTAIS;Totais Gerais do Balancete;;${trialBalance.total_opening_debit};${trialBalance.total_opening_credit};${trialBalance.total_period_debit};${trialBalance.total_period_credit};${trialBalance.total_closing_debit};${trialBalance.total_closing_credit}${showVerticalAnalysis ? ';100.00%' : ''}`
+      : `TOTAIS;Totais Gerais do Balancete;;${trialBalance.total_period_debit};${trialBalance.total_period_credit};${trialBalance.total_closing_debit};${trialBalance.total_closing_credit}${showVerticalAnalysis ? ';100.00%' : ''}`;
 
     const csv = [header, ...lines, totalLine].join('\r\n');
     downloadCsv(`balancete_verificacao_${activeYear?.year_code || new Date().getFullYear()}.csv`, csv);
@@ -980,21 +1013,27 @@ export const AccountingView: React.FC = () => {
         target,
         corporateMeta,
         financialStatements.balanco,
-        financialStatements.dre
+        financialStatements.dre,
+        financialStatements.cashFlow,
+        financialStatements.notesData
       );
     } else if (format === 'excel') {
       exportFinancialStatementExcel(
         target,
         corporateMeta,
         financialStatements.balanco,
-        financialStatements.dre
+        financialStatements.dre,
+        financialStatements.cashFlow,
+        financialStatements.notesData
       );
     } else {
       exportFinancialStatementCsv(
         target,
         corporateMeta,
         financialStatements.balanco,
-        financialStatements.dre
+        financialStatements.dre,
+        financialStatements.cashFlow,
+        financialStatements.notesData
       );
     }
   };
@@ -1354,6 +1393,10 @@ export const AccountingView: React.FC = () => {
             setSelectedLedgerAccountCode(code);
             setActiveTab('ledger');
           }}
+          showVerticalAnalysis={showVerticalAnalysis}
+          onShowVerticalAnalysisChange={setShowVerticalAnalysis}
+          verticalAnalysisBase={verticalAnalysisBase}
+          onVerticalAnalysisBaseChange={setVerticalAnalysisBase}
         />
       )}
       {/* TAB 2: LIVRO DIÁRIO DE LANÇAMENTOS */}
@@ -1716,40 +1759,38 @@ export const AccountingView: React.FC = () => {
                 (PGC Angola - Decreto n.º 82/01)
               </div>
 
-              {(financialSubTab === 'balance_sheet' || financialSubTab === 'income_statement') && (
-                <div className="flex flex-wrap items-center gap-1.5 border-l border-slate-200 dark:border-slate-700 pl-3">
-                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mr-1">
-                    Pacote Completo (Balanço + DR):
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleExportStatements('pdf', 'both')}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition"
-                    title="Exportar Relatório Corporativo Completo (Balanço + Demonstração de Resultados) em PDF A4"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    PDF Corporativo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleExportStatements('excel', 'both')}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition"
-                    title="Exportar Relatório Corporativo Completo (Balanço + Demonstração de Resultados) em Excel formatado (.xls)"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5" />
-                    Excel (.xls)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleExportStatements('csv', 'both')}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition"
-                    title="Exportar Relatório Corporativo Completo (Balanço + Demonstração de Resultados) em CSV"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    CSV
-                  </button>
-                </div>
-              )}
+              <div className="flex flex-wrap items-center gap-1.5 border-l border-slate-200 dark:border-slate-700 pl-3">
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mr-1">
+                  Dossier Completo (4 Demonstrações PGC):
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleExportStatements('pdf', 'all')}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition"
+                  title="Exportar Dossier Completo (Balanço, DRE, DFC e Notas às Contas) em PDF A4"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  PDF Dossier (4 Docs)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportStatements('excel', 'all')}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition"
+                  title="Exportar Dossier Completo (Balanço, DRE, DFC e Notas às Contas) em Excel (.xls)"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  Excel (.xls)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportStatements('csv', 'all')}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition"
+                  title="Exportar Dossier Completo (Balanço, DRE, DFC e Notas às Contas) em CSV"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  CSV
+                </button>
+              </div>
             </div>
           </GlassCard>
 

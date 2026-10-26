@@ -59,21 +59,24 @@ impl CancelInvoiceWithCreditNoteUseCase {
         // 3. Validação: Não pode anular uma Nota de Crédito
         validate_not_credit_note(&original_invoice.document_type)?;
 
-        // 4. Validação: Não pode anular um documento já estornado
-        if let Some(existing_nc) = self
-            .invoice_repository
-            .find_credit_note_for_source(
-                session.as_mut(),
-                command.tenant_id,
-                &original_invoice.document_number,
-            )
-            .await
-            .map_err(persistence_error)?
-        {
-            return Err(DomainError::invalid(format!(
-                "O documento {} já foi anulado pela Nota de Crédito {}.",
-                original_invoice.document_number, existing_nc.document_number
-            )));
+        // 4. Validação: Apenas para estorno integral bloqueia se já existir estorno completo prévio
+        let is_custom_lines = command.lines.as_ref().map_or(false, |l| !l.is_empty());
+        if !is_custom_lines {
+            if let Some(existing_nc) = self
+                .invoice_repository
+                .find_credit_note_for_source(
+                    session.as_mut(),
+                    command.tenant_id,
+                    &original_invoice.document_number,
+                )
+                .await
+                .map_err(persistence_error)?
+            {
+                return Err(DomainError::invalid(format!(
+                    "O documento {} já foi anulado pela Nota de Crédito {}.",
+                    original_invoice.document_number, existing_nc.document_number
+                )));
+            }
         }
 
         // Fecha a sessão de leitura prévia antes de delegar a emissão atómica
@@ -93,25 +96,39 @@ impl CancelInvoiceWithCreditNoteUseCase {
             }
         });
 
-        // 6. Conversão das linhas originais para as linhas estornadas da NC
-        let nc_lines: Vec<InvoiceLineInput> = original_invoice
-            .lines
-            .iter()
-            .map(|l| InvoiceLineInput {
-                product_code: l.product_code.clone(),
-                description: format!("Anulação: {}", l.description),
-                quantity: l.quantity,
-                unit_price: l.unit_price,
-                discount_amount: if l.discount_amount.is_zero() {
-                    None
-                } else {
-                    Some(l.discount_amount)
-                },
-                tax_rate: l.tax_rate,
-                tax_exemption_code: l.tax_exemption_code.clone(),
-                is_service: None,
-            })
-            .collect();
+        // 6. Conversão das linhas originais ou uso das linhas personalizadas da NC (redução de quantidades/ajuste)
+        let nc_lines: Vec<InvoiceLineInput> = match command.lines {
+            Some(lines) if !lines.is_empty() => {
+                for line in &lines {
+                    if line.quantity <= rust_decimal::Decimal::ZERO
+                        && line.unit_price <= rust_decimal::Decimal::ZERO
+                    {
+                        return Err(DomainError::invalid(
+                            "As linhas da Nota de Crédito devem ter quantidade ou valor positivo.",
+                        ));
+                    }
+                }
+                lines
+            }
+            _ => original_invoice
+                .lines
+                .iter()
+                .map(|l| InvoiceLineInput {
+                    product_code: l.product_code.clone(),
+                    description: format!("Anulação: {}", l.description),
+                    quantity: l.quantity,
+                    unit_price: l.unit_price,
+                    discount_amount: if l.discount_amount.is_zero() {
+                        None
+                    } else {
+                        Some(l.discount_amount)
+                    },
+                    tax_rate: l.tax_rate,
+                    tax_exemption_code: l.tax_exemption_code.clone(),
+                    is_service: None,
+                })
+                .collect(),
+        };
 
         // 7. Preparação e emissão atómica da Nota de Crédito
         let issue_command = IssueInvoiceCommand {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileText,
@@ -17,6 +17,9 @@ import {
   Search,
   RefreshCw,
   Calendar,
+  RotateCcw,
+  PackageMinus,
+  Percent,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
@@ -49,6 +52,31 @@ export const InvoicingView: React.FC = () => {
   const [cancelModalInvoice, setCancelModalInvoice] = useState<Invoice | null>(null);
   const [cancelReason, setCancelReason] = useState<string>('');
   const [thermalTicketText, setThermalTicketText] = useState<string | null>(null);
+
+  interface NCAdjustmentLine {
+    productCode: string;
+    description: string;
+    originalQty: number;
+    originalUnitPrice: number;
+    taxRate: number;
+    taxExemptionCode?: string | null;
+    isService?: boolean;
+    selected: boolean;
+    returnQty: number;
+    differentialPrice: number;
+  }
+
+  const [ncMode, setNcMode] = useState<'full' | 'partial_qty' | 'price_adjustment'>('full');
+  const [ncLines, setNcLines] = useState<NCAdjustmentLine[]>([]);
+
+  const NC_REASON_PRESETS = [
+    { label: 'Anulação integral por mútuo acordo', text: 'Anulação integral do documento fiscal nos termos do Dec. Presidencial 71/25' },
+    { label: 'Devolução parcial de artigos avariados', text: 'Devolução parcial de artigos por avaria física ou inconformidade' },
+    { label: 'Retificação por erro de quantidade faturada', text: 'Retificação por erro de contagem na quantidade faturada de artigos' },
+    { label: 'Acerto de preço unitário / Desconto concedido', text: 'Acerto de preço unitário e desconto comercial concedido à posteriori' },
+    { label: 'Anulação para correção de NIF/dados do cliente', text: 'Anulação para correção de NIF e identificação da entidade adquirente' },
+    { label: 'Cancelamento de serviços não executados', text: 'Retificação por não execução parcial ou total da prestação de serviços' },
+  ];
 
   // Queries
   const {
@@ -227,7 +255,15 @@ export const InvoicingView: React.FC = () => {
   });
 
   const cancelMutation = useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason: string }) => {
+    mutationFn: ({
+      id,
+      reason,
+      lines,
+    }: {
+      id: string;
+      reason: string;
+      lines?: any[];
+    }) => {
       const activeNcSeries =
         seriesList.find((s) => s.documentType === 'NC' && s.isActive)?.seriesCode ||
         cancelModalInvoice?.documentNumber.split(' ')[1]?.split('/')[0] ||
@@ -236,6 +272,7 @@ export const InvoicingView: React.FC = () => {
         tenantId: activeTenant!.id,
         reason,
         seriesCode: activeNcSeries,
+        lines,
       });
     },
     onSuccess: () => {
@@ -249,10 +286,136 @@ export const InvoicingView: React.FC = () => {
       const msg =
         err?.response?.data?.detail ||
         err?.response?.data?.error ||
-        'Erro ao emitir Nota de Crédito para estornar o documento.';
+        err?.message ||
+        'Erro ao emitir Nota de Crédito para retificar o documento.';
       alert(msg);
     },
   });
+
+  useEffect(() => {
+    if (!cancelModalInvoice) {
+      setNcLines([]);
+      return;
+    }
+    setNcMode('full');
+    setCancelReason('Anulação integral do documento fiscal nos termos do Dec. Presidencial 71/25');
+
+    const setupLines = (linesData: any[]) => {
+      setNcLines(
+        linesData.map((l) => ({
+          productCode: l.productCode,
+          description: l.description,
+          originalQty: Number(l.quantity) || 1,
+          originalUnitPrice: Number(l.unitPrice) || 0,
+          taxRate: Number(l.taxRate) || 0,
+          taxExemptionCode: l.taxExemptionCode,
+          isService: Boolean(l.isService),
+          selected: true,
+          returnQty: Number(l.quantity) || 1,
+          differentialPrice: 0,
+        }))
+      );
+    };
+
+    if (cancelModalInvoice.lines && cancelModalInvoice.lines.length > 0) {
+      setupLines(cancelModalInvoice.lines);
+    } else {
+      invoicingApi
+        .getInvoice(cancelModalInvoice.id)
+        .then((full) => {
+          if (full?.lines && full.lines.length > 0) {
+            setupLines(full.lines);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [cancelModalInvoice]);
+
+  const calculatedNcTotals = React.useMemo(() => {
+    if (!cancelModalInvoice) return { net: 0, tax: 0, total: 0 };
+    if (ncMode === 'full') {
+      return {
+        net: cancelModalInvoice.netTotal,
+        tax: cancelModalInvoice.taxTotal,
+        total: cancelModalInvoice.grossTotal,
+      };
+    }
+    if (ncMode === 'partial_qty') {
+      const active = ncLines.filter((l) => l.selected && l.returnQty > 0);
+      const net = active.reduce((acc, l) => acc + l.returnQty * l.originalUnitPrice, 0);
+      const tax = active.reduce(
+        (acc, l) => acc + l.returnQty * l.originalUnitPrice * (l.taxRate / 100),
+        0
+      );
+      return { net, tax, total: net + tax };
+    }
+    // price_adjustment
+    const active = ncLines.filter((l) => l.selected && l.differentialPrice > 0);
+    const net = active.reduce((acc, l) => acc + l.originalQty * l.differentialPrice, 0);
+    const tax = active.reduce(
+      (acc, l) => acc + l.originalQty * l.differentialPrice * (l.taxRate / 100),
+      0
+    );
+    return { net, tax, total: net + tax };
+  }, [ncMode, ncLines, cancelModalInvoice]);
+
+  const isNcValid = React.useMemo(() => {
+    if (!cancelModalInvoice || !cancelReason.trim()) return false;
+    if (ncMode === 'full') return true;
+    if (ncMode === 'partial_qty') {
+      const active = ncLines.filter((l) => l.selected && l.returnQty > 0);
+      if (active.length === 0) return false;
+      const anyInvalid = active.some((l) => l.returnQty <= 0 || l.returnQty > l.originalQty);
+      return !anyInvalid && calculatedNcTotals.total > 0;
+    }
+    if (ncMode === 'price_adjustment') {
+      const active = ncLines.filter((l) => l.selected && l.differentialPrice > 0);
+      if (active.length === 0) return false;
+      const anyInvalid = active.some(
+        (l) => l.differentialPrice <= 0 || l.differentialPrice > l.originalUnitPrice
+      );
+      return !anyInvalid && calculatedNcTotals.total > 0;
+    }
+    return false;
+  }, [cancelModalInvoice, cancelReason, ncMode, ncLines, calculatedNcTotals]);
+
+  const handleConfirmNc = () => {
+    if (!cancelModalInvoice || !isNcValid) return;
+
+    let linesPayload: any[] | undefined = undefined;
+
+    if (ncMode === 'partial_qty') {
+      const active = ncLines.filter((l) => l.selected && l.returnQty > 0);
+      linesPayload = active.map((l, idx) => ({
+        lineNumber: idx + 1,
+        productCode: l.productCode,
+        description: `[Devolução Qtd] ${l.description}`,
+        quantity: l.returnQty,
+        unitPrice: l.originalUnitPrice,
+        taxRate: l.taxRate,
+        taxExemptionCode: l.taxExemptionCode || undefined,
+        isService: l.isService,
+      }));
+    } else if (ncMode === 'price_adjustment') {
+      const active = ncLines.filter((l) => l.selected && l.differentialPrice > 0);
+      linesPayload = active.map((l, idx) => ({
+        lineNumber: idx + 1,
+        productCode: l.productCode,
+        description: `[Abatimento de Preço] ${l.description}`,
+        quantity: l.originalQty,
+        unitPrice: l.differentialPrice,
+        taxRate: l.taxRate,
+        taxExemptionCode: l.taxExemptionCode || undefined,
+        isService: l.isService,
+      }));
+    }
+
+    cancelMutation.mutate({
+      id: cancelModalInvoice.id,
+      reason: cancelReason,
+      lines: linesPayload,
+    });
+  };
 
   const [newSeriesType, setNewSeriesType] = useState('FT');
   const [newSeriesCode, setNewSeriesCode] = useState('2026B');
@@ -757,11 +920,17 @@ export const InvoicingView: React.FC = () => {
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                     {sortedInvoices.map((inv) => {
                       const isNC = inv.documentType === 'NC';
-                      const isRectified =
-                        inv.documentType === 'FT' &&
-                        invoices.some(
-                          (n) => n.documentType === 'NC' && n.sourceDocumentNumber === inv.documentNumber
-                        );
+                      const linkedNcs = invoices.filter(
+                        (n) => n.documentType === 'NC' && n.sourceDocumentNumber === inv.documentNumber
+                      );
+                      const totalCreditApplied = linkedNcs.reduce(
+                        (acc, n) => acc + (Number(n.grossTotal) || 0),
+                        0
+                      );
+                      const isFullyRectified =
+                        inv.documentType === 'FT' && totalCreditApplied >= inv.grossTotal - 0.01;
+                      const isPartiallyRectified =
+                        inv.documentType === 'FT' && linkedNcs.length > 0 && !isFullyRectified;
 
                       return (
                         <tr
@@ -839,9 +1008,13 @@ export const InvoicingView: React.FC = () => {
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-500/20">
                                 Liquidada
                               </span>
-                            ) : isRectified ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-300 line-through">
-                                Retificada por NC
+                            ) : isFullyRectified ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-300 line-through">
+                                Anulada por NC
+                              </span>
+                            ) : isPartiallyRectified ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-500/30">
+                                Retificada Parcial
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-500/20">
@@ -889,14 +1062,22 @@ export const InvoicingView: React.FC = () => {
                               >
                                 <Download className="w-4 h-4" />
                               </button>
-                              {!isNC && !isRectified && (
+                              {!isNC && !isFullyRectified && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setCancelModalInvoice(inv);
                                   }}
-                                  title="Anular com Nota de Crédito (NC)"
-                                  className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                  title={
+                                    isPartiallyRectified
+                                      ? 'Emitir Nova Nota de Crédito (Retificação Parcial)'
+                                      : 'Retificar / Emitir Nota de Crédito (NC)'
+                                  }
+                                  className={`p-1.5 rounded-lg transition-colors ${
+                                    isPartiallyRectified
+                                      ? 'text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+                                      : 'text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30'
+                                  }`}
                                 >
                                   <Ban className="w-4 h-4" />
                                 </button>
@@ -1927,6 +2108,17 @@ export const InvoicingView: React.FC = () => {
               >
                 Fechar
               </button>
+              {selectedInvoice.documentType !== 'NC' && (
+                <button
+                  onClick={() => {
+                    setCancelModalInvoice(selectedInvoice);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 dark:text-rose-300 text-sm font-bold border border-rose-200 dark:border-rose-800 transition-colors"
+                >
+                  <Ban className="w-4 h-4" />
+                  <span>Retificar / Emitir NC</span>
+                </button>
+              )}
               <button
                 onClick={() => handleDownloadPdf(selectedInvoice)}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-sm font-bold hover:bg-slate-100"
@@ -1988,60 +2180,403 @@ export const InvoicingView: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL DE ANULAÇÃO VIA NC */}
+      {/* MODAL DE EMISSÃO DE NOTA DE CRÉDITO (NC) E RETIFICAÇÃO FISCAL */}
       {cancelModalInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full p-6 relative">
-            <div className="flex items-center gap-2 text-rose-600 mb-2">
-              <AlertCircle className="w-5 h-5" />
-              <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
-                Anular Documento Fiscal
-              </h3>
-            </div>
-            <p className="text-xs text-slate-500 mb-4">
-              A regulamentação fiscal exige que documentos fiscais assinados sejam retificados via emissão de uma{' '}
-              <strong>Nota de Crédito (NC)</strong> associada.
-            </p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-4xl w-full p-6 relative border border-slate-200 dark:border-slate-800 my-8">
+            <button
+              onClick={() => setCancelModalInvoice(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
 
-            <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-mono mb-4">
-              Documento: <strong>{cancelModalInvoice.documentNumber}</strong>
-              <br />
-              Total: <KzAmount value={cancelModalInvoice.grossTotal} />
+            {/* Cabeçalho */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/50 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+                <FileCheck2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">
+                  Retificação Fiscal & Emissão de Nota de Crédito (NC)
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Decreto Presidencial n.º 71/25 (Regime Jurídico das Faturas) — Estorno, Devolução de Quantidades ou Abatimento de Preço
+                </p>
+              </div>
             </div>
 
-            <div className="space-y-2 mb-4">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Motivo Legal da Anulação / Devolução
+            {/* Resumo do Documento Original */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 mb-5 text-xs">
+              <div>
+                <span className="text-slate-400 block font-medium">Documento de Origem:</span>
+                <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-sm">
+                  {cancelModalInvoice.documentNumber}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Adquirente / Cliente:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200 truncate block">
+                  {cancelModalInvoice.customerName}
+                </span>
+                <span className="font-mono text-[10px] text-slate-500">
+                  NIF: {cancelModalInvoice.customerNif || 'Consumidor Final'}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Data de Emissão:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                  {cancelModalInvoice.issuedAt ? new Date(cancelModalInvoice.issuedAt).toLocaleDateString('pt-AO') : '—'}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Total Original da Fatura:</span>
+                <span className="font-bold text-emerald-700 dark:text-emerald-400 text-sm">
+                  <KzAmount value={cancelModalInvoice.grossTotal} />
+                </span>
+              </div>
+            </div>
+
+            {/* Seletor de Modalidade de Retificação */}
+            <div className="mb-5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
+                1. Modalidade de Ajuste Fiscal
               </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setNcMode('full')}
+                  className={`p-3.5 rounded-xl border text-left transition-all ${
+                    ncMode === 'full'
+                      ? 'border-rose-500 bg-rose-50/60 dark:bg-rose-950/30 ring-2 ring-rose-500/20'
+                      : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <RotateCcw className={`w-4 h-4 ${ncMode === 'full' ? 'text-rose-600' : 'text-slate-400'}`} />
+                    <span className="font-bold text-xs text-slate-900 dark:text-white">
+                      Anulação Integral (100%)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-tight">
+                    Estorno integral da fatura, anulando todos os artigos e regularizando a totalidade do IVA.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setNcMode('partial_qty')}
+                  className={`p-3.5 rounded-xl border text-left transition-all ${
+                    ncMode === 'partial_qty'
+                      ? 'border-amber-500 bg-amber-50/60 dark:bg-amber-950/30 ring-2 ring-amber-500/20'
+                      : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <PackageMinus className={`w-4 h-4 ${ncMode === 'partial_qty' ? 'text-amber-600' : 'text-slate-400'}`} />
+                    <span className="font-bold text-xs text-slate-900 dark:text-white">
+                      Devolução / Redução de Qtd
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-tight">
+                    Devolução física ou correção de contagem de unidades faturadas em excesso.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setNcMode('price_adjustment')}
+                  className={`p-3.5 rounded-xl border text-left transition-all ${
+                    ncMode === 'price_adjustment'
+                      ? 'border-blue-500 bg-blue-50/60 dark:bg-blue-950/30 ring-2 ring-blue-500/20'
+                      : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Percent className={`w-4 h-4 ${ncMode === 'price_adjustment' ? 'text-blue-600' : 'text-slate-400'}`} />
+                    <span className="font-bold text-xs text-slate-900 dark:text-white">
+                      Acerto de Preço / Abatimento
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-tight">
+                    Desconto financeiro a posteriori ou retificação do preço unitário sem alterar quantidades.
+                  </p>
+                </button>
+              </div>
+            </div>
+
+            {/* Tabela de Linhas Interativa (Ajuste Parcial) */}
+            {ncMode !== 'full' && (
+              <div className="mb-5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                    2. Seleção de Artigos e Valores a Retificar
+                  </label>
+                  <div className="flex items-center gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNcLines((prev) =>
+                          prev.map((l) => ({ ...l, selected: true, returnQty: l.originalQty, differentialPrice: 0 }))
+                        )
+                      }
+                      className="text-emerald-600 hover:underline"
+                    >
+                      Selecionar Todos
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNcLines((prev) =>
+                          prev.map((l) => ({ ...l, selected: false, returnQty: 0, differentialPrice: 0 }))
+                        )
+                      }
+                      className="text-slate-500 hover:underline"
+                    >
+                      Desmarcar Todos
+                    </button>
+                  </div>
+                </div>
+
+                {ncLines.length === 0 ? (
+                  <div className="p-4 rounded-xl border border-dashed border-slate-300 text-center text-xs text-slate-500">
+                    A carregar artigos da fatura...
+                  </div>
+                ) : (
+                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto max-h-56 overflow-y-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-100/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 sticky top-0">
+                        <tr>
+                          <th className="py-2 px-3 w-10 text-center">Sel.</th>
+                          <th className="py-2 px-3">Artigo / Descrição</th>
+                          <th className="py-2 px-3 text-right">Qtd Orig.</th>
+                          <th className="py-2 px-3 text-right">P. Unit. Orig.</th>
+                          <th className="py-2 px-3 text-center">IVA</th>
+                          <th className="py-2 px-3 text-right">
+                            {ncMode === 'partial_qty' ? 'Qtd a Retificar / Devolver' : 'Abatimento Unitário (Kz)'}
+                          </th>
+                          <th className="py-2 px-3 text-right">Subtotal Crédito</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                        {ncLines.map((line, idx) => {
+                          const lineNet =
+                            ncMode === 'partial_qty'
+                              ? line.returnQty * line.originalUnitPrice
+                              : line.originalQty * line.differentialPrice;
+                          const lineTax = lineNet * (line.taxRate / 100);
+                          const lineGross = lineNet + lineTax;
+
+                          return (
+                            <tr
+                              key={line.productCode + idx}
+                              className={`transition-colors ${
+                                line.selected
+                                  ? 'bg-rose-50/30 dark:bg-rose-950/10'
+                                  : 'opacity-50 bg-slate-50/50 dark:bg-slate-900/50'
+                              }`}
+                            >
+                              <td className="py-2 px-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={line.selected}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setNcLines((prev) =>
+                                      prev.map((l, i) =>
+                                        i === idx
+                                          ? {
+                                              ...l,
+                                              selected: checked,
+                                              returnQty: checked ? l.returnQty || l.originalQty : 0,
+                                              differentialPrice: checked ? l.differentialPrice : 0,
+                                            }
+                                          : l
+                                      )
+                                    );
+                                  }}
+                                  className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                />
+                              </td>
+                              <td className="py-2 px-3">
+                                <div className="font-semibold text-slate-800 dark:text-slate-200">
+                                  {line.description}
+                                </div>
+                                <div className="font-mono text-[10px] text-slate-400 flex items-center gap-1.5">
+                                  <span>{line.productCode}</span>
+                                  {line.isService && (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-sans">
+                                      Serviço
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono">{line.originalQty}</td>
+                              <td className="py-2 px-3 text-right font-mono">
+                                <KzAmount value={line.originalUnitPrice} />
+                              </td>
+                              <td className="py-2 px-3 text-center font-mono">
+                                <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 dark:bg-slate-800">
+                                  {line.taxRate}%
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 text-right">
+                                {ncMode === 'partial_qty' ? (
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={line.originalQty}
+                                    step="any"
+                                    disabled={!line.selected}
+                                    value={line.returnQty}
+                                    onChange={(e) => {
+                                      const val = Math.max(
+                                        0,
+                                        Math.min(line.originalQty, parseFloat(e.target.value) || 0)
+                                      );
+                                      setNcLines((prev) =>
+                                        prev.map((l, i) => (i === idx ? { ...l, returnQty: val } : l))
+                                      );
+                                    }}
+                                    className="w-24 px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-right font-mono font-bold text-xs focus:ring-2 focus:ring-amber-500"
+                                  />
+                                ) : (
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={line.originalUnitPrice}
+                                    step="any"
+                                    disabled={!line.selected}
+                                    value={line.differentialPrice}
+                                    onChange={(e) => {
+                                      const val = Math.max(
+                                        0,
+                                        Math.min(line.originalUnitPrice, parseFloat(e.target.value) || 0)
+                                      );
+                                      setNcLines((prev) =>
+                                        prev.map((l, i) => (i === idx ? { ...l, differentialPrice: val } : l))
+                                      );
+                                    }}
+                                    className="w-28 px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-right font-mono font-bold text-xs focus:ring-2 focus:ring-blue-500"
+                                  />
+                                )}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
+                                <KzAmount value={lineGross} />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Motivo Legal AGT */}
+            <div className="mb-5 space-y-2">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                {ncMode === 'full' ? '2' : '3'}. Motivo Legal da Retificação (Obrigatório AGT)
+              </label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {NC_REASON_PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => setCancelReason(p.text)}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
               <textarea
                 required
-                rows={3}
+                rows={2}
                 value={cancelReason}
                 onChange={(e) => setCancelReason(e.target.value)}
-                placeholder="Ex: Erro nos artigos faturados a pedido do cliente."
-                className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs focus:outline-none focus:ring-2 focus:ring-rose-500"
+                placeholder="Indique a fundamentação legal ou comercial da emissão desta Nota de Crédito..."
+                className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs focus:outline-none focus:ring-2 focus:ring-rose-500"
               />
             </div>
 
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setCancelModalInvoice(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
-              >
-                Voltar
-              </button>
-              <button
-                disabled={!cancelReason.trim() || cancelMutation.isPending}
-                onClick={() =>
-                  cancelMutation.mutate({
-                    id: cancelModalInvoice.id,
-                    reason: cancelReason,
-                  })
-                }
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs disabled:opacity-50"
-              >
-                {cancelMutation.isPending ? 'A emitir NC...' : 'Confirmar & Emitir NC'}
-              </button>
+            {/* Simulação do Crédito Fiscal */}
+            <div className="p-4 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 mb-5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                  Simulação do Impacto Fiscal (NC a Emitir)
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Assinatura RSA-2048 com Chaves Certificadas AGT
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-[11px] text-slate-500 block">Incidência (Net)</span>
+                  <span className="font-mono font-bold text-sm text-slate-800 dark:text-slate-200">
+                    <KzAmount value={calculatedNcTotals.net} />
+                  </span>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-[11px] text-slate-500 block">IVA Regularizado</span>
+                  <span className="font-mono font-bold text-sm text-amber-600 dark:text-amber-400">
+                    <KzAmount value={calculatedNcTotals.tax} />
+                  </span>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-rose-300 dark:border-rose-900/60 bg-rose-50/30">
+                  <span className="text-[11px] text-rose-600 dark:text-rose-400 font-bold block">
+                    Total Nota de Crédito
+                  </span>
+                  <span className="font-mono font-extrabold text-sm text-rose-600 dark:text-rose-400">
+                    <KzAmount value={calculatedNcTotals.total} />
+                  </span>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-[11px] text-slate-500 block">Saldo Restante FT</span>
+                  <span className="font-mono font-bold text-sm text-slate-700 dark:text-slate-300">
+                    <KzAmount value={Math.max(0, cancelModalInvoice.grossTotal - calculatedNcTotals.total)} />
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Ações */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
+              <div className="text-[11px] text-slate-500">
+                {ncMode === 'full' && 'A fatura será marcada como retificada integralmente.'}
+                {ncMode === 'partial_qty' && 'Os artigos selecionados serão devolvidos ao stock do armazém.'}
+                {ncMode === 'price_adjustment' && 'Será gerado crédito financeiro em conta corrente sem movimentação de stock.'}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCancelModalInvoice(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={!isNcValid || cancelMutation.isPending}
+                  onClick={handleConfirmNc}
+                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all"
+                >
+                  <FileCheck2 className="w-4 h-4" />
+                  <span>
+                    {cancelMutation.isPending
+                      ? 'A certificar e emitir NC...'
+                      : `Emitir Nota de Crédito (${
+                          ncMode === 'full'
+                            ? '100% Anulação'
+                            : ncMode === 'partial_qty'
+                            ? 'Devolução Parcial'
+                            : 'Abatimento'
+                        })`}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

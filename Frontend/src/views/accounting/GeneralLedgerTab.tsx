@@ -140,7 +140,7 @@ export const GeneralLedgerTab: React.FC<GeneralLedgerTabProps> = ({
         </div>
 
         <div>
-          <span className="text-[11px] font-bold text-slate-500 uppercase">Saldo Final da Conta</span>
+          <span className="text-[11px] font-bold text-slate-500 uppercase">Saldo da Conta</span>
           <div className="text-sm font-mono font-black mt-1">
             {selectedLedgerAccount.closing_debit > 0 ? (
               <span className="text-emerald-700 dark:text-emerald-400">

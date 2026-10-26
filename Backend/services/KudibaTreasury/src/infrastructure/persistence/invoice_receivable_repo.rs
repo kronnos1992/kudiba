@@ -24,13 +24,15 @@ impl InvoiceReceivableRepository for PostgresInvoiceReceivableRepository {
             r#"
             INSERT INTO kudiba_treasury.invoice_receivables
                 (id, tenant_id, invoice_id, document_number, document_type, payment_mechanism,
-                 gross_total, status, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 gross_total, paid_amount, remaining_amount, status, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             ON CONFLICT (tenant_id, invoice_id) DO UPDATE SET
                 document_number   = EXCLUDED.document_number,
                 document_type     = EXCLUDED.document_type,
                 payment_mechanism = EXCLUDED.payment_mechanism,
                 gross_total       = EXCLUDED.gross_total,
+                paid_amount       = EXCLUDED.paid_amount,
+                remaining_amount  = EXCLUDED.remaining_amount,
                 status            = EXCLUDED.status,
                 updated_at        = EXCLUDED.updated_at
             "#,
@@ -42,6 +44,8 @@ impl InvoiceReceivableRepository for PostgresInvoiceReceivableRepository {
         .bind(&receivable.document_type)
         .bind(&receivable.payment_mechanism)
         .bind(receivable.gross_total)
+        .bind(receivable.paid_amount)
+        .bind(receivable.remaining_amount)
         .bind(receivable.status.as_str())
         .bind(receivable.created_at)
         .bind(receivable.updated_at)
@@ -60,7 +64,9 @@ impl InvoiceReceivableRepository for PostgresInvoiceReceivableRepository {
         let rows = sqlx::query_as::<_, InvoiceReceivableRow>(
             r#"
             SELECT id, tenant_id, invoice_id, document_number, document_type, payment_mechanism,
-                   gross_total, status, created_at, updated_at
+                   gross_total, COALESCE(paid_amount, 0) as paid_amount,
+                   COALESCE(remaining_amount, gross_total - COALESCE(paid_amount, 0)) as remaining_amount,
+                   status, created_at, updated_at
             FROM kudiba_treasury.invoice_receivables
             WHERE tenant_id = $1
             ORDER BY created_at DESC

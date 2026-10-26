@@ -72,6 +72,7 @@ else
     echo "[+] Iniciando KudibaInvoicing (HTTP :9090 | gRPC :9091)..."
     PORT=9090 \
     GRPC_PORT=9091 \
+    AGT_RSA_PRIVATE_KEY_PATH="${AGT_RSA_PRIVATE_KEY_PATH:-$ROOT_DIR/certs/agt/agt_private_key.pem}" \
     RUST_LOG=info,kudiba_invoicing=debug \
     setsid nohup "$ROOT_DIR/Backend/target/debug/kudiba-invoicing" </dev/null > "$LOGS_DIR/kudiba-invoicing.log" 2>&1 &
     INVOICING_PID=$!
@@ -208,7 +209,9 @@ fi
 wait_for_health "http://127.0.0.1:8080/health" "Kudiba Gateway" 60 || true
 
 # 10. Frontend (HTTP :3000)
-if lsof -i :3000 >/dev/null 2>&1 || nc -z 127.0.0.1 3000 2>/dev/null; then
+if [ "${SKIP_FRONTEND:-false}" = "true" ] || [ "$1" = "--no-frontend" ] || [ "$1" = "--backend-only" ]; then
+    echo "[-] Frontend omitido conforme solicitado (--no-frontend)."
+elif lsof -i :3000 >/dev/null 2>&1 || nc -z 127.0.0.1 3000 2>/dev/null; then
     echo "[-] Frontend já está em execução (porta 3000 ocupada)."
 else
     echo "[+] Iniciando Frontend (HTTP :3000)..."
@@ -219,8 +222,8 @@ else
     popd >/dev/null
     echo $FRONTEND_PID > "$LOGS_DIR/frontend.pid"
     echo "    Frontend iniciado com PID $FRONTEND_PID (logs em $LOGS_DIR/frontend.log)"
+    wait_for_health "http://127.0.0.1:3000/" "Frontend" 30 || true
 fi
-wait_for_health "http://127.0.0.1:3000/" "Frontend" 30 || true
 
 echo ""
 echo "=== Estado dos Servidores ==="

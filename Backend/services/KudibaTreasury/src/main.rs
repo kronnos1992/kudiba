@@ -267,11 +267,15 @@ async fn ensure_schema(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
             document_type VARCHAR(10) NOT NULL,
             payment_mechanism VARCHAR(40),
             gross_total NUMERIC(15, 4) NOT NULL DEFAULT 0,
+            paid_amount NUMERIC(15, 4) NOT NULL DEFAULT 0,
+            remaining_amount NUMERIC(15, 4),
             status VARCHAR(20) NOT NULL DEFAULT 'OUTSTANDING',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CONSTRAINT uq_treasury_receivable_invoice UNIQUE (tenant_id, invoice_id)
         );
+        ALTER TABLE kudiba_treasury.invoice_receivables ADD COLUMN IF NOT EXISTS paid_amount NUMERIC(15, 4) NOT NULL DEFAULT 0;
+        ALTER TABLE kudiba_treasury.invoice_receivables ADD COLUMN IF NOT EXISTS remaining_amount NUMERIC(15, 4);
         CREATE INDEX IF NOT EXISTS idx_receivables_tenant ON kudiba_treasury.invoice_receivables(tenant_id);
         CREATE INDEX IF NOT EXISTS idx_receivables_status ON kudiba_treasury.invoice_receivables(tenant_id, status);
         "#

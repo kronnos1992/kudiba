@@ -1,5 +1,5 @@
-import React from 'react';
-import { Search, FileSpreadsheet, BookOpen } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Search, FileSpreadsheet, BookOpen, Percent } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { SortableHeader } from '../../components/common/SortableHeader';
@@ -48,6 +48,10 @@ interface TrialBalanceTabProps {
   requestTrialBalanceSort: (field: string) => void;
   trialBalance: TrialBalanceTotals | undefined;
   onOpenLedger: (accountCode: string) => void;
+  showVerticalAnalysis?: boolean;
+  onShowVerticalAnalysisChange?: (value: boolean) => void;
+  verticalAnalysisBase?: 'class' | 'global';
+  onVerticalAnalysisBaseChange?: (value: 'class' | 'global') => void;
 }
 
 export const TrialBalanceTab: React.FC<TrialBalanceTabProps> = ({
@@ -67,7 +71,38 @@ export const TrialBalanceTab: React.FC<TrialBalanceTabProps> = ({
   requestTrialBalanceSort,
   trialBalance,
   onOpenLedger,
+  showVerticalAnalysis,
+  onShowVerticalAnalysisChange,
+  verticalAnalysisBase,
+  onVerticalAnalysisBaseChange,
 }) => {
+  const [internalShowAV, setInternalShowAV] = useState(false);
+  const [internalBaseAV, setInternalBaseAV] = useState<'class' | 'global'>('class');
+
+  const showAV = showVerticalAnalysis ?? internalShowAV;
+  const setShowAV = onShowVerticalAnalysisChange ?? setInternalShowAV;
+  const baseAV = verticalAnalysisBase ?? internalBaseAV;
+  const setBaseAV = onVerticalAnalysisBaseChange ?? setInternalBaseAV;
+
+  // Totais por Classe PGC e Total Global para cálculo da Análise Vertical (AV %)
+  const { classTotals, globalTotal } = useMemo(() => {
+    const analyticalRows = sortedRows.filter((r) => r.is_analytical);
+    const rowsToUse = analyticalRows.length > 0 ? analyticalRows : sortedRows;
+    const totals: Record<string, number> = {};
+    let gTotal = 0;
+
+    for (const r of rowsToUse) {
+      const prefix = r.account_code.charAt(0);
+      const deb = parseFloat(String(r.closing_debit || 0));
+      const cred = parseFloat(String(r.closing_credit || 0));
+      const bal = Math.max(deb, cred);
+      totals[prefix] = (totals[prefix] || 0) + bal;
+      gTotal += bal;
+    }
+    return { classTotals: totals, globalTotal: gTotal };
+  }, [sortedRows]);
+
+  const totalColumnsCount = (trialBalanceColumns === 6 ? 9 : 7) + (showAV ? 1 : 0);
   return (
         <div className="space-y-4">
           {/* Controls Bar */}
@@ -108,6 +143,35 @@ export const TrialBalanceTab: React.FC<TrialBalanceTabProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              {/* Toggle Análise Vertical (AV %) */}
+              <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setShowAV(!showAV)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition ${
+                    showAV
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Ativar/Desativar Análise Vertical das Contas (Peso percentual nas massas patrimoniais)"
+                >
+                  <Percent className="w-3.5 h-3.5" />
+                  <span>Análise Vertical</span>
+                </button>
+
+                {showAV && (
+                  <select
+                    value={baseAV}
+                    onChange={(e) => setBaseAV(e.target.value as 'class' | 'global')}
+                    className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 rounded-md px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    title="Defina a base da Análise Vertical: Na Classe PGC ou no Total do Balancete"
+                  >
+                    <option value="class">Base: Na Classe PGC</option>
+                    <option value="global">Base: No Total Global</option>
+                  </select>
+                )}
+              </div>
+
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Modelo:</span>
                 <div className="inline-flex rounded-lg border border-slate-300 dark:border-slate-700 p-0.5 bg-slate-100 dark:bg-slate-800">
@@ -219,6 +283,18 @@ export const TrialBalanceTab: React.FC<TrialBalanceTabProps> = ({
                       onSort={requestTrialBalanceSort}
                       className="p-3 text-amber-800 dark:text-amber-300 font-extrabold"
                     />
+                    {showAV && (
+                      <th
+                        className="p-3 text-right w-44 text-slate-700 dark:text-slate-300 font-extrabold sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10"
+                        title={
+                          baseAV === 'class'
+                            ? 'Análise Vertical: Peso percentual da rubrica face ao total da sua Classe / Massa Patrimonial PGC'
+                            : 'Análise Vertical: Peso percentual da rubrica face ao Total Geral do Balancete'
+                        }
+                      >
+                        AV % ({baseAV === 'class' ? 'Massa PGC' : 'Global'})
+                      </th>
+                    )}
                     <th className="p-3 text-center w-20 sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10">
                       Ações
                     </th>
@@ -228,7 +304,7 @@ export const TrialBalanceTab: React.FC<TrialBalanceTabProps> = ({
                   {isLoading ? (
                     <tr>
                       <td
-                        colSpan={trialBalanceColumns === 6 ? 9 : 7}
+                        colSpan={totalColumnsCount}
                         className="p-8 text-center text-slate-400 font-sans"
                       >
                         A carregar balancete de verificação...
@@ -237,7 +313,7 @@ export const TrialBalanceTab: React.FC<TrialBalanceTabProps> = ({
                   ) : sortedRows.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={trialBalanceColumns === 6 ? 9 : 7}
+                        colSpan={totalColumnsCount}
                         className="p-8 text-center text-slate-400 font-sans"
                       >
                         Nenhuma conta encontrada para os filtros selecionados.
@@ -246,6 +322,13 @@ export const TrialBalanceTab: React.FC<TrialBalanceTabProps> = ({
                   ) : (
                     sortedRows.map((r) => {
                       const isSynthetic = !r.is_analytical;
+                      const prefix = r.account_code.charAt(0);
+                      const deb = parseFloat(String(r.closing_debit || 0));
+                      const cred = parseFloat(String(r.closing_credit || 0));
+                      const bal = Math.max(deb, cred);
+                      const base = baseAV === 'class' ? (classTotals[prefix] || 0) : globalTotal;
+                      const avPct = base > 0 ? (bal / base) * 100 : 0;
+
                       return (
                         <tr
                           key={r.account_code}
@@ -321,6 +404,32 @@ export const TrialBalanceTab: React.FC<TrialBalanceTabProps> = ({
                               '-'
                             )}
                           </td>
+                          {showAV && (
+                            <td className="p-2.5 text-right font-sans">
+                              <div className="flex items-center justify-end gap-2">
+                                <div className="w-16 bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden shrink-0">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-300 ${
+                                      avPct > 50
+                                        ? 'bg-indigo-600 dark:bg-indigo-400'
+                                        : avPct > 20
+                                        ? 'bg-blue-600 dark:bg-blue-400'
+                                        : 'bg-emerald-500 dark:bg-emerald-400'
+                                    }`}
+                                    style={{ width: `${Math.min(100, Math.max(0, avPct))}%` }}
+                                  />
+                                </div>
+                                <span
+                                  className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200 w-12 text-right"
+                                  title={`Peso de ${avPct.toFixed(2)}% ${
+                                    baseAV === 'class' ? `na Classe ${prefix}` : 'no Balancete Geral'
+                                  }`}
+                                >
+                                  {avPct.toFixed(1)}%
+                                </span>
+                              </div>
+                            </td>
+                          )}
                           <td className="p-2.5 text-center font-sans">
                             <button
                               type="button"
@@ -376,6 +485,11 @@ export const TrialBalanceTab: React.FC<TrialBalanceTabProps> = ({
                         value={parseFloat(String(trialBalance?.total_closing_credit || 0))}
                       />
                     </td>
+                    {showAV && (
+                      <td className="p-3 text-right text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
+                        100.0%
+                      </td>
+                    )}
                     <td></td>
                   </tr>
                 </tfoot>

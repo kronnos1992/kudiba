@@ -241,6 +241,9 @@ pub struct CancelInvoiceCommand {
     /// Código de série a usar para a Nota de Crédito. Se omitido, usa a mesma série do documento original.
     #[serde(default)]
     pub series_code: Option<String>,
+    /// Linhas personalizadas de retificação (devolução parcial ou acerto de valor). Se omitido, estorna todas as linhas originais.
+    #[serde(default)]
+    pub lines: Option<Vec<InvoiceLineInput>>,
 }
 
 /// Comprovativo de anulação e de emissão da Nota de Crédito rectificativa

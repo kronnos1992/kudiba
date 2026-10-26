@@ -264,7 +264,12 @@ export const invoicingApi = {
 
   cancelInvoice: async (
     id: string,
-    payload: { tenantId: string; reason: string; seriesCode?: string }
+    payload: {
+      tenantId: string;
+      reason: string;
+      seriesCode?: string;
+      lines?: InvoiceLine[];
+    }
   ): Promise<any> => {
     const response = await apiClient.post(`/api/v1/fiscal/invoices/${id}/cancel`, payload);
     return response.data;

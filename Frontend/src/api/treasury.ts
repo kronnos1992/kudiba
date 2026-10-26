@@ -171,7 +171,9 @@ export interface InvoiceReceivable {
   document_type: string;
   payment_mechanism: string | null;
   gross_total: string | number;
-  status: 'Outstanding' | 'Settled' | string;
+  paid_amount?: string | number;
+  remaining_amount?: string | number;
+  status: 'Outstanding' | 'Partial' | 'Settled' | string;
   created_at: string;
   updated_at: string;
 }

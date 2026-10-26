@@ -13,8 +13,8 @@ use uuid::Uuid;
 use crate::application::commands::sync_agt::SyncAgtCommand;
 use crate::application::dto::{
     CancelInvoiceCommand, CreateFiscalSeriesCommand, GetInvoiceQuery, GetTaxRegimeQuery,
-    IssueInvoiceCommand, ResolveTaxRegimeCommand, SignDirectCommand, ValidateSeriesSequenceQuery,
-    VerifySignatureQuery,
+    InvoiceLineInput, IssueInvoiceCommand, ResolveTaxRegimeCommand, SignDirectCommand,
+    ValidateSeriesSequenceQuery, VerifySignatureQuery,
 };
 use crate::application::queries::export_saft::ExportSaftQuery;
 use crate::application::queries::fiscal_reports::FiscalReportQuery;
@@ -484,6 +484,8 @@ pub struct CancelInvoicePayload {
     pub reason: String,
     #[serde(rename = "seriesCode")]
     pub series_code: Option<String>,
+    #[serde(default)]
+    pub lines: Option<Vec<InvoiceLineInput>>,
 }
 
 async fn cancel_invoice_handler(
@@ -515,6 +517,7 @@ async fn cancel_invoice_handler(
         invoice_id: id,
         reason: payload.reason,
         series_code: payload.series_code,
+        lines: payload.lines,
     };
 
     match state.cancel_invoice.execute(command).await {

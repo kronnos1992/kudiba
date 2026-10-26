@@ -7,10 +7,20 @@ import {
   Landmark,
   Download,
   CheckCircle2,
+  Printer,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { useAuthStore } from '../../stores/authStore';
+import {
+  exportFinancialStatementPdf,
+  exportFinancialStatementExcel,
+  exportFinancialStatementCsv,
+  CorporateEntityMeta,
+  BalanceSheetExportData,
+  IncomeStatementExportData,
+} from './financialStatementsExporter';
 
 export interface CashFlowData {
   // Operacional - Método Direto
@@ -60,68 +70,71 @@ export const CashFlowStatement: React.FC<CashFlowStatementProps> = ({ data, fisc
   const { activeTenant } = useAuthStore();
   const [method, setMethod] = useState<'direct' | 'indirect'>('direct');
 
-  const handleExportCsv = () => {
-    const isDirect = method === 'direct';
-    const lines = [
-      `Demonstração dos Fluxos de Caixa (${isDirect ? 'Método Directo' : 'Método Indirecto'}) - Exercício ${fiscalYear}`,
-      `Conforme Decreto n.º 82/01 de 16 de Novembro (PGC Angola)`,
-      `Empresa: ${activeTenant?.company_name || 'Kudiba'} · NIF: ${activeTenant?.nif || 'N/A'}`,
-      `Moeda: Kwanzas (AOA)`,
-      '',
-      'Rubrica;Nota;Valor (Kz)',
-      '1. FLUXOS DE CAIXA DAS ACTIVIDADES OPERACIONAIS;;',
-    ];
+  const corporateMeta: CorporateEntityMeta = {
+    companyName: activeTenant?.company_name || 'Kudiba Comércio & Serviços, Lda.',
+    nif: activeTenant?.nif || '5417281902',
+    fiscalYear: Number(fiscalYear) || new Date().getFullYear(),
+    currency: 'AOA',
+  };
 
-    if (isDirect) {
-      lines.push(
-        `Recebimentos (de caixa) de clientes;Nota 43;${data.recebimentosClientes.toFixed(2)}`,
-        `(-) Pagamentos (de caixa) a fornecedores e pessoal;Nota 43;-${(data.pagamentosFornecedores + data.pagamentosPessoal).toFixed(2)}`,
-        `(-) Pagamentos de impostos sobre lucros e tributos;Nota 43;-${data.pagamentosImpostos.toFixed(2)}`,
-        `(+/-) Outros recebimentos / (pagamentos) operacionais;;${data.outrosOperacionais.toFixed(2)}`,
-        `= Caixa Líquida Proveniente das Actividades Operacionais (A);;${data.fluxoOperacional.toFixed(2)}`
-      );
-    } else {
-      lines.push(
-        `Resultado antes de impostos (RAI);;${data.resultadoAntesImpostos.toFixed(2)}`,
-        `(+) Amortizações do exercício;Nota 29;${data.amortizacoesExercicio.toFixed(2)}`,
-        `(+) Custos financeiros (Juros);Nota 31;${data.ajustamentosFinanceiros.toFixed(2)}`,
-        `= Resultados antes das alterações no capital circulante;;${data.ebitdaOperacional.toFixed(2)}`,
-        `(+/-) Variação nas existências;;${data.variacaoExistencias.toFixed(2)}`,
-        `(+/-) Variação nas dívidas de clientes a receber;;${data.variacaoClientes.toFixed(2)}`,
-        `(+/-) Variação nas dívidas a fornecedores e Estado;;${data.variacaoFornecedoresPassivos.toFixed(2)}`,
-        `(-) Pagamentos de impostos sobre lucros;;-${data.pagamentosImpostos.toFixed(2)}`,
-        `= Caixa Líquida Proveniente das Actividades Operacionais (A);;${data.fluxoOperacional.toFixed(2)}`
-      );
-    }
+  const emptyBalanco: BalanceSheetExportData = {
+    imobCorporeas: 0,
+    imobIncorporeas: 0,
+    amortAcumuladas: 0,
+    totalAtivoNaoCorrente: 0,
+    existencias: 0,
+    clientes: 0,
+    estadoDevedor: 0,
+    outrosDevedores: 0,
+    meiosFinanceiros: data.saldoFinalCaixa,
+    totalAtivoCorrente: data.saldoFinalCaixa,
+    totalAtivo: data.saldoFinalCaixa,
+    capitalSocial: 0,
+    reservas: 0,
+    resultadosTransitados: 0,
+    resultadoPeriodo: 0,
+    totalCapitalProprio: 0,
+    fornecedores: 0,
+    estadoCredor: 0,
+    remuneracoesPagar: 0,
+    outrosCredores: 0,
+    totalPassivo: 0,
+    totalPassivoCapitalProprio: 0,
+    balancoDiff: 0,
+    isBalanced: true,
+  };
 
-    lines.push(
-      '',
-      '2. FLUXOS DE CAIXA DAS ACTIVIDADES DE INVESTIMENTO;;',
-      `(-) Pagamentos por aquisições de imobilizações corpóreas;Nota 4;-${data.aquisicoesImobilizadoCorporeo.toFixed(2)}`,
-      `(-) Pagamentos por aquisições de imobilizações incorpóreas / software;Nota 5;-${data.aquisicoesImobilizadoIncorporeo.toFixed(2)}`,
-      `(+) Recebimentos de alienações de activos imobilizados;;${data.alienacoesImobilizado.toFixed(2)}`,
-      `= Caixa Líquida Usada nas Actividades de Investimento (B);;${data.fluxoInvestimento.toFixed(2)}`,
-      '',
-      '3. FLUXOS DE CAIXA DAS ACTIVIDADES DE FINANCIAMENTO;;',
-      `(+) Aumentos de capital e prestações suplementares;Nota 12;${data.aumentoCapital.toFixed(2)}`,
-      `(+) Empréstimos e financiamentos obtidos;Nota 15;${data.financiamentosObtidos.toFixed(2)}`,
-      `(-) Amortização de empréstimos bancários;Nota 15;-${data.amortizacaoFinanciamentos.toFixed(2)}`,
-      `(-) Juros e custos financeiros pagos;Nota 31;-${data.jurosPagos.toFixed(2)}`,
-      `= Caixa Líquida das Actividades de Financiamento (C);;${data.fluxoFinanciamento.toFixed(2)}`,
-      '',
-      `AUMENTO / (DIMINUIÇÃO) LÍQUIDO DE CAIXA E SEUS EQUIVALENTES (A + B + C);;${data.variacaoLiquidaCaixa.toFixed(2)}`,
-      `Caixa e seus equivalentes no início do período;Nota 47;${data.saldoInicialCaixa.toFixed(2)}`,
-      `Caixa e seus equivalentes no fim do período;Nota 47;${data.saldoFinalCaixa.toFixed(2)}`,
-      `Disponibilidades no Balanço (Disponibilidades PGC);;${data.saldoBalancoClasse1.toFixed(2)}`
-    );
+  const emptyDre: IncomeStatementExportData = {
+    vendas: 0,
+    servicos: 0,
+    outrosProveitos: 0,
+    totalProveitosOperacionais: 0,
+    cmvmc: 0,
+    margemBruta: 0,
+    fse: 0,
+    pessoal: 0,
+    amortizacoes: 0,
+    outrosCustosOperacionais: 0,
+    totalCustosOperacionais: 0,
+    resultadoOperacional: 0,
+    proveitosFinanceiros: 0,
+    custosFinanceiros: 0,
+    resultadoFinanceiro: 0,
+    rai: data.resultadoAntesImpostos,
+    impostoEstimado: 0,
+    resultadoLiquido: 0,
+  };
 
-    const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `demonstracao_fluxos_caixa_${method}_${fiscalYear}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+  const handleExportPdf = () => {
+    exportFinancialStatementPdf('cash_flow', corporateMeta, emptyBalanco, emptyDre, data);
+  };
+
+  const handleExportExcel = () => {
+    exportFinancialStatementExcel('cash_flow', corporateMeta, emptyBalanco, emptyDre, data);
+  };
+
+  const handleExportCsvComplete = () => {
+    exportFinancialStatementCsv('cash_flow', corporateMeta, emptyBalanco, emptyDre, data);
   };
 
   return (
@@ -241,14 +254,35 @@ export const CashFlowStatement: React.FC<CashFlowStatementProps> = ({ data, fisc
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
-            >
-              <Download className="w-3.5 h-3.5 text-emerald-600" />
-              CSV
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                title="Exportar Demonstração de Fluxos de Caixa em PDF A4"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                PDF
+              </button>
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                title="Exportar Demonstração de Fluxos de Caixa em Excel (.xls)"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                Excel
+              </button>
+              <button
+                type="button"
+                onClick={handleExportCsvComplete}
+                className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                title="Exportar Demonstração de Fluxos de Caixa em CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-600" />
+                CSV
+              </button>
+            </div>
           </div>
         </div>
 

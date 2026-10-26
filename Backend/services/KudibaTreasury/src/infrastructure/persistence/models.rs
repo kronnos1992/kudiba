@@ -224,6 +224,8 @@ pub struct InvoiceReceivableRow {
     pub document_type: String,
     pub payment_mechanism: Option<String>,
     pub gross_total: Decimal,
+    pub paid_amount: Decimal,
+    pub remaining_amount: Option<Decimal>,
     pub status: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -231,6 +233,9 @@ pub struct InvoiceReceivableRow {
 
 impl From<InvoiceReceivableRow> for InvoiceReceivable {
     fn from(r: InvoiceReceivableRow) -> Self {
+        let remaining = r
+            .remaining_amount
+            .unwrap_or_else(|| (r.gross_total - r.paid_amount).max(Decimal::ZERO));
         Self {
             id: r.id,
             tenant_id: r.tenant_id,
@@ -239,6 +244,8 @@ impl From<InvoiceReceivableRow> for InvoiceReceivable {
             document_type: r.document_type,
             payment_mechanism: r.payment_mechanism,
             gross_total: r.gross_total,
+            paid_amount: r.paid_amount,
+            remaining_amount: remaining,
             status: ReceivableStatus::from_db(&r.status),
             created_at: r.created_at,
             updated_at: r.updated_at,

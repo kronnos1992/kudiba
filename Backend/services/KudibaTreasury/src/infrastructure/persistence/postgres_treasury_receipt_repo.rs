@@ -319,12 +319,19 @@ impl TreasuryReceiptRepository for PostgresTreasuryReceiptRepository {
                 let _ = sqlx::query(
                     r#"
                     UPDATE kudiba_treasury.invoice_receivables
-                    SET status = 'SETTLED', updated_at = NOW()
-                    WHERE tenant_id = $1 AND (invoice_id = $2 OR document_number = $3)
+                    SET paid_amount = paid_amount + $3,
+                        remaining_amount = GREATEST(0, gross_total - (paid_amount + $3)),
+                        status = CASE 
+                            WHEN (paid_amount + $3) >= gross_total THEN 'SETTLED' 
+                            ELSE 'PARTIAL' 
+                        END,
+                        updated_at = NOW()
+                    WHERE tenant_id = $1 AND (invoice_id = $2 OR document_number = $4)
                     "#,
                 )
                 .bind(receipt.tenant_id)
                 .bind(&line.invoice_id)
+                .bind(line.amount_settled)
                 .bind(&line.invoice_number)
                 .execute(&mut *tx)
                 .await;
@@ -334,16 +341,23 @@ impl TreasuryReceiptRepository for PostgresTreasuryReceiptRepository {
         if let Some(ref notes) = receipt.notes {
             if let Some(doc_num) = notes.strip_prefix("Liquidação da fatura ") {
                 let doc_num = doc_num.trim();
-                if !doc_num.is_empty() {
+                if !doc_num.is_empty() && receipt.lines.is_empty() {
                     let _ = sqlx::query(
                         r#"
                         UPDATE kudiba_treasury.invoice_receivables
-                        SET status = 'SETTLED', updated_at = NOW()
+                        SET paid_amount = paid_amount + $3,
+                            remaining_amount = GREATEST(0, gross_total - (paid_amount + $3)),
+                            status = CASE 
+                                WHEN (paid_amount + $3) >= gross_total THEN 'SETTLED' 
+                                ELSE 'PARTIAL' 
+                            END,
+                            updated_at = NOW()
                         WHERE tenant_id = $1 AND document_number = $2
                         "#,
                     )
                     .bind(receipt.tenant_id)
                     .bind(doc_num)
+                    .bind(receipt.total_amount)
                     .execute(&mut *tx)
                     .await;
                 }

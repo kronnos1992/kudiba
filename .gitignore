@@ -47,3 +47,8 @@ postgres_data/
 rabbitmq_data/
 redis_gateway_data/
 redpanda_data/
+
+# Certificates and keys
+certs/
+*.pem
+*.key

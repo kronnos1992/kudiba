@@ -13,10 +13,20 @@ import {
   Layers,
   Percent,
   TrendingUp,
+  Printer,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { useAuthStore } from '../../stores/authStore';
+import {
+  exportFinancialStatementPdf,
+  exportFinancialStatementExcel,
+  exportFinancialStatementCsv,
+  CorporateEntityMeta,
+  BalanceSheetExportData,
+  IncomeStatementExportData,
+} from './financialStatementsExporter';
 
 export interface FinancialNotesData {
   // Meios Financeiros (Nota 4 e 10)
@@ -129,43 +139,71 @@ export const FinancialNotesStatement: React.FC<FinancialNotesStatementProps> = (
     setExpandedNotes(updated);
   };
 
-  const handleExportCsv = () => {
-    const lines = [
-      `Notas às Demonstrações Financeiras (Anexo ao Balanço e DRE) - Exercício ${fiscalYear}`,
-      `Conforme Decreto n.º 82/01 de 16 de Novembro (PGC Angola)`,
-      `Entidade: ${activeTenant?.company_name || 'Kudiba'} · NIF: ${activeTenant?.nif || 'N/A'}`,
-      `Moeda: Kwanzas (AOA)`,
-      '',
-      'Número da Nota;Título Oficial;Rubricas / Descrição;Valor (Kz)',
-      `Nota 4;Imobilizado Corpóreo;Equipamentos, viaturas e instalações;${data.imobilizacoesCorporeas.toFixed(2)}`,
-      `Nota 4;Imobilizado Corpóreo;(-) Amortizações acumuladas;-${data.amortizacoesAcumuladas.toFixed(2)}`,
-      `Nota 5;Imobilizado Incorpóreo;Software, patentes e licenças;${data.imobilizacoesIncorporeas.toFixed(2)}`,
-      `Nota 8;Existências;Mercadorias em armazém (CMP);${data.mercadorias.toFixed(2)}`,
-      `Nota 8;Existências;Matérias-primas e subsidiárias;${data.materiasPrimas.toFixed(2)}`,
-      `Nota 9;Contas a Receber;Clientes em conta corrente;${data.clientesContaCorrente.toFixed(2)}`,
-      `Nota 9;Contas a Receber;Outros devedores;${data.outrosDevedores.toFixed(2)}`,
-      `Nota 10;Disponibilidades;Caixa geral;${data.caixaGeral.toFixed(2)}`,
-      `Nota 10;Disponibilidades;Depósitos à ordem em bancos;${data.depositosOrdem.toFixed(2)}`,
-      `Nota 12;Capital;Capital social subscrito e realizado;${data.capitalSocial.toFixed(2)}`,
-      `Nota 13;Reservas;Reservas legais e estatutárias;${data.reservasLegais.toFixed(2)}`,
-      `Nota 14;Resultados Transitados;Resultados acumulados de anos anteriores;${data.resultadosTransitados.toFixed(2)}`,
-      `Nota 20;Contas a Pagar;Fornecedores em conta corrente;${data.fornecedoresCorrentes.toFixed(2)}`,
-      `Nota 20;Contas a Pagar;Remunerações a pagar ao pessoal;${data.remuneracoesPagar.toFixed(2)}`,
-      `Nota 20;Contas a Pagar;Estado e encargos tributários (IVA/IRT);${(data.ivaApurado + data.irtRetido).toFixed(2)}`,
-      `Nota 22;Volume de Negócios;Vendas de mercadorias e produtos (71);${data.vendas.toFixed(2)}`,
-      `Nota 22;Volume de Negócios;Prestações de serviços (72);${data.prestacoesServicos.toFixed(2)}`,
-      `Nota 22;Volume de Negócios;Total Volume de Negócios;${(data.vendas + data.prestacoesServicos).toFixed(2)}`,
-      `Nota 35;Imposto sobre o Rendimento;Estimativa de Imposto Industrial;${data.impostoIndustrialEstimado.toFixed(2)}`,
-      `Nota 47;Caixa e Equivalentes;Total de disponibilidades no fecho;${data.totalMeiosFinanceiros.toFixed(2)}`,
-    ];
+  const corporateMeta: CorporateEntityMeta = {
+    companyName: activeTenant?.company_name || 'Kudiba Comércio & Serviços, Lda.',
+    nif: activeTenant?.nif || '5417281902',
+    fiscalYear: Number(fiscalYear) || new Date().getFullYear(),
+    currency: 'AOA',
+  };
 
-    const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `notas_contas_decreto_82_01_${fiscalYear}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+  const emptyBalanco: BalanceSheetExportData = {
+    imobCorporeas: data.imobilizacoesCorporeas,
+    imobIncorporeas: data.imobilizacoesIncorporeas,
+    amortAcumuladas: data.amortizacoesAcumuladas,
+    totalAtivoNaoCorrente: data.ativoLiquidoNaoCorrente,
+    existencias: data.totalExistencias,
+    clientes: data.clientesContaCorrente,
+    estadoDevedor: 0,
+    outrosDevedores: data.outrosDevedores,
+    meiosFinanceiros: data.totalMeiosFinanceiros,
+    totalAtivoCorrente: data.totalExistencias + data.totalClientesOutrosDevedores + data.totalMeiosFinanceiros,
+    totalAtivo: totalActivo,
+    capitalSocial: data.capitalSocial,
+    reservas: data.reservasLegais,
+    resultadosTransitados: data.resultadosTransitados,
+    resultadoPeriodo: data.resultadoLiquido,
+    totalCapitalProprio: data.totalCapitalProprio,
+    fornecedores: data.fornecedoresCorrentes,
+    estadoCredor: data.ivaApurado + data.irtRetido,
+    remuneracoesPagar: data.remuneracoesPagar,
+    outrosCredores: data.outrosCredores,
+    totalPassivo: data.totalPassivoCorrente,
+    totalPassivoCapitalProprio: data.totalCapitalProprio + data.totalPassivoCorrente,
+    balancoDiff: 0,
+    isBalanced: true,
+  };
+
+  const emptyDre: IncomeStatementExportData = {
+    vendas: data.vendas,
+    servicos: data.prestacoesServicos,
+    outrosProveitos: 0,
+    totalProveitosOperacionais: data.vendas + data.prestacoesServicos,
+    cmvmc: 0,
+    margemBruta: data.vendas + data.prestacoesServicos,
+    fse: 0,
+    pessoal: 0,
+    amortizacoes: 0,
+    outrosCustosOperacionais: 0,
+    totalCustosOperacionais: 0,
+    resultadoOperacional: 0,
+    proveitosFinanceiros: 0,
+    custosFinanceiros: 0,
+    resultadoFinanceiro: 0,
+    rai: 0,
+    impostoEstimado: data.impostoIndustrialEstimado,
+    resultadoLiquido: data.resultadoLiquido,
+  };
+
+  const handleExportPdf = () => {
+    exportFinancialStatementPdf('notes', corporateMeta, emptyBalanco, emptyDre, undefined, data);
+  };
+
+  const handleExportExcel = () => {
+    exportFinancialStatementExcel('notes', corporateMeta, emptyBalanco, emptyDre, undefined, data);
+  };
+
+  const handleExportCsvComplete = () => {
+    exportFinancialStatementCsv('notes', corporateMeta, emptyBalanco, emptyDre, undefined, data);
   };
 
   return (
@@ -202,14 +240,35 @@ export const FinancialNotesStatement: React.FC<FinancialNotesStatementProps> = (
             >
               Colapsar
             </button>
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              className="px-3.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm ml-1"
-            >
-              <Download className="w-4 h-4 text-purple-600" />
-              CSV
-            </button>
+            <div className="flex items-center gap-1.5 ml-1">
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                className="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                title="Exportar Notas às Contas em PDF A4"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                PDF
+              </button>
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                title="Exportar Notas às Contas em Excel (.xls)"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                Excel
+              </button>
+              <button
+                type="button"
+                onClick={handleExportCsvComplete}
+                className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                title="Exportar Notas às Contas em CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-purple-600" />
+                CSV
+              </button>
+            </div>
           </div>
         </div>
 

@@ -19,6 +19,8 @@ import {
   TrendingUp,
   ArrowLeftRight,
   ArrowUpCircle,
+  Eye,
+  Download,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
@@ -47,6 +49,11 @@ import { CashFlowTab } from './components/CashFlowTab';
 import { PayablesTab } from './components/PayablesTab';
 import { TransfersTab } from './components/TransfersTab';
 import { BankAccountsTab } from './components/BankAccountsTab';
+import {
+  printReceiptPdf,
+  downloadReceiptPdfFile,
+  ReceiptCompanyMeta,
+} from './receiptPdfExporter';
 
 type TreasuryTab =
   | 'cash_flow'
@@ -177,17 +184,48 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
     });
   };
 
+  const [viewReceiptTarget, setViewReceiptTarget] = useState<TreasuryReceipt | null>(null);
+  const [selectedReceivableForReceipt, setSelectedReceivableForReceipt] = useState<InvoiceReceivable | null>(null);
+
+  const companyMeta: ReceiptCompanyMeta = {
+    name: activeTenant?.company_name || 'Kudiba Comércio & Serviços, Lda.',
+    nif: activeTenant?.nif || '5417281902',
+    address: 'Luanda, Angola',
+    city: 'Luanda',
+  };
+
+  const getReceivableRemaining = React.useCallback((rec: InvoiceReceivable) => {
+    if (rec.remaining_amount !== undefined && rec.remaining_amount !== null) {
+      return Math.max(0, Number(rec.remaining_amount));
+    }
+    const gross = Number(rec.gross_total) || 0;
+    const paid = Number(rec.paid_amount) || 0;
+    return Math.max(0, gross - paid);
+  }, []);
+
+  const getReceivablePaid = React.useCallback((rec: InvoiceReceivable) => {
+    if (rec.paid_amount !== undefined && rec.paid_amount !== null) {
+      return Number(rec.paid_amount);
+    }
+    return 0;
+  }, []);
+
   const isReceivableSettled = React.useCallback(
     (rec: InvoiceReceivable) => {
       if (rec.status?.toUpperCase() === 'SETTLED') return true;
       if (rec.document_type === 'NC') return true;
-      return receipts.some(
-        (rc) =>
-          rc.lines?.some((l) => l.invoice_id === rec.invoice_id || l.invoice_number === rec.document_number) ||
-          (rc.notes && rc.notes.includes(rec.document_number))
-      );
+      return getReceivableRemaining(rec) <= 0.001;
     },
-    [receipts]
+    [getReceivableRemaining]
+  );
+
+  const isReceivablePartial = React.useCallback(
+    (rec: InvoiceReceivable) => {
+      if (isReceivableSettled(rec)) return false;
+      if (rec.status?.toUpperCase() === 'PARTIAL') return true;
+      return getReceivablePaid(rec) > 0.001;
+    },
+    [isReceivableSettled, getReceivablePaid]
   );
 
   const filteredReceivables = React.useMemo(() => {
@@ -922,18 +960,21 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                       onSort={requestReceiptsSort}
                       className="px-4 py-3"
                     />
+                    <th className="px-4 py-3 text-right sticky top-0 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10">
+                      Ações
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {receiptsLoading ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                         A carregar recibos...
                       </td>
                     </tr>
                   ) : sortedReceipts.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                         Nenhum recibo de quitação emitido até ao momento.
                       </td>
                     </tr>
@@ -980,10 +1021,38 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                             <td className="px-4 py-3 text-xs text-slate-500 truncate max-w-xs">
                               {r.notes || '—'}
                             </td>
+                            <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setViewReceiptTarget(r)}
+                                  className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-800 rounded-lg transition"
+                                  title="Visualizar Recibo Oficial (RC)"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => printReceiptPdf(r, companyMeta)}
+                                  className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg transition"
+                                  title="Imprimir Recibo"
+                                >
+                                  <Printer className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => downloadReceiptPdfFile(r, companyMeta)}
+                                  className="p-1.5 text-slate-500 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-slate-800 rounded-lg transition"
+                                  title="Download Recibo (HTML/PDF)"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                           {isExpanded && (
                             <tr className="bg-slate-50/80 dark:bg-slate-900/60 border-y border-emerald-100 dark:border-emerald-900/30">
-                              <td colSpan={8} className="px-6 py-4">
+                              <td colSpan={9} className="px-6 py-4">
                                 <div className="space-y-3">
                                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 dark:border-slate-800 pb-2">
                                     <div className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
@@ -1108,12 +1177,14 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                     />
                     <SortableHeader
                       columnKey="gross_total"
-                      label="Total a Liquidar"
+                      label="Total Fatura"
                       align="right"
                       currentSort={receivablesSortConfig}
                       onSort={requestReceivablesSort}
                       className="px-4 py-3"
                     />
+                    <th className="px-4 py-3 text-right">Já Quitado</th>
+                    <th className="px-4 py-3 text-right">Saldo Devedor</th>
                     <SortableHeader
                       columnKey="status"
                       label="Estado"
@@ -1130,13 +1201,13 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {receivablesLoading ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
                         A carregar contas a receber...
                       </td>
                     </tr>
                   ) : sortedReceivables.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
                         Nenhuma fatura a prazo pendente de liquidação.
                       </td>
                     </tr>
@@ -1175,6 +1246,12 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                             <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
                               <KzAmount value={Number(rec.gross_total)} />
                             </td>
+                            <td className="px-4 py-3 text-right text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                              <KzAmount value={getReceivablePaid(rec)} />
+                            </td>
+                            <td className="px-4 py-3 text-right font-bold text-amber-600 dark:text-amber-400">
+                              <KzAmount value={getReceivableRemaining(rec)} />
+                            </td>
                             <td className="px-4 py-3 text-center">
                               {(() => {
                                 const settled = isReceivableSettled(rec);
@@ -1185,15 +1262,25 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                                     </span>
                                   );
                                 }
+                                if (settled) {
+                                  return (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                      Liquidada
+                                    </span>
+                                  );
+                                }
+                                const isPartial = isReceivablePartial(rec);
+                                if (isPartial) {
+                                  const paidPct = Math.round((getReceivablePaid(rec) / (Number(rec.gross_total) || 1)) * 100);
+                                  return (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300" title={`Já quitado ${paidPct}% do valor`}>
+                                      Parcial ({paidPct}%)
+                                    </span>
+                                  );
+                                }
                                 return (
-                                  <span
-                                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
-                                      !settled
-                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                    }`}
-                                  >
-                                    {!settled ? 'Pendente' : 'Liquidada'}
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                                    Pendente
                                   </span>
                                 );
                               })()}
@@ -1202,6 +1289,8 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                               {!isReceivableSettled(rec) && rec.document_type !== 'NC' && (
                                 <button
                                   onClick={() => {
+                                    const remaining = getReceivableRemaining(rec);
+                                    setSelectedReceivableForReceipt(rec);
                                     const defaultEntity = entities.length > 0 ? entities[0] : null;
                                     setReceiptForm({
                                       customer_id: defaultEntity?.id || '',
@@ -1210,21 +1299,21 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                                       bank_account_id: bankAccounts[0]?.id || '',
                                       session_id: '',
                                       payment_method: 'TRANSFERENCIA',
-                                      total_amount: String(rec.gross_total),
+                                      total_amount: String(remaining.toFixed(2)),
                                       currency: 'AOA',
                                       notes: `Liquidação da fatura ${rec.document_number}`,
                                       lines: [
                                         {
                                           invoice_id: rec.invoice_id,
                                           invoice_number: rec.document_number,
-                                          amount_settled: String(rec.gross_total),
-                                          notes: 'Liquidação integral',
+                                          amount_settled: String(remaining.toFixed(2)),
+                                          notes: remaining < Number(rec.gross_total) ? 'Quitação parcial' : 'Liquidação integral',
                                         },
                                       ],
                                     });
                                     setShowReceiptModal(true);
                                   }}
-                                  className="px-2.5 py-1 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
+                                  className="px-2.5 py-1 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors shadow-xs"
                                 >
                                   Emitir RC
                                 </button>
@@ -1233,7 +1322,7 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                           </tr>
                           {isExpanded && (
                             <tr className="bg-slate-50/80 dark:bg-slate-900/60 border-y border-amber-200 dark:border-amber-900/30">
-                              <td colSpan={8} className="px-6 py-4">
+                              <td colSpan={10} className="px-6 py-4">
                                 <div className="space-y-2">
                                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 dark:border-slate-800 pb-2">
                                     <div className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
@@ -1245,21 +1334,29 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                                       <span>Última Atualização: {new Date(rec.updated_at).toLocaleString('pt-AO')}</span>
                                     </div>
                                   </div>
-                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-600 dark:text-slate-300 pt-1">
+                                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs text-slate-600 dark:text-slate-300 pt-1">
                                     <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
                                       <span className="text-slate-400 block text-[11px]">Tipo de Documento:</span>
                                       <span className="font-semibold text-slate-900 dark:text-white">{rec.document_type}</span>
                                     </div>
                                     <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                                      <span className="text-slate-400 block text-[11px]">Condição de Pagamento:</span>
-                                      <span className="font-semibold text-slate-900 dark:text-white">{rec.payment_mechanism || 'Crédito / A Prazo'}</span>
+                                      <span className="text-slate-400 block text-[11px]">Total da Fatura:</span>
+                                      <span className="font-bold text-slate-900 dark:text-white">
+                                        <KzAmount value={Number(rec.gross_total)} />
+                                      </span>
+                                    </div>
+                                    <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      <span className="text-slate-400 block text-[11px]">Já Quitado (Recibos):</span>
+                                      <span className="font-bold text-emerald-600">
+                                        <KzAmount value={getReceivablePaid(rec)} />
+                                      </span>
                                     </div>
                                     <div className="p-2.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
                                       <span className="text-slate-400 block text-[11px]">
-                                        {isReceivableSettled(rec) ? 'Total Liquidado / Regularizado:' : 'Total Pendente de Cobrança:'}
+                                        {isReceivableSettled(rec) ? 'Estado:' : 'Saldo Devedor Pendente:'}
                                       </span>
                                       <span className={`font-bold ${isReceivableSettled(rec) ? 'text-emerald-600' : 'text-amber-600'}`}>
-                                        <KzAmount value={Number(rec.gross_total)} />
+                                        {isReceivableSettled(rec) ? 'Totalmente Liquidada' : <KzAmount value={getReceivableRemaining(rec)} />}
                                       </span>
                                     </div>
                                   </div>
@@ -1832,6 +1929,23 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
             </div>
 
             <div className="space-y-3">
+              {selectedReceivableForReceipt && (
+                <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs space-y-1.5">
+                  <div className="flex justify-between items-center font-bold text-slate-900 dark:text-white">
+                    <span>Fatura: {selectedReceivableForReceipt.document_number}</span>
+                    <span className="font-mono text-emerald-700 dark:text-emerald-300">
+                      Total: {Number(selectedReceivableForReceipt.gross_total).toLocaleString('pt-AO')} Kz
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-600 dark:text-slate-300">
+                    <span>Já Quitado: {getReceivablePaid(selectedReceivableForReceipt).toLocaleString('pt-AO')} Kz</span>
+                    <span className="font-bold text-amber-600 dark:text-amber-400">
+                      Saldo a Cobrar: {getReceivableRemaining(selectedReceivableForReceipt).toLocaleString('pt-AO')} Kz
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
                   Cliente Adquirente *
@@ -1919,8 +2033,65 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                     onChange={(e) => setReceiptForm({ ...receiptForm, total_amount: e.target.value })}
                     className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold"
                   />
+                  {selectedReceivableForReceipt && (
+                    <div className="flex items-center gap-1.5 pt-1.5">
+                      <span className="text-[10px] uppercase font-bold text-slate-400">Atalhos:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const rem = getReceivableRemaining(selectedReceivableForReceipt);
+                          setReceiptForm({ ...receiptForm, total_amount: rem.toFixed(2) });
+                        }}
+                        className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 transition"
+                      >
+                        100% Saldo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const rem = getReceivableRemaining(selectedReceivableForReceipt);
+                          setReceiptForm({ ...receiptForm, total_amount: (rem / 2).toFixed(2) });
+                        }}
+                        className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 transition"
+                      >
+                        50% Metade
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const rem = getReceivableRemaining(selectedReceivableForReceipt);
+                          setReceiptForm({ ...receiptForm, total_amount: (rem / 4).toFixed(2) });
+                        }}
+                        className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 hover:bg-purple-200 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200 transition"
+                      >
+                        25% Quarto
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {selectedReceivableForReceipt && (
+                <div className="text-[11px] p-2.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                  {(() => {
+                    const amt = parseFloat(String(receiptForm.total_amount)) || 0;
+                    const rem = getReceivableRemaining(selectedReceivableForReceipt);
+                    const remainingAfter = Math.max(0, rem - amt);
+                    if (amt >= rem - 0.001) {
+                      return (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                          ✓ Quitação Total: Este recibo liquidará integralmente o saldo pendente.
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="text-blue-600 dark:text-blue-400 font-semibold flex items-center gap-1">
+                        ℹ Pagamento Parcial: Restará um saldo devedor de {remainingAfter.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz.
+                      </span>
+                    );
+                  })()}
+                </div>
+              )}
 
               {receiptForm.payment_method === 'TRANSFERENCIA' && (
                 <div>
@@ -1959,7 +2130,10 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
               <button
                 type="button"
-                onClick={() => setShowReceiptModal(false)}
+                onClick={() => {
+                  setShowReceiptModal(false);
+                  setSelectedReceivableForReceipt(null);
+                }}
                 className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 rounded-lg"
               >
                 Cancelar
@@ -1987,7 +2161,11 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                             invoice_id: l.invoice_id,
                             invoice_number: l.invoice_number,
                             amount_settled: receiptForm.total_amount,
-                            notes: l.notes || 'Liquidação integral',
+                            notes:
+                              selectedReceivableForReceipt &&
+                              parseFloat(String(receiptForm.total_amount)) < getReceivableRemaining(selectedReceivableForReceipt)
+                                ? 'Quitação parcial'
+                                : l.notes || 'Liquidação de fatura',
                           }))
                         : [
                             {
@@ -2003,6 +2181,162 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
               >
                 {issueReceiptMutation.isPending ? 'A emitir...' : 'Emitir Recibo RC'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Visualizar Recibo de Quitação (RC) */}
+      {viewReceiptTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-2xl w-full p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-emerald-600" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Recibo de Quitação: <span className="font-mono text-emerald-600">{viewReceiptTarget.receipt_number}</span>
+                </h3>
+              </div>
+              <button
+                onClick={() => setViewReceiptTarget(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Document Body Preview */}
+            <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50/50 dark:bg-slate-800/40 space-y-4">
+              <div className="flex flex-col sm:flex-row justify-between gap-3 border-b border-slate-200 dark:border-slate-700 pb-3">
+                <div>
+                  <h4 className="font-extrabold text-sm uppercase text-slate-900 dark:text-white">
+                    {companyMeta.name}
+                  </h4>
+                  <p className="text-xs text-slate-500">NIF: <strong className="font-mono">{companyMeta.nif}</strong></p>
+                  <p className="text-xs text-slate-500">{companyMeta.address} · {companyMeta.city}</p>
+                </div>
+                <div className="text-right">
+                  <span className="inline-block px-2.5 py-0.5 rounded text-xs font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                    RECIBO DE QUITAÇÃO
+                  </span>
+                  <div className="font-mono font-bold text-sm text-slate-900 dark:text-white mt-1">
+                    {viewReceiptTarget.receipt_number}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {new Date(viewReceiptTarget.issued_at || viewReceiptTarget.created_at).toLocaleString('pt-AO')}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Adquirente / Cliente
+                  </span>
+                  <div className="font-bold text-slate-900 dark:text-white text-sm">
+                    {viewReceiptTarget.customer_name}
+                  </div>
+                  <div className="text-slate-500 font-mono mt-0.5">
+                    NIF: {viewReceiptTarget.customer_nif || '999999999'}
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Pagamento & Liquidação
+                  </span>
+                  <div>Método: <strong className="text-slate-900 dark:text-white">{viewReceiptTarget.payment_method}</strong></div>
+                  <div>Moeda: <strong className="text-slate-900 dark:text-white">{viewReceiptTarget.currency || 'AOA'}</strong></div>
+                  {viewReceiptTarget.notes && (
+                    <div className="italic text-slate-500 mt-1">Ref: {viewReceiptTarget.notes}</div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h5 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                  Faturas Liquidadas
+                </h5>
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Documento</th>
+                        <th className="px-3 py-2 text-left">Descrição</th>
+                        <th className="px-3 py-2 text-right">Montante Quitado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                      {viewReceiptTarget.lines && viewReceiptTarget.lines.length > 0 ? (
+                        viewReceiptTarget.lines.map((l, idx) => (
+                          <tr key={l.id || idx}>
+                            <td className="px-3 py-2 font-mono font-bold text-emerald-600">
+                              {l.invoice_number || 'FT s/n'}
+                            </td>
+                            <td className="px-3 py-2 text-slate-500">
+                              {l.notes || 'Quitação de fatura'}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono font-bold text-slate-900 dark:text-white">
+                              <KzAmount value={Number(l.amount_settled)} />
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td className="px-3 py-2 font-mono font-bold text-emerald-600">Diversos</td>
+                          <td className="px-3 py-2 text-slate-500">{viewReceiptTarget.notes || 'Quitação de conta corrente'}</td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-slate-900 dark:text-white">
+                            <KzAmount value={Number(viewReceiptTarget.total_amount)} />
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <div className="w-64 rounded-lg bg-emerald-600 text-white p-3 flex justify-between items-center shadow-sm">
+                  <span className="text-xs uppercase font-bold tracking-wider">TOTAL QUITADO:</span>
+                  <span className="font-mono font-extrabold text-base">
+                    <KzAmount value={Number(viewReceiptTarget.total_amount)} />
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-slate-400 border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between items-center">
+                <span>Processado por programa validado n.º 000/AGT/2026 · Kudiba ERP</span>
+                <span>Decreto Presidencial n.º 71/25</span>
+              </div>
+            </div>
+
+            {/* Actions Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setViewReceiptTarget(null)}
+                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+              >
+                Fechar
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => printReceiptPdf(viewReceiptTarget, companyMeta)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition shadow-sm"
+                >
+                  <Printer className="w-4 h-4" />
+                  Imprimir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadReceiptPdfFile(viewReceiptTarget, companyMeta)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition shadow-sm"
+                >
+                  <Download className="w-4 h-4" />
+                  Download HTML / PDF
+                </button>
+              </div>
             </div>
           </div>
         </div>

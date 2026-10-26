@@ -8,6 +8,7 @@ use crate::domain::error::DomainError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReceivableStatus {
     Outstanding,
+    Partial,
     Settled,
 }
 
@@ -15,6 +16,7 @@ impl ReceivableStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
             ReceivableStatus::Outstanding => "OUTSTANDING",
+            ReceivableStatus::Partial => "PARTIAL",
             ReceivableStatus::Settled => "SETTLED",
         }
     }
@@ -22,6 +24,7 @@ impl ReceivableStatus {
     pub fn from_db(value: &str) -> Self {
         match value.trim().to_uppercase().as_str() {
             "SETTLED" => ReceivableStatus::Settled,
+            "PARTIAL" => ReceivableStatus::Partial,
             _ => ReceivableStatus::Outstanding,
         }
     }
@@ -36,6 +39,8 @@ pub struct InvoiceReceivable {
     pub document_type: String,
     pub payment_mechanism: Option<String>,
     pub gross_total: Decimal,
+    pub paid_amount: Decimal,
+    pub remaining_amount: Decimal,
     pub status: ReceivableStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -65,10 +70,10 @@ impl InvoiceReceivable {
         }
 
         let document_type = document_type.trim().to_uppercase();
-        let status = if matches!(document_type.as_str(), "FR" | "VD" | "NC") {
-            ReceivableStatus::Settled
+        let (status, paid_amount, remaining_amount) = if matches!(document_type.as_str(), "FR" | "VD" | "NC") {
+            (ReceivableStatus::Settled, gross_total, Decimal::ZERO)
         } else {
-            ReceivableStatus::Outstanding
+            (ReceivableStatus::Outstanding, Decimal::ZERO, gross_total)
         };
 
         let now = Utc::now();
@@ -80,9 +85,29 @@ impl InvoiceReceivable {
             document_type,
             payment_mechanism,
             gross_total,
+            paid_amount,
+            remaining_amount,
             status,
             created_at: now,
             updated_at: now,
         })
+    }
+
+    pub fn apply_payment(&mut self, amount: Decimal) -> Result<(), DomainError> {
+        if amount <= Decimal::ZERO {
+            return Err(DomainError::ValidationError(
+                "O valor de liquidação deve ser positivo".to_string(),
+            ));
+        }
+        self.paid_amount += amount;
+        if self.paid_amount >= self.gross_total {
+            self.remaining_amount = Decimal::ZERO;
+            self.status = ReceivableStatus::Settled;
+        } else {
+            self.remaining_amount = self.gross_total - self.paid_amount;
+            self.status = ReceivableStatus::Partial;
+        }
+        self.updated_at = Utc::now();
+        Ok(())
     }
 }

@@ -1,3 +1,6 @@
+import { CashFlowData } from './CashFlowStatement';
+import { FinancialNotesData } from './FinancialNotesStatement';
+
 export interface CorporateEntityMeta {
   companyName: string;
   nif: string;
@@ -56,7 +59,13 @@ export interface IncomeStatementExportData {
   resultadoLiquido: number;
 }
 
-export type StatementExportTarget = 'balance_sheet' | 'income_statement' | 'both';
+export type StatementExportTarget =
+  | 'balance_sheet'
+  | 'income_statement'
+  | 'cash_flow'
+  | 'notes'
+  | 'both'
+  | 'all';
 
 const fmtKz = (val: number): string =>
   new Intl.NumberFormat('pt-AO', {
@@ -83,7 +92,7 @@ interface StatementRow {
   isNegative?: boolean;
 }
 
-const buildBalanceSheetRows = (b: BalanceSheetExportData): StatementRow[] => {
+export const buildBalanceSheetRows = (b: BalanceSheetExportData): StatementRow[] => {
   const totalA = b.totalAtivo || 1;
   const totalCP = b.totalPassivoCapitalProprio || 1;
   return [
@@ -132,37 +141,37 @@ const buildBalanceSheetRows = (b: BalanceSheetExportData): StatementRow[] => {
     },
     { code: 'Classes 2-4', label: 'ACTIVOS CORRENTES', note: '', amount: 0, pct: '', isSection: true },
     {
-      code: '2',
-      label: 'Existências (Mercadorias, matérias-primas e produtos)',
+      code: '21-26',
+      label: 'Existências (Inventários / Mercadorias)',
       note: 'Nota 8',
       amount: b.existencias,
       pct: fmtPct(b.existencias, totalA),
     },
     {
       code: '31',
-      label: 'Contas a receber — Clientes correntes (nacionais e estrangeiros)',
+      label: 'Clientes (Contas correntes e títulos a receber)',
       note: 'Nota 9',
       amount: b.clientes,
       pct: fmtPct(b.clientes, totalA),
     },
     {
-      code: '34',
-      label: 'Estado e outros entes públicos — Devedor (IVA dedutível e retenções)',
+      code: '34.1',
+      label: 'Estado e outros entes públicos (Saldo devedor)',
       note: 'Nota 9',
       amount: b.estadoDevedor,
       pct: fmtPct(b.estadoDevedor, totalA),
     },
     {
       code: '37',
-      label: 'Outros valores a receber e devedores diversos',
+      label: 'Outros devedores e custos diferidos',
       note: 'Nota 9',
       amount: b.outrosDevedores,
       pct: fmtPct(b.outrosDevedores, totalA),
     },
     {
       code: '41-45',
-      label: 'Disponibilidades (Caixa, depósitos à ordem e depósitos a prazo)',
-      note: 'Nota 10/47',
+      label: 'Meios financeiros líquidos (Caixa e depósitos bancários)',
+      note: 'Nota 10',
       amount: b.meiosFinanceiros,
       pct: fmtPct(b.meiosFinanceiros, totalA),
     },
@@ -183,23 +192,23 @@ const buildBalanceSheetRows = (b: BalanceSheetExportData): StatementRow[] => {
       isTotal: true,
     },
     { code: '', label: 'CAPITAL PRÓPRIO E PASSIVO', note: '', amount: 0, pct: '', isSection: true },
-    { code: 'Classes 5/8', label: 'CAPITAL PRÓPRIO (FUNDOS PRÓPRIOS)', note: '', amount: 0, pct: '', isSection: true },
+    { code: 'Classe 5', label: 'CAPITAL PRÓPRIO', note: '', amount: 0, pct: '', isSection: true },
     {
       code: '51',
-      label: 'Capital social subscrito e realizado',
+      label: 'Capital social realizado',
       note: 'Nota 12',
       amount: b.capitalSocial,
       pct: fmtPct(b.capitalSocial, totalCP),
     },
     {
-      code: '55-58',
-      label: 'Reservas legais, de reavaliação e reservas livres',
+      code: '52-55',
+      label: 'Reservas legais e estatutárias',
       note: 'Nota 13',
       amount: b.reservas,
       pct: fmtPct(b.reservas, totalCP),
     },
     {
-      code: '59',
+      code: '56',
       label: 'Resultados transitados de exercícios anteriores',
       note: 'Nota 14',
       amount: b.resultadosTransitados,
@@ -208,25 +217,25 @@ const buildBalanceSheetRows = (b: BalanceSheetExportData): StatementRow[] => {
     {
       code: '88',
       label: 'Resultado líquido do exercício',
-      note: 'Nota 36',
+      note: 'Nota 14',
       amount: b.resultadoPeriodo,
       pct: fmtPct(b.resultadoPeriodo, totalCP),
     },
     {
-      code: 'CP',
+      code: 'TCP',
       label: 'SUBTOTAL DO CAPITAL PRÓPRIO',
       note: '',
       amount: b.totalCapitalProprio,
       pct: fmtPct(b.totalCapitalProprio, totalCP),
       isSubtotal: true,
     },
-    { code: 'Classe 3', label: 'PASSIVO (CORRENTE E NÃO CORRENTE)', note: '', amount: 0, pct: '', isSection: true },
+    { code: 'Classes 3-4', label: 'PASSIVO (CORRENTE E NÃO CORRENTE)', note: '', amount: 0, pct: '', isSection: true },
     ...(b.emprestimos && b.emprestimos > 0
       ? [
           {
             code: '33',
-            label: 'Empréstimos e financiamentos obtidos',
-            note: 'Nota 15',
+            label: 'Empréstimos obtidos de instituições financeiras',
+            note: 'Nota 17',
             amount: b.emprestimos,
             pct: fmtPct(b.emprestimos, totalCP),
           },
@@ -234,15 +243,15 @@ const buildBalanceSheetRows = (b: BalanceSheetExportData): StatementRow[] => {
       : []),
     {
       code: '32',
-      label: 'Contas a pagar — Fornecedores correntes (nacionais e estrangeiros)',
-      note: 'Nota 20',
+      label: 'Fornecedores (Contas correntes e títulos a pagar)',
+      note: 'Nota 19',
       amount: b.fornecedores,
       pct: fmtPct(b.fornecedores, totalCP),
     },
     {
-      code: '34',
-      label: 'Estado e outros entes públicos — Credor (IVA, IRT, INSS, Retenções II)',
-      note: 'Nota 20',
+      code: '34.2',
+      label: 'Estado e outros entes públicos (Saldo credor / Impostos a pagar)',
+      note: 'Nota 19',
       amount: b.estadoCredor,
       pct: fmtPct(b.estadoCredor, totalCP),
     },
@@ -279,7 +288,7 @@ const buildBalanceSheetRows = (b: BalanceSheetExportData): StatementRow[] => {
   ];
 };
 
-const buildIncomeStatementRows = (d: IncomeStatementExportData): StatementRow[] => {
+export const buildIncomeStatementRows = (d: IncomeStatementExportData): StatementRow[] => {
   const vn = d.vendas + d.servicos || d.totalProveitosOperacionais || 1;
   return [
     { code: 'Classe 6', label: 'PROVEITOS E GANHOS OPERACIONAIS', note: '', amount: 0, pct: '', isSection: true },
@@ -429,6 +438,199 @@ const buildIncomeStatementRows = (d: IncomeStatementExportData): StatementRow[] 
   ];
 };
 
+export const buildCashFlowRows = (cf: CashFlowData): StatementRow[] => {
+  const base = Math.abs(cf.fluxoOperacional) || 1;
+  return [
+    { code: '', label: '1. ACTIVIDADES OPERACIONAIS (MÉTODO DIRECTO)', note: '', amount: 0, pct: '', isSection: true },
+    {
+      code: 'OP.1',
+      label: 'Recebimentos de clientes',
+      note: 'Nota 43',
+      amount: cf.recebimentosClientes,
+      pct: fmtPct(cf.recebimentosClientes, base),
+    },
+    {
+      code: 'OP.2',
+      label: '(-) Pagamentos a fornecedores',
+      note: 'Nota 43',
+      amount: -Math.abs(cf.pagamentosFornecedores),
+      pct: fmtPct(-Math.abs(cf.pagamentosFornecedores), base),
+      isNegative: true,
+    },
+    {
+      code: 'OP.3',
+      label: '(-) Pagamentos ao pessoal',
+      note: 'Nota 43',
+      amount: -Math.abs(cf.pagamentosPessoal),
+      pct: fmtPct(-Math.abs(cf.pagamentosPessoal), base),
+      isNegative: true,
+    },
+    {
+      code: 'OP.4',
+      label: '(-) Pagamentos de impostos e tributos (Estado)',
+      note: 'Nota 43',
+      amount: -Math.abs(cf.pagamentosImpostos),
+      pct: fmtPct(-Math.abs(cf.pagamentosImpostos), base),
+      isNegative: true,
+    },
+    {
+      code: 'OP.5',
+      label: '(+/-) Outros recebimentos / pagamentos operacionais',
+      note: '',
+      amount: cf.outrosOperacionais,
+      pct: fmtPct(cf.outrosOperacionais, base),
+    },
+    {
+      code: 'FLUXO.OP',
+      label: 'FLUXO DE CAIXA LÍQUIDO DAS ACTIVIDADES OPERACIONAIS (A)',
+      note: '',
+      amount: cf.fluxoOperacional,
+      pct: '100,00%',
+      isSubtotal: true,
+    },
+    { code: '', label: '2. ACTIVIDADES DE INVESTIMENTO', note: '', amount: 0, pct: '', isSection: true },
+    {
+      code: 'INV.1',
+      label: '(-) Pagamentos por aquisição de imobilizado corpóreo',
+      note: 'Nota 4',
+      amount: -Math.abs(cf.aquisicoesImobilizadoCorporeo),
+      pct: '',
+      isNegative: true,
+    },
+    {
+      code: 'INV.2',
+      label: '(-) Pagamentos por aquisição de imobilizado incorpóreo',
+      note: 'Nota 5',
+      amount: -Math.abs(cf.aquisicoesImobilizadoIncorporeo),
+      pct: '',
+      isNegative: true,
+    },
+    {
+      code: 'INV.3',
+      label: '(+) Recebimentos por alienação de imobilizado',
+      note: '',
+      amount: cf.alienacoesImobilizado,
+      pct: '',
+    },
+    {
+      code: 'FLUXO.INV',
+      label: 'FLUXO DE CAIXA LÍQUIDO DAS ACTIVIDADES DE INVESTIMENTO (B)',
+      note: '',
+      amount: cf.fluxoInvestimento,
+      pct: '',
+      isSubtotal: true,
+    },
+    { code: '', label: '3. ACTIVIDADES DE FINANCIAMENTO', note: '', amount: 0, pct: '', isSection: true },
+    {
+      code: 'FIN.1',
+      label: '(+) Aumento de capital social e entradas de sócios',
+      note: 'Nota 12',
+      amount: cf.aumentoCapital,
+      pct: '',
+    },
+    {
+      code: 'FIN.2',
+      label: '(+) Financiamentos e empréstimos obtidos',
+      note: 'Nota 17',
+      amount: cf.financiamentosObtidos,
+      pct: '',
+    },
+    {
+      code: 'FIN.3',
+      label: '(-) Amortizações de financiamentos bancários',
+      note: 'Nota 17',
+      amount: -Math.abs(cf.amortizacaoFinanciamentos),
+      pct: '',
+      isNegative: true,
+    },
+    {
+      code: 'FIN.4',
+      label: '(-) Juros e encargos financeiros suportados',
+      note: 'Nota 31',
+      amount: -Math.abs(cf.jurosPagos),
+      pct: '',
+      isNegative: true,
+    },
+    {
+      code: 'FLUXO.FIN',
+      label: 'FLUXO DE CAIXA LÍQUIDO DAS ACTIVIDADES DE FINANCIAMENTO (C)',
+      note: '',
+      amount: cf.fluxoFinanciamento,
+      pct: '',
+      isSubtotal: true,
+    },
+    { code: '', label: 'RESUMO E VARIAÇÃO LÍQUIDA DE MEIOS FINANCEIROS', note: '', amount: 0, pct: '', isSection: true },
+    {
+      code: 'VAR.CX',
+      label: 'VARIAÇÃO LÍQUIDA DE CAIXA E EQUIVALENTES (A + B + C)',
+      note: '',
+      amount: cf.variacaoLiquidaCaixa,
+      pct: '',
+      isSubtotal: true,
+    },
+    {
+      code: 'CX.INI',
+      label: '(+) Saldo inicial de caixa e depósitos bancários',
+      note: 'Nota 10',
+      amount: cf.saldoInicialCaixa,
+      pct: '',
+    },
+    {
+      code: 'CX.FIM',
+      label: '(=) SALDO FINAL DE CAIXA E EQUIVALENTES DE CAIXA',
+      note: 'Nota 10',
+      amount: cf.saldoFinalCaixa,
+      pct: '',
+      isTotal: true,
+    },
+  ];
+};
+
+export const buildFinancialNotesRows = (n: FinancialNotesData): StatementRow[] => {
+  return [
+    { code: '', label: 'NOTA 4 & 10 — MEIOS FINANCEIROS LÍQUIDOS (DISPONIBILIDADES)', note: 'Art. 5.º PGC', amount: 0, pct: '', isSection: true },
+    { code: '41', label: 'Caixa Geral (Numerário em moeda nacional)', note: 'Nota 10', amount: n.caixaGeral, pct: '' },
+    { code: '43', label: 'Depósitos à Ordem em Instituições Bancárias', note: 'Nota 10', amount: n.depositosOrdem, pct: '' },
+    { code: '44', label: 'Outros depósitos bancários e aplicações de tesouraria', note: 'Nota 10', amount: n.outrosDepositos, pct: '' },
+    { code: 'MFL.TOTAL', label: 'Total dos Meios Financeiros Líquidos', note: '', amount: n.totalMeiosFinanceiros, pct: '', isSubtotal: true },
+
+    { code: '', label: 'NOTA 8 — EXISTÊNCIAS E INVENTÁRIOS', note: 'Art. 5.º PGC', amount: 0, pct: '', isSection: true },
+    { code: '21', label: 'Mercadorias para revenda', note: 'Nota 8', amount: n.mercadorias, pct: '' },
+    { code: '22', label: 'Matérias-primas, subsidiárias e de consumo', note: 'Nota 8', amount: n.materiasPrimas, pct: '' },
+    { code: 'INV.TOTAL', label: 'Total de Existências', note: '', amount: n.totalExistencias, pct: '', isSubtotal: true },
+
+    { code: '', label: 'NOTA 9 — CLIENTES E OUTRAS CONTAS A RECEBER', note: 'Art. 5.º PGC', amount: 0, pct: '', isSection: true },
+    { code: '31.1', label: 'Clientes — Contas correntes correntes', note: 'Nota 9', amount: n.clientesContaCorrente, pct: '' },
+    { code: '37.1', label: 'Outros devedores e adiantamentos', note: 'Nota 9', amount: n.outrosDevedores, pct: '' },
+    { code: 'REC.TOTAL', label: 'Total de Contas a Receber', note: '', amount: n.totalClientesOutrosDevedores, pct: '', isSubtotal: true },
+
+    { code: '', label: 'NOTAS 4 & 5 — IMOBILIZAÇÕES CORPÓREAS E INCORPÓREAS', note: 'Art. 5.º PGC', amount: 0, pct: '', isSection: true },
+    { code: '11', label: 'Imobilizações corpóreas (Custo de aquisição)', note: 'Nota 4', amount: n.imobilizacoesCorporeas, pct: '' },
+    { code: '12', label: 'Imobilizações incorpóreas (Software / Licenças)', note: 'Nota 5', amount: n.imobilizacoesIncorporeas, pct: '' },
+    { code: '18', label: '(-) Amortizações acumuladas', note: 'Nota 4/5', amount: -Math.abs(n.amortizacoesAcumuladas), pct: '', isNegative: true },
+    { code: 'ANC.LIQ', label: 'Activo Líquido Não Corrente', note: '', amount: n.ativoLiquidoNaoCorrente, pct: '', isSubtotal: true },
+
+    { code: '', label: 'NOTAS 19 & 20 — FORNECEDORES E OUTRAS CONTAS A PAGAR', note: 'Art. 5.º PGC', amount: 0, pct: '', isSection: true },
+    { code: '32.1', label: 'Fornecedores — Contas correntes', note: 'Nota 19', amount: n.fornecedoresCorrentes, pct: '' },
+    { code: '36.1', label: 'Pessoal — Remunerações a pagar', note: 'Nota 20', amount: n.remuneracoesPagar, pct: '' },
+    { code: '37.2', label: 'Outros credores', note: 'Nota 20', amount: n.outrosCredores, pct: '' },
+    { code: 'PASS.CORR', label: 'Total Passivo Corrente Comercial', note: '', amount: n.totalPassivoCorrente, pct: '', isSubtotal: true },
+
+    { code: '', label: 'NOTA 9 & 35 — ESTADO E TRIBUTOS PENDENTES', note: 'Art. 5.º PGC', amount: 0, pct: '', isSection: true },
+    { code: '34.5.3', label: 'IVA Apurado no Período (Saldo a Pagar)', note: 'Nota 35', amount: n.ivaApurado, pct: '' },
+    { code: '34.2.1', label: 'IRT Retido aos Trabalhadores (a entregar)', note: 'Nota 35', amount: n.irtRetido, pct: '' },
+    { code: '34.2.3', label: 'Retenção na Fonte de Serviços (6,5%)', note: 'Nota 35', amount: n.retencaoServicos, pct: '' },
+    { code: '34.1.1', label: 'Estimativa de Imposto Industrial (25%)', note: 'Nota 35', amount: n.impostoIndustrialEstimado, pct: '' },
+
+    { code: '', label: 'NOTAS 12, 13 & 14 — CAPITAL PRÓPRIO E RESERVAS', note: 'Art. 5.º PGC', amount: 0, pct: '', isSection: true },
+    { code: '51', label: 'Capital Social Registado', note: 'Nota 12', amount: n.capitalSocial, pct: '' },
+    { code: '52', label: 'Reservas Legais', note: 'Nota 13', amount: n.reservasLegais, pct: '' },
+    { code: '56', label: 'Resultados Transitados', note: 'Nota 14', amount: n.resultadosTransitados, pct: '' },
+    { code: '88', label: 'Resultado Líquido do Exercício', note: 'Nota 14', amount: n.resultadoLiquido, pct: '' },
+    { code: 'CP.TOTAL', label: 'Total do Capital Próprio', note: '', amount: n.totalCapitalProprio, pct: '', isTotal: true },
+  ];
+};
+
 /**
  * 1. EXPORTAÇÃO CSV CORPORATIVO (UTF-8 com BOM, compatível com Excel PT/AO)
  */
@@ -436,7 +638,9 @@ export const exportFinancialStatementCsv = (
   target: StatementExportTarget,
   meta: CorporateEntityMeta,
   balanco: BalanceSheetExportData,
-  dre: IncomeStatementExportData
+  dre: IncomeStatementExportData,
+  cashFlow?: CashFlowData,
+  notesData?: FinancialNotesData
 ) => {
   const nowStr = new Date().toLocaleString('pt-AO');
   const lines: string[] = [
@@ -448,7 +652,7 @@ export const exportFinancialStatementCsv = (
     '',
   ];
 
-  if (target === 'balance_sheet' || target === 'both') {
+  if (target === 'balance_sheet' || target === 'both' || target === 'all') {
     lines.push(
       `=== I. BALANÇO PATRIMONIAL EM 31 DE DEZEMBRO DE ${meta.fiscalYear} ===`,
       'Código PGC;Rubricas / Designação da Conta;Nota do Anexo;Montante Exercício N (Kz); Estrutura (%)',
@@ -462,7 +666,7 @@ export const exportFinancialStatementCsv = (
     );
   }
 
-  if (target === 'income_statement' || target === 'both') {
+  if (target === 'income_statement' || target === 'both' || target === 'all') {
     const ebitda = dre.resultadoOperacional + dre.amortizacoes;
     lines.push(
       `=== II. DEMONSTRAÇÃO DE RESULTADOS POR NATUREZA — EXERCÍCIO DE ${meta.fiscalYear} ===`,
@@ -482,6 +686,33 @@ export const exportFinancialStatementCsv = (
     );
   }
 
+  if ((target === 'cash_flow' || target === 'all') && cashFlow) {
+    lines.push(
+      `=== III. DEMONSTRAÇÃO DOS FLUXOS DE CAIXA (DFC) — EXERCÍCIO DE ${meta.fiscalYear} ===`,
+      'Código;Rubricas dos Fluxos de Caixa;Nota;Montante Exercício N (Kz);Proporção (%)',
+      ...buildCashFlowRows(cashFlow).map((r) =>
+        r.isSection
+          ? `${r.code};"${r.label}";;;`
+          : `${r.code};"${r.label}";${r.note};${fmtNum(r.amount)};${r.pct}`
+      ),
+      `CONCILIAÇÃO DE CAIXA;${cashFlow.isReconciled ? 'Reconciliado com Balanço' : 'Verificar Saldo'};;${fmtNum(cashFlow.saldoFinalCaixa)};`,
+      ''
+    );
+  }
+
+  if ((target === 'notes' || target === 'all') && notesData) {
+    lines.push(
+      `=== IV. NOTAS ÀS CONTAS / ANEXO AO BALANÇO E DRE (PGC ANGOLA) — EXERCÍCIO DE ${meta.fiscalYear} ===`,
+      'Nota / Conta;Descrição da Divulgação Financeira;Referência Legal;Montante (Kz);',
+      ...buildFinancialNotesRows(notesData).map((r) =>
+        r.isSection
+          ? `${r.code};"${r.label}";;;`
+          : `${r.code};"${r.label}";${r.note};${fmtNum(r.amount)};`
+      ),
+      ''
+    );
+  }
+
   lines.push(
     'TERMO DE RESPONSABILIDADE E ASSINATURAS OFICIAIS;;;;',
     'A Administração / Gerência:;_______________________________;O Contabilista Certificado (OCPCA):;_______________________________'
@@ -492,7 +723,13 @@ export const exportFinancialStatementCsv = (
       ? `Balanco_Patrimonial_PGC_${meta.fiscalYear}.csv`
       : target === 'income_statement'
       ? `Demonstracao_Resultados_PGC_${meta.fiscalYear}.csv`
-      : `Relatorio_Contas_Balanco_DR_PGC_${meta.fiscalYear}.csv`;
+      : target === 'cash_flow'
+      ? `Demonstracao_Fluxos_Caixa_PGC_${meta.fiscalYear}.csv`
+      : target === 'notes'
+      ? `Notas_as_Contas_Anexo_PGC_${meta.fiscalYear}.csv`
+      : target === 'both'
+      ? `Relatorio_Contas_Balanco_DR_PGC_${meta.fiscalYear}.csv`
+      : `Dossier_Contabilistico_Completo_PGC_${meta.fiscalYear}.csv`;
 
   const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
@@ -512,7 +749,9 @@ export const exportFinancialStatementExcel = (
   target: StatementExportTarget,
   meta: CorporateEntityMeta,
   balanco: BalanceSheetExportData,
-  dre: IncomeStatementExportData
+  dre: IncomeStatementExportData,
+  cashFlow?: CashFlowData,
+  notesData?: FinancialNotesData
 ) => {
   const nowStr = new Date().toLocaleString('pt-AO');
   const vn = dre.vendas + dre.servicos || 1;
@@ -551,11 +790,11 @@ export const exportFinancialStatementExcel = (
         }
         return `
           <tr>
-            <td style="text-align:center; color:#475569; font-family:Consolas, monospace; padding:5px 8px; border:1px solid #e2e8f0;">${r.code}</td>
-            <td style="color:#1e293b; padding:5px 8px; border:1px solid #e2e8f0;">${r.label}</td>
-            <td style="text-align:center; color:#64748b; padding:5px 8px; border:1px solid #e2e8f0;">${r.note}</td>
-            <td style="text-align:right; color:${r.isNegative || r.amount < 0 ? '#dc2626' : '#0f172a'}; font-family:Consolas, monospace; padding:5px 8px; border:1px solid #e2e8f0;">${fmtKz(r.amount)}</td>
-            <td style="text-align:right; color:#64748b; font-family:Consolas, monospace; padding:5px 8px; border:1px solid #e2e8f0;">${r.pct}</td>
+            <td style="text-align:center; padding:5px 8px; border:1px solid #e2e8f0; font-family:Consolas, monospace;">${r.code}</td>
+            <td style="padding:5px 8px; border:1px solid #e2e8f0;">${r.label}</td>
+            <td style="text-align:center; padding:5px 8px; border:1px solid #e2e8f0; color:#64748b;">${r.note}</td>
+            <td style="text-align:right; padding:5px 8px; border:1px solid #e2e8f0; font-family:Consolas, monospace; ${r.isNegative ? 'color:#b91c1c;' : ''}">${fmtKz(r.amount)}</td>
+            <td style="text-align:right; padding:5px 8px; border:1px solid #e2e8f0; color:#64748b;">${r.pct}</td>
           </tr>`;
       })
       .join('');
@@ -563,13 +802,12 @@ export const exportFinancialStatementExcel = (
   const html = `
     <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
     <head>
-      <meta charset="UTF-8" />
       <!--[if gte mso 9]>
       <xml>
         <x:ExcelWorkbook>
           <x:ExcelWorksheets>
             <x:ExcelWorksheet>
-              <x:Name>Demonstracoes_PGC_${meta.fiscalYear}</x:Name>
+              <x:Name>Demonstracoes Financeiras PGC</x:Name>
               <x:WorksheetOptions>
                 <x:DisplayGridlines/>
               </x:WorksheetOptions>
@@ -578,34 +816,30 @@ export const exportFinancialStatementExcel = (
         </x:ExcelWorkbook>
       </xml>
       <![endif]-->
+      <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 9.5pt; color: #1e293b; }
+        table { border-collapse: collapse; width: 100%; }
+        th { font-family: 'Segoe UI', Arial, sans-serif; font-size: 9pt; }
+        td { font-family: 'Segoe UI', Arial, sans-serif; font-size: 9pt; }
+      </style>
     </head>
-    <body style="font-family: Calibri, Arial, sans-serif; font-size: 10pt; color: #0f172a;">
-      <table border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse;">
+    <body>
+      <table>
         <tr>
-          <td colspan="5" style="background-color:#0f172a; color:#ffffff; font-size:14pt; font-weight:bold; padding:12px 14px;">
-            ${meta.companyName.toUpperCase()} — DEMONSTRAÇÕES FINANCEIRAS CORPORATIVAS
+          <td colspan="5" style="font-size:14pt; font-weight:bold; color:#0f172a; text-align:center; padding:10px;">
+            ${meta.companyName.toUpperCase()}
           </td>
         </tr>
         <tr>
-          <td colspan="5" style="background-color:#1e293b; color:#cbd5e1; font-size:9.5pt; padding:6px 14px;">
-            Plano Geral de Contabilidade de Angola (Decreto n.º 82/01 de 16 de Novembro) · Ordem dos Contabilistas e Peritos Contabilistas de Angola (OCPCA)
-          </td>
-        </tr>
-        <tr>
-          <td colspan="2" style="background-color:#f8fafc; padding:6px 10px; border:1px solid #cbd5e1;">
-            <b>Entidade:</b> ${meta.companyName} &nbsp;|&nbsp; <b>NIF:</b> ${meta.nif}
-          </td>
-          <td colspan="2" style="background-color:#f8fafc; padding:6px 10px; border:1px solid #cbd5e1;">
-            <b>Exercício Económico:</b> ${meta.fiscalYear} (01/01/${meta.fiscalYear} a 31/12/${meta.fiscalYear})
-          </td>
-          <td style="background-color:#f8fafc; padding:6px 10px; border:1px solid #cbd5e1; text-align:right;">
-            <b>Moeda:</b> Kwanzas (AOA)
+          <td colspan="5" style="font-size:10pt; color:#475569; text-align:center;">
+            NIF: <b>${meta.nif}</b> &nbsp;|&nbsp; Exercício Fiscal de <b>${meta.fiscalYear}</b> &nbsp;|&nbsp; PGC Angola (Decreto n.º 82/01)
           </td>
         </tr>
         <tr><td colspan="5" style="height:12px;"></td></tr>
 
         ${
-          target === 'balance_sheet' || target === 'both'
+          target === 'balance_sheet' || target === 'both' || target === 'all'
             ? `
         <tr>
           <td colspan="5" style="background-color:#1e3a8a; color:#ffffff; font-size:11pt; font-weight:bold; padding:8px 12px;">
@@ -634,11 +868,11 @@ export const exportFinancialStatementExcel = (
         }
 
         ${
-          target === 'income_statement' || target === 'both'
+          target === 'income_statement' || target === 'both' || target === 'all'
             ? `
         <tr>
           <td colspan="5" style="background-color:#065f46; color:#ffffff; font-size:11pt; font-weight:bold; padding:8px 12px;">
-            ${target === 'both' ? 'II. ' : ''}DEMONSTRAÇÃO DE RESULTADOS POR NATUREZA — EXERCÍCIO DE ${meta.fiscalYear} (Decreto n.º 82/01)
+            ${target === 'all' || target === 'both' ? 'II. ' : ''}DEMONSTRAÇÃO DE RESULTADOS POR NATUREZA — EXERCÍCIO DE ${meta.fiscalYear}
           </td>
         </tr>
         <tr>
@@ -680,6 +914,48 @@ export const exportFinancialStatementExcel = (
             : ''
         }
 
+        ${
+          (target === 'cash_flow' || target === 'all') && cashFlow
+            ? `
+        <tr>
+          <td colspan="5" style="background-color:#0284c7; color:#ffffff; font-size:11pt; font-weight:bold; padding:8px 12px;">
+            ${target === 'all' ? 'III. ' : ''}DEMONSTRAÇÃO DOS FLUXOS DE CAIXA (DFC) — EXERCÍCIO DE ${meta.fiscalYear} (Decreto n.º 82/01)
+          </td>
+        </tr>
+        <tr>
+          <th style="background-color:#334155; color:#ffffff; padding:7px; border:1px solid #1e293b; width:110px;">Código</th>
+          <th style="background-color:#334155; color:#ffffff; padding:7px; border:1px solid #1e293b; width:440px; text-align:left;">Fluxos de Caixa por Actividade</th>
+          <th style="background-color:#334155; color:#ffffff; padding:7px; border:1px solid #1e293b; width:100px;">Nota</th>
+          <th style="background-color:#334155; color:#ffffff; padding:7px; border:1px solid #1e293b; width:180px; text-align:right;">Exercício ${meta.fiscalYear} (Kz)</th>
+          <th style="background-color:#334155; color:#ffffff; padding:7px; border:1px solid #1e293b; width:110px; text-align:right;">Proporção (%)</th>
+        </tr>
+        ${renderRowsHtml(buildCashFlowRows(cashFlow))}
+        <tr><td colspan="5" style="height:18px;"></td></tr>
+        `
+            : ''
+        }
+
+        ${
+          (target === 'notes' || target === 'all') && notesData
+            ? `
+        <tr>
+          <td colspan="5" style="background-color:#7c3aed; color:#ffffff; font-size:11pt; font-weight:bold; padding:8px 12px;">
+            ${target === 'all' ? 'IV. ' : ''}NOTAS ÀS CONTAS / ANEXO AO BALANÇO E DRE (PGC ANGOLA) — EXERCÍCIO DE ${meta.fiscalYear}
+          </td>
+        </tr>
+        <tr>
+          <th style="background-color:#334155; color:#ffffff; padding:7px; border:1px solid #1e293b; width:110px;">Nota / Conta</th>
+          <th style="background-color:#334155; color:#ffffff; padding:7px; border:1px solid #1e293b; width:440px; text-align:left;">Descrição da Divulgação e Políticas Contabilísticas</th>
+          <th style="background-color:#334155; color:#ffffff; padding:7px; border:1px solid #1e293b; width:100px;">Enquadramento</th>
+          <th style="background-color:#334155; color:#ffffff; padding:7px; border:1px solid #1e293b; width:180px; text-align:right;">Montante (Kz)</th>
+          <th style="background-color:#334155; color:#ffffff; padding:7px; border:1px solid #1e293b; width:110px; text-align:right;">Observação</th>
+        </tr>
+        ${renderRowsHtml(buildFinancialNotesRows(notesData))}
+        <tr><td colspan="5" style="height:18px;"></td></tr>
+        `
+            : ''
+        }
+
         <tr>
           <td colspan="2" style="padding:18px 10px 6px 10px; border-top:1px solid #94a3b8; text-align:center; font-weight:bold;">
             __________________________________________________<br/>
@@ -706,7 +982,13 @@ export const exportFinancialStatementExcel = (
       ? `Balanco_Patrimonial_PGC_${meta.fiscalYear}.xls`
       : target === 'income_statement'
       ? `Demonstracao_Resultados_PGC_${meta.fiscalYear}.xls`
-      : `Relatorio_Contas_Balanco_DR_PGC_${meta.fiscalYear}.xls`;
+      : target === 'cash_flow'
+      ? `Demonstracao_Fluxos_Caixa_PGC_${meta.fiscalYear}.xls`
+      : target === 'notes'
+      ? `Notas_as_Contas_Anexo_PGC_${meta.fiscalYear}.xls`
+      : target === 'both'
+      ? `Relatorio_Contas_Balanco_DR_PGC_${meta.fiscalYear}.xls`
+      : `Dossier_Contabilistico_Completo_PGC_${meta.fiscalYear}.xls`;
 
   const blob = new Blob(['\uFEFF' + html], {
     type: 'application/vnd.ms-excel;charset=utf-8;',
@@ -728,7 +1010,9 @@ export const exportFinancialStatementPdf = (
   target: StatementExportTarget,
   meta: CorporateEntityMeta,
   balanco: BalanceSheetExportData,
-  dre: IncomeStatementExportData
+  dre: IncomeStatementExportData,
+  cashFlow?: CashFlowData,
+  notesData?: FinancialNotesData
 ) => {
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
@@ -752,474 +1036,415 @@ export const exportFinancialStatementPdf = (
         if (r.isTotal) {
           return `
             <tr class="total-row">
-              <td class="center mono">${r.code}</td>
+              <td class="font-mono text-center">${r.code}</td>
               <td>${r.label}</td>
-              <td class="center">${r.note}</td>
-              <td class="right mono">${fmtKz(r.amount)}</td>
-              <td class="right mono">${r.pct}</td>
+              <td class="text-center">${r.note}</td>
+              <td class="text-right font-mono">${fmtKz(r.amount)}</td>
+              <td class="text-right font-mono">${r.pct}</td>
             </tr>`;
         }
         if (r.isSubtotal) {
           return `
             <tr class="subtotal-row">
-              <td class="center mono">${r.code}</td>
+              <td class="font-mono text-center">${r.code}</td>
               <td>${r.label}</td>
-              <td class="center">${r.note}</td>
-              <td class="right mono ${r.amount < 0 ? 'neg' : ''}">${fmtKz(r.amount)}</td>
-              <td class="right mono">${r.pct}</td>
+              <td class="text-center text-muted">${r.note}</td>
+              <td class="text-right font-mono ${r.amount < 0 ? 'text-danger' : ''}">${fmtKz(r.amount)}</td>
+              <td class="text-right font-mono">${r.pct}</td>
             </tr>`;
         }
         return `
-          <tr>
-            <td class="center mono muted">${r.code}</td>
+          <tr class="item-row">
+            <td class="font-mono text-center text-muted">${r.code}</td>
             <td>${r.label}</td>
-            <td class="center muted">${r.note}</td>
-            <td class="right mono ${r.isNegative || r.amount < 0 ? 'neg' : ''}">${fmtKz(r.amount)}</td>
-            <td class="right mono muted">${r.pct}</td>
+            <td class="text-center text-muted">${r.note}</td>
+            <td class="text-right font-mono ${r.isNegative ? 'text-danger' : ''}">${fmtKz(r.amount)}</td>
+            <td class="text-right font-mono text-muted">${r.pct}</td>
           </tr>`;
       })
       .join('');
 
   const docTitle =
     target === 'balance_sheet'
-      ? `Balanço Patrimonial PGC - ${meta.companyName} (${meta.fiscalYear})`
+      ? `Balanço Patrimonial PGC — Exercício de ${meta.fiscalYear}`
       : target === 'income_statement'
-      ? `Demonstração de Resultados PGC - ${meta.companyName} (${meta.fiscalYear})`
-      : `Balanço e Demonstração de Resultados PGC - ${meta.companyName} (${meta.fiscalYear})`;
+      ? `Demonstração de Resultados por Natureza — Exercício de ${meta.fiscalYear}`
+      : target === 'cash_flow'
+      ? `Demonstração dos Fluxos de Caixa (DFC) — Exercício de ${meta.fiscalYear}`
+      : target === 'notes'
+      ? `Notas às Contas / Anexo PGC — Exercício de ${meta.fiscalYear}`
+      : target === 'both'
+      ? `Relatório e Contas (Balanço + DR) — Exercício de ${meta.fiscalYear}`
+      : `Dossier Contabilístico Completo (4 Demonstrações PGC) — Exercício de ${meta.fiscalYear}`;
 
   const html = `
     <!DOCTYPE html>
-    <html lang="pt-AO">
+    <html lang="pt">
     <head>
-      <meta charset="UTF-8" />
-      <title>${docTitle}</title>
+      <meta charset="utf-8">
+      <title>${docTitle} - ${meta.companyName}</title>
       <style>
         @page {
           size: A4 portrait;
-          margin: 14mm 12mm;
+          margin: 14mm 14mm 16mm 14mm;
         }
         * {
           box-sizing: border-box;
+          margin: 0;
+          padding: 0;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
         }
         body {
-          font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-          color: #0f172a;
-          background: #f1f5f9;
-          margin: 0;
-          padding: 20px;
-          font-size: 11px;
-          line-height: 1.4;
-        }
-        .toolbar {
-          max-width: 210mm;
-          margin: 0 auto 14px auto;
-          background: #0f172a;
-          color: #fff;
-          padding: 10px 16px;
-          border-radius: 10px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
-        }
-        .toolbar-actions {
-          display: flex;
-          gap: 8px;
-        }
-        .btn {
-          border: none;
-          padding: 7px 14px;
-          border-radius: 6px;
-          font-size: 11px;
-          font-weight: 700;
-          cursor: pointer;
-        }
-        .btn-primary {
-          background: #2563eb;
-          color: #fff;
-        }
-        .btn-secondary {
-          background: #334155;
-          color: #e2e8f0;
-        }
-        .page {
-          max-width: 210mm;
-          margin: 0 auto;
+          font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+          font-size: 8.5pt;
+          line-height: 1.35;
+          color: #1e293b;
           background: #ffffff;
-          padding: 16mm 14mm;
-          border-radius: 8px;
-          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+          padding: 16px;
         }
-        .corp-header {
-          border-bottom: 3px solid #0f172a;
-          padding-bottom: 12px;
+        .header-box {
+          border-bottom: 2px solid #0f172a;
+          padding-bottom: 10px;
           margin-bottom: 14px;
+        }
+        .company-name {
+          font-size: 15pt;
+          font-weight: 800;
+          color: #0f172a;
+          text-transform: uppercase;
+          letter-spacing: -0.3px;
+        }
+        .header-meta {
           display: flex;
           justify-content: space-between;
-          align-items: flex-start;
-        }
-        .brand-title {
-          font-size: 17px;
-          font-weight: 900;
-          letter-spacing: -0.3px;
-          color: #0f172a;
-          text-transform: uppercase;
-        }
-        .brand-sub {
-          font-size: 10px;
+          font-size: 8.5pt;
           color: #475569;
-          margin-top: 2px;
-          font-weight: 600;
+          margin-top: 4px;
         }
-        .meta-box {
-          text-align: right;
-          font-size: 10px;
-          color: #334155;
-        }
-        .meta-box strong {
-          color: #0f172a;
-        }
-        .entity-strip {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 8px;
-          background: #f8fafc;
-          border: 1px solid #cbd5e1;
-          border-radius: 6px;
-          padding: 8px 12px;
-          margin-bottom: 16px;
-          font-size: 10px;
-        }
-        .entity-strip div span {
-          display: block;
-          font-size: 8.5px;
-          text-transform: uppercase;
-          color: #64748b;
-          font-weight: 700;
-        }
-        .entity-strip div strong {
-          font-size: 10.5px;
-          color: #0f172a;
-        }
-        .statement-block {
-          margin-bottom: 20px;
-        }
-        .statement-title {
+        .section-header {
           background: #0f172a;
           color: #ffffff;
-          padding: 7px 12px;
-          font-size: 11.5px;
-          font-weight: 800;
-          letter-spacing: 0.4px;
-          text-transform: uppercase;
+          font-size: 10.5pt;
+          font-weight: 700;
+          padding: 6px 10px;
+          border-radius: 4px;
+          margin-top: 14px;
+          margin-bottom: 6px;
           display: flex;
           justify-content: space-between;
           align-items: center;
-          border-radius: 4px 4px 0 0;
         }
-        .statement-title.dre {
-          background: #065f46;
-        }
+        .section-header.blue { background: #1e3a8a; }
+        .section-header.emerald { background: #065f46; }
+        .section-header.sky { background: #0369a1; }
+        .section-header.purple { background: #6b21a8; }
         table {
           width: 100%;
           border-collapse: collapse;
-          font-size: 10px;
+          margin-bottom: 12px;
         }
         th {
-          background: #1e293b;
-          color: #ffffff;
-          padding: 6px 8px;
+          background: #f1f5f9;
+          color: #334155;
           font-weight: 700;
           text-transform: uppercase;
-          font-size: 9px;
-          border: 1px solid #1e293b;
+          font-size: 7.5pt;
+          letter-spacing: 0.5px;
+          padding: 5px 6px;
+          border-bottom: 1.5px solid #cbd5e1;
         }
         td {
-          padding: 5px 8px;
-          border: 1px solid #e2e8f0;
-          color: #1e293b;
+          padding: 4px 6px;
+          border-bottom: 1px solid #e2e8f0;
+          font-size: 8.2pt;
         }
+        .font-mono {
+          font-family: 'Consolas', 'Menlo', monospace;
+        }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .text-muted { color: #64748b; }
+        .text-danger { color: #b91c1c; font-weight: 600; }
         .section-row td {
-          background: #e2e8f0;
+          background: #f8fafc;
+          font-weight: 700;
           color: #0f172a;
-          font-weight: 800;
-          font-size: 9.5px;
-          text-transform: uppercase;
-          padding: 5px 8px;
-          border-color: #cbd5e1;
+          font-size: 8.2pt;
+          border-top: 1px solid #cbd5e1;
+          border-bottom: 1px solid #cbd5e1;
+          padding: 5px 6px;
         }
         .code-badge {
-          background: #cbd5e1;
-          color: #0f172a;
-          padding: 1px 5px;
+          display: inline-block;
+          background: #e2e8f0;
+          color: #334155;
           border-radius: 3px;
+          padding: 1px 4px;
+          font-size: 7pt;
+          font-weight: 600;
           font-family: Consolas, monospace;
-          font-size: 8.5px;
         }
         .subtotal-row td {
-          background: #f1f5f9;
-          font-weight: 800;
+          background: #f8fafc;
+          font-weight: 700;
           color: #0f172a;
-          border-top: 1.5px solid #94a3b8;
-          border-bottom: 1.5px solid #94a3b8;
+          border-top: 1px solid #cbd5e1;
+          border-bottom: 1px solid #cbd5e1;
         }
         .total-row td {
           background: #0f172a;
           color: #ffffff !important;
-          font-weight: 900;
-          font-size: 10.5px;
-          padding: 7px 8px;
-          border-color: #0f172a;
+          font-weight: 800;
+          font-size: 9pt;
+          border-top: 1.5px solid #0f172a;
+          border-bottom: 1.5px solid #0f172a;
         }
-        .center { text-align: center; }
-        .right { text-align: right; }
-        .mono { font-family: 'JetBrains Mono', Consolas, monospace; }
-        .muted { color: #64748b; }
-        .neg { color: #dc2626 !important; }
+        .page-break {
+          page-break-before: always;
+          break-before: page;
+        }
         .kpi-grid {
           display: grid;
           grid-template-columns: repeat(4, 1fr);
           gap: 8px;
-          margin-top: 10px;
+          margin: 10px 0 14px 0;
         }
         .kpi-card {
           border: 1px solid #cbd5e1;
+          border-radius: 6px;
+          padding: 6px 8px;
           background: #f8fafc;
-          border-radius: 5px;
-          padding: 7px 10px;
         }
-        .kpi-card span {
-          display: block;
-          font-size: 8.5px;
+        .kpi-title {
+          font-size: 7pt;
+          font-weight: 700;
           text-transform: uppercase;
           color: #64748b;
-          font-weight: 700;
         }
-        .kpi-card strong {
-          font-size: 11px;
-          font-family: Consolas, monospace;
+        .kpi-value {
+          font-size: 10pt;
+          font-weight: 800;
           color: #0f172a;
+          font-family: Consolas, monospace;
+          margin-top: 2px;
         }
-        .kpi-card small {
-          display: block;
-          font-size: 9px;
-          color: #059669;
-          font-weight: 700;
+        .kpi-sub {
+          font-size: 7pt;
+          color: #047857;
+          font-weight: 600;
         }
-        .balance-check {
-          margin-top: 6px;
-          padding: 6px 10px;
-          border-radius: 4px;
-          font-weight: 700;
-          font-size: 9.5px;
-          display: flex;
-          justify-content: space-between;
-          background: ${balanco.isBalanced ? '#ecfdf5' : '#fffbeb'};
-          color: ${balanco.isBalanced ? '#065f46' : '#92400e'};
-          border: 1px solid ${balanco.isBalanced ? '#a7f3d0' : '#fde68a'};
-        }
-        .signatures {
-          margin-top: 28px;
+        .signatures-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 40px;
+          gap: 30px;
+          margin-top: 24px;
+          padding-top: 12px;
           page-break-inside: avoid;
         }
-        .sig-box {
+        .sig-line {
+          border-top: 1px solid #94a3b8;
           text-align: center;
-          padding-top: 26px;
-          border-top: 1.5px solid #334155;
-          font-size: 10px;
+          font-size: 8pt;
+          padding-top: 4px;
+          color: #334155;
+          font-weight: 600;
         }
-        .sig-box strong {
-          display: block;
-          color: #0f172a;
-          text-transform: uppercase;
-        }
-        .sig-box span {
-          font-size: 9px;
-          color: #64748b;
-        }
-        .doc-footer {
-          margin-top: 18px;
-          padding-top: 8px;
-          border-top: 1px solid #e2e8f0;
+        .footer-note {
+          margin-top: 14px;
+          font-size: 7pt;
+          color: #94a3b8;
           display: flex;
           justify-content: space-between;
-          font-size: 8.5px;
-          color: #64748b;
-        }
-        .page-break {
-          page-break-before: always;
-          margin-top: 24px;
+          border-top: 1px solid #e2e8f0;
+          padding-top: 6px;
         }
         @media print {
-          body {
-            background: #ffffff;
-            padding: 0;
-          }
-          .no-print {
-            display: none !important;
-          }
-          .page {
-            box-shadow: none;
-            padding: 0;
-            max-width: none;
-          }
+          body { padding: 0; }
+          .no-print { display: none; }
         }
       </style>
     </head>
     <body>
-      <div class="toolbar no-print">
-        <div>
-          <strong>Pré-visualização Oficial de Impressão / Exportação PDF (A4)</strong>
-          <div style="font-size:10px; color:#94a3b8;">Selecione "Guardar como PDF" na janela de impressão para gerar o ficheiro PDF corporativo.</div>
-        </div>
-        <div class="toolbar-actions">
-          <button class="btn btn-primary" onclick="window.print()">Guardar como PDF / Imprimir</button>
-          <button class="btn btn-secondary" onclick="window.close()">Fechar</button>
+      <div class="header-box">
+        <div class="company-name">${meta.companyName}</div>
+        <div class="header-meta">
+          <div>NIF: <strong>${meta.nif}</strong> &nbsp;·&nbsp; PGC Angola (Decreto n.º 82/01)</div>
+          <div>Exercício Económico de <strong>${meta.fiscalYear}</strong> &nbsp;·&nbsp; Moeda: <strong>Kwanzas (AOA)</strong></div>
         </div>
       </div>
 
-      <div class="page">
-        <div class="corp-header">
-          <div>
-            <div class="brand-title">${meta.companyName}</div>
-            <div class="brand-sub">Demonstrações Financeiras Oficiais · Plano Geral de Contabilidade de Angola (Decreto n.º 82/01)</div>
+      ${
+        target === 'balance_sheet' || target === 'both' || target === 'all'
+          ? `
+      <div class="section-header blue">
+        <span>I. BALANÇO PATRIMONIAL EM 31 DE DEZEMBRO DE ${meta.fiscalYear}</span>
+        <span style="font-size:8pt; font-weight:normal;">Decreto Presidencial n.º 82/01</span>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 12%;" class="text-center">Código PGC</th>
+            <th style="width: 50%; text-align: left;">Rubricas / Designação Patrimonial</th>
+            <th style="width: 10%;" class="text-center">Nota</th>
+            <th style="width: 16%;" class="text-right">Exercício ${meta.fiscalYear}</th>
+            <th style="width: 12%;" class="text-right">Peso (%)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${renderTableRows(buildBalanceSheetRows(balanco))}
+        </tbody>
+      </table>
+      `
+          : ''
+      }
+
+      ${
+        target === 'income_statement' || target === 'both' || target === 'all'
+          ? `
+      <div class="${target === 'both' || target === 'all' ? 'page-break' : ''}">
+        <div class="section-header emerald">
+          <span>${target === 'all' || target === 'both' ? 'II. ' : ''}DEMONSTRAÇÃO DE RESULTADOS POR NATUREZA — EXERCÍCIO DE ${meta.fiscalYear}</span>
+          <span style="font-size:8pt; font-weight:normal;">Contas 6, 7 e 8 PGC</span>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-title">Volume de Negócios</div>
+            <div class="kpi-value">${fmtKz(dre.vendas + dre.servicos)}</div>
+            <div class="kpi-sub">Vendas + Serviços</div>
           </div>
-          <div class="meta-box">
-            <div><strong>RELATÓRIO E CONTAS ANUAL</strong></div>
-            <div>Exercício Fiscal: <strong>${meta.fiscalYear}</strong></div>
-            <div>Emissão: ${nowStr}</div>
+          <div class="kpi-card">
+            <div class="kpi-title">Margem Bruta</div>
+            <div class="kpi-value">${fmtKz(dre.margemBruta)}</div>
+            <div class="kpi-sub">${fmtPct(dre.margemBruta, vn)} do VN</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">EBITDA Operacional</div>
+            <div class="kpi-value">${fmtKz(ebitda)}</div>
+            <div class="kpi-sub">${fmtPct(ebitda, vn)} do VN</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Resultado Líquido</div>
+            <div class="kpi-value" style="color:${dre.resultadoLiquido >= 0 ? '#047857' : '#b91c1c'};">${fmtKz(dre.resultadoLiquido)}</div>
+            <div class="kpi-sub">${fmtPct(dre.resultadoLiquido, vn)} Margem Líq.</div>
           </div>
         </div>
 
-        <div class="entity-strip">
-          <div>
-            <span>Entidade / Firma</span>
-            <strong>${meta.companyName}</strong>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 12%;" class="text-center">Conta PGC</th>
+              <th style="width: 50%; text-align: left;">Rubricas por Natureza Económica</th>
+              <th style="width: 10%;" class="text-center">Nota</th>
+              <th style="width: 16%;" class="text-right">Exercício ${meta.fiscalYear}</th>
+              <th style="width: 12%;" class="text-right">% VN</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${renderTableRows(buildIncomeStatementRows(dre))}
+          </tbody>
+        </table>
+      </div>
+      `
+          : ''
+      }
+
+      ${
+        (target === 'cash_flow' || target === 'all') && cashFlow
+          ? `
+      <div class="${target === 'all' ? 'page-break' : ''}">
+        <div class="section-header sky">
+          <span>${target === 'all' ? 'III. ' : ''}DEMONSTRAÇÃO DOS FLUXOS DE CAIXA (DFC) — EXERCÍCIO DE ${meta.fiscalYear}</span>
+          <span style="font-size:8pt; font-weight:normal;">Método Directo / PGC</span>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-title">Fluxo Operacional</div>
+            <div class="kpi-value">${fmtKz(cashFlow.fluxoOperacional)}</div>
+            <div class="kpi-sub">Actividades Correntes</div>
           </div>
-          <div>
-            <span>NIF (AGT)</span>
-            <strong class="mono">${meta.nif}</strong>
+          <div class="kpi-card">
+            <div class="kpi-title">Fluxo Investimento</div>
+            <div class="kpi-value">${fmtKz(cashFlow.fluxoInvestimento)}</div>
+            <div class="kpi-sub">Imobilizado / Capex</div>
           </div>
-          <div>
-            <span>Período de Relato</span>
-            <strong>01/01/${meta.fiscalYear} a 31/12/${meta.fiscalYear}</strong>
+          <div class="kpi-card">
+            <div class="kpi-title">Fluxo Financiamento</div>
+            <div class="kpi-value">${fmtKz(cashFlow.fluxoFinanciamento)}</div>
+            <div class="kpi-sub">Capital & Financiamentos</div>
           </div>
-          <div>
-            <span>Unidade Monetária</span>
-            <strong>Kwanzas (AOA)</strong>
+          <div class="kpi-card">
+            <div class="kpi-title">Saldo Final de Caixa</div>
+            <div class="kpi-value" style="color:#0284c7;">${fmtKz(cashFlow.saldoFinalCaixa)}</div>
+            <div class="kpi-sub">${cashFlow.isReconciled ? 'Reconciliado' : 'A Reconciliar'}</div>
           </div>
         </div>
 
-        ${
-          target === 'balance_sheet' || target === 'both'
-            ? `
-        <div class="statement-block">
-          <div class="statement-title">
-            <span>I. Balanço Patrimonial em 31 de Dezembro de ${meta.fiscalYear}</span>
-            <span style="font-size:9.5px; font-weight:600; opacity:0.9;">Classes 1, 2, 3, 4, 5 e 8 do PGC</span>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="width:12%;">Código PGC</th>
-                <th style="width:50%; text-align:left;">Rubricas / Designação</th>
-                <th style="width:10%;">Nota</th>
-                <th style="width:18%; text-align:right;">Exercício ${meta.fiscalYear} (Kz)</th>
-                <th style="width:10%; text-align:right;">Peso (%)</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${renderTableRows(buildBalanceSheetRows(balanco))}
-            </tbody>
-          </table>
-          <div class="balance-check">
-            <span>${
-              balanco.isBalanced
-                ? 'Equação Fundamental do Balanço Verificada: Activo = Capital Próprio + Passivo'
-                : 'Ajuste Transitório de Fecho (Diferença pendente de apuramento final)'
-            }</span>
-            <span class="mono">Δ = ${fmtKz(balanco.balancoDiff)}</span>
-          </div>
-        </div>
-        `
-            : ''
-        }
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 12%;" class="text-center">Código</th>
+              <th style="width: 50%; text-align: left;">Fluxos de Caixa por Actividade</th>
+              <th style="width: 10%;" class="text-center">Nota</th>
+              <th style="width: 16%;" class="text-right">Exercício ${meta.fiscalYear}</th>
+              <th style="width: 12%;" class="text-right">Proporção (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${renderTableRows(buildCashFlowRows(cashFlow))}
+          </tbody>
+        </table>
+      </div>
+      `
+          : ''
+      }
 
-        ${
-          target === 'income_statement' || target === 'both'
-            ? `
-        <div class="statement-block ${target === 'both' ? 'page-break' : ''}">
-          <div class="statement-title dre">
-            <span>${target === 'both' ? 'II. ' : ''}Demonstração de Resultados por Natureza — Exercício de ${meta.fiscalYear}</span>
-            <span style="font-size:9.5px; font-weight:600; opacity:0.9;">Classes 6, 7 e 8 do PGC</span>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="width:12%;">Conta PGC</th>
-                <th style="width:50%; text-align:left;">Rubricas por Natureza</th>
-                <th style="width:10%;">Nota</th>
-                <th style="width:18%; text-align:right;">Exercício ${meta.fiscalYear} (Kz)</th>
-                <th style="width:10%; text-align:right;">% VN</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${renderTableRows(buildIncomeStatementRows(dre))}
-            </tbody>
-          </table>
-
-          <div class="kpi-grid">
-            <div class="kpi-card">
-              <span>Volume de Negócios (61+62)</span>
-              <strong>${fmtKz(dre.vendas + dre.servicos)}</strong>
-              <small>Base 100,00%</small>
-            </div>
-            <div class="kpi-card">
-              <span>Margem Bruta</span>
-              <strong>${fmtKz(dre.margemBruta)}</strong>
-              <small>${fmtPct(dre.margemBruta, vn)} s/ VN</small>
-            </div>
-            <div class="kpi-card">
-              <span>EBITDA Operacional</span>
-              <strong>${fmtKz(ebitda)}</strong>
-              <small>${fmtPct(ebitda, vn)} s/ VN</small>
-            </div>
-            <div class="kpi-card">
-              <span>Margem Líquida (Conta 88)</span>
-              <strong>${fmtKz(dre.resultadoLiquido)}</strong>
-              <small>${fmtPct(dre.resultadoLiquido, vn)} s/ VN</small>
-            </div>
-          </div>
-        </div>
-        `
-            : ''
-        }
-
-        <div class="signatures">
-          <div class="sig-box">
-            <strong>A Administração / Gerência</strong>
-            <span>Assinatura e Carimbo Oficial da Sociedade</span>
-          </div>
-          <div class="sig-box">
-            <strong>O Contabilista / Perito Contabilista</strong>
-            <span>Inscrito na OCPCA sob o n.º _______________</span>
-          </div>
+      ${
+        (target === 'notes' || target === 'all') && notesData
+          ? `
+      <div class="${target === 'all' ? 'page-break' : ''}">
+        <div class="section-header purple">
+          <span>${target === 'all' ? 'IV. ' : ''}NOTAS ÀS CONTAS / ANEXO AO BALANÇO E DRE — EXERCÍCIO DE ${meta.fiscalYear}</span>
+          <span style="font-size:8pt; font-weight:normal;">Art. 5.º Decreto n.º 82/01 PGC</span>
         </div>
 
-        <div class="doc-footer">
-          <span>Elaborado em conformidade com o Decreto n.º 82/01 (PGC Angola) e Decreto Executivo n.º 385/20 (SAF-T AO)</span>
-          <span>Kudiba ERP · Pág. 1</span>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 14%;" class="text-center">Nota / Rubrica</th>
+              <th style="width: 52%; text-align: left;">Descrição da Divulgação e Enquadramento PGC</th>
+              <th style="width: 14%;" class="text-center">Referência</th>
+              <th style="width: 20%;" class="text-right">Montante (Kz)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${renderTableRows(buildFinancialNotesRows(notesData))}
+          </tbody>
+        </table>
+      </div>
+      `
+          : ''
+      }
+
+      <div class="signatures-grid">
+        <div class="sig-line">
+          A Administração / Gerência Executiva<br/>
+          ${meta.companyName}
+        </div>
+        <div class="sig-line">
+          O Contabilista Certificado<br/>
+          (Ordem dos Contabilistas e Peritos Contabilistas de Angola — OCPCA)
         </div>
       </div>
 
-      <script>
-        window.onload = function() {
-          setTimeout(function() { window.print(); }, 250);
-        };
-      </script>
+      <div class="footer-note">
+        <span>Kudiba ERP — Módulo de Contabilidade PGC & Relatório de Gestão</span>
+        <span>Emitido em ${nowStr} por utilizador autorizado</span>
+        <span>Página Oficial de Relato Financeiro</span>
+      </div>
     </body>
     </html>
   `;
@@ -1227,4 +1452,8 @@ export const exportFinancialStatementPdf = (
   printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => {
+    printWindow.print();
+  }, 400);
 };

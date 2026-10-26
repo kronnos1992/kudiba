@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Layers,
@@ -17,6 +17,18 @@ import {
   X,
   ArrowRight,
   Info,
+  FileText,
+  ShoppingBag,
+  CreditCard,
+  BookOpen,
+  Tag,
+  ChevronDown,
+  ChevronUp,
+  History,
+  ArrowRightLeft,
+  Laptop,
+  Package,
+  Search,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
@@ -28,6 +40,8 @@ import {
   UpdateCostCenterPayload,
   CreateAllocationRulePayload,
   AllocateExpensePayload,
+  CostAllocationRecord,
+  ReclassifyCostAllocationPayload,
 } from '../../api/accounting';
 
 type CostCenterSubTab =
@@ -156,6 +170,80 @@ export const CostCentersTab: React.FC = () => {
     },
   });
 
+  // Cadeias de Rastreabilidade (Trace Chains) & Reclassificação
+  const [expandedChains, setExpandedChains] = useState<Set<string>>(new Set());
+  const [traceSearch, setTraceSearch] = useState<string>('');
+
+  const [isReclassModalOpen, setIsReclassModalOpen] = useState(false);
+  const [selectedAllocationForReclass, setSelectedAllocationForReclass] = useState<CostAllocationRecord | null>(null);
+  const [reclassForm, setReclassForm] = useState<ReclassifyCostAllocationPayload>({
+    allocation_id: '',
+    to_cost_center_id: '',
+    transferred_amount: 0,
+    transferred_units: 1,
+    asset_tags_moved: '',
+    reason: '',
+    performed_by: 'Dr. António Manuel (Contabilista Chefe OCPCA)',
+  });
+
+  const reclassifyMutation = useMutation({
+    mutationFn: accountingApi.reclassifyAllocation,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounting_cost_centers_dashboard'] });
+      setIsReclassModalOpen(false);
+      setSelectedAllocationForReclass(null);
+    },
+  });
+
+  // Auto-expandir a primeira cadeia ao carregar os dados
+  useEffect(() => {
+    if (dashboard?.trace_chains && dashboard.trace_chains.length > 0 && expandedChains.size === 0) {
+      setExpandedChains(new Set([dashboard.trace_chains[0].batch_id]));
+    }
+  }, [dashboard?.trace_chains]);
+
+  const toggleChainExpansion = (batchId: string) => {
+    setExpandedChains((prev) => {
+      const next = new Set(prev);
+      if (next.has(batchId)) {
+        next.delete(batchId);
+      } else {
+        next.add(batchId);
+      }
+      return next;
+    });
+  };
+
+  const expandAllChains = () => {
+    if (dashboard?.trace_chains) {
+      setExpandedChains(new Set(dashboard.trace_chains.map((c) => c.batch_id)));
+    }
+  };
+
+  const collapseAllChains = () => {
+    setExpandedChains(new Set());
+  };
+
+  const openReclassifyModal = (alloc: CostAllocationRecord) => {
+    setSelectedAllocationForReclass(alloc);
+    const maxUnits = num(alloc.allocated_units) || 1;
+    const maxAmount = num(alloc.allocated_amount);
+    const unitPrice = maxUnits > 0 ? maxAmount / maxUnits : maxAmount;
+    const defaultTransferredUnits = Math.min(1, maxUnits);
+    const otherCenter = activeOperationalCenters.find((c) => c.id !== alloc.cost_center_id) || activeOperationalCenters[0];
+
+    setReclassForm({
+      allocation_id: alloc.id,
+      to_cost_center_id: otherCenter?.id || '',
+      transferred_amount: unitPrice * defaultTransferredUnits,
+      transferred_units: defaultTransferredUnits,
+      asset_tags_moved: alloc.asset_tags ? alloc.asset_tags.split(',')[0].trim() : '',
+      reason: `Transferência de equipamento para reforço operacional em ${otherCenter?.name || 'novo centro'}`,
+      performed_by: 'Dr. António Manuel (Contabilista Chefe OCPCA)',
+    });
+    setIsReclassModalOpen(true);
+  };
+
   const openEditModal = (c: CostCenterItem) => {
     setEditingCenter(c);
     setEditCenterForm({
@@ -184,22 +272,55 @@ export const CostCentersTab: React.FC = () => {
     const fin = centers.find((c) => c.code === 'CC-FIN-001') || activeOperationalCenters[4];
     const endeRule = dashboard?.allocation_rules.find((r) => r.code === 'REG-ENDE-01');
 
-    if (caseId === 'A' && ti) {
+    if (caseId === 'A' && ti && rh && vnd) {
       setAllocForm({
         source_module: 'COMPRAS',
         source_document_ref: 'FT SISTEC-2026/00501',
+        supplier_name: 'SISTEC Angola, S.A.',
+        purchase_order_ref: 'OC 2026/00142',
+        receipt_delivery_ref: 'GR 2026/00089 (10 Computadores)',
+        payment_settlement_ref: 'RC 2026/00310 (BAI)',
+        journal_entry_ref: 'COMP #2026/0045',
         allocation_date: new Date().toISOString().split('T')[0],
         account_code: '11.5',
         account_name: 'Equipamento Administrativo e Informático (Ativo Imobilizado)',
         is_capex: true,
-        total_amount: 2000000,
+        total_amount: 5000000,
+        total_units: 10,
+        unit_measure: 'Computadores',
+        useful_life_months: 48,
         allocation_rule_id: undefined,
-        allocation_criterion: 'Imputação Direta de Ativo Imobilizado (CAPEX — Classe 1)',
-        project_code: 'PRJ-RENOV-TI',
-        vehicle_or_asset: 'Servidores & Portáteis TI',
+        allocation_criterion: 'Distribuição Física por Termo de Entrega de Equipamentos (10 Unidades = Kz 5.000.000)',
+        project_code: 'PRJ-RENOV-PARQUE-26',
+        vehicle_or_asset: 'Lote 10 Computadores Dell Latitude 5540',
         notes:
-          'Caso A: Compra de computadores para TI reconhecida como Ativo Imobilizado (não distorce a despesa operacional integral do mês).',
-        lines: [{ cost_center_id: ti.id, percentage: 100 }],
+          'Caso A: Compra de 10 computadores reconhecida como Ativo Imobilizado (Conta 11.5). Não consome o orçamento operacional mensal de uma só vez; quota mensal de amortização de Kz 104.166,67 amortizada ao longo de 48 meses.',
+        lines: [
+          {
+            cost_center_id: ti.id,
+            percentage: 40,
+            allocated_units: 4,
+            asset_tags: 'PAT-TI-001, PAT-TI-002, PAT-TI-003, PAT-TI-004',
+            recipient_responsible: 'Eng.º Osvaldo Neto',
+            notes: '4 portáteis afetos à equipa de TI e desenvolvimento',
+          },
+          {
+            cost_center_id: rh.id,
+            percentage: 30,
+            allocated_units: 3,
+            asset_tags: 'PAT-RH-001, PAT-RH-002, PAT-RH-003',
+            recipient_responsible: 'Dra. Helena Sebastião',
+            notes: '3 portáteis para processamento de salários e atendimento RH',
+          },
+          {
+            cost_center_id: vnd.id,
+            percentage: 30,
+            allocated_units: 3,
+            asset_tags: 'PAT-VND-001, PAT-VND-002, PAT-VND-003',
+            recipient_responsible: 'Paulo Cassule',
+            notes: '3 portáteis para a equipa comercial externa',
+          },
+        ],
       });
     } else if (caseId === 'B' && ti && rh && vnd && fin) {
       setAllocForm({
@@ -299,6 +420,45 @@ export const CostCentersTab: React.FC = () => {
       return true;
     });
   }, [dashboard, branchFilter, selectedCenterFilter]);
+
+  const filteredTraceChains = useMemo(() => {
+    const list = dashboard?.trace_chains || [];
+    return list.filter((chain) => {
+      if (branchFilter !== 'ALL') {
+        const matchesBranch = chain.splits.some((s) => s.branch_name === branchFilter);
+        if (!matchesBranch) return false;
+      }
+      if (selectedCenterFilter !== 'ALL') {
+        const matchesCenter = chain.splits.some((s) => s.cost_center_id === selectedCenterFilter);
+        if (!matchesCenter) return false;
+      }
+      if (traceSearch.trim()) {
+        const q = traceSearch.toLowerCase();
+        const matchesDoc = chain.source_document_ref.toLowerCase().includes(q);
+        const matchesSupplier = (chain.supplier_name || '').toLowerCase().includes(q);
+        const matchesPo = (chain.purchase_order_ref || '').toLowerCase().includes(q);
+        const matchesGr = (chain.receipt_delivery_ref || '').toLowerCase().includes(q);
+        const matchesAcct =
+          chain.account_code.includes(q) || chain.account_name.toLowerCase().includes(q);
+        const matchesSplits = chain.splits.some(
+          (s) =>
+            s.cost_center_name.toLowerCase().includes(q) ||
+            s.cost_center_code.toLowerCase().includes(q) ||
+            (s.asset_tags || '').toLowerCase().includes(q) ||
+            (s.recipient_responsible || '').toLowerCase().includes(q)
+        );
+        return (
+          matchesDoc ||
+          matchesSupplier ||
+          matchesPo ||
+          matchesGr ||
+          matchesAcct ||
+          matchesSplits
+        );
+      }
+      return true;
+    });
+  }, [dashboard, branchFilter, selectedCenterFilter, traceSearch]);
 
   const handleExportCostCentersCsv = () => {
     if (!dashboard) return;
@@ -986,6 +1146,382 @@ export const CostCentersTab: React.FC = () => {
             </div>
           </GlassCard>
 
+          {/* CADEIA DE RASTREABILIDADE DOCUMENTAL COMPLETA (TRACE CHAINS) */}
+          <GlassCard className="p-5 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                    Cadeias de Rastreabilidade Documental Completa (Origem → Atribuição → Equipamentos &amp; Tags → Depreciação)
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
+                    {filteredTraceChains.length} operações
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Acompanha a compra original, ordens de compra, guias de remessa, pagamentos, equipamentos físicos entregues aos colaboradores e a distinção entre CAPEX e depreciação
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Pesquisar documento, fornecedor, tag patrimonial..."
+                    value={traceSearch}
+                    onChange={(e) => setTraceSearch(e.target.value)}
+                    className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs w-64"
+                  />
+                  {traceSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setTraceSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={expandAllChains}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200"
+                >
+                  Expandir Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={collapseAllChains}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200"
+                >
+                  Recolher Todos
+                </button>
+              </div>
+            </div>
+
+            {/* Lista de Cadeias de Rastreabilidade */}
+            <div className="space-y-4">
+              {filteredTraceChains.map((chain) => {
+                const isExpanded = expandedChains.has(chain.batch_id);
+                return (
+                  <div
+                    key={chain.batch_id}
+                    className={`rounded-2xl border transition-all overflow-hidden ${
+                      chain.is_capex
+                        ? 'border-purple-200 dark:border-purple-900/60 bg-purple-50/20 dark:bg-purple-950/10'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
+                    }`}
+                  >
+                    {/* Cabeçalho do Card da Operação */}
+                    <div
+                      onClick={() => toggleChainExpansion(chain.batch_id)}
+                      className="p-4 cursor-pointer hover:bg-slate-50/60 dark:hover:bg-slate-800/40 flex flex-col md:flex-row md:items-center justify-between gap-3 select-none"
+                    >
+                      <div className="flex items-start md:items-center gap-3">
+                        <div
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                            chain.is_capex
+                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
+                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+                          }`}
+                        >
+                          {chain.is_capex ? <Laptop className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm font-black text-slate-900 dark:text-white">
+                              {chain.source_document_ref}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                chain.is_capex
+                                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200'
+                                  : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200'
+                              }`}
+                            >
+                              {chain.is_capex ? 'Ativo Imobilizado (CAPEX)' : 'Despesa Operacional (OPEX)'}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-400">
+                              {chain.allocation_date} · {chain.source_module}
+                            </span>
+                          </div>
+                          <div className="text-xs text-slate-600 dark:text-slate-300 font-medium flex items-center gap-1.5 mt-0.5">
+                            <span>Fornecedor: <b>{chain.supplier_name || 'Despesa Geral'}</b></span>
+                            <span>•</span>
+                            <span className="font-mono">{chain.account_code} — {chain.account_name}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4 self-end md:self-center">
+                        <div className="text-right">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                            Montante Total
+                          </span>
+                          <span className="font-mono text-sm font-black text-slate-900 dark:text-white">
+                            <KzAmount value={num(chain.total_document_amount)} />
+                          </span>
+                          {chain.is_capex && num(chain.total_monthly_depreciation) > 0 && (
+                            <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 block">
+                              Quota: <KzAmount value={num(chain.total_monthly_depreciation)} />/mês
+                            </span>
+                          )}
+                        </div>
+                        <div className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500">
+                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Conteúdo Expansível: Trilha Documental + Ativos + Splits */}
+                    {isExpanded && (
+                      <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-4 bg-slate-50/40 dark:bg-slate-950/20">
+                        {/* 1. Trilha Documental Integrada (5 Elos) */}
+                        <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2">
+                            Rastreabilidade Documental Ponta a Ponta (Documentos Relacionados)
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
+                            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                              <span className="text-[10px] font-bold text-slate-400 block flex items-center gap-1">
+                                <FileText className="w-3 h-3 text-blue-500" /> 1. Fatura de Fornecedor
+                              </span>
+                              <strong className="font-mono text-slate-900 dark:text-white block truncate">
+                                {chain.source_document_ref}
+                              </strong>
+                            </div>
+
+                            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                              <span className="text-[10px] font-bold text-slate-400 block flex items-center gap-1">
+                                <ShoppingBag className="w-3 h-3 text-amber-500" /> 2. Ordem de Compra (PO)
+                              </span>
+                              <strong className="font-mono text-slate-900 dark:text-white block truncate">
+                                {chain.purchase_order_ref || 'Não especificada'}
+                              </strong>
+                            </div>
+
+                            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                              <span className="text-[10px] font-bold text-slate-400 block flex items-center gap-1">
+                                <Truck className="w-3 h-3 text-emerald-500" /> 3. Guia de Remessa / Recepção
+                              </span>
+                              <strong className="font-mono text-slate-900 dark:text-white block truncate">
+                                {chain.receipt_delivery_ref || 'Não especificada'}
+                              </strong>
+                            </div>
+
+                            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                              <span className="text-[10px] font-bold text-slate-400 block flex items-center gap-1">
+                                <CreditCard className="w-3 h-3 text-indigo-500" /> 4. Pagamento / Liquidação
+                              </span>
+                              <strong className="font-mono text-slate-900 dark:text-white block truncate">
+                                {chain.payment_settlement_ref || 'Não especificado'}
+                              </strong>
+                            </div>
+
+                            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                              <span className="text-[10px] font-bold text-slate-400 block flex items-center gap-1">
+                                <BookOpen className="w-3 h-3 text-purple-500" /> 5. Diário Contabilístico
+                              </span>
+                              <strong className="font-mono text-slate-900 dark:text-white block truncate">
+                                {chain.journal_entry_ref || 'Lançamento Automático'}
+                              </strong>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 2. Nota Contabilística se for Ativo Imobilizado (CAPEX) */}
+                        {chain.is_capex && (
+                          <div className="p-3.5 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 flex items-start gap-3">
+                            <Info className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
+                            <div className="text-xs text-purple-900 dark:text-purple-200">
+                              <strong>Princípio Contabilístico de Ativos Fixos (Decreto PGC):</strong> A aquisição de{' '}
+                              <b>{chain.total_units ? `${num(chain.total_units)} ${chain.unit_measure || 'unidades'}` : 'equipamentos'}</b> no valor total de{' '}
+                              <b><KzAmount value={num(chain.total_document_amount)} /></b> foi reconhecida na <b>Conta 11.5 (Ativo Imobilizado)</b>.
+                              Este valor <u>não é lançado como despesa integral imediata</u> dos departamentos no momento da compra, protegendo o orçamento mensal (OPEX).
+                              O impacto operacional mensal corresponde à quota de depreciação de <b><KzAmount value={num(chain.total_monthly_depreciation)} />/mês</b> ao longo de <b>{chain.useful_life_months || 48} meses</b> (Conta 73.1).
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 3. Tabela de Atribuição aos Departamentos, Equipamentos Físicos e Responsáveis */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                              Distribuição por Departamentos, Equipamentos Entregues &amp; Responsáveis
+                            </span>
+                            <span className="text-slate-400">
+                              Critério: <b>{chain.allocation_criterion || 'Atribuição Direta'}</b>
+                            </span>
+                          </div>
+
+                          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                            <table className="w-full text-left text-xs border-separate border-spacing-0">
+                              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 uppercase font-bold">
+                                <tr>
+                                  <th className="p-2.5">Centro de Custos &amp; Departamento</th>
+                                  <th className="p-2.5">Equipamentos Entregues</th>
+                                  <th className="p-2.5">Etiquetas Patrimoniais / N.º Série</th>
+                                  <th className="p-2.5">Responsável pelo Recebimento</th>
+                                  <th className="p-2.5 text-right">Quota / Valor Atribuído</th>
+                                  <th className="p-2.5 text-right">Amortização Mensal</th>
+                                  <th className="p-2.5 text-center">Ações</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                {chain.splits.map((split) => (
+                                  <tr key={split.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                                    <td className="p-2.5">
+                                      <div className="font-bold text-slate-900 dark:text-white">
+                                        {split.cost_center_code} — {split.cost_center_name}
+                                      </div>
+                                      <div className="text-[11px] text-slate-400">{split.branch_name}</div>
+                                    </td>
+                                    <td className="p-2.5 font-medium">
+                                      {split.allocated_units ? (
+                                        <span className="inline-flex items-center gap-1 font-semibold text-slate-800 dark:text-slate-200">
+                                          <Package className="w-3.5 h-3.5 text-blue-500" />
+                                          {num(split.allocated_units)} {chain.unit_measure || 'unid.'}
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-400">—</span>
+                                      )}
+                                    </td>
+                                    <td className="p-2.5">
+                                      {split.asset_tags ? (
+                                        <div className="inline-flex items-center gap-1 font-mono font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded text-[11px]">
+                                          <Tag className="w-3 h-3" />
+                                          {split.asset_tags}
+                                        </div>
+                                      ) : (
+                                        <span className="text-slate-400">—</span>
+                                      )}
+                                    </td>
+                                    <td className="p-2.5">
+                                      {split.recipient_responsible ? (
+                                        <span className="font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1">
+                                          <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                          {split.recipient_responsible}
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-400">—</span>
+                                      )}
+                                    </td>
+                                    <td className="p-2.5 text-right">
+                                      <div className="font-mono font-black text-slate-900 dark:text-white">
+                                        <KzAmount value={num(split.allocated_amount)} />
+                                      </div>
+                                      <span className="text-[10px] text-slate-400 font-bold">
+                                        {num(split.percentage).toFixed(0)}% da compra
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-right font-mono font-bold text-purple-600 dark:text-purple-400">
+                                      {num(split.monthly_depreciation) > 0 ? (
+                                        <KzAmount value={num(split.monthly_depreciation)} />
+                                      ) : (
+                                        <span className="text-slate-400 text-xs">—</span>
+                                      )}
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => openReclassifyModal(split)}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/40 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition border border-indigo-200 dark:border-indigo-800"
+                                      >
+                                        <ArrowRightLeft className="w-3 h-3" />
+                                        Transferir
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </GlassCard>
+
+          {/* HISTÓRICO DE RECLASSIFICAÇÕES E TRANSFERÊNCIAS ENTRE CENTROS */}
+          {dashboard.reclassifications && dashboard.reclassifications.length > 0 && (
+            <GlassCard className="p-5 space-y-3 border-l-4 border-l-indigo-600">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                <div className="flex items-center gap-2">
+                  <History className="w-4 h-4 text-indigo-600" />
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                    Histórico Auditável de Transferências &amp; Reclassificações entre Centros
+                  </h3>
+                </div>
+                <span className="text-xs text-slate-400">
+                  {dashboard.reclassifications.length} movimentação(ões) registada(s)
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-separate border-spacing-0">
+                  <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 uppercase font-bold">
+                    <tr>
+                      <th className="p-2.5">Data / Hora</th>
+                      <th className="p-2.5">Documento</th>
+                      <th className="p-2.5">Origem → Destino</th>
+                      <th className="p-2.5">Unidades &amp; Tags Movimentadas</th>
+                      <th className="p-2.5 text-right">Valor Transferido</th>
+                      <th className="p-2.5">Motivo &amp; Responsável</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {dashboard.reclassifications.map((rec) => (
+                      <tr key={rec.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                        <td className="p-2.5 font-mono text-slate-500">
+                          {new Date(rec.created_at).toLocaleString('pt-AO')}
+                        </td>
+                        <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">
+                          {rec.source_document_ref}
+                        </td>
+                        <td className="p-2.5">
+                          <div className="flex items-center gap-1 font-bold">
+                            <span className="text-rose-600">{rec.from_cost_center_code}</span>
+                            <ArrowRight className="w-3 h-3 text-slate-400" />
+                            <span className="text-emerald-600">{rec.to_cost_center_code}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {rec.from_cost_center_name} → {rec.to_cost_center_name}
+                          </div>
+                        </td>
+                        <td className="p-2.5">
+                          {rec.transferred_units && (
+                            <span className="font-bold text-slate-800 dark:text-slate-200 block">
+                              {num(rec.transferred_units)} unid.
+                            </span>
+                          )}
+                          {rec.asset_tags_moved && (
+                            <span className="font-mono text-xs text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded">
+                              {rec.asset_tags_moved}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
+                          <KzAmount value={num(rec.transferred_amount)} />
+                        </td>
+                        <td className="p-2.5">
+                          <p className="text-slate-700 dark:text-slate-300 italic">{rec.reason}</p>
+                          <span className="text-[10px] font-bold text-slate-400 block mt-0.5">
+                            Autorizado por: {rec.performed_by}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </GlassCard>
+          )}
+
           {/* Tabela Rastreável de Documentos e Linhas de Distribuição */}
           <GlassCard className="overflow-hidden">
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1021,6 +1557,7 @@ export const CostCentersTab: React.FC = () => {
                     <th className="p-3">Projeto / Viatura</th>
                     <th className="p-3 text-right">Quota (%)</th>
                     <th className="p-3 text-right">Valor Imputado</th>
+                    <th className="p-3 text-center">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1082,6 +1619,16 @@ export const CostCentersTab: React.FC = () => {
                       </td>
                       <td className="p-3 text-right font-mono font-black text-slate-900 dark:text-white">
                         <KzAmount value={num(a.allocated_amount)} />
+                      </td>
+                      <td className="p-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => openReclassifyModal(a)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/40 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition border border-indigo-200 dark:border-indigo-800"
+                        >
+                          <ArrowRightLeft className="w-3 h-3" />
+                          Transferir
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -2039,6 +2586,203 @@ export const CostCentersTab: React.FC = () => {
                 className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50"
               >
                 Guardar Regra (100%)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: RECLASSIFICAÇÃO / TRANSFERÊNCIA INTERNA DE EQUIPAMENTO OU CUSTO */}
+      {isReclassModalOpen && selectedAllocationForReclass && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-xl max-h-[92vh] overflow-y-auto space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <ArrowRightLeft className="w-5 h-5 text-indigo-600" />
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                    Transferir / Reclassificar Equipamento ou Custo
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Histórico auditável: transfere unidades e quotas entre centros com registo de motivo e responsáveis
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsReclassModalOpen(false);
+                  setSelectedAllocationForReclass(null);
+                }}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Caixa de Origem Atual */}
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-500">Documento / Fatura:</span>
+                <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                  {selectedAllocationForReclass.source_document_ref}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-500">Centro de Origem:</span>
+                <span className="font-bold text-slate-900 dark:text-white">
+                  {selectedAllocationForReclass.cost_center_code} — {selectedAllocationForReclass.cost_center_name} ({selectedAllocationForReclass.branch_name})
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-500">Unidades Disponíveis na Origem:</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white">
+                  {num(selectedAllocationForReclass.allocated_units) || 1} {selectedAllocationForReclass.unit_measure || 'unid.'} · Valor Atual: <KzAmount value={num(selectedAllocationForReclass.allocated_amount)} />
+                </span>
+              </div>
+              {selectedAllocationForReclass.asset_tags && (
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-500">Etiquetas Atuais:</span>
+                  <span className="font-mono font-semibold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/40 px-2 py-0.5 rounded">
+                    {selectedAllocationForReclass.asset_tags}
+                  </span>
+                </div>
+              )}
+              {selectedAllocationForReclass.recipient_responsible && (
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-500">Responsável Atual:</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    {selectedAllocationForReclass.recipient_responsible}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Formulário de Transferência */}
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold block mb-1">Centro de Custos de Destino *</label>
+                <select
+                  value={reclassForm.to_cost_center_id}
+                  onChange={(e) => setReclassForm({ ...reclassForm, to_cost_center_id: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 font-bold"
+                >
+                  <option value="">Selecione o Centro de Destino...</option>
+                  {activeOperationalCenters
+                    .filter((c) => c.id !== selectedAllocationForReclass.cost_center_id)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.code} — {c.name} ({c.branch_name})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold block mb-1">Unidades a Transferir</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max={num(selectedAllocationForReclass.allocated_units) || 1}
+                    value={reclassForm.transferred_units || 1}
+                    onChange={(e) => {
+                      const u = parseFloat(e.target.value) || 1;
+                      const maxU = num(selectedAllocationForReclass.allocated_units) || 1;
+                      const totalAmt = num(selectedAllocationForReclass.allocated_amount);
+                      const unitAmt = maxU > 0 ? totalAmt / maxU : totalAmt;
+                      setReclassForm({
+                        ...reclassForm,
+                        transferred_units: u,
+                        transferred_amount: Math.min(totalAmt, u * unitAmt),
+                      });
+                    }}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold block mb-1">Valor a Transferir (Kz) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={reclassForm.transferred_amount}
+                    onChange={(e) =>
+                      setReclassForm({
+                        ...reclassForm,
+                        transferred_amount: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold block mb-1">
+                  Etiquetas Patrimoniais / N.º de Série Movimentados
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: PAT-TI-004"
+                  value={reclassForm.asset_tags_moved || ''}
+                  onChange={(e) =>
+                    setReclassForm({ ...reclassForm, asset_tags_moved: e.target.value })
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 font-mono"
+                />
+                <span className="text-[11px] text-slate-400 mt-0.5 block">
+                  Identifica especificamente os computadores ou equipamentos físicos cedidos
+                </span>
+              </div>
+
+              <div>
+                <label className="font-bold block mb-1">
+                  Justificação / Motivo da Transferência (Auditoria) *
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Ex: Reafetação de 1 portátil para o novo colaborador da área comercial..."
+                  value={reclassForm.reason}
+                  onChange={(e) => setReclassForm({ ...reclassForm, reason: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold block mb-1">Responsável pela Transferência</label>
+                <input
+                  type="text"
+                  value={reclassForm.performed_by || ''}
+                  onChange={(e) =>
+                    setReclassForm({ ...reclassForm, performed_by: e.target.value })
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsReclassModalOpen(false);
+                  setSelectedAllocationForReclass(null);
+                }}
+                className="px-4 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={
+                  !reclassForm.to_cost_center_id ||
+                  !reclassForm.reason.trim() ||
+                  reclassForm.transferred_amount <= 0 ||
+                  reclassifyMutation.isPending
+                }
+                onClick={() => reclassifyMutation.mutate(reclassForm)}
+                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {reclassifyMutation.isPending ? 'A Processar...' : 'Confirmar Transferência'}
               </button>
             </div>
           </div>
