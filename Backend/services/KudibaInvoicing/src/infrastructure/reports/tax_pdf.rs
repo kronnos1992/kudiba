@@ -63,13 +63,10 @@ impl TaxPdfReportGenerator {
         // Subtítulo e Metadados do Emitente
         Self::add_text(&mut operations, "F1", 9.0, 40.0, 778.0, "Regime Juridico das Facturas e Documentos Equivalentes (Decreto Presidencial n. 71/25)", (0.3, 0.3, 0.3));
 
-        let period_desc = match report.fiscal_month {
-            Some(m) => format!(
-                "Periodo Fiscal: Mes {:02} / Exercicio {}",
-                m, report.fiscal_year
-            ),
-            None => format!("Periodo Fiscal: Exercicio Anual {}", report.fiscal_year),
-        };
+        let period_desc = format!(
+            "Periodo Fiscal: {} ate {}",
+            report.period_start, report.period_end
+        );
         Self::add_text(
             &mut operations,
             "F2",
@@ -526,6 +523,8 @@ mod tests {
             tenant_id: Uuid::new_v4(),
             fiscal_year: 2026,
             fiscal_month: Some(10),
+            period_start: chrono::NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+            period_end: chrono::NaiveDate::from_ymd_opt(2026, 10, 31).unwrap(),
             vat: vec![
                 VatReportLine {
                     tax_rate: Decimal::from(14),

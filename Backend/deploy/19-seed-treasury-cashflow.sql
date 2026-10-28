@@ -6,21 +6,39 @@
 DO $$
 DECLARE
     v_tenant_id UUID := 'a0000000-0000-0000-0000-000000000001'::uuid;
-    v_bai_id UUID := 'b0000000-0000-0000-0000-000000000002'::uuid;
+    v_bai_id UUID;
     v_bfa_id UUID := 'b0000000-0000-0000-0000-000000000003'::uuid;
     v_bic_id UUID := 'b0000000-0000-0000-0000-000000000004'::uuid;
     v_bma_id UUID := 'b0000000-0000-0000-0000-000000000005'::uuid;
-    v_register_id UUID := 'c0000000-0000-0000-0000-000000000001'::uuid;
-    v_stmt_id UUID := gen_random_uuid();
-    v_p1 UUID := gen_random_uuid();
-    v_p2 UUID := gen_random_uuid();
-    v_p3 UUID := gen_random_uuid();
-    v_p4 UUID := gen_random_uuid();
-    v_p5 UUID := gen_random_uuid();
-    v_p6 UUID := gen_random_uuid();
-    v_p7 UUID := gen_random_uuid();
+    v_register_id UUID;
+    v_stmt_id UUID := 'd0000000-0000-0000-0000-000000000001'::uuid;
+    v_p1 UUID := 'd0000000-0000-0000-0000-000000000011'::uuid;
+    v_p2 UUID := 'd0000000-0000-0000-0000-000000000012'::uuid;
+    v_p3 UUID := 'd0000000-0000-0000-0000-000000000013'::uuid;
+    v_p4 UUID := 'd0000000-0000-0000-0000-000000000014'::uuid;
+    v_p5 UUID := 'd0000000-0000-0000-0000-000000000015'::uuid;
+    v_p6 UUID := 'd0000000-0000-0000-0000-000000000016'::uuid;
+    v_p7 UUID := 'd0000000-0000-0000-0000-000000000017'::uuid;
 BEGIN
     -- 1. Contas Bancárias Angolanas com Moedas e Câmbio de Referência BNA
+    INSERT INTO kudiba_treasury.bank_accounts (
+        id, tenant_id, bank_name, account_number, iban, currency,
+        current_balance, reconciled_balance, exchange_rate_to_aoa, is_active
+    )
+    VALUES (
+        'b0000000-0000-0000-0000-000000000002', v_tenant_id,
+        'Banco Angolano de Investimentos (BAI)', '0006-0000-1234-5678-90',
+        'AO06004000001234567890123', 'AOA', 14500000.0000, 14200000.0000, 1.0000, true
+    )
+    ON CONFLICT (tenant_id, iban) DO UPDATE
+    SET current_balance = EXCLUDED.current_balance,
+        reconciled_balance = EXCLUDED.reconciled_balance,
+        exchange_rate_to_aoa = EXCLUDED.exchange_rate_to_aoa;
+
+    SELECT id INTO v_bai_id
+    FROM kudiba_treasury.bank_accounts
+    WHERE tenant_id = v_tenant_id AND iban = 'AO06004000001234567890123';
+
     UPDATE kudiba_treasury.bank_accounts
     SET current_balance = 14500000.0000, reconciled_balance = 14200000.0000, exchange_rate_to_aoa = 1.0000
     WHERE id = v_bai_id;
@@ -34,6 +52,19 @@ BEGIN
     SET current_balance = EXCLUDED.current_balance,
         reconciled_balance = EXCLUDED.reconciled_balance,
         exchange_rate_to_aoa = EXCLUDED.exchange_rate_to_aoa;
+
+    SELECT id INTO v_bfa_id FROM kudiba_treasury.bank_accounts
+    WHERE tenant_id = v_tenant_id AND iban = 'AO06000600009876543210987';
+    SELECT id INTO v_bic_id FROM kudiba_treasury.bank_accounts
+    WHERE tenant_id = v_tenant_id AND iban = 'AO06005100005555444433332';
+    SELECT id INTO v_bma_id FROM kudiba_treasury.bank_accounts
+    WHERE tenant_id = v_tenant_id AND iban = 'AO06005500007777888899991';
+
+    SELECT id INTO v_register_id
+    FROM kudiba_treasury.cash_registers
+    WHERE tenant_id = v_tenant_id
+    ORDER BY created_at
+    LIMIT 1;
 
     -- 2. Contas a Pagar a Fornecedores (Invoice Payables)
     -- P1: AngoAlissar
@@ -62,10 +93,11 @@ BEGIN
 
     -- Registo da liquidação parcial de Refriango
     INSERT INTO kudiba_treasury.payable_settlements (
-        tenant_id, payable_id, bank_account_id, amount_paid, payment_method, payment_reference,
+        id, tenant_id, payable_id, bank_account_id, amount_paid, payment_method, payment_reference,
         settled_at, operator_user_id, notes
     ) VALUES (
-        v_tenant_id, v_p2, v_bai_id, 2000000.0000, 'TRANSFERENCIA', 'TRF-BAI-7849201',
+        'd0000000-0000-0000-0000-000000000021', v_tenant_id, v_p2, v_bai_id,
+        2000000.0000, 'TRANSFERENCIA', 'TRF-BAI-7849201',
         NOW() - INTERVAL '5 days', 'admin@kudiba.ao', 'Pagamento 1ª tranche 2.000.000 Kz'
     ) ON CONFLICT DO NOTHING;
 
@@ -131,12 +163,12 @@ BEGIN
 
     -- 3. Transferências Internas entre Contas e Caixas (Cash Transfers)
     INSERT INTO kudiba_treasury.cash_transfers (
-        tenant_id, transfer_number, source_type, source_id, target_type, target_id,
+        id, tenant_id, transfer_number, source_type, source_id, target_type, target_id,
         amount, fee_amount, currency, status, operator_user_id, notes, transferred_at
     ) VALUES
-        (v_tenant_id, 'TRF-INT-2026-001', 'REGISTER', v_register_id, 'BANK', v_bai_id, 1500000.0000, 0.0000, 'AOA', 'COMPLETED', 'admin@kudiba.ao', 'Sangria de fim de turno para depósito bancário no BAI', NOW() - INTERVAL '3 days'),
-        (v_tenant_id, 'TRF-INT-2026-002', 'BANK', v_bai_id, 'BANK', v_bfa_id, 3000000.0000, 350.0000, 'AOA', 'COMPLETED', 'admin@kudiba.ao', 'Reforço de tesouraria conta BFA para pagamento a fornecedores. Comissão STC 350 Kz.', NOW() - INTERVAL '2 days'),
-        (v_tenant_id, 'TRF-INT-2026-003', 'BANK', v_bfa_id, 'REGISTER', v_register_id, 250000.0000, 0.0000, 'AOA', 'COMPLETED', 'admin@kudiba.ao', 'Levantamento para fundo de maneio de trocos em numerário', NOW() - INTERVAL '1 day')
+        ('d0000000-0000-0000-0000-000000000031', v_tenant_id, 'TRF-INT-2026-001', 'REGISTER', v_register_id, 'BANK', v_bai_id, 1500000.0000, 0.0000, 'AOA', 'COMPLETED', 'admin@kudiba.ao', 'Sangria de fim de turno para depósito bancário no BAI', NOW() - INTERVAL '3 days'),
+        ('d0000000-0000-0000-0000-000000000032', v_tenant_id, 'TRF-INT-2026-002', 'BANK', v_bai_id, 'BANK', v_bfa_id, 3000000.0000, 350.0000, 'AOA', 'COMPLETED', 'admin@kudiba.ao', 'Reforço de tesouraria conta BFA para pagamento a fornecedores. Comissão STC 350 Kz.', NOW() - INTERVAL '2 days'),
+        ('d0000000-0000-0000-0000-000000000033', v_tenant_id, 'TRF-INT-2026-003', 'BANK', v_bfa_id, 'REGISTER', v_register_id, 250000.0000, 0.0000, 'AOA', 'COMPLETED', 'admin@kudiba.ao', 'Levantamento para fundo de maneio de trocos em numerário', NOW() - INTERVAL '1 day')
     ON CONFLICT DO NOTHING;
 
     -- 4. Extrato Bancário e Reconciliação (Banco BAI)
@@ -144,22 +176,23 @@ BEGIN
         id, tenant_id, bank_account_id, reference_period, start_balance, end_balance,
         statement_date, file_name, status
     ) VALUES (
-        v_stmt_id, v_tenant_id, v_bai_id, '2026-10', 10500000.0000, 14500000.0000,
+        v_stmt_id, v_tenant_id, v_bai_id, to_char(CURRENT_DATE, 'YYYY-MM'),
+        10500000.0000, 14500000.0000,
         CURRENT_DATE, 'Extrato_BAI_Outubro_2026.pdf', 'OPEN'
     ) ON CONFLICT DO NOTHING;
 
     -- Linhas do Extrato
     INSERT INTO kudiba_treasury.bank_statement_lines (
-        statement_id, tenant_id, line_date, description, document_ref, amount,
+        id, statement_id, tenant_id, line_date, description, document_ref, amount,
         balance_after, movement_type, is_reconciled, matched_type, reconciled_at, reconciled_by
     ) VALUES
-        (v_stmt_id, v_tenant_id, CURRENT_DATE - INTERVAL '4 days', 'Crédito Depósito Numerário Balcão Talatona', 'DEP-BAI-0982', 1500000.0000, 12000000.0000, 'CREDIT', true, 'TRANSFER', NOW() - INTERVAL '3 days', 'admin@kudiba.ao'),
-        (v_stmt_id, v_tenant_id, CURRENT_DATE - INTERVAL '3 days', 'Liquidação Lote TPA EMIS Terminal #10294', 'TPA-EMIS-449102', 3850000.0000, 15850000.0000, 'CREDIT', true, 'RECEIPT', NOW() - INTERVAL '2 days', 'admin@kudiba.ao'),
-        (v_stmt_id, v_tenant_id, CURRENT_DATE - INTERVAL '3 days', 'Comissão Gestão e Aluguer TPA EMIS Out/2026', 'DEB-EMIS-0091', -25000.0000, 15825000.0000, 'DEBIT', true, 'COMMISSION', NOW() - INTERVAL '2 days', 'admin@kudiba.ao'),
-        (v_stmt_id, v_tenant_id, CURRENT_DATE - INTERVAL '2 days', 'Trf Interbancária Enviada p/ BFA Reforço', 'STC-AO-8841290', -3000350.0000, 12824650.0000, 'DEBIT', true, 'TRANSFER', NOW() - INTERVAL '2 days', 'admin@kudiba.ao'),
-        (v_stmt_id, v_tenant_id, CURRENT_DATE - INTERVAL '1 day', 'Recebimento Factura FT-2026/0048 Soc. Construções', 'TRF-CLI-77124', 3675350.0000, 16500000.0000, 'CREDIT', true, 'RECEIPT', NOW() - INTERVAL '1 day', 'admin@kudiba.ao'),
-        (v_stmt_id, v_tenant_id, CURRENT_DATE - INTERVAL '1 day', 'Pagamento Refriango 1ª Tranche FT REFR/2026/1204', 'TRF-BAI-7849201', -2000000.0000, 14500000.0000, 'DEBIT', true, 'PAYABLE', NOW() - INTERVAL '1 day', 'admin@kudiba.ao'),
-        (v_stmt_id, v_tenant_id, CURRENT_DATE, 'Manutenção de Conta à Ordem Banco BAI Outubro', 'DEB-MAN-202610', -4500.0000, 14495500.0000, 'DEBIT', false, NULL, NULL, NULL)
+        ('d0000000-0000-0000-0000-000000000041', v_stmt_id, v_tenant_id, CURRENT_DATE - INTERVAL '4 days', 'Crédito Depósito Numerário Balcão Talatona', 'DEP-BAI-0982', 1500000.0000, 12000000.0000, 'CREDIT', true, 'TRANSFER', NOW() - INTERVAL '3 days', 'admin@kudiba.ao'),
+        ('d0000000-0000-0000-0000-000000000042', v_stmt_id, v_tenant_id, CURRENT_DATE - INTERVAL '3 days', 'Liquidação Lote TPA EMIS Terminal #10294', 'TPA-EMIS-449102', 3850000.0000, 15850000.0000, 'CREDIT', true, 'RECEIPT', NOW() - INTERVAL '2 days', 'admin@kudiba.ao'),
+        ('d0000000-0000-0000-0000-000000000043', v_stmt_id, v_tenant_id, CURRENT_DATE - INTERVAL '3 days', 'Comissão Gestão e Aluguer TPA EMIS Out/2026', 'DEB-EMIS-0091', -25000.0000, 15825000.0000, 'DEBIT', true, 'COMMISSION', NOW() - INTERVAL '2 days', 'admin@kudiba.ao'),
+        ('d0000000-0000-0000-0000-000000000044', v_stmt_id, v_tenant_id, CURRENT_DATE - INTERVAL '2 days', 'Trf Interbancária Enviada p/ BFA Reforço', 'STC-AO-8841290', -3000350.0000, 12824650.0000, 'DEBIT', true, 'TRANSFER', NOW() - INTERVAL '2 days', 'admin@kudiba.ao'),
+        ('d0000000-0000-0000-0000-000000000045', v_stmt_id, v_tenant_id, CURRENT_DATE - INTERVAL '1 day', 'Recebimento Factura FT-2026/0048 Soc. Construções', 'TRF-CLI-77124', 3675350.0000, 16500000.0000, 'CREDIT', true, 'RECEIPT', NOW() - INTERVAL '1 day', 'admin@kudiba.ao'),
+        ('d0000000-0000-0000-0000-000000000046', v_stmt_id, v_tenant_id, CURRENT_DATE - INTERVAL '1 day', 'Pagamento Refriango 1ª Tranche FT REFR/2026/1204', 'TRF-BAI-7849201', -2000000.0000, 14500000.0000, 'DEBIT', true, 'PAYABLE', NOW() - INTERVAL '1 day', 'admin@kudiba.ao'),
+        ('d0000000-0000-0000-0000-000000000047', v_stmt_id, v_tenant_id, CURRENT_DATE, 'Manutenção de Conta à Ordem Banco BAI Outubro', 'DEB-MAN-202610', -4500.0000, 14495500.0000, 'DEBIT', false, NULL, NULL, NULL)
     ON CONFLICT DO NOTHING;
 
 END $$;

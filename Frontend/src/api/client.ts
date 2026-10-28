@@ -3,6 +3,18 @@ import { useAuthStore } from '../stores/authStore';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
+function getTokenTenantId(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return null;
+    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof decoded.tenant_id === 'string' ? decoded.tenant_id : null;
+  } catch {
+    return null;
+  }
+}
+
 export const apiClient = axios.create({
   baseURL: BASE_URL,
   timeout: 30000,
@@ -31,18 +43,20 @@ const processQueue = (error: AxiosError | null, token: string | null = null) => 
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const { accessToken, activeTenant, activeBranch } = useAuthStore.getState();
+    const token = accessToken || localStorage.getItem('kudiba_access_token');
+    const tenantId = activeTenant?.id || getTokenTenantId(token);
 
-    if (accessToken) {
-      config.headers.Authorization = `Bearer ${accessToken}`;
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
 
-    const requestedTenantId = config.headers['X-Tenant-ID'];
+    const requestedTenantId = config.headers.get('X-Tenant-ID');
     if (typeof requestedTenantId === 'string' && requestedTenantId) {
       if (requestedTenantId !== activeTenant?.id) {
         delete config.headers['X-Branch-ID'];
       }
-    } else if (activeTenant?.id) {
-      config.headers['X-Tenant-ID'] = activeTenant.id;
+    } else if (tenantId) {
+      config.headers.set('X-Tenant-ID', tenantId);
     }
 
     if (activeBranch?.id && (!requestedTenantId || requestedTenantId === activeTenant?.id)) {

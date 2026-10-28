@@ -62,6 +62,14 @@ class UpdateRolesHttpRequest(BaseModel):
 class UpdateMemberStatusHttpRequest(BaseModel):
     status: str = Field(..., pattern=r"^(ACTIVE|SUSPENDED)$", description="Estado do membro (ACTIVE ou SUSPENDED)")
 
+class ChangePasswordHttpRequest(BaseModel):
+    current_password: str = Field(..., min_length=1, max_length=1024)
+    new_password: str = Field(..., min_length=12, max_length=1024)
+
+
+class ResetPasswordHttpRequest(BaseModel):
+    new_password: str = Field(..., min_length=12, max_length=1024)
+
 
 class BankAccountHttpItem(BaseModel):
     bank_name: str = Field(..., description="Nome da instituição bancária")
@@ -248,6 +256,26 @@ def create_auth_router() -> APIRouter:
     ):
         app_state = get_app_state(request)
         return await app_state.get_user_profile.execute(ctx.user_id)
+
+    @router.post(
+        "/me/change-password",
+        summary="Alterar a própria palavra-passe",
+    )
+    async def change_own_password(
+        req: ChangePasswordHttpRequest,
+        request: Request,
+        ctx: SecurityContext = Depends(get_security_context),
+    ):
+        app_state = get_app_state(request)
+        await app_state.manage_password.change_own_password(
+            user_id=ctx.user_id,
+            tenant_id=ctx.tenant_id,
+            current_password=req.current_password,
+            new_password=req.new_password,
+            ip_address=extract_client_ip(request),
+            user_agent=request.headers.get("User-Agent"),
+        )
+        return {"success": True, "message": "Palavra-passe alterada. Inicie sessão novamente."}
 
     @router.get(
         "/tenant/settings",
@@ -597,6 +625,32 @@ def create_auth_router() -> APIRouter:
         app_state = get_app_state(request)
         return await app_state.list_tenant_members.execute(ctx.tenant_id)
 
+    @router.put(
+        "/users/{target_user_id}/password",
+        summary="Redefinir palavra-passe como SYSADMIN",
+    )
+    async def reset_user_password(
+        target_user_id: uuid.UUID,
+        req: ResetPasswordHttpRequest,
+        request: Request,
+        ctx: SecurityContext = Depends(get_security_context),
+    ):
+        if not (ctx.has_role("SYSADMIN") or ctx.has_role("SUPER_ADMIN")):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Apenas SYSADMIN pode redefinir a palavra-passe de outro utilizador.",
+            )
+        app_state = get_app_state(request)
+        await app_state.manage_password.reset_user_password(
+            target_user_id=target_user_id,
+            actor_user_id=ctx.user_id,
+            tenant_id=ctx.tenant_id,
+            new_password=req.new_password,
+            ip_address=extract_client_ip(request),
+            user_agent=request.headers.get("User-Agent"),
+        )
+        return {"success": True, "message": "Palavra-passe redefinida; todas as sessões foram encerradas."}
+
     @router.get(
         "/audit-logs",
         summary="Consultar Registos de Auditoria e Acessos",
@@ -852,4 +906,3 @@ def create_auth_router() -> APIRouter:
         await app_state.delete_role.execute(role_id, ctx.tenant_id)
 
     return router
-

@@ -444,41 +444,21 @@ async fn fetch_forecast_flow(
 
     let withholding_retention: Decimal = withholding_row.try_get("total").unwrap_or(Decimal::ZERO);
 
-    let estimated_iva = dec!(1850000.0);
-    let estimated_irt = dec!(620000.0);
-    let estimated_inss = dec!(340000.0);
-    let estimated_payroll = dec!(4200000.0);
-
-    let tax_obligations = vec![
-        TaxObligationForecast {
-            tax_type: "IVA_MENSAL".to_string(),
-            due_date: "2026-10-30".to_string(),
-            estimated_amount: estimated_iva,
-            description: "Imposto sobre o Valor Acrescentado a entregar à AGT (vence dia 30)".to_string(),
-        },
-        TaxObligationForecast {
-            tax_type: "IRT_FOLHA".to_string(),
-            due_date: "2026-10-31".to_string(),
-            estimated_amount: estimated_irt,
-            description: "Retenção de IRT dos colaboradores a entregar à AGT (vence dia 31)".to_string(),
-        },
-        TaxObligationForecast {
+    let tax_obligations = if withholding_retention > Decimal::ZERO {
+        vec![TaxObligationForecast {
             tax_type: "RETENCAO_6_5".to_string(),
-            due_date: "2026-10-31".to_string(),
+            due_date: "A apurar".to_string(),
             estimated_amount: withholding_retention,
-            description: "Retenção na Fonte de 6.5% sobre serviços de terceiros (vence dia 31)".to_string(),
-        },
-        TaxObligationForecast {
-            tax_type: "INSS_SEGURANCA_SOCIAL".to_string(),
-            due_date: "2026-11-10".to_string(),
-            estimated_amount: estimated_inss,
-            description: "Contribuição para a Segurança Social (8% entidade + 3% trabalhador, vence dia 10)".to_string(),
-        },
-    ];
+            description: "Retenção na Fonte sobre serviços de terceiros registados.".to_string(),
+        }]
+    } else {
+        Vec::new()
+    };
 
-    let estimated_taxes = estimated_iva + estimated_irt + withholding_retention + estimated_inss;
+    let estimated_taxes = withholding_retention;
+    let estimated_payroll = Decimal::ZERO;
     let total_expected_inflows = receivables_due;
-    let total_expected_outflows = payables_due + estimated_taxes + estimated_payroll;
+    let total_expected_outflows = payables_due + estimated_taxes;
     let net_expected_flow = total_expected_inflows - total_expected_outflows;
 
     Ok(ForecastCashFlow {
@@ -529,25 +509,9 @@ async fn build_projections(
         let date = today + chrono::Duration::days(i);
         let starting = running_balance;
 
-        let expected_in = if i % 7 == 2 || i % 7 == 5 {
-            dec!(1200000.0)
-        } else if i % 7 == 0 || i % 7 == 6 {
-            dec!(300000.0)
-        } else {
-            dec!(650000.0)
-        };
+        let expected_in = Decimal::ZERO;
 
-        let mut expected_out = *payables_by_date.get(&date).unwrap_or(&Decimal::ZERO);
-
-        if date.day() == 30 {
-            expected_out += dec!(1850000.0); // IVA
-        }
-        if date.day() == 31 || (date.month() == 2 && date.day() == 28) {
-            expected_out += dec!(4820000.0); // Salários + IRT
-        }
-        if date.day() == 10 {
-            expected_out += dec!(340000.0); // INSS
-        }
+        let expected_out = *payables_by_date.get(&date).unwrap_or(&Decimal::ZERO);
 
         let ending = starting + expected_in - expected_out;
         running_balance = ending;
@@ -598,22 +562,17 @@ async fn generate_alerts(
         });
     }
 
-    alerts.push(TreasuryAlert {
-        severity: "WARNING".to_string(),
-        title: "Prazo AGT: Liquidação de IVA".to_string(),
-        message: "O pagamento do IVA apurado do período fiscal vence a dia 30. Programe os fundos na conta bancária principal.".to_string(),
-        due_date: Some("2026-10-30".to_string()),
-    });
-
-    alerts.push(TreasuryAlert {
-        severity: "INFO".to_string(),
-        title: "Prazo AGT: IRT e Retenções na Fonte".to_string(),
-        message: format!(
-            "Declaração e liquidação do IRT e Retenções na Fonte de 6.5% no total de {} Kz vencem no final do mês.",
-            forecast.estimated_taxes
-        ),
-        due_date: Some("2026-10-31".to_string()),
-    });
+    if forecast.estimated_taxes > Decimal::ZERO {
+        alerts.push(TreasuryAlert {
+            severity: "INFO".to_string(),
+            title: "Retenções na Fonte por Liquidar".to_string(),
+            message: format!(
+                "Existem retenções na fonte registadas no valor de {} Kz.",
+                forecast.estimated_taxes
+            ),
+            due_date: None,
+        });
+    }
 
     let unreconciled_row = sqlx::query(
         "SELECT COUNT(*) AS count \

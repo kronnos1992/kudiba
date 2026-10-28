@@ -1,11 +1,10 @@
 import { create } from 'zustand';
-import { AuthState, LogoutReason, User, Tenant, Branch, LoginResponse } from '../types/auth';
+import { AuthState, LogoutReason, User, Tenant, LoginResponse } from '../types/auth';
 import { toast } from './toastStore';
 
 interface AuthActions {
   setSession: (response: LoginResponse) => void;
   updateTokens: (accessToken: string, refreshToken: string, expiresIn?: number) => void;
-  setActiveTenant: (tenant: Tenant, branch?: Branch) => void;
   updateActiveTenantSettings: (updates: Partial<Tenant>) => void;
   setUser: (user: User) => void;
   logout: (reason?: LogoutReason) => void;
@@ -187,29 +186,6 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
       localStorage.removeItem(STORAGE_KEYS.SESSION_EXPIRES_AT);
     }
     set({ accessToken, refreshToken, sessionExpiresAt });
-  },
-
-  setActiveTenant: (tenant, branch) => {
-    localStorage.setItem(STORAGE_KEYS.ACTIVE_TENANT, JSON.stringify(tenant));
-    const selectedBranch = branch || tenant.branches[0] || null;
-    if (selectedBranch) {
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_BRANCH, JSON.stringify(selectedBranch));
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.ACTIVE_BRANCH);
-    }
-    set((state) => {
-      const updatedUser = state.user
-        ? {
-            ...state.user,
-            roles: tenant.roles?.length ? tenant.roles : state.user.roles || [],
-            permissions: tenant.permissions?.length ? tenant.permissions : state.user.permissions || [],
-          }
-        : null;
-      if (updatedUser) {
-        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updatedUser));
-      }
-      return { activeTenant: tenant, activeBranch: selectedBranch, user: updatedUser };
-    });
   },
 
   updateActiveTenantSettings: (updates) => {

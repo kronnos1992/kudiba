@@ -8,6 +8,7 @@ from src.application.commands import (
     CreateRoleUseCase,
     DeleteRoleUseCase,
     InviteUserUseCase,
+    ManagePasswordUseCase,
     LogoutUserUseCase,
     RemoveMemberUseCase,
     ResetRolePermissionsUseCase,
@@ -58,6 +59,7 @@ class AppState:
     logout_user: LogoutUserUseCase
     switch_tenant: SwitchTenantUseCase
     invite_user: InviteUserUseCase
+    manage_password: ManagePasswordUseCase
     update_user_roles: UpdateUserRolesUseCase
     update_member_status: UpdateMemberStatusUseCase
     remove_member: RemoveMemberUseCase
@@ -152,6 +154,15 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         role_repo=role_repo,
     )
 
+    manage_password = ManagePasswordUseCase(
+        user_repo=user_repo,
+        password_hasher=hasher,
+        refresh_token_repo=refresh_token_repo,
+        cache_service=cache,
+        audit_repo=audit_repo,
+        session_revocation_ttl_seconds=config.jwt_access_expiration_minutes * 60 + 60,
+    )
+
     update_user_roles = UpdateUserRolesUseCase(
         uow_factory=uow_factory,
         user_tenant_repo=user_tenant_repo,
@@ -239,6 +250,7 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         logout_user=logout_user,
         switch_tenant=switch_tenant,
         invite_user=invite_user,
+        manage_password=manage_password,
         update_user_roles=update_user_roles,
         update_member_status=update_member_status,
         remove_member=remove_member,
@@ -256,4 +268,3 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         list_roles=list_roles,
         list_permissions=list_permissions,
     )
-

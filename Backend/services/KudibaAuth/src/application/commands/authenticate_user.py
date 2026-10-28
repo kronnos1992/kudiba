@@ -222,6 +222,10 @@ class AuthenticateUserUseCase:
                 )
                 for b in branches
             ]
+            if not user.is_superadmin and not (
+                {role.upper() for role in roles} & {"ADMIN", "SYSADMIN", "SUPER_ADMIN"}
+            ):
+                branch_dtos = [branch for branch in branch_dtos if branch.id == branch_id]
 
             return AuthenticationResult(
                 access_token=access_token,
@@ -242,4 +246,3 @@ class AuthenticateUserUseCase:
                     branches=branch_dtos,
                 ),
             )
-

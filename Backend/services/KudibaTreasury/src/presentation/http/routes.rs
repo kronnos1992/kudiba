@@ -145,6 +145,102 @@ pub fn extract_user_id(headers: &HeaderMap) -> Result<String, (StatusCode, Json<
     }
 }
 
+fn is_admin_user(headers: &HeaderMap) -> bool {
+    headers
+        .get("X-Resolved-Roles")
+        .and_then(|h| h.to_str().ok())
+        .map(|raw| {
+            raw.split(',')
+                .map(|role| role.trim().to_uppercase())
+                .any(|role| matches!(role.as_str(), "ADMIN" | "SYSADMIN" | "SUPER_ADMIN"))
+        })
+        .unwrap_or(false)
+}
+
+fn extract_branch_id(headers: &HeaderMap) -> Result<Uuid, (StatusCode, Json<ProblemDetail>)> {
+    let branch_id = headers
+        .get("X-Resolved-Branch-ID")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|raw| Uuid::parse_str(raw).ok());
+
+    branch_id.ok_or_else(|| {
+        (
+            StatusCode::FORBIDDEN,
+            Json(ProblemDetail::new(
+                StatusCode::FORBIDDEN,
+                "Filial Não Identificada",
+                "O operador precisa de ter uma filial atribuída na sua sessão para aceder aos caixas.",
+                "BRANCH_SCOPE_REQUIRED",
+            )),
+        )
+    })
+}
+
+fn branch_access_denied() -> (StatusCode, Json<ProblemDetail>) {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ProblemDetail::new(
+            StatusCode::FORBIDDEN,
+            "Acesso ao Caixa Negado",
+            "Só é possível aceder a caixas da filial atribuída ao utilizador.",
+            "CASH_REGISTER_BRANCH_FORBIDDEN",
+        )),
+    )
+}
+
+async fn ensure_register_access(
+    state: &AppState,
+    headers: &HeaderMap,
+    tenant_id: Uuid,
+    register_id: Uuid,
+) -> Result<CashRegisterResponse, (StatusCode, Json<ProblemDetail>)> {
+    let register = state
+        .queries
+        .get_cash_register(tenant_id, register_id)
+        .await
+        .map_err(map_domain_error)?;
+
+    if !is_admin_user(headers) && register.branch_id != Some(extract_branch_id(headers)?) {
+        return Err(branch_access_denied());
+    }
+
+    Ok(register)
+}
+
+async fn ensure_session_access(
+    state: &AppState,
+    headers: &HeaderMap,
+    tenant_id: Uuid,
+    session_id: Uuid,
+) -> Result<CashSessionResponse, (StatusCode, Json<ProblemDetail>)> {
+    let session = state
+        .queries
+        .get_cash_session(tenant_id, session_id)
+        .await
+        .map_err(map_domain_error)?;
+    ensure_register_access(state, headers, tenant_id, session.register_id).await?;
+    Ok(session)
+}
+
+fn ensure_session_operator(
+    headers: &HeaderMap,
+    session: &CashSessionResponse,
+) -> Result<(), (StatusCode, Json<ProblemDetail>)> {
+    if !is_admin_user(headers) && extract_user_id(headers)? != session.operator_user_id {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ProblemDetail::new(
+                StatusCode::FORBIDDEN,
+                "Sessão de Caixa de Outro Operador",
+                "Só o operador que abriu a sessão ou um administrador pode alterá-la.",
+                "CASH_SESSION_OPERATOR_FORBIDDEN",
+            )),
+        ));
+    }
+
+    Ok(())
+}
+
 pub fn require_roles(
     headers: &HeaderMap,
     allowed: &[&str],
@@ -235,6 +331,7 @@ pub async fn create_register_handler(
     headers: HeaderMap,
     Json(payload): Json<CreateCashRegisterRequest>,
 ) -> Result<(StatusCode, Json<CashRegisterResponse>), (StatusCode, Json<ProblemDetail>)> {
+    require_roles(&headers, &["ADMIN", "SYSADMIN", "SUPER_ADMIN"])?;
     let tenant_id = extract_tenant_id(&headers)?;
     let register = state
         .create_register_cmd
@@ -256,7 +353,17 @@ pub async fn list_registers_handler(
         .await
         .map_err(map_domain_error)?;
 
-    Ok(Json(registers))
+    if is_admin_user(&headers) {
+        return Ok(Json(registers));
+    }
+
+    let branch_id = extract_branch_id(&headers)?;
+    Ok(Json(
+        registers
+            .into_iter()
+            .filter(|register| register.branch_id == Some(branch_id))
+            .collect(),
+    ))
 }
 
 pub async fn get_register_handler(
@@ -265,11 +372,7 @@ pub async fn get_register_handler(
     Path(id): Path<Uuid>,
 ) -> Result<Json<CashRegisterResponse>, (StatusCode, Json<ProblemDetail>)> {
     let tenant_id = extract_tenant_id(&headers)?;
-    let register = state
-        .queries
-        .get_cash_register(tenant_id, id)
-        .await
-        .map_err(map_domain_error)?;
+    let register = ensure_register_access(&state, &headers, tenant_id, id).await?;
 
     Ok(Json(register))
 }
@@ -281,9 +384,15 @@ pub async fn get_register_handler(
 pub async fn open_session_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(payload): Json<OpenCashSessionRequest>,
+    Json(mut payload): Json<OpenCashSessionRequest>,
 ) -> Result<(StatusCode, Json<CashSessionResponse>), (StatusCode, Json<ProblemDetail>)> {
+    require_roles(
+        &headers,
+        &["ADMIN", "SYSADMIN", "SUPER_ADMIN", "OPERADOR_CAIXA"],
+    )?;
     let tenant_id = extract_tenant_id(&headers)?;
+    ensure_register_access(&state, &headers, tenant_id, payload.register_id).await?;
+    payload.operator_user_id = extract_user_id(&headers)?;
     let session = state
         .open_session_cmd
         .execute(tenant_id, payload)
@@ -299,7 +408,13 @@ pub async fn close_session_handler(
     Path(id): Path<Uuid>,
     Json(payload): Json<CloseCashSessionRequest>,
 ) -> Result<Json<CashSessionResponse>, (StatusCode, Json<ProblemDetail>)> {
+    require_roles(
+        &headers,
+        &["ADMIN", "SYSADMIN", "SUPER_ADMIN", "OPERADOR_CAIXA"],
+    )?;
     let tenant_id = extract_tenant_id(&headers)?;
+    let current_session = ensure_session_access(&state, &headers, tenant_id, id).await?;
+    ensure_session_operator(&headers, &current_session)?;
     let session = state
         .close_session_cmd
         .execute(tenant_id, id, payload)
@@ -315,6 +430,7 @@ pub async fn get_current_session_handler(
     Query(query): Query<CurrentSessionQuery>,
 ) -> Result<Json<Option<CashSessionResponse>>, (StatusCode, Json<ProblemDetail>)> {
     let tenant_id = extract_tenant_id(&headers)?;
+    ensure_register_access(&state, &headers, tenant_id, query.register_id).await?;
     let session = state
         .queries
         .get_open_session(tenant_id, query.register_id)
@@ -330,11 +446,7 @@ pub async fn get_session_handler(
     Path(id): Path<Uuid>,
 ) -> Result<Json<CashSessionResponse>, (StatusCode, Json<ProblemDetail>)> {
     let tenant_id = extract_tenant_id(&headers)?;
-    let session = state
-        .queries
-        .get_cash_session(tenant_id, id)
-        .await
-        .map_err(map_domain_error)?;
+    let session = ensure_session_access(&state, &headers, tenant_id, id).await?;
 
     Ok(Json(session))
 }
@@ -345,6 +457,7 @@ pub async fn get_session_report_handler(
     Path(id): Path<Uuid>,
 ) -> Result<Json<SessionReportResponse>, (StatusCode, Json<ProblemDetail>)> {
     let tenant_id = extract_tenant_id(&headers)?;
+    ensure_session_access(&state, &headers, tenant_id, id).await?;
     let report = state
         .queries
         .get_session_report(tenant_id, id)
@@ -363,7 +476,7 @@ pub async fn open_pos_session_handler(
     headers: HeaderMap,
     Json(payload): Json<OpenPosSessionRequest>,
 ) -> Result<(StatusCode, Json<PosSessionResponse>), (StatusCode, Json<ProblemDetail>)> {
-    require_roles(&headers, &["ADMIN"])?;
+    require_roles(&headers, &["ADMIN", "SYSADMIN", "SUPER_ADMIN"])?;
     let tenant_id = extract_tenant_id(&headers)?;
     let user_id = extract_user_id(&headers)?;
     let session = state
@@ -381,7 +494,7 @@ pub async fn close_pos_session_handler(
     Path(id): Path<Uuid>,
     Json(payload): Json<ClosePosSessionRequest>,
 ) -> Result<Json<PosSessionResponse>, (StatusCode, Json<ProblemDetail>)> {
-    require_roles(&headers, &["ADMIN"])?;
+    require_roles(&headers, &["ADMIN", "SYSADMIN", "SUPER_ADMIN"])?;
     let tenant_id = extract_tenant_id(&headers)?;
     let user_id = extract_user_id(&headers)?;
     let session = state
@@ -399,6 +512,7 @@ pub async fn get_current_pos_session_handler(
     Query(query): Query<CurrentSessionQuery>,
 ) -> Result<Json<Option<PosSessionResponse>>, (StatusCode, Json<ProblemDetail>)> {
     let tenant_id = extract_tenant_id(&headers)?;
+    ensure_register_access(&state, &headers, tenant_id, query.register_id).await?;
     let session = state
         .pos_session_repo
         .find_open_session_by_register(tenant_id, query.register_id)
@@ -417,6 +531,20 @@ pub async fn pos_panel_handler(
     (StatusCode, Json<ProblemDetail>),
 > {
     let tenant_id = extract_tenant_id(&headers)?;
+    if !is_admin_user(&headers) {
+        let register_id = query.register_id.ok_or_else(|| {
+            (
+                StatusCode::FORBIDDEN,
+                Json(ProblemDetail::new(
+                    StatusCode::FORBIDDEN,
+                    "Caixa Não Identificado",
+                    "O operador só pode consultar o painel do caixa da sua filial.",
+                    "CASH_REGISTER_REQUIRED",
+                )),
+            )
+        })?;
+        ensure_register_access(&state, &headers, tenant_id, register_id).await?;
+    }
     let date = query
         .date
         .unwrap_or_else(|| chrono::Utc::now().date_naive());
@@ -445,9 +573,16 @@ pub struct PosPanelQuery {
 pub async fn record_movement_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(payload): Json<RecordCashMovementRequest>,
+    Json(mut payload): Json<RecordCashMovementRequest>,
 ) -> Result<(StatusCode, Json<CashMovementResponse>), (StatusCode, Json<ProblemDetail>)> {
+    require_roles(
+        &headers,
+        &["ADMIN", "SYSADMIN", "SUPER_ADMIN", "OPERADOR_CAIXA"],
+    )?;
     let tenant_id = extract_tenant_id(&headers)?;
+    let session = ensure_session_access(&state, &headers, tenant_id, payload.session_id).await?;
+    ensure_session_operator(&headers, &session)?;
+    payload.operator_user_id = extract_user_id(&headers)?;
     let movement = state
         .record_movement_cmd
         .execute(tenant_id, payload)
@@ -463,6 +598,7 @@ pub async fn list_session_movements_handler(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<CashMovementResponse>>, (StatusCode, Json<ProblemDetail>)> {
     let tenant_id = extract_tenant_id(&headers)?;
+    ensure_session_access(&state, &headers, tenant_id, id).await?;
     let movements = state
         .queries
         .list_session_movements(tenant_id, id)
@@ -529,7 +665,15 @@ pub async fn issue_receipt_handler(
     headers: HeaderMap,
     Json(payload): Json<IssueTreasuryReceiptRequest>,
 ) -> Result<(StatusCode, Json<TreasuryReceiptResponse>), (StatusCode, Json<ProblemDetail>)> {
+    require_roles(
+        &headers,
+        &["ADMIN", "SYSADMIN", "SUPER_ADMIN", "OPERADOR_CAIXA"],
+    )?;
     let tenant_id = extract_tenant_id(&headers)?;
+    if let Some(session_id) = payload.session_id {
+        let session = ensure_session_access(&state, &headers, tenant_id, session_id).await?;
+        ensure_session_operator(&headers, &session)?;
+    }
     let receipt = state
         .issue_receipt_cmd
         .execute(tenant_id, payload)

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use serde::Serialize;
 use sqlx::Row;
@@ -14,6 +15,8 @@ pub struct FiscalReportQuery {
     pub tenant_id: Uuid,
     pub fiscal_year: i32,
     pub fiscal_month: Option<u32>,
+    pub from_date: Option<NaiveDate>,
+    pub to_date: Option<NaiveDate>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -33,6 +36,8 @@ pub struct FiscalReportResult {
     pub tenant_id: Uuid,
     pub fiscal_year: i32,
     pub fiscal_month: Option<u32>,
+    pub period_start: NaiveDate,
+    pub period_end: NaiveDate,
     pub vat: Vec<VatReportLine>,
     #[serde(with = "rust_decimal::serde::float")]
     pub withholding_total: Decimal,
@@ -63,6 +68,35 @@ impl FiscalReportsUseCase {
             return Err(DomainError::invalid("Mês fiscal deve estar entre 1 e 12."));
         }
 
+        let (period_start, period_end) = match (query.from_date, query.to_date) {
+            (Some(start), Some(end)) if start <= end => (start, end),
+            (Some(_), Some(_)) => {
+                return Err(DomainError::invalid(
+                    "A data de início não pode ser posterior à data de fim.",
+                ));
+            }
+            (Some(date), None) | (None, Some(date)) => (date, date),
+            (None, None) => {
+                let month = query.fiscal_month.unwrap_or(1);
+                let start = NaiveDate::from_ymd_opt(query.fiscal_year, month, 1)
+                    .ok_or_else(|| DomainError::invalid("Período fiscal inválido."))?;
+                let next_month = if month == 12 {
+                    NaiveDate::from_ymd_opt(query.fiscal_year + 1, 1, 1)
+                } else {
+                    NaiveDate::from_ymd_opt(query.fiscal_year, month + 1, 1)
+                }
+                .ok_or_else(|| DomainError::invalid("Período fiscal inválido."))?;
+                if query.fiscal_month.is_some() {
+                    (start, next_month.pred_opt().unwrap_or(start))
+                } else {
+                    (
+                        NaiveDate::from_ymd_opt(query.fiscal_year, 1, 1).unwrap_or(start),
+                        NaiveDate::from_ymd_opt(query.fiscal_year, 12, 31).unwrap_or(start),
+                    )
+                }
+            }
+        };
+
         let mut session = self.session_factory.open().await?;
         let vat_rows = sqlx::query(
             "SELECT l.tax_rate, \
@@ -72,13 +106,13 @@ impl FiscalReportsUseCase {
                  (l.line_total - (ROUND(l.quantity * l.unit_price, 2) - l.discount_amount))) AS tax_amount \
              FROM kudiba_core.invoices i \
              JOIN kudiba_core.invoice_lines l ON l.invoice_id = i.id \
-             WHERE i.tenant_id = $1 AND EXTRACT(YEAR FROM i.issued_at)::INT = $2 \
-               AND ($3::INT IS NULL OR EXTRACT(MONTH FROM i.issued_at)::INT = $3) \
+             WHERE i.tenant_id = $1 AND i.issued_at >= $2::date \
+               AND i.issued_at < ($3::date + INTERVAL '1 day') \
              GROUP BY l.tax_rate ORDER BY l.tax_rate",
         )
         .bind(query.tenant_id)
-        .bind(query.fiscal_year)
-        .bind(query.fiscal_month.map(|month| month as i32))
+        .bind(period_start)
+        .bind(period_end)
         .fetch_all(&mut *session.connection())
         .await
         .map_err(|err| DomainError::Persistence(err.to_string()))?;
@@ -104,12 +138,12 @@ impl FiscalReportsUseCase {
             "SELECT COALESCE(SUM(CASE WHEN document_type = 'NC' THEN -withholding_total ELSE withholding_total END), 0) AS withholding_total, \
              COALESCE(SUM(CASE WHEN document_type = 'NC' THEN -stamp_duty_total ELSE stamp_duty_total END), 0) AS stamp_duty_total \
              FROM kudiba_core.invoices \
-             WHERE tenant_id = $1 AND EXTRACT(YEAR FROM issued_at)::INT = $2 \
-               AND ($3::INT IS NULL OR EXTRACT(MONTH FROM issued_at)::INT = $3)",
+             WHERE tenant_id = $1 AND issued_at >= $2::date \
+               AND issued_at < ($3::date + INTERVAL '1 day')",
         )
         .bind(query.tenant_id)
-        .bind(query.fiscal_year)
-        .bind(query.fiscal_month.map(|month| month as i32))
+        .bind(period_start)
+        .bind(period_end)
         .fetch_one(&mut *session.connection())
         .await
         .map_err(|err| DomainError::Persistence(err.to_string()))?;
@@ -118,6 +152,8 @@ impl FiscalReportsUseCase {
             tenant_id: query.tenant_id,
             fiscal_year: query.fiscal_year,
             fiscal_month: query.fiscal_month,
+            period_start,
+            period_end,
             vat,
             withholding_total: totals
                 .try_get("withholding_total")

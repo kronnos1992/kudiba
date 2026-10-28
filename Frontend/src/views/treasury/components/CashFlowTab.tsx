@@ -18,6 +18,11 @@ import {
   Euro,
 } from 'lucide-react';
 import { GlassCard } from '../../../components/common/GlassCard';
+import {
+  getLocalDateString,
+  ReportDateFilter,
+  resolveReportDateRange,
+} from '../../../components/common/ReportDateFilter';
 import { KzAmount } from '../../../components/common/KzAmount';
 import { treasuryApi, CashFlowReport } from '../../../api/treasury';
 
@@ -28,10 +33,22 @@ interface CashFlowTabProps {
 
 export const CashFlowTab: React.FC<CashFlowTabProps> = ({ tenantId, onNavigateTab }) => {
   const [viewMode, setViewMode] = useState<'overview' | 'activities' | 'projections'>('overview');
+  const [reportStartDate, setReportStartDate] = useState(getLocalDateString);
+  const [reportEndDate, setReportEndDate] = useState(getLocalDateString);
+  const reportDateRange = resolveReportDateRange(reportStartDate, reportEndDate);
 
   const { data: report, isLoading } = useQuery<CashFlowReport>({
-    queryKey: ['treasury_cash_flow', tenantId],
-    queryFn: () => treasuryApi.getCashFlow(),
+    queryKey: [
+      'treasury_cash_flow',
+      tenantId,
+      reportDateRange.startDate,
+      reportDateRange.endDate,
+    ],
+    queryFn: () =>
+      treasuryApi.getCashFlow({
+        start_date: reportDateRange.startDate,
+        end_date: reportDateRange.endDate,
+      }),
     enabled: Boolean(tenantId),
     refetchInterval: 30000,
   });
@@ -59,6 +76,13 @@ export const CashFlowTab: React.FC<CashFlowTabProps> = ({ tenantId, onNavigateTa
 
   return (
     <div className="space-y-6">
+      <ReportDateFilter
+        startDate={reportStartDate}
+        endDate={reportEndDate}
+        onStartDateChange={setReportStartDate}
+        onEndDateChange={setReportEndDate}
+      />
+
       {/* Alertas Fiscais e de Tesouraria Angolana */}
       {alerts && alerts.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -419,7 +443,11 @@ export const CashFlowTab: React.FC<CashFlowTabProps> = ({ tenantId, onNavigateTa
                 <span>Calendário Fiscal AGT (Este Mês)</span>
               </h3>
               <div className="space-y-2.5 text-xs">
-                {forecast.tax_obligations.map((tax, idx) => (
+                {forecast.tax_obligations.length === 0 ? (
+                  <p className="py-4 text-center text-slate-500 dark:text-slate-400">
+                    Sem obrigações fiscais registadas.
+                  </p>
+                ) : forecast.tax_obligations.map((tax, idx) => (
                   <div
                     key={idx}
                     className="p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-amber-50/20 dark:bg-amber-950/10"

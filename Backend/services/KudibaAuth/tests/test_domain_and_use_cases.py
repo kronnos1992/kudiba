@@ -10,6 +10,7 @@ from src.application.commands import (
     DeleteRoleUseCase,
     InviteUserUseCase,
     LogoutUserUseCase,
+    ManagePasswordUseCase,
     RemoveMemberUseCase,
     ResetRolePermissionsUseCase,
     RotateRefreshTokenUseCase,
@@ -108,6 +109,13 @@ class MockUserRepository(IUserRepository):
 
     async def update_login_state(self, user: User) -> None:
         self.users[user.id] = user
+
+    async def update_password_hash(self, user_id: uuid.UUID, password_hash: str) -> bool:
+        user = self.users.get(user_id)
+        if not user:
+            return False
+        user.password_hash = password_hash
+        return True
 
 
 class MockTenantRepository(ITenantRepository):
@@ -225,6 +233,14 @@ class MockRefreshTokenRepository(IRefreshTokenRepository):
                 revoked += 1
         return revoked
 
+    async def revoke_user_tokens(self, user_id: uuid.UUID) -> int:
+        revoked = 0
+        for token in self.tokens.values():
+            if token.user_id == user_id and not token.is_revoked:
+                token.is_revoked = True
+                revoked += 1
+        return revoked
+
     async def replace_active_token(self, token_hash: str, replacement: RefreshToken, now: datetime) -> bool:
         token = self.tokens.get(token_hash)
         if not token or token.is_revoked or token.is_expired(now):
@@ -265,6 +281,7 @@ class MockCacheService(ICacheService):
     def __init__(self):
         self.blacklist = set()
         self.revoked_before: Dict[str, int] = {}
+        self.user_revoked_before: Dict[str, int] = {}
 
     async def blacklist_token(self, jti: str, ttl_seconds: int) -> None:
         self.blacklist.add(jti)
@@ -277,6 +294,12 @@ class MockCacheService(ICacheService):
 
     async def get_revoked_before(self, user_id: str, tenant_id: str) -> int:
         return self.revoked_before.get(f"{user_id}:{tenant_id}", 0)
+
+    async def revoke_user_sessions_before(self, user_id: str, epoch: int, ttl_seconds: int) -> None:
+        self.user_revoked_before[user_id] = epoch
+
+    async def get_user_revoked_before(self, user_id: str) -> int:
+        return self.user_revoked_before.get(user_id, 0)
 
 
 class MockAuditRepository(IAuditRepository):
@@ -1268,3 +1291,166 @@ async def test_update_member_status_and_remove_member():
     )
     assert await user_tenant_repo.find_membership(cashier_id, tenant_id) is None
     assert f"{cashier_id}:{tenant_id}" not in user_tenant_repo.roles
+
+
+@pytest.mark.asyncio
+async def test_switch_tenant_limits_non_admin_to_assigned_branch():
+    user_id = uuid.uuid4()
+    tenant_id = uuid.uuid4()
+    assigned_branch_id = uuid.uuid4()
+    other_branch_id = uuid.uuid4()
+
+    user_repo = MockUserRepository()
+    tenant_repo = MockTenantRepository()
+    user_tenant_repo = MockUserTenantRepository()
+    refresh_token_repo = MockRefreshTokenRepository()
+    audit_repo = MockAuditRepository()
+    user = User(
+        id=user_id,
+        email=Email("operator@kudiba.ao"),
+        full_name="Operador",
+        password_hash="hashed",
+    )
+    await user_repo.save(user)
+
+    tenant_repo.tenants[tenant_id] = Tenant(
+        id=tenant_id,
+        slug="kudiba",
+        company_name="Kudiba",
+        nif="5000000000",
+    )
+    tenant_repo.branches[assigned_branch_id] = Branch(
+        id=assigned_branch_id,
+        tenant_id=tenant_id,
+        code="SEDE",
+        name="Sede",
+    )
+    tenant_repo.branches[other_branch_id] = Branch(
+        id=other_branch_id,
+        tenant_id=tenant_id,
+        code="FILIAL",
+        name="Filial",
+    )
+    await user_tenant_repo.save_membership(
+        UserTenant(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            tenant_id=tenant_id,
+            default_branch_id=assigned_branch_id,
+        )
+    )
+    await user_tenant_repo.assign_roles(user_id, tenant_id, ["OPERADOR_CAIXA"])
+
+    use_case = SwitchTenantUseCase(
+        MockUnitOfWorkFactory(),
+        user_repo,
+        tenant_repo,
+        user_tenant_repo,
+        refresh_token_repo,
+        MockTokenService(),
+        audit_repo,
+    )
+
+    result = await use_case.execute(
+        SwitchTenantCommand(user_id, tenant_id, assigned_branch_id)
+    )
+    assert result.active_tenant.default_branch.id == assigned_branch_id
+    assert [branch.id for branch in result.active_tenant.branches] == [assigned_branch_id]
+
+    with pytest.raises(TenantAccessForbiddenError):
+        await use_case.execute(
+            SwitchTenantCommand(user_id, tenant_id, other_branch_id)
+        )
+
+    await user_tenant_repo.assign_roles(user_id, tenant_id, ["ADMIN"])
+    admin_result = await use_case.execute(
+        SwitchTenantCommand(user_id, tenant_id, other_branch_id)
+    )
+    assert admin_result.active_tenant.default_branch.id == other_branch_id
+    assert {branch.id for branch in admin_result.active_tenant.branches} == {
+        assigned_branch_id,
+        other_branch_id,
+    }
+
+
+@pytest.mark.asyncio
+async def test_manage_password_checks_current_password_and_revokes_sessions():
+    user_id = uuid.uuid4()
+    tenant_id = uuid.uuid4()
+    user_repo = MockUserRepository()
+    user = User(
+        id=user_id,
+        email=Email("user@kudiba.ao"),
+        full_name="User",
+        password_hash="hashed_CurrentPassword123",
+    )
+    await user_repo.save(user)
+    refresh_tokens = MockRefreshTokenRepository()
+    second_tenant_id = uuid.uuid4()
+    for token_tenant_id in (tenant_id, second_tenant_id):
+        token = RefreshToken(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            tenant_id=token_tenant_id,
+            token_hash=f"hash-{uuid.uuid4()}",
+            family_id=uuid.uuid4(),
+            expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+        )
+        await refresh_tokens.save(token)
+    cache = MockCacheService()
+    audit = MockAuditRepository()
+    hasher = MockPasswordHasher()
+    use_case = ManagePasswordUseCase(
+        user_repo,
+        hasher,
+        refresh_tokens,
+        cache,
+        audit,
+        session_revocation_ttl_seconds=900,
+    )
+
+    with pytest.raises(InvalidCredentialsError):
+        await use_case.change_own_password(
+            user_id,
+            tenant_id,
+            "wrong-password",
+            "A-strong-new-password-2026",
+            None,
+            None,
+        )
+
+    await use_case.change_own_password(
+        user_id,
+        tenant_id,
+        "CurrentPassword123",
+        "A-strong-new-password-2026",
+        None,
+        None,
+    )
+
+    assert user.password_hash == "hashed_A-strong-new-password-2026"
+    assert str(user_id) in cache.user_revoked_before
+    assert audit.events[-1]["action"] == "PASSWORD_CHANGED"
+
+    for token_tenant_id in (tenant_id, second_tenant_id):
+        token = RefreshToken(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            tenant_id=token_tenant_id,
+            token_hash=f"reset-hash-{uuid.uuid4()}",
+            family_id=uuid.uuid4(),
+            expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+        )
+        await refresh_tokens.save(token)
+
+    await use_case.reset_user_password(
+        target_user_id=user_id,
+        actor_user_id=uuid.uuid4(),
+        tenant_id=tenant_id,
+        new_password="A-different-strong-password",
+        ip_address=None,
+        user_agent=None,
+    )
+    assert user.password_hash == "hashed_A-different-strong-password"
+    assert all(token.is_revoked for token in refresh_tokens.tokens.values())
+    assert audit.events[-1]["action"] == "PASSWORD_RESET_BY_SYSADMIN"

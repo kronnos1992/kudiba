@@ -72,6 +72,20 @@ class SqlAlchemyRefreshTokenRepository(IRefreshTokenRepository):
                 await session.commit()
             return result.rowcount or 0
 
+    async def revoke_user_tokens(self, user_id: uuid.UUID) -> int:
+        async with session_scope(self._session_factory) as (session, owns_session):
+            result = await session.execute(
+                update(RefreshTokenModel)
+                .where(
+                    RefreshTokenModel.user_id == user_id,
+                    RefreshTokenModel.is_revoked.is_(False),
+                )
+                .values(is_revoked=True)
+            )
+            if owns_session:
+                await session.commit()
+            return result.rowcount or 0
+
     async def replace_active_token(
         self,
         token_hash: str,

@@ -387,6 +387,8 @@ export const invoicingApi = {
   getZReports: async (params?: {
     posTerminalId?: string;
     date?: string;
+    from_date?: string;
+    to_date?: string;
   }): Promise<PosZReportSummary[]> => {
     const response = await apiClient.get<PosZReportSummary[]>('/api/v1/fiscal/pos/reports', {
       params,
@@ -398,6 +400,8 @@ export const invoicingApi = {
     tenantId: string;
     year: number;
     month?: number;
+    from_date?: string;
+    to_date?: string;
   }): Promise<Blob> => {
     const response = await apiClient.get('/api/v1/fiscal/reports/tax/pdf', {
       params,
@@ -410,6 +414,8 @@ export const invoicingApi = {
     tenantId: string;
     year: number;
     month?: number;
+    from_date?: string;
+    to_date?: string;
   }): Promise<Blob> => {
     const response = await apiClient.get('/api/v1/fiscal/reports/tax/excel', {
       params,

@@ -29,6 +29,10 @@ class IRefreshTokenRepository(ABC):
         pass
 
     @abstractmethod
+    async def revoke_user_tokens(self, user_id: uuid.UUID) -> int:
+        pass
+
+    @abstractmethod
     async def replace_active_token(
         self,
         token_hash: str,

@@ -309,6 +309,8 @@ services:
       - ./Backend/deploy/03-retire-demo-admin.sql:/docker-entrypoint-initdb.d/03-retire-demo-admin.sql:ro
       - ./Backend/deploy/04-inventory-schema.sql:/docker-entrypoint-initdb.d/04-inventory-schema.sql:ro
       - ./Backend/deploy/05-treasury-schema.sql:/docker-entrypoint-initdb.d/05-treasury-schema.sql:ro
+      - ./Backend/deploy/18-treasury-cash-flow-payables.sql:/docker-entrypoint-initdb.d/18-treasury-cash-flow-payables.sql:ro
+      - ./Backend/deploy/19-seed-treasury-cashflow.sql:/docker-entrypoint-initdb.d/19-seed-treasury-cashflow.sql:ro
       - ./Backend/deploy/06-accounting-schema.sql:/docker-entrypoint-initdb.d/06-accounting-schema.sql:ro
       - ./Backend/deploy/07-payroll-schema.sql:/docker-entrypoint-initdb.d/07-payroll-schema.sql:ro
       - ./Backend/deploy/08-integrations-schema.sql:/docker-entrypoint-initdb.d/08-integrations-schema.sql:ro

@@ -1,19 +1,28 @@
 export interface CachedPosProduct {
   tenantId: string;
   id: string;
+  tenant_id: string;
   code: string;
+  ref_id?: string | null;
+  barcode: string | null;
   name: string;
-  description?: string;
+  description: string | null;
+  product_type: string;
+  is_stockable: boolean;
+  track_lots: boolean;
   unit_of_measure: string;
   sale_price: number | string;
-  cost_price?: number | string;
+  cost_price: number | string;
+  current_cmp: number | string;
+  tax_type: string;
+  tax_code: string;
   tax_percentage: number | string;
-  tax_exemption_code?: string;
-  is_stockable: boolean;
-  stock_quantity?: number;
-  barcode?: string;
-  product_type?: string;
-  exemption_reason_code?: string | null;
+  exemption_reason_code: string | null;
+  exemption_reason_text: string | null;
+  has_withholding_tax: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface OfflinePosSale {
@@ -105,7 +114,7 @@ export async function cachePosProducts(
     const store = tx.objectStore('cached_products_by_tenant');
     const meta = tx.objectStore('pos_meta');
 
-    const previous = store.index('tenantId').openKeyCursor(IDBKeyRange.only(tenantId));
+    const previous = store.index('tenantId').openCursor(IDBKeyRange.only(tenantId));
     previous.onsuccess = () => {
       const cursor = previous.result;
       if (cursor) {

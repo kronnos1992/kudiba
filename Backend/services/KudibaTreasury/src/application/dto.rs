@@ -93,6 +93,7 @@ impl From<PosSession> for PosSessionResponse {
 #[derive(Debug, Clone, Deserialize)]
 pub struct OpenCashSessionRequest {
     pub register_id: Uuid,
+    #[serde(default)]
     pub operator_user_id: String,
     pub opening_balance: Decimal,
 }
@@ -150,6 +151,7 @@ pub struct RecordCashMovementRequest {
     pub movement_type: MovementType,
     pub amount: Decimal,
     pub reason: String,
+    #[serde(default)]
     pub operator_user_id: String,
 }
 

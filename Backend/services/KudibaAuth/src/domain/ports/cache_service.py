@@ -19,3 +19,11 @@ class ICacheService(ABC):
     async def get_revoked_before(self, user_id: str, tenant_id: str) -> int:
         """Devolve o instante (unix) a partir do qual os tokens foram revogados, ou 0 se não houver."""
         pass
+
+    @abstractmethod
+    async def revoke_user_sessions_before(self, user_id: str, epoch: int, ttl_seconds: int) -> None:
+        pass
+
+    @abstractmethod
+    async def get_user_revoked_before(self, user_id: str) -> int:
+        pass

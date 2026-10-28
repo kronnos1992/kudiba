@@ -3,6 +3,7 @@ from src.application.commands.rotate_refresh_token import RotateRefreshTokenUseC
 from src.application.commands.logout_user import LogoutUserUseCase
 from src.application.commands.switch_tenant import SwitchTenantUseCase
 from src.application.commands.invite_user import InviteUserUseCase
+from src.application.commands.manage_password import ManagePasswordUseCase
 from src.application.commands.manage_members import (
     RemoveMemberUseCase,
     UpdateMemberStatusUseCase,
@@ -26,6 +27,7 @@ __all__ = [
     "LogoutUserUseCase",
     "SwitchTenantUseCase",
     "InviteUserUseCase",
+    "ManagePasswordUseCase",
     "CreateRoleUseCase",
     "UpdateRoleUseCase",
     "UpdateRolePermissionsUseCase",
@@ -37,4 +39,3 @@ __all__ = [
     "UpdateTenantSettingsUseCase",
     "CreateBranchUseCase",
 ]
-

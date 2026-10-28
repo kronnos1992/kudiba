@@ -23,6 +23,11 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
+import {
+  getLocalDateString,
+  ReportDateFilter,
+  resolveReportDateRange,
+} from '../../components/common/ReportDateFilter';
 import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { SortableHeader } from '../../components/common/SortableHeader';
@@ -436,6 +441,9 @@ export const InvoicingView: React.FC = () => {
   const [saftYear, setSaftYear] = useState(currentYear);
   const [saftMonth, setSaftMonth] = useState<number | ''>('');
   const [saftLoading, setSaftLoading] = useState(false);
+  const [taxReportStartDate, setTaxReportStartDate] = useState(getLocalDateString);
+  const [taxReportEndDate, setTaxReportEndDate] = useState(getLocalDateString);
+  const taxReportDateRange = resolveReportDateRange(taxReportStartDate, taxReportEndDate);
 
   const saftParams = () => {
     if (!activeTenant?.id) {
@@ -551,11 +559,19 @@ export const InvoicingView: React.FC = () => {
 
   const handleDownloadTaxPdf = async () => {
     try {
-      const blob = await invoicingApi.getTaxReportPdf(saftParams());
+      if (!activeTenant?.id) {
+        throw new Error('Empresa activa não identificada.');
+      }
+      const blob = await invoicingApi.getTaxReportPdf({
+        tenantId: activeTenant.id,
+        year: Number(taxReportDateRange.startDate.slice(0, 4)),
+        from_date: taxReportDateRange.startDate,
+        to_date: taxReportDateRange.endDate,
+      });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Mapa_IVA_${saftYear}${saftMonth !== '' ? `_${String(saftMonth).padStart(2, '0')}` : ''}_${activeTenant?.taxId || 'Kudiba'}.pdf`;
+      a.download = `Mapa_IVA_${taxReportDateRange.startDate}_${taxReportDateRange.endDate}_${activeTenant.taxId || 'Kudiba'}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -567,11 +583,19 @@ export const InvoicingView: React.FC = () => {
 
   const handleDownloadTaxExcel = async () => {
     try {
-      const blob = await invoicingApi.getTaxReportExcel(saftParams());
+      if (!activeTenant?.id) {
+        throw new Error('Empresa activa não identificada.');
+      }
+      const blob = await invoicingApi.getTaxReportExcel({
+        tenantId: activeTenant.id,
+        year: Number(taxReportDateRange.startDate.slice(0, 4)),
+        from_date: taxReportDateRange.startDate,
+        to_date: taxReportDateRange.endDate,
+      });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Mapa_IVA_${saftYear}${saftMonth !== '' ? `_${String(saftMonth).padStart(2, '0')}` : ''}_${activeTenant?.taxId || 'Kudiba'}.xlsx`;
+      a.download = `Mapa_IVA_${taxReportDateRange.startDate}_${taxReportDateRange.endDate}_${activeTenant.taxId || 'Kudiba'}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1835,6 +1859,12 @@ export const InvoicingView: React.FC = () => {
                 <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
                   Mapas Oficiais de Apuramento de IVA
                 </p>
+                <ReportDateFilter
+                  startDate={taxReportStartDate}
+                  endDate={taxReportEndDate}
+                  onStartDateChange={setTaxReportStartDate}
+                  onEndDateChange={setTaxReportEndDate}
+                />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     onClick={handleDownloadTaxPdf}

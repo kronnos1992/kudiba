@@ -25,6 +25,11 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
+import {
+  getLocalDateString,
+  ReportDateFilter,
+  resolveReportDateRange,
+} from '../../components/common/ReportDateFilter';
 import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { SortableHeader } from '../../components/common/SortableHeader';
@@ -82,6 +87,9 @@ export const AccountingView: React.FC = () => {
   const { activeTenant } = useAuthStore();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<AccountingTab>('trial_balance');
+  const [reportStartDate, setReportStartDate] = useState(getLocalDateString);
+  const [reportEndDate, setReportEndDate] = useState(getLocalDateString);
+  const reportDateRange = resolveReportDateRange(reportStartDate, reportEndDate);
 
   // Balancete filters
   const [trialBalanceColumns, setTrialBalanceColumns] = useState<4 | 6>(6);
@@ -129,16 +137,27 @@ export const AccountingView: React.FC = () => {
   });
 
   const { data: trialBalance, isLoading: isLoadingTrialBalance } = useQuery({
-    queryKey: ['accounting_trial_balance'],
-    queryFn: () => accountingApi.getTrialBalance(),
+    queryKey: ['accounting_trial_balance', reportDateRange.startDate, reportDateRange.endDate],
+    queryFn: () =>
+      accountingApi.getTrialBalance({
+        from_date: reportDateRange.startDate,
+        to_date: reportDateRange.endDate,
+      }),
   });
 
   const { data: entries = [], isLoading: isLoadingEntries } = useQuery({
-    queryKey: ['accounting_entries', entriesJournalFilter],
+    queryKey: [
+      'accounting_entries',
+      entriesJournalFilter,
+      reportDateRange.startDate,
+      reportDateRange.endDate,
+    ],
     queryFn: () =>
       accountingApi.listEntries({
         journal_id: entriesJournalFilter === 'all' ? undefined : entriesJournalFilter,
-        limit: 250,
+        from_date: reportDateRange.startDate,
+        to_date: reportDateRange.endDate,
+        limit: 100_000,
       }),
   });
 
@@ -1370,6 +1389,15 @@ export const AccountingView: React.FC = () => {
           </button>
         </nav>
       </div>
+
+      {['trial_balance', 'entries', 'ledger', 'financial_statements', 'vat_settlement'].includes(activeTab) && (
+        <ReportDateFilter
+          startDate={reportStartDate}
+          endDate={reportEndDate}
+          onStartDateChange={setReportStartDate}
+          onEndDateChange={setReportEndDate}
+        />
+      )}
 
       {/* TAB 1: BALANCETE DE VERIFICAÇÃO */}
       {activeTab === 'trial_balance' && (

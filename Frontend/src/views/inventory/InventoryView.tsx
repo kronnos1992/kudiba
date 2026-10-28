@@ -169,6 +169,10 @@ export const InventoryView: React.FC = () => {
     manufacture_date: '',
   });
   const [isSubmittingPurchase, setIsSubmittingPurchase] = useState(false);
+  const hasInvalidPurchaseBatchDates =
+    Boolean(newBatchForm.expiry_date) &&
+    Boolean(newBatchForm.manufacture_date) &&
+    newBatchForm.expiry_date < newBatchForm.manufacture_date;
 
   // Formulário de Transferência
   const [transferForm, setTransferForm] = useState({
@@ -292,6 +296,7 @@ export const InventoryView: React.FC = () => {
     mutationFn: (payload: CreateProductPayload) => inventoryApi.createProduct(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_products'] });
+      queryClient.invalidateQueries({ queryKey: ['pos_products'] });
       setShowProductModal(false);
       resetProductForm();
     },
@@ -302,6 +307,7 @@ export const InventoryView: React.FC = () => {
       inventoryApi.updateProduct(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_products'] });
+      queryClient.invalidateQueries({ queryKey: ['pos_products'] });
       setEditingProduct(null);
     },
   });
@@ -311,6 +317,7 @@ export const InventoryView: React.FC = () => {
       inventoryApi.updateProductPrice(id, { sale_price: salePrice, cost_price: costPrice }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_products'] });
+      queryClient.invalidateQueries({ queryKey: ['pos_products'] });
       setPriceModalProduct(null);
     },
   });
@@ -560,6 +567,11 @@ export const InventoryView: React.FC = () => {
     if (!purchaseForm.warehouse_id || !purchaseForm.product_id) return;
     const prod = products.find((p) => p.id === purchaseForm.product_id);
     if (!prod) return;
+
+    if (prod.track_lots && purchaseBatchMode === 'new' && hasInvalidPurchaseBatchDates) {
+      toast.error('A data de validade não pode ser anterior à data de fabrico.');
+      return;
+    }
 
     let finalBatchId: string | undefined = undefined;
 
@@ -2262,6 +2274,7 @@ export const InventoryView: React.FC = () => {
                           <input
                             type="date"
                             value={newBatchForm.expiry_date}
+                            min={newBatchForm.manufacture_date || undefined}
                             onChange={(e) => setNewBatchForm({ ...newBatchForm, expiry_date: e.target.value })}
                             className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
                           />
@@ -2273,11 +2286,17 @@ export const InventoryView: React.FC = () => {
                           <input
                             type="date"
                             value={newBatchForm.manufacture_date}
+                            max={newBatchForm.expiry_date || undefined}
                             onChange={(e) => setNewBatchForm({ ...newBatchForm, manufacture_date: e.target.value })}
                             className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
                           />
                         </div>
                       </div>
+                    )}
+                    {purchaseBatchMode === 'new' && hasInvalidPurchaseBatchDates && (
+                      <p role="alert" className="text-xs font-medium text-red-700 dark:text-red-300">
+                        A data de fabrico não pode ser posterior à data de validade.
+                      </p>
                     )}
                   </div>
                 );
@@ -2403,7 +2422,8 @@ export const InventoryView: React.FC = () => {
                   purchaseMutation.isPending ||
                   (Boolean(products.find((p) => p.id === purchaseForm.product_id)?.track_lots) &&
                     ((purchaseBatchMode === 'existing' && !purchaseForm.batch_id) ||
-                      (purchaseBatchMode === 'new' && !newBatchForm.batch_number.trim())))
+                      (purchaseBatchMode === 'new' &&
+                        (!newBatchForm.batch_number.trim() || hasInvalidPurchaseBatchDates))))
                 }
                 onClick={handleConfirmPurchase}
                 className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50 inline-flex items-center gap-2"

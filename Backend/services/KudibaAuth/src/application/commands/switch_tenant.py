@@ -60,14 +60,25 @@ class SwitchTenantUseCase:
             tenant_name = tenant.company_name
             tenant_nif = tenant.nif
 
-            branch_id = cmd.target_branch_id or (membership.default_branch_id if membership else None)
+            roles = await self.user_tenant_repo.get_user_roles_in_tenant(user.id, cmd.target_tenant_id)
+            is_admin = user.is_superadmin or bool(
+                {role.upper() for role in roles} & {"ADMIN", "SYSADMIN", "SUPER_ADMIN"}
+            )
+            assigned_branch_id = membership.default_branch_id if membership else None
+            branch_id = cmd.target_branch_id or assigned_branch_id
+
+            if not is_admin and branch_id != assigned_branch_id:
+                raise TenantAccessForbiddenError(
+                    "Só é possível seleccionar a filial atribuída ao utilizador."
+                )
+
             branch_dto = None
             if branch_id:
                 branch = await self.tenant_repo.find_branch_by_id(branch_id, cmd.target_tenant_id)
-                if branch:
-                    branch_dto = BranchSummaryDto(id=branch.id, code=branch.code, name=branch.name, city=branch.city)
+                if not branch or not branch.is_active:
+                    raise TenantAccessForbiddenError("A filial solicitada não existe ou está inactiva.")
+                branch_dto = BranchSummaryDto(id=branch.id, code=branch.code, name=branch.name, city=branch.city)
 
-            roles = await self.user_tenant_repo.get_user_roles_in_tenant(user.id, cmd.target_tenant_id)
             permissions = await self.user_tenant_repo.get_roles_permissions(roles, cmd.target_tenant_id)
 
             access_token, _, exp_ts = self.token_service.create_access_token(
@@ -99,7 +110,10 @@ class SwitchTenantUseCase:
                 tenant_id=cmd.target_tenant_id,
                 ip_address=cmd.ip_address,
                 user_agent=cmd.user_agent,
-                details={"target_tenant_id": str(cmd.target_tenant_id)},
+                details={
+                    "target_tenant_id": str(cmd.target_tenant_id),
+                    "branch_id": str(branch_id) if branch_id else None,
+                },
             )
 
             from src.application.queries.get_tenant_settings import build_tenant_summary_dto
@@ -115,6 +129,8 @@ class SwitchTenantUseCase:
                 )
                 for b in branches
             ]
+            if not is_admin:
+                branch_dtos = [branch for branch in branch_dtos if branch.id == assigned_branch_id]
 
             return AuthenticationResult(
                 access_token=access_token,
@@ -135,4 +151,3 @@ class SwitchTenantUseCase:
                     branches=branch_dtos,
                 ),
             )
-

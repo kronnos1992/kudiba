@@ -1502,7 +1502,6 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                 onClick={() =>
                   openSessionMutation.mutate({
                     register_id: openSessionRegister.id,
-                    operator_user_id: user?.id || 'operador-01',
                     opening_balance: openingBalanceInput,
                   })
                 }
@@ -1669,7 +1668,6 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                     movement_type: movementTypeInput,
                     amount: movementAmountInput,
                     reason: movementReasonInput,
-                    operator_user_id: user?.id || 'operador-01',
                   })
                 }
                 className="px-4 py-2 text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg disabled:opacity-50"

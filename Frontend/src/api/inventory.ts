@@ -223,6 +223,19 @@ export const inventoryApi = {
     return res.data;
   },
 
+  listAllProducts: async (): Promise<Product[]> => {
+    const pageSize = 200;
+    const products: Product[] = [];
+    let offset = 0;
+
+    while (true) {
+      const page = await inventoryApi.listProducts({ limit: pageSize, offset });
+      products.push(...page);
+      if (page.length < pageSize) return products;
+      offset += page.length;
+    }
+  },
+
   getProduct: async (id: string): Promise<Product> => {
     const res = await apiClient.get<Product>(`/api/v1/inventory/products/${id}`);
     return res.data;

@@ -20,3 +20,7 @@ class IUserRepository(ABC):
     @abstractmethod
     async def update_login_state(self, user: User) -> None:
         pass
+
+    @abstractmethod
+    async def update_password_hash(self, user_id: uuid.UUID, password_hash: str) -> bool:
+        pass

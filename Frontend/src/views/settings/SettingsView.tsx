@@ -169,6 +169,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
   const [selectedMemberForRoles, setSelectedMemberForRoles] = useState<TenantMember | null>(null);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [memberToDelete, setMemberToDelete] = useState<TenantMember | null>(null);
+  const [memberToResetPassword, setMemberToResetPassword] = useState<TenantMember | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [confirmResetPassword, setConfirmResetPassword] = useState('');
 
   // Invite Form
   const [inviteForm, setInviteForm] = useState<InviteMemberPayload>({
@@ -492,6 +495,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
     },
   });
 
+  const resetPasswordMutation = useMutation({
+    mutationFn: ({ userId, newPassword }: { userId: string; newPassword: string }) =>
+      authApi.resetUserPassword(userId, newPassword),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['auth_audit_logs'] });
+      setMemberToResetPassword(null);
+      setResetPassword('');
+      setConfirmResetPassword('');
+      toast.success('Palavra-passe redefinida; todas as sessões do utilizador foram encerradas.');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || 'Não foi possível redefinir a palavra-passe.');
+    },
+  });
+
   const createSeriesMutation = useMutation({
     mutationFn: invoicingApi.createSeries,
     onSuccess: () => {
@@ -511,7 +529,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
 
   const roles = user?.roles?.length ? user.roles : (activeTenant?.roles ?? []);
   const isSuperadmin = Boolean(user?.is_superadmin);
-  const isAdmin = isSuperadmin || roles.some((r) => ['ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase()));
+  const isSysAdmin = isSuperadmin || roles.some((r) => ['SYSADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase()));
+  const isAdmin = isSysAdmin || roles.some((r) => r.toUpperCase() === 'ADMIN');
 
   if (!isAdmin) {
     return (
@@ -1679,6 +1698,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                             </td>
                             <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-center gap-1.5">
+                                {isSysAdmin && (
+                                  <button
+                                    type="button"
+                                    disabled={isSelf}
+                                    onClick={() => {
+                                      setMemberToResetPassword(m);
+                                      setResetPassword('');
+                                      setConfirmResetPassword('');
+                                    }}
+                                    title={isSelf ? 'Use Minha Conta para alterar a sua própria palavra-passe' : 'Redefinir palavra-passe como SYSADMIN'}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30 text-xs font-semibold disabled:opacity-40"
+                                  >
+                                    <Key className="w-3 h-3" />
+                                    Palavra-passe
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -2296,6 +2331,83 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {memberToResetPassword && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (resetPassword !== confirmResetPassword) {
+                toast.error('A confirmação da senha não coincide.');
+                return;
+              }
+              resetPasswordMutation.mutate({
+                userId: memberToResetPassword.user_id,
+                newPassword: resetPassword,
+              });
+            }}
+            className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Redefinir palavra-passe</h3>
+                <p className="text-xs text-slate-500">{memberToResetPassword.full_name} · {memberToResetPassword.email}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMemberToResetPassword(null)}
+                aria-label="Fechar"
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              A redefinição encerra todas as sessões atuais. Entregue a nova palavra-passe ao utilizador por um canal seguro.
+            </p>
+            <label className="block space-y-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Nova palavra-passe (mínimo 12 caracteres)
+              <input
+                type="password"
+                autoComplete="new-password"
+                minLength={12}
+                required
+                value={resetPassword}
+                onChange={(event) => setResetPassword(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+              />
+            </label>
+            <label className="block space-y-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Confirmar nova palavra-passe
+              <input
+                type="password"
+                autoComplete="new-password"
+                minLength={12}
+                required
+                value={confirmResetPassword}
+                onChange={(event) => setConfirmResetPassword(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMemberToResetPassword(null)}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={resetPassword.length < 12 || resetPasswordMutation.isPending}
+                className="px-4 py-2 rounded-lg bg-blue-600 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {resetPasswordMutation.isPending ? 'A redefinir...' : 'Redefinir palavra-passe'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

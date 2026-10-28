@@ -72,9 +72,10 @@ export const App: React.FC = () => {
           setOnboardingModalOpen(true);
         }
       })
-      .catch(() => {
+      .catch((error: any) => {
         if (
           mounted &&
+          error?.response?.status !== 401 &&
           activeTenant.onboarding_completed === false &&
           dismissedOnboardingForTenant !== activeTenant.id
         ) {

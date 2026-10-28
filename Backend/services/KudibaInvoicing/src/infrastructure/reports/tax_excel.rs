@@ -80,13 +80,10 @@ impl TaxExcelReportGenerator {
             )
             .map_err(Self::map_err)?;
 
-        let period_label = match report.fiscal_month {
-            Some(m) => format!(
-                "Período Fiscal: Mês {:02} / Exercício {}",
-                m, report.fiscal_year
-            ),
-            None => format!("Período Fiscal: Exercício Anual {}", report.fiscal_year),
-        };
+        let period_label = format!(
+            "Período Fiscal: {} até {}",
+            report.period_start, report.period_end
+        );
         worksheet
             .write(3, 0, &period_label)
             .map_err(Self::map_err)?;
@@ -293,6 +290,8 @@ mod tests {
             tenant_id: Uuid::new_v4(),
             fiscal_year: 2026,
             fiscal_month: Some(10),
+            period_start: chrono::NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+            period_end: chrono::NaiveDate::from_ymd_opt(2026, 10, 31).unwrap(),
             vat: vec![
                 VatReportLine {
                     tax_rate: Decimal::from(14),

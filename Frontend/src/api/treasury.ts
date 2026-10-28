@@ -42,7 +42,6 @@ export interface CashSession {
 
 export interface OpenCashSessionPayload {
   register_id: string;
-  operator_user_id: string;
   opening_balance: string | number;
 }
 
@@ -68,7 +67,6 @@ export interface RecordCashMovementPayload {
   movement_type: MovementType;
   amount: string | number;
   reason: string;
-  operator_user_id: string;
 }
 
 export interface SessionReconciliation {

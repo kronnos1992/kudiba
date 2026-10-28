@@ -1338,6 +1338,8 @@ pub struct FiscalReportQueryParams {
     pub tenant_id: Uuid,
     pub year: i32,
     pub month: Option<u32>,
+    pub from_date: Option<chrono::NaiveDate>,
+    pub to_date: Option<chrono::NaiveDate>,
     pub format: Option<String>,
 }
 
@@ -1366,6 +1368,8 @@ async fn fiscal_report_handler(
             tenant_id: params.tenant_id,
             fiscal_year: params.year,
             fiscal_month: params.month,
+            from_date: params.from_date,
+            to_date: params.to_date,
         })
         .await
     {
@@ -1428,6 +1432,8 @@ async fn fiscal_report_excel_handler(
             tenant_id: params.tenant_id,
             fiscal_year: params.year,
             fiscal_month: params.month,
+            from_date: params.from_date,
+            to_date: params.to_date,
         })
         .await
     {
@@ -1461,6 +1467,8 @@ async fn fiscal_report_pdf_handler(
             tenant_id: params.tenant_id,
             fiscal_year: params.year,
             fiscal_month: params.month,
+            from_date: params.from_date,
+            to_date: params.to_date,
         })
         .await
     {
@@ -1870,6 +1878,8 @@ pub struct PosReportQueryParams {
     #[serde(rename = "tenantId")]
     pub tenant_id: Option<Uuid>,
     pub date: Option<chrono::NaiveDate>,
+    pub from_date: Option<chrono::NaiveDate>,
+    pub to_date: Option<chrono::NaiveDate>,
     #[serde(rename = "posTerminalId", alias = "seriesCode")]
     pub pos_terminal_id: Option<String>,
     pub format: Option<String>,
@@ -2029,8 +2039,8 @@ async fn pos_z_reports_history_handler(
 
     let query = crate::application::queries::pos_reports::ZReportListQuery {
         tenant_id,
-        from: None,
-        to: params.date,
+        from: params.from_date.or(params.date),
+        to: params.to_date.or(params.date),
         pos_terminal_id: params.pos_terminal_id,
         limit: None,
     };

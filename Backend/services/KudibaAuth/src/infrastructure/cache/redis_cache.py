@@ -57,6 +57,24 @@ class RedisCacheService(ICacheService):
         except (TypeError, ValueError):
             return 0
 
+    async def revoke_user_sessions_before(self, user_id: str, epoch: int, ttl_seconds: int) -> None:
+        if not user_id or ttl_seconds <= 0:
+            return
+        client = await self._get_client()
+        await client.set(f"jwt:revoked-before-user:{user_id}", str(epoch), ex=ttl_seconds)
+
+    async def get_user_revoked_before(self, user_id: str) -> int:
+        if not user_id:
+            return 0
+        client = await self._get_client()
+        value = await client.get(f"jwt:revoked-before-user:{user_id}")
+        if not value:
+            return 0
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
     async def ping(self) -> bool:
         client = await self._get_client()
         return bool(await client.ping())

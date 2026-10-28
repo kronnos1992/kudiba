@@ -32,6 +32,11 @@ export interface UpdateRolesPayload {
   roles: string[];
 }
 
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
+}
+
 export interface RoleCatalogItem {
   id: string;
   name: string;
@@ -222,6 +227,14 @@ export const authApi = {
     return response.data;
   },
 
+  changeOwnPassword: async (payload: ChangePasswordPayload): Promise<void> => {
+    await apiClient.post('/api/v1/auth/me/change-password', payload);
+  },
+
+  resetUserPassword: async (userId: string, newPassword: string): Promise<void> => {
+    await apiClient.put(`/api/v1/auth/users/${userId}/password`, { new_password: newPassword });
+  },
+
   switchTenant: async (payload: SwitchTenantPayload): Promise<LoginResponse> => {
     const response = await apiClient.post<LoginResponse>('/api/v1/auth/switch-tenant', payload);
     return response.data;
@@ -350,4 +363,3 @@ export const authApi = {
     return response.data;
   },
 };
-

@@ -53,6 +53,13 @@ async def get_current_claims(
     sub = claims.get("sub")
     tenant_id = claims.get("tenant_id")
     if sub and tenant_id:
+        user_revoked_before = await app_state.cache.get_user_revoked_before(str(sub))
+        if user_revoked_before and int(claims.get("iat", 0) or 0) < user_revoked_before:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Sessão invalidada por alteração da senha. Inicie sessão novamente.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         revoked_before = await app_state.cache.get_revoked_before(str(sub), str(tenant_id))
         if revoked_before and int(claims.get("iat", 0) or 0) < revoked_before:
             raise HTTPException(

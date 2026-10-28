@@ -29,6 +29,11 @@ import {
 import { useAuthStore } from '../../stores/authStore';
 import { toast } from '../../stores/toastStore';
 import { GlassCard } from '../../components/common/GlassCard';
+import {
+  getLocalDateString,
+  ReportDateFilter,
+  resolveReportDateRange,
+} from '../../components/common/ReportDateFilter';
 import { KzAmount } from '../../components/common/KzAmount';
 import { inventoryApi, Product } from '../../api/inventory';
 import { invoicingApi, Invoice, PosDailyReportResult, PosZReportSummary } from '../../api/invoicing';
@@ -105,65 +110,98 @@ export const PosView: React.FC = () => {
 
   // Painel POS, abas e sessão do gestor
   const [posTab, setPosTab] = useState<'venda' | 'painel' | 'relatorios'>('venda');
-  const [panelDate, setPanelDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [panelDate, setPanelDate] = useState<string>(getLocalDateString);
   const [posOpenModal, setPosOpenModal] = useState(false);
   const [posCloseModal, setPosCloseModal] = useState(false);
   const [posNotesInput, setPosNotesInput] = useState('');
   const [zReports, setZReports] = useState<PosZReportSummary[]>([]);
   const [loadingZReports, setLoadingZReports] = useState(false);
+  const [zReportStartDate, setZReportStartDate] = useState(getLocalDateString);
+  const [zReportEndDate, setZReportEndDate] = useState(getLocalDateString);
+  const zReportDateRange = resolveReportDateRange(zReportStartDate, zReportEndDate);
 
   const roles = (user?.roles ?? []).map((r) => r.toUpperCase());
-  const isManager = roles.length === 0 || roles.some((r) => r !== 'OPERADOR_CAIXA');
+  const isManager = roles.some((r) => ['ADMIN', 'SYSADMIN', 'SUPER_ADMIN'].includes(r));
 
   // Queries
-  const { data: products = [], isLoading: isLoadingProducts } = useQuery({
+  const {
+    data: products = [],
+    isLoading: isLoadingProducts,
+    isError: productsQueryFailed,
+    isSuccess: productsQuerySucceeded,
+    refetch: refetchProducts,
+  } = useQuery({
     queryKey: ['pos_products', activeTenant?.id],
-    queryFn: () => inventoryApi.listProducts({ limit: 150 }),
+    queryFn: () => inventoryApi.listAllProducts(),
     enabled: Boolean(activeTenant?.id),
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: isBackendReachable ? 30_000 : false,
+    refetchIntervalInBackground: false,
   });
 
   // Catálogo de contingência: espelha produtos em IndexedDB para permitir venda offline.
   React.useEffect(() => {
-    if (!activeTenant?.id || !products.length) return;
+    if (!activeTenant?.id || !productsQuerySucceeded) return;
     cachePosProducts(activeTenant.id,
       products.map((p) => ({
         id: p.id,
+        tenant_id: p.tenant_id,
         code: p.code,
+        ref_id: p.ref_id,
+        barcode: p.barcode,
         name: p.name,
-        description: p.description ?? undefined,
+        description: p.description,
+        product_type: p.product_type,
+        is_stockable: p.is_stockable,
+        track_lots: p.track_lots,
         unit_of_measure: p.unit_of_measure,
         sale_price: p.sale_price,
         cost_price: p.cost_price,
+        current_cmp: p.current_cmp,
+        tax_type: p.tax_type,
+        tax_code: p.tax_code,
         tax_percentage: p.tax_percentage,
-        tax_exemption_code: p.exemption_reason_code ?? undefined,
-        is_stockable: p.is_stockable,
-        barcode: p.barcode ?? undefined,
-        product_type: p.product_type,
         exemption_reason_code: p.exemption_reason_code,
+        exemption_reason_text: p.exemption_reason_text,
+        has_withholding_tax: p.has_withholding_tax,
+        is_active: p.is_active,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
       }))
     ).catch(() => {
-      // IndexedDB indisponível (modo privado): o POS continua a operar online.
+      toast.warning('Não foi possível sincronizar o catálogo offline deste dispositivo.');
     });
-  }, [products, activeTenant?.id]);
+  }, [products, productsQuerySucceeded, activeTenant?.id]);
 
   // Carrega o catálogo local quando o serviço central está inacessível.
   React.useEffect(() => {
     setOfflineCatalog([]);
-    if (!activeTenant?.id) return;
+    if (!activeTenant?.id || !productsQueryFailed || !isContingencyMode) return;
     let active = true;
-    if (!activeTenant?.id) return;
     getCachedPosProducts(activeTenant.id)
       .then((cached) => {
         if (active && cached.length) setOfflineCatalog(cached);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) toast.warning('Não foi possível carregar o catálogo offline deste dispositivo.');
+      });
     return () => {
       active = false;
     };
-  }, [activeTenant?.id]);
+  }, [activeTenant?.id, productsQueryFailed, isContingencyMode]);
+
+  const previousBackendReachable = React.useRef(isBackendReachable);
+  React.useEffect(() => {
+    if (!previousBackendReachable.current && isBackendReachable && activeTenant?.id) {
+      void refetchProducts();
+    }
+    previousBackendReachable.current = isBackendReachable;
+  }, [activeTenant?.id, isBackendReachable, refetchProducts]);
 
   const catalogProducts: Product[] =
-    products.length > 0 ? products : (offlineCatalog as unknown as Product[]);
+    productsQueryFailed ? (offlineCatalog as unknown as Product[]) : products;
   const isCatalogLoading = isLoadingProducts && catalogProducts.length === 0;
 
   const { data: stockBalances = [] } = useQuery({
@@ -381,7 +419,6 @@ export const PosView: React.FC = () => {
       }
       return await treasuryApi.openSession({
         register_id: activeRegister.id,
-        operator_user_id: user?.id || user?.email || 'pos-operator',
         opening_balance: openingBalanceInput || '0.00',
       });
     },
@@ -441,7 +478,6 @@ export const PosView: React.FC = () => {
         movement_type: movementTypeInput,
         amount: movementAmountInput,
         reason: movementReasonInput || 'Movimento de caixa POS',
-        operator_user_id: user?.id || user?.email || 'pos-operator',
       });
     },
     onSuccess: () => {
@@ -571,7 +607,6 @@ export const PosView: React.FC = () => {
               movement_type: 'SALE_RECEIPT',
               amount: Number(issued.grossTotal || totalGross).toFixed(2),
               reason: `Venda POS ${issued.documentNumber} (${selectedPaymentMethod})`,
-              operator_user_id: user?.id || user?.email || 'pos-operator',
             });
           } catch {
             // Segue sem bloquear o talão fiscal já assinado
@@ -760,7 +795,11 @@ export const PosView: React.FC = () => {
       setLoadingZReports(true);
       setErrorMessage(null);
       const terminalId = activeRegister?.code || undefined;
-      const reports = await invoicingApi.getZReports({ posTerminalId: terminalId });
+      const reports = await invoicingApi.getZReports({
+        posTerminalId: terminalId,
+        from_date: zReportDateRange.startDate,
+        to_date: zReportDateRange.endDate,
+      });
       setZReports(reports);
     } catch (err: any) {
       setErrorMessage(
@@ -1662,6 +1701,12 @@ export const PosView: React.FC = () => {
                 <span>Carregar</span>
               </button>
             </div>
+            <ReportDateFilter
+              startDate={zReportStartDate}
+              endDate={zReportEndDate}
+              onStartDateChange={setZReportStartDate}
+              onEndDateChange={setZReportEndDate}
+            />
             {zReports.length === 0 ? (
               <p className="text-xs text-slate-400 py-4 text-center">
                 {loadingZReports ? 'A carregar...' : 'Sem Fechos Z gravados. Clique em Carregar.'}

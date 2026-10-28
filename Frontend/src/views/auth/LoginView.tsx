@@ -86,35 +86,13 @@ export const LoginView: React.FC = () => {
           `Conta temporariamente bloqueada por excesso de tentativas falhadas. Tente novamente em ${formatCountdown(seconds)}.`
         );
         setLockSeconds(seconds);
-      } else if (!errorMsg) {
-        setSession({
-          access_token: 'mock-jwt-token-kudiba-2026',
-          refresh_token: 'mock-refresh-token-kudiba-2026',
-          token_type: 'bearer',
-          expires_in: 3600,
-          user: {
-            id: 'u-001',
-            email,
-            fullName: 'Gestor Comercial Kudiba',
-            isActive: true,
-            roles: ['ADMIN', 'OPERATOR'],
-            permissions: ['invoices:create', 'invoices:read', 'pos:manage'],
-          },
-          tenants: [
-            {
-              id: 'tenant-ao-001',
-              name: 'Kudiba Comércio Geral, Lda',
-              taxId: '5417892341',
-              currency: 'AOA',
-              branches: [
-                { id: 'b-01', name: 'Sede - Luanda', code: 'LU-01', isMain: true },
-                { id: 'b-02', name: 'Armazém Viana', code: 'VN-02' },
-              ],
-            },
-          ],
-        });
       } else {
-        setError(errorMsg || 'Credenciais inválidas. Verifique o email e senha.');
+        const message =
+          errorMsg ||
+          (err instanceof Error && err.message === 'Network Error'
+            ? 'Não foi possível contactar o servidor de autenticação. Verifique a ligação e tente novamente.'
+            : 'Credenciais inválidas. Verifique o email e a palavra-passe.');
+        setError(message);
       }
     } finally {
       setLoading(false);

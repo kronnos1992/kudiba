@@ -1,13 +1,6 @@
-use std::path::PathBuf;
-
-/// Compila o contrato gRPC canónico do motor fiscal (`kudiba.fiscal.v1`).
-/// O ficheiro proto vive na raiz do monorepo (`proto/fiscal/v1`) para que o Gateway,
-/// o Core API e este microsserviço partilhem exactamente o mesmo contrato.
-///
-/// Layout de desenvolvimento: `<repo>/proto`. No contentor, o contrato é copiado
-/// para `./proto` relativo ao crate, pelo que ambas as raízes são aceites.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
+    let manifest_dir = std::path::PathBuf::from(manifest_dir);
 
     let proto_root = ["../../../proto", "../../proto", "proto"]
         .iter()

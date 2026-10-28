@@ -1,12 +1,6 @@
-use axum::{
-    extract::Request,
-    http::{HeaderValue, StatusCode},
-    middleware::Next,
-    response::{IntoResponse, Response},
-};
+use axum::{extract::Request, http::HeaderValue, middleware::Next, response::Response};
 use uuid::Uuid;
 
-use crate::errors::ProblemDetail;
 use crate::middleware::{is_auth_service_path, is_public_path};
 
 /// Middleware de higienização contra Header Spoofing e resolução Multi-Tenant
@@ -70,7 +64,8 @@ pub async fn tenant_resolver_middleware(mut req: Request, next: Next) -> Respons
         }
     }
 
-    // Se a rota exige tenant e nenhuma identificação válida foi fornecida
+    // A autenticação injecta o tenant canónico a partir do JWT validado.
+    // O cabeçalho/subdomínio serve apenas para validação cruzada quando fornecido.
     match resolved_tenant {
         Some(tenant_id) => {
             if let Ok(header_val) = HeaderValue::from_str(&tenant_id) {
@@ -83,15 +78,6 @@ pub async fn tenant_resolver_middleware(mut req: Request, next: Next) -> Respons
             }
             next.run(req).await
         }
-        None => {
-            ProblemDetail::new(
-                "https://api.kudiba.ao/errors/tenant-resolution-failed",
-                "Identificação de Organização Ausente",
-                StatusCode::BAD_REQUEST,
-                "Não foi possível identificar a organização. Forneça o cabeçalho X-Tenant-ID ou acesse através do subdomínio da empresa.",
-                path,
-                "TENANT_IDENTIFICATION_REQUIRED",
-            ).into_response()
-        }
+        None => next.run(req).await,
     }
 }

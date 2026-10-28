@@ -59,6 +59,21 @@ class SqlAlchemyUserRepository(IUserRepository):
             if owns_session:
                 await session.commit()
 
+    async def update_password_hash(self, user_id: uuid.UUID, password_hash: str) -> bool:
+        async with session_scope(self._session_factory) as (session, owns_session):
+            result = await session.execute(
+                update(UserModel)
+                .where(UserModel.id == user_id)
+                .values(
+                    password_hash=password_hash,
+                    failed_login_attempts=0,
+                    locked_until=None,
+                )
+            )
+            if owns_session:
+                await session.commit()
+            return bool(result.rowcount)
+
     @staticmethod
     def _to_entity(m: UserModel) -> User:
         return User(
