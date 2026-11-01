@@ -2,17 +2,19 @@ name: Docker Build & Publish (Docker Hub)
 
 on:
   push:
-    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**', 'inventory/**', 'treasury/**', 'accounting/**', 'payroll/**' ]
+    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**', 'inventory/**', 'treasury/**', 'accounting/**', 'payroll/**', 'frontend/**' ]
     paths:
       - 'docker-compose.yml'
       - 'Backend/**'
+      - 'Frontend/**'
       - 'proto/**'
       - '.github/workflows/docker.yml'
   pull_request:
-    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**', 'inventory/**', 'treasury/**', 'accounting/**', 'payroll/**' ]
+    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**', 'inventory/**', 'treasury/**', 'accounting/**', 'payroll/**', 'frontend/**' ]
     paths:
       - 'docker-compose.yml'
       - 'Backend/**'
+      - 'Frontend/**'
       - 'proto/**'
       - '.github/workflows/docker.yml'
 
@@ -91,6 +93,10 @@ jobs:
             image: kudiba-backoffice
             context: ./Backend/services/KudibaBackoffice
             dockerfile: ./Backend/services/KudibaBackoffice/Dockerfile
+          - service: frontend
+            image: kudiba-frontend
+            context: ./Frontend
+            dockerfile: ./Frontend/Dockerfile
 
     steps:
       - name: Checkout repository

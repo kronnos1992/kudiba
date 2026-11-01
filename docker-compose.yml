@@ -275,6 +275,28 @@ services:
           - kudiba-backoffice
 
   # ============================================================================
+  # 10. FRONTEND SPA — REACT + VITE + TYPESCRIPT (NGINX)
+  # Build estático multi-stage servido por Nginx, com proxy de /api para o
+  # Gateway e fallback SPA para as rotas do React Router.
+  # ============================================================================
+  frontend:
+    image: ${DOCKERHUB_USERNAME:-kudiba}/kudiba-frontend:${IMAGE_TAG:-latest}
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/}
+        VITE_SESSION_IDLE_MINUTES: ${VITE_SESSION_IDLE_MINUTES:-30}
+    container_name: kudiba-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - gateway
+    networks:
+      - kudiba-perimeter-network
+
+  # ============================================================================
   # 3. ESTADO EFÉMERO & CACHE PERIMÉTRICO (REDIS 7+)
   # ============================================================================
   gateway-redis:
