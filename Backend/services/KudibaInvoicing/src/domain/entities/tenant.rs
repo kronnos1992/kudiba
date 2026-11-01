@@ -35,6 +35,7 @@ pub struct Tenant {
     pub phone: Option<String>,
     pub email: Option<String>,
     pub website: Option<String>,
+    pub logo_data_url: Option<String>,
     pub commercial_registry: Option<String>,
     pub share_capital: Option<String>,
     pub currency: Option<String>,

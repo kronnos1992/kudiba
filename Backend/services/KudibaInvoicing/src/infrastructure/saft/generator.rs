@@ -622,6 +622,7 @@ mod tests {
             phone: Some("+244 923 000 111".to_string()),
             email: Some("fiscal@kudiba.ao".to_string()),
             website: Some("https://www.kudiba.ao".to_string()),
+            logo_data_url: None,
             commercial_registry: Some("REG-1234".to_string()),
             share_capital: Some("5.000.000,00 AOA".to_string()),
             currency: Some("AOA".to_string()),

@@ -9,17 +9,30 @@
 //! - Menção legal obrigatória: "{validation_chars}-Processado por programa validado n.º {cert} Kudiba ERP"
 
 use std::collections::BTreeMap;
+use std::io::Read;
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use lopdf::content::{Content, Operation};
-use lopdf::{dictionary, Document, Object, Stream};
+use lopdf::{dictionary, Document, Encoding, Object, ObjectId, Stream, StringFormat};
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 
 use crate::domain::entities::invoice::Invoice;
+use crate::domain::entities::invoice_line::InvoiceLine;
 use crate::domain::entities::tenant::Tenant;
 use crate::domain::error::DomainError;
 use crate::domain::services::fiscal_qr::AgtQrCodeService;
 
 pub struct InvoicePdfGenerator;
+
+struct DecodedLogo {
+    width: u32,
+    height: u32,
+    color_space: &'static str,
+    data: Vec<u8>,
+    filter: Option<&'static str>,
+    inverted_cmyk: bool,
+}
 
 impl InvoicePdfGenerator {
     /// Produz o ficheiro binário PDF (formato A4) do documento fiscal
@@ -41,32 +54,48 @@ impl InvoicePdfGenerator {
         let mut doc = Document::with_version("1.5");
         let pages_id = doc.new_object_id();
 
-        // Fontes standard Type1 (sem ficheiros de fontes externos)
+        // Fontes standard Type1 com codificação WinAnsi (caracteres do português)
         let font_regular_id = doc.add_object(dictionary! {
             "Type" => "Font",
             "Subtype" => "Type1",
             "BaseFont" => "Helvetica",
+            "Encoding" => "WinAnsiEncoding",
         });
 
         let font_bold_id = doc.add_object(dictionary! {
             "Type" => "Font",
             "Subtype" => "Type1",
             "BaseFont" => "Helvetica-Bold",
+            "Encoding" => "WinAnsiEncoding",
         });
 
         let font_italic_id = doc.add_object(dictionary! {
             "Type" => "Font",
             "Subtype" => "Type1",
             "BaseFont" => "Helvetica-Oblique",
+            "Encoding" => "WinAnsiEncoding",
         });
 
-        let resources_id = doc.add_object(dictionary! {
+        let logo = tenant
+            .and_then(|t| t.logo_data_url.as_deref())
+            .and_then(|data_url| Self::add_logo_xobject(&mut doc, data_url));
+
+        let mut resources = dictionary! {
             "Font" => dictionary! {
                 "F1" => font_regular_id,
                 "F2" => font_bold_id,
                 "F3" => font_italic_id,
             },
-        });
+        };
+        if let Some((logo_id, _, _)) = logo {
+            resources.set(
+                "XObject",
+                dictionary! {
+                    "Logo" => logo_id,
+                },
+            );
+        }
+        let resources_id = doc.add_object(resources);
 
         let mut operations: Vec<Operation> = vec![
             // Faixa superior decorativa subtil (Azul Marinho #1E3A8A)
@@ -76,6 +105,36 @@ impl InvoicePdfGenerator {
             Operation::new("f", vec![]),
             Operation::new("Q", vec![]),
         ];
+
+        let header_left_x = 40.0;
+        let (issuer_top_y, section_shift) = if let Some((_, logo_w, logo_h)) = logo {
+            let max_w = 90.0;
+            let max_h = 34.0;
+            let scale = (max_w / logo_w as f64).min(max_h / logo_h as f64).min(1.0);
+            let draw_w = logo_w as f64 * scale;
+            let draw_h = logo_h as f64 * scale;
+            let logo_y = 810.0 - draw_h;
+
+            operations.push(Operation::new("q", vec![]));
+            operations.push(Operation::new(
+                "cm",
+                vec![
+                    draw_w.into(),
+                    0.into(),
+                    0.into(),
+                    draw_h.into(),
+                    header_left_x.into(),
+                    logo_y.into(),
+                ],
+            ));
+            operations.push(Operation::new("Do", vec!["Logo".into()]));
+            operations.push(Operation::new("Q", vec![]));
+
+            let issuer_top_y = (logo_y - 14.0).min(792.0);
+            (issuer_top_y, (792.0 - issuer_top_y).max(0.0))
+        } else {
+            (792.0, 0.0)
+        };
 
         // =====================================================================
         // 1. TOPO & CABEÇALHO DO EMITENTE E DOCUMENTO
@@ -92,13 +151,13 @@ impl InvoicePdfGenerator {
             &mut operations,
             "F2",
             14.5,
-            40.0,
-            792.0,
+            header_left_x,
+            issuer_top_y,
             display_title,
             (0.1, 0.15, 0.3),
         );
 
-        let mut header_y = 778.0;
+        let mut header_y = issuer_top_y - 14.0;
         if let Some(t) = tenant {
             if t.trade_name
                 .as_deref()
@@ -108,7 +167,7 @@ impl InvoicePdfGenerator {
                     &mut operations,
                     "F2",
                     8.5,
-                    40.0,
+                    header_left_x,
                     header_y,
                     &t.company_name,
                     (0.25, 0.25, 0.25),
@@ -134,7 +193,7 @@ impl InvoicePdfGenerator {
             &mut operations,
             "F2",
             8.5,
-            40.0,
+            header_left_x,
             header_y,
             &nif_line,
             (0.2, 0.2, 0.2),
@@ -149,7 +208,7 @@ impl InvoicePdfGenerator {
                 &mut operations,
                 "F1",
                 8.0,
-                40.0,
+                header_left_x,
                 header_y,
                 &format!("Capital Social: {}", cap),
                 (0.35, 0.35, 0.35),
@@ -176,7 +235,7 @@ impl InvoicePdfGenerator {
             &mut operations,
             "F1",
             8.0,
-            40.0,
+            header_left_x,
             header_y,
             &format!("{}, {} - {}", issuer_addr, issuer_city, issuer_country),
             (0.35, 0.35, 0.35),
@@ -199,7 +258,7 @@ impl InvoicePdfGenerator {
                     &mut operations,
                     "F1",
                     7.5,
-                    40.0,
+                    header_left_x,
                     header_y,
                     &contacts.join(" | "),
                     (0.4, 0.4, 0.4),
@@ -270,14 +329,19 @@ impl InvoicePdfGenerator {
         ));
         operations.push(Operation::new(
             "re",
-            vec![40.into(), 650.into(), 250.into(), 75.into()],
+            vec![
+                40.into(),
+                (650.0 - section_shift).into(),
+                250.into(),
+                75.into(),
+            ],
         ));
         operations.push(Operation::new("f", vec![]));
         operations.push(Operation::new("Q", vec![]));
         Self::draw_rect_border(
             &mut operations,
             40.0,
-            650.0,
+            650.0 - section_shift,
             250.0,
             75.0,
             0.5,
@@ -289,7 +353,7 @@ impl InvoicePdfGenerator {
             "F2",
             8.0,
             48.0,
-            712.0,
+            712.0 - section_shift,
             "EXMO.(S) SR.(S) / ADQUIRENTE:",
             (0.3, 0.4, 0.55),
         );
@@ -298,7 +362,7 @@ impl InvoicePdfGenerator {
             "F2",
             9.5,
             48.0,
-            698.0,
+            698.0 - section_shift,
             &invoice.customer_name,
             (0.1, 0.1, 0.1),
         );
@@ -307,7 +371,7 @@ impl InvoicePdfGenerator {
             "F1",
             9.0,
             48.0,
-            684.0,
+            684.0 - section_shift,
             &format!("NIF: {}", invoice.customer_nif),
             (0.2, 0.2, 0.2),
         );
@@ -327,7 +391,7 @@ impl InvoicePdfGenerator {
             "F1",
             8.5,
             48.0,
-            670.0,
+            670.0 - section_shift,
             &cust_line,
             (0.35, 0.35, 0.35),
         );
@@ -340,14 +404,19 @@ impl InvoicePdfGenerator {
         ));
         operations.push(Operation::new(
             "re",
-            vec![305.into(), 650.into(), 250.into(), 75.into()],
+            vec![
+                305.into(),
+                (650.0 - section_shift).into(),
+                250.into(),
+                75.into(),
+            ],
         ));
         operations.push(Operation::new("f", vec![]));
         operations.push(Operation::new("Q", vec![]));
         Self::draw_rect_border(
             &mut operations,
             305.0,
-            650.0,
+            650.0 - section_shift,
             250.0,
             75.0,
             0.5,
@@ -366,7 +435,7 @@ impl InvoicePdfGenerator {
             "F2",
             8.0,
             313.0,
-            712.0,
+            712.0 - section_shift,
             "DADOS DA OPERAÇÃO FISCAL:",
             (0.3, 0.4, 0.55),
         );
@@ -375,7 +444,7 @@ impl InvoicePdfGenerator {
             "F1",
             8.5,
             313.0,
-            698.0,
+            698.0 - section_shift,
             &format!("Data de Emissão: {}", issued_str),
             (0.2, 0.2, 0.2),
         );
@@ -384,7 +453,7 @@ impl InvoicePdfGenerator {
             "F1",
             8.5,
             313.0,
-            684.0,
+            684.0 - section_shift,
             &format!("Data do Sistema: {}", entry_str),
             (0.2, 0.2, 0.2),
         );
@@ -393,7 +462,7 @@ impl InvoicePdfGenerator {
             "F1",
             8.5,
             313.0,
-            670.0,
+            670.0 - section_shift,
             &format!("Pagamento: {} | Moeda: {}", payment_str, invoice.currency),
             (0.2, 0.2, 0.2),
         );
@@ -402,7 +471,7 @@ impl InvoicePdfGenerator {
             "F1",
             8.5,
             313.0,
-            656.0,
+            656.0 - section_shift,
             &format!("Regime Fiscal IVA: {}", invoice.tax_regime_code),
             (0.2, 0.2, 0.2),
         );
@@ -413,7 +482,7 @@ impl InvoicePdfGenerator {
                 "F2",
                 8.0,
                 313.0,
-                642.0,
+                642.0 - section_shift,
                 &format!("Doc. Rectificado: {}", src_doc),
                 (0.7, 0.2, 0.2),
             );
@@ -422,10 +491,10 @@ impl InvoicePdfGenerator {
         // =====================================================================
         // 3. TABELA DE ITENS / LINHAS DA FACTURA
         // =====================================================================
-        let mut y = 625.0;
+        let mut y = 625.0 - section_shift;
 
         if let Some(transport) = &invoice.transport {
-            let box_y = 598.0;
+            let box_y = 598.0 - section_shift;
             operations.push(Operation::new("q", vec![]));
             operations.push(Operation::new(
                 "rg",
@@ -577,30 +646,16 @@ impl InvoicePdfGenerator {
 
         y -= 16.0;
 
-        // Agrupador para resumo de IVA
-        let mut vat_breakdown: BTreeMap<i64, (Decimal, Decimal, Option<String>)> = BTreeMap::new();
+        let vat_breakdown = Self::build_vat_breakdown(&invoice.lines);
 
         for line in &invoice.lines {
-            // Registo para resumo de IVA
-            let rate_cents = (line.tax_rate * Decimal::from(100))
-                .to_string()
-                .parse::<i64>()
-                .unwrap_or(0);
-            let entry = vat_breakdown.entry(rate_cents).or_insert((
-                Decimal::ZERO,
-                Decimal::ZERO,
-                line.tax_exemption_code.clone(),
-            ));
-            entry.0 += line.line_base();
-            entry.1 += line.line_tax();
-
             let num_str = format!("{:02}", line.line_number);
-            let qty_str = format!("{:.2}", line.quantity);
-            let price_str = format!("{:.2}", line.unit_price);
+            let qty_str = Self::format_decimal_comma(line.quantity);
+            let price_str = Self::format_amount(line.unit_price);
             let disc_str = if line.discount_amount.is_zero() {
                 "-".to_string()
             } else {
-                format!("{:.2}", line.discount_amount)
+                Self::format_amount(line.discount_amount)
             };
             let vat_str = if line.tax_rate.is_zero() {
                 match &line.tax_exemption_code {
@@ -608,9 +663,9 @@ impl InvoicePdfGenerator {
                     None => "0% (Isento)".to_string(),
                 }
             } else {
-                format!("{:.1}%", line.tax_rate)
+                Self::format_rate(line.tax_rate)
             };
-            let total_str = format!("{:.2}", line.line_total);
+            let total_str = Self::format_amount(line.line_total);
 
             Self::add_text(
                 &mut operations,
@@ -765,7 +820,7 @@ impl InvoicePdfGenerator {
         let mut vat_row_y = summary_y - 24.0;
         for (rate_cents, (base, tax, ex_code)) in &vat_breakdown {
             let rate_f = *rate_cents as f64 / 100.0;
-            let rate_label = format!("{:.1}%", rate_f);
+            let rate_label = format!("{:.1}%", rate_f).replace('.', ",");
             let ex_display = ex_code.as_deref().unwrap_or("-");
 
             Self::add_text(
@@ -783,7 +838,7 @@ impl InvoicePdfGenerator {
                 7.5,
                 95.0,
                 vat_row_y,
-                &format!("{:.2}", base),
+                &Self::format_amount(*base),
                 (0.2, 0.2, 0.2),
             );
             Self::add_text(
@@ -792,7 +847,7 @@ impl InvoicePdfGenerator {
                 7.5,
                 175.0,
                 vat_row_y,
-                &format!("{:.2}", tax),
+                &Self::format_amount(*tax),
                 (0.2, 0.2, 0.2),
             );
             Self::add_text(
@@ -852,6 +907,7 @@ impl InvoicePdfGenerator {
         // 4.2 Caixa de Totais Finais (Lado Direito: x=330 a x=555)
         let total_box_top = summary_y;
         let mut tot_y = total_box_top - 2.0;
+        let total_row_gap = 16.0;
 
         Self::add_text(
             &mut operations,
@@ -862,16 +918,16 @@ impl InvoicePdfGenerator {
             "Total Ilíquido:",
             (0.3, 0.3, 0.3),
         );
-        Self::add_text(
+        Self::add_text_right(
             &mut operations,
             "F1",
             8.5,
-            475.0,
+            552.0,
             tot_y,
-            &format!("{:.2} AOA", invoice.gross_total),
+            &format!("{} AOA", Self::format_amount(invoice.gross_total)),
             (0.1, 0.1, 0.1),
         );
-        tot_y -= 13.0;
+        tot_y -= total_row_gap;
 
         Self::add_text(
             &mut operations,
@@ -879,19 +935,19 @@ impl InvoicePdfGenerator {
             8.5,
             335.0,
             tot_y,
-            "Total Base Tributável (Incidência):",
+            "Total Base Tributável:",
             (0.3, 0.3, 0.3),
         );
-        Self::add_text(
+        Self::add_text_right(
             &mut operations,
             "F1",
             8.5,
-            475.0,
+            552.0,
             tot_y,
-            &format!("{:.2} AOA", invoice.net_total),
+            &format!("{} AOA", Self::format_amount(invoice.net_total)),
             (0.1, 0.1, 0.1),
         );
-        tot_y -= 13.0;
+        tot_y -= total_row_gap;
 
         Self::add_text(
             &mut operations,
@@ -899,19 +955,19 @@ impl InvoicePdfGenerator {
             8.5,
             335.0,
             tot_y,
-            "Total Imposto sobre Valor Acrescentado:",
+            "Total de IVA:",
             (0.3, 0.3, 0.3),
         );
-        Self::add_text(
+        Self::add_text_right(
             &mut operations,
             "F1",
             8.5,
-            475.0,
+            552.0,
             tot_y,
-            &format!("{:.2} AOA", invoice.tax_total),
+            &format!("{} AOA", Self::format_amount(invoice.tax_total)),
             (0.1, 0.1, 0.1),
         );
-        tot_y -= 13.0;
+        tot_y -= total_row_gap;
 
         if !invoice.withholding_total.is_zero() {
             Self::add_text(
@@ -920,19 +976,19 @@ impl InvoicePdfGenerator {
                 8.5,
                 335.0,
                 tot_y,
-                "Retenção na Fonte (RF 6.5%):",
+                "Retenção na Fonte (6,5%):",
                 (0.6, 0.1, 0.1),
             );
-            Self::add_text(
+            Self::add_text_right(
                 &mut operations,
                 "F1",
                 8.5,
-                475.0,
+                552.0,
                 tot_y,
-                &format!("-{:.2} AOA", invoice.withholding_total),
+                &format!("-{} AOA", Self::format_amount(invoice.withholding_total)),
                 (0.6, 0.1, 0.1),
             );
-            tot_y -= 13.0;
+            tot_y -= total_row_gap;
         }
 
         if !invoice.stamp_duty_total.is_zero() {
@@ -945,19 +1001,20 @@ impl InvoicePdfGenerator {
                 "Imposto de Selo (IS):",
                 (0.3, 0.3, 0.3),
             );
-            Self::add_text(
+            Self::add_text_right(
                 &mut operations,
                 "F1",
                 8.5,
-                475.0,
+                552.0,
                 tot_y,
-                &format!("+{:.2} AOA", invoice.stamp_duty_total),
+                &format!("+{} AOA", Self::format_amount(invoice.stamp_duty_total)),
                 (0.1, 0.1, 0.1),
             );
-            tot_y -= 13.0;
+            tot_y -= total_row_gap;
         }
 
         // Destaque do Total a Pagar
+        tot_y -= total_row_gap / 2.0;
         operations.push(Operation::new("q", vec![]));
         operations.push(Operation::new(
             "rg",
@@ -965,7 +1022,7 @@ impl InvoicePdfGenerator {
         ));
         operations.push(Operation::new(
             "re",
-            vec![330.into(), (tot_y - 6.0).into(), 225.into(), 20.into()],
+            vec![330.into(), (tot_y - 8.5).into(), 225.into(), 27.into()],
         ));
         operations.push(Operation::new("f", vec![]));
         operations.push(Operation::new("Q", vec![]));
@@ -979,13 +1036,13 @@ impl InvoicePdfGenerator {
             "TOTAL A PAGAR:",
             (0.12, 0.23, 0.54),
         );
-        Self::add_text(
+        Self::add_text_right(
             &mut operations,
             "F2",
             11.5,
-            465.0,
+            552.0,
             tot_y,
-            &format!("{:.2} AOA", invoice.amount_due),
+            &format!("{} AOA", Self::format_amount(invoice.amount_due)),
             (0.12, 0.23, 0.54),
         );
 
@@ -1145,6 +1202,8 @@ impl InvoicePdfGenerator {
         text: &str,
         color: (f64, f64, f64),
     ) {
+        let encoded = Encoding::SimpleEncoding(b"WinAnsiEncoding").string_to_bytes(text);
+
         operations.push(Operation::new("q", vec![]));
         operations.push(Operation::new("BT", vec![]));
         operations.push(Operation::new(
@@ -1156,9 +1215,353 @@ impl InvoicePdfGenerator {
             vec![font.to_string().into(), size.into()],
         ));
         operations.push(Operation::new("Td", vec![x.into(), y.into()]));
-        operations.push(Operation::new("Tj", vec![Object::string_literal(text)]));
+        operations.push(Operation::new(
+            "Tj",
+            vec![Object::String(encoded, StringFormat::Literal)],
+        ));
         operations.push(Operation::new("ET", vec![]));
         operations.push(Operation::new("Q", vec![]));
+    }
+
+    fn add_text_right(
+        operations: &mut Vec<Operation>,
+        font: &str,
+        size: f64,
+        right_x: f64,
+        y: f64,
+        text: &str,
+        color: (f64, f64, f64),
+    ) {
+        let approx_width = text.chars().count() as f64 * size * 0.52;
+        let x = (right_x - approx_width).max(335.0);
+        Self::add_text(operations, font, size, x, y, text, color);
+    }
+
+    fn format_amount(value: Decimal) -> String {
+        let negative = value.is_sign_negative();
+        let fixed = format!("{:.2}", value.abs());
+        let (integer, decimals) = fixed.split_once('.').unwrap_or((&fixed, "00"));
+        let digits = integer.as_bytes();
+        let mut grouped = String::with_capacity(integer.len() + integer.len() / 3);
+        for (index, digit) in digits.iter().enumerate() {
+            if index > 0 && (digits.len() - index) % 3 == 0 {
+                grouped.push('.');
+            }
+            grouped.push(*digit as char);
+        }
+
+        let formatted = format!("{grouped},{decimals}");
+        if negative {
+            format!("-{formatted}")
+        } else {
+            formatted
+        }
+    }
+
+    fn format_decimal_comma(value: Decimal) -> String {
+        format!("{:.2}", value).replace('.', ",")
+    }
+
+    fn format_rate(value: Decimal) -> String {
+        format!("{:.1}%", value).replace('.', ",")
+    }
+
+    fn vat_rate_basis_points(value: Decimal) -> i64 {
+        (value * Decimal::from(100)).round().to_i64().unwrap_or(0)
+    }
+
+    fn build_vat_breakdown(
+        lines: &[InvoiceLine],
+    ) -> BTreeMap<i64, (Decimal, Decimal, Option<String>)> {
+        let mut vat_breakdown: BTreeMap<i64, (Decimal, Decimal, Option<String>)> = BTreeMap::new();
+
+        for line in lines {
+            let rate_cents = Self::vat_rate_basis_points(line.tax_rate);
+            let entry = vat_breakdown.entry(rate_cents).or_insert((
+                Decimal::ZERO,
+                Decimal::ZERO,
+                line.tax_exemption_code.clone(),
+            ));
+            entry.0 += line.line_base();
+            entry.1 += line.line_tax();
+        }
+
+        vat_breakdown
+    }
+
+    fn add_logo_xobject(doc: &mut Document, data_url: &str) -> Option<(ObjectId, u32, u32)> {
+        let logo = Self::decode_logo(data_url)?;
+
+        let mut dict = dictionary! {
+            "Type" => "XObject",
+            "Subtype" => "Image",
+            "Width" => logo.width as i64,
+            "Height" => logo.height as i64,
+            "ColorSpace" => logo.color_space,
+            "BitsPerComponent" => 8,
+        };
+        if let Some(filter) = logo.filter {
+            dict.set("Filter", filter);
+        }
+        if logo.inverted_cmyk {
+            dict.set(
+                "Decode",
+                vec![
+                    1.into(),
+                    0.into(),
+                    1.into(),
+                    0.into(),
+                    1.into(),
+                    0.into(),
+                    1.into(),
+                    0.into(),
+                ],
+            );
+        }
+
+        let logo_id = doc.add_object(Stream::new(dict, logo.data));
+        Some((logo_id, logo.width, logo.height))
+    }
+
+    fn decode_logo(data_url: &str) -> Option<DecodedLogo> {
+        let trimmed = data_url.trim();
+        let payload = if let Some(rest) = trimmed.strip_prefix("data:") {
+            let (meta, payload) = rest.split_once(',')?;
+            if !meta.contains(";base64") {
+                return None;
+            }
+            payload
+        } else {
+            trimmed
+        };
+        let compact: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
+        let bytes = BASE64.decode(compact.as_bytes()).ok()?;
+
+        if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+            let (width, height, data) = Self::decode_png_rgb(&bytes)?;
+            return Some(DecodedLogo {
+                width,
+                height,
+                color_space: "DeviceRGB",
+                data,
+                filter: None,
+                inverted_cmyk: false,
+            });
+        }
+
+        if bytes.starts_with(b"\xff\xd8") {
+            let (width, height, components) = Self::parse_jpeg_header(&bytes)?;
+            let (color_space, inverted_cmyk) = match components {
+                1 => ("DeviceGray", false),
+                4 => ("DeviceCMYK", true),
+                _ => ("DeviceRGB", false),
+            };
+            return Some(DecodedLogo {
+                width,
+                height,
+                color_space,
+                data: bytes,
+                filter: Some("DCTDecode"),
+                inverted_cmyk,
+            });
+        }
+
+        None
+    }
+
+    fn decode_png_rgb(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+        let mut position = 8usize;
+        let mut width = 0u32;
+        let mut height = 0u32;
+        let mut bit_depth = 0u8;
+        let mut color_type = 0u8;
+        let mut interlace = 0u8;
+        let mut palette: Vec<[u8; 3]> = Vec::new();
+        let mut palette_alpha: Vec<u8> = Vec::new();
+        let mut idat: Vec<u8> = Vec::new();
+
+        while position + 12 <= bytes.len() {
+            let length =
+                u32::from_be_bytes(bytes[position..position + 4].try_into().ok()?) as usize;
+            let chunk_type = &bytes[position + 4..position + 8];
+            let chunk_end = position + 8 + length;
+            if chunk_end + 4 > bytes.len() {
+                return None;
+            }
+            let data = &bytes[position + 8..chunk_end];
+
+            match chunk_type {
+                b"IHDR" if data.len() >= 13 => {
+                    width = u32::from_be_bytes(data[0..4].try_into().ok()?);
+                    height = u32::from_be_bytes(data[4..8].try_into().ok()?);
+                    bit_depth = data[8];
+                    color_type = data[9];
+                    interlace = data[12];
+                }
+                b"PLTE" => {
+                    palette = data.as_chunks::<3>().0.to_vec();
+                }
+                b"tRNS" => palette_alpha = data.to_vec(),
+                b"IDAT" => idat.extend_from_slice(data),
+                b"IEND" => break,
+                _ => {}
+            }
+
+            position = chunk_end + 4;
+        }
+
+        if width == 0 || height == 0 || bit_depth != 8 || interlace != 0 || idat.is_empty() {
+            return None;
+        }
+
+        let channels = match color_type {
+            0 => 1usize,
+            2 => 3usize,
+            3 => 1usize,
+            4 => 2usize,
+            6 => 4usize,
+            _ => return None,
+        };
+        if color_type == 3 && palette.is_empty() {
+            return None;
+        }
+
+        let mut decoder = flate2::read::ZlibDecoder::new(idat.as_slice());
+        let mut decompressed = Vec::new();
+        decoder.read_to_end(&mut decompressed).ok()?;
+
+        let stride = width as usize * channels;
+        if decompressed.len() < (stride + 1) * height as usize {
+            return None;
+        }
+
+        let mut rows = Vec::with_capacity(stride * height as usize);
+        let mut previous = vec![0u8; stride];
+        let mut offset = 0usize;
+
+        for _ in 0..height {
+            let filter = decompressed[offset];
+            offset += 1;
+            let mut row = decompressed[offset..offset + stride].to_vec();
+            offset += stride;
+
+            for index in 0..stride {
+                let left = if index >= channels {
+                    row[index - channels] as i16
+                } else {
+                    0
+                };
+                let above = previous[index] as i16;
+                let upper_left = if index >= channels {
+                    previous[index - channels] as i16
+                } else {
+                    0
+                };
+                let value = match filter {
+                    0 => row[index] as i16,
+                    1 => row[index] as i16 + left,
+                    2 => row[index] as i16 + above,
+                    3 => row[index] as i16 + ((left + above) / 2),
+                    4 => {
+                        let predictor = left + above - upper_left;
+                        let pa = (predictor - left).abs();
+                        let pb = (predictor - above).abs();
+                        let pc = (predictor - upper_left).abs();
+                        let paeth = if pa <= pb && pa <= pc {
+                            left
+                        } else if pb <= pc {
+                            above
+                        } else {
+                            upper_left
+                        };
+                        row[index] as i16 + paeth
+                    }
+                    _ => return None,
+                };
+                row[index] = value as u8;
+            }
+
+            rows.extend_from_slice(&row);
+            previous = row;
+        }
+
+        let mut rgb = Vec::with_capacity(width as usize * height as usize * 3);
+        for row in rows.chunks_exact(stride) {
+            for pixel in row.chunks_exact(channels) {
+                let (r, g, b, a) = match color_type {
+                    0 => (pixel[0], pixel[0], pixel[0], 255u8),
+                    2 => (pixel[0], pixel[1], pixel[2], 255u8),
+                    3 => {
+                        let entry = palette.get(pixel[0] as usize)?;
+                        let alpha = palette_alpha.get(pixel[0] as usize).copied().unwrap_or(255);
+                        (entry[0], entry[1], entry[2], alpha)
+                    }
+                    4 => (pixel[0], pixel[0], pixel[0], pixel[1]),
+                    _ => (pixel[0], pixel[1], pixel[2], pixel[3]),
+                };
+                let alpha = a as u16;
+                let blend = |channel: u8| -> u8 {
+                    ((channel as u16 * alpha + 255 * (255 - alpha)) / 255) as u8
+                };
+                rgb.push(blend(r));
+                rgb.push(blend(g));
+                rgb.push(blend(b));
+            }
+        }
+
+        Some((width, height, rgb))
+    }
+
+    fn parse_jpeg_header(bytes: &[u8]) -> Option<(u32, u32, u8)> {
+        let mut position = 2usize;
+        while position + 4 <= bytes.len() {
+            if bytes[position] != 0xff {
+                position += 1;
+                continue;
+            }
+            let marker = bytes[position + 1];
+            if marker == 0xff {
+                position += 1;
+                continue;
+            }
+            if marker == 0xd8 || marker == 0xd9 || (0xd0..=0xd7).contains(&marker) {
+                position += 2;
+                continue;
+            }
+
+            let length = u16::from_be_bytes([bytes[position + 2], bytes[position + 3]]) as usize;
+            if length < 2 || position + 2 + length > bytes.len() {
+                return None;
+            }
+
+            if matches!(
+                marker,
+                0xc0 | 0xc1
+                    | 0xc2
+                    | 0xc3
+                    | 0xc5
+                    | 0xc6
+                    | 0xc7
+                    | 0xc9
+                    | 0xca
+                    | 0xcb
+                    | 0xcd
+                    | 0xce
+                    | 0xcf
+            ) {
+                if length < 8 {
+                    return None;
+                }
+                let height = u16::from_be_bytes([bytes[position + 5], bytes[position + 6]]) as u32;
+                let width = u16::from_be_bytes([bytes[position + 7], bytes[position + 8]]) as u32;
+                let components = bytes[position + 9];
+                return Some((width, height, components));
+            }
+
+            position += 2 + length;
+        }
+
+        None
     }
 
     fn draw_horizontal_line(
@@ -1291,5 +1694,165 @@ mod tests {
 
         assert!(!pdf_bytes.is_empty());
         assert!(pdf_bytes.starts_with(b"%PDF-1.5"));
+        let tenant = Tenant {
+            id: Uuid::new_v4(),
+            slug: "kudiba".to_string(),
+            company_name: "Kudiba Tecnologia SA".to_string(),
+            trade_name: Some("Kudiba ERP".to_string()),
+            nif: "5412345678".to_string(),
+            address_detail: Some("Av. 4 de Fevereiro".to_string()),
+            city: Some("Luanda".to_string()),
+            province: Some("Luanda".to_string()),
+            postal_code: None,
+            country: Some("AO".to_string()),
+            phone: None,
+            email: None,
+            website: None,
+            logo_data_url: Some(
+                "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+                    .to_string(),
+            ),
+            commercial_registry: None,
+            share_capital: None,
+            currency: Some("AOA".to_string()),
+            tax_office_code: None,
+            agt_cert_number: Some("999/AGT/2026".to_string()),
+            invoice_footer_notes: None,
+            bank_accounts: Vec::new(),
+            status: "ACTIVE".to_string(),
+            tax_regime_code: "GERAL".to_string(),
+            contingency_started_at: None,
+        };
+
+        let pdf_with_logo = InvoicePdfGenerator::generate_pdf_with_tenant(
+            &invoice,
+            Some(&tenant),
+            "Kudiba Tecnologia SA",
+            "999/AGT/2026",
+        )
+        .expect("PDF com logótipo deve ser gerado");
+
+        assert!(pdf_with_logo
+            .windows(b"/XObject".len())
+            .any(|window| window == b"/XObject"));
+        assert!(pdf_with_logo
+            .windows(b"/Logo".len())
+            .any(|window| window == b"/Logo"));
+    }
+
+    #[test]
+    fn formata_montantes_no_padrao_angolano() {
+        assert_eq!(
+            InvoicePdfGenerator::format_amount(Decimal::new(200000000, 2)),
+            "2.000.000,00"
+        );
+        assert_eq!(
+            InvoicePdfGenerator::format_amount(Decimal::new(123456789012, 2)),
+            "1.234.567.890,12"
+        );
+        assert_eq!(
+            InvoicePdfGenerator::format_amount(Decimal::new(-5000, 2)),
+            "-50,00"
+        );
+    }
+
+    #[test]
+    fn codifica_caracteres_portugueses_em_winansi() {
+        let mut operations = Vec::new();
+        InvoicePdfGenerator::add_text(
+            &mut operations,
+            "F1",
+            9.0,
+            40.0,
+            700.0,
+            "Café à Ação — N.º 1",
+            (0.0, 0.0, 0.0),
+        );
+
+        let encoded = Content { operations }.encode().expect("conteúdo válido");
+        for byte in [0xe9, 0xe0, 0xe7, 0xe3, 0x97, 0xba] {
+            assert!(encoded.contains(&byte), "byte WinAnsi em falta: {byte:#x}");
+        }
+        assert!(!encoded.windows(2).any(|window| window == [0xc3, 0xa9]));
+    }
+
+    #[test]
+    fn separa_resumo_iva_por_taxa() {
+        use rust_decimal::Decimal;
+
+        let invoice_id = Uuid::new_v4();
+        let lines = vec![
+            InvoiceLine::new(
+                Uuid::new_v4(),
+                invoice_id,
+                1,
+                "PROD-004".to_string(),
+                "Açúcar Branco Kudiba 1Kg".to_string(),
+                Decimal::new(200, 2),
+                Decimal::new(110000, 2),
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Some("M04".to_string()),
+                Decimal::new(220000, 2),
+            ),
+            InvoiceLine::new(
+                Uuid::new_v4(),
+                invoice_id,
+                2,
+                "PRD-005".to_string(),
+                "Computador Portátil HP ProBook".to_string(),
+                Decimal::new(700, 2),
+                Decimal::new(45000000, 2),
+                Decimal::ZERO,
+                Decimal::new(1400, 2),
+                None,
+                Decimal::new(359100000, 2),
+            ),
+        ];
+
+        let breakdown = InvoicePdfGenerator::build_vat_breakdown(&lines);
+        assert_eq!(breakdown.len(), 2);
+        let (base_zero, tax_zero, code_zero) = breakdown.get(&0).expect("taxa 0%");
+        assert_eq!(*base_zero, Decimal::new(220000, 2));
+        assert_eq!(*tax_zero, Decimal::ZERO);
+        assert_eq!(code_zero.as_deref(), Some("M04"));
+        let (base_14, tax_14, code_14) = breakdown.get(&1400).expect("taxa 14%");
+        assert_eq!(*base_14, Decimal::new(315000000, 2));
+        assert_eq!(*tax_14, Decimal::new(44100000, 2));
+        assert!(code_14.is_none());
+    }
+
+    #[test]
+    fn agrupa_iva_pela_taxa_correta() {
+        use rust_decimal::Decimal;
+
+        assert_eq!(
+            InvoicePdfGenerator::vat_rate_basis_points(Decimal::new(1400, 2)),
+            1400
+        );
+        assert_eq!(
+            InvoicePdfGenerator::vat_rate_basis_points(Decimal::new(0, 2)),
+            0
+        );
+        assert_eq!(
+            InvoicePdfGenerator::vat_rate_basis_points(Decimal::new(650, 2)),
+            650
+        );
+        assert_eq!(
+            InvoicePdfGenerator::format_rate(Decimal::new(1400, 2)),
+            "14,0%"
+        );
+    }
+
+    #[test]
+    fn descodifica_logo_png_em_data_url() {
+        let data_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        let logo = InvoicePdfGenerator::decode_logo(data_url).expect("logo PNG válido");
+
+        assert_eq!((logo.width, logo.height), (1, 1));
+        assert_eq!(logo.color_space, "DeviceRGB");
+        assert_eq!(logo.data.len(), 3);
+        assert!(logo.filter.is_none());
+        assert!(!logo.inverted_cmyk);
     }
 }

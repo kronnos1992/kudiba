@@ -60,7 +60,7 @@ impl CancelInvoiceWithCreditNoteUseCase {
         validate_not_credit_note(&original_invoice.document_type)?;
 
         // 4. Validação: Apenas para estorno integral bloqueia se já existir estorno completo prévio
-        let is_custom_lines = command.lines.as_ref().map_or(false, |l| !l.is_empty());
+        let is_custom_lines = command.lines.as_ref().is_some_and(|l| !l.is_empty());
         if !is_custom_lines {
             if let Some(existing_nc) = self
                 .invoice_repository

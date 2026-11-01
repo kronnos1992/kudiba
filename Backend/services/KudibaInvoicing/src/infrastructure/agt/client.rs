@@ -264,6 +264,7 @@ mod tests {
                     phone: None,
                     email: None,
                     website: None,
+                    logo_data_url: None,
                     commercial_registry: None,
                     share_capital: None,
                     currency: Some("AOA".to_string()),

@@ -590,6 +590,15 @@ async fn get_invoice_pdf_handler(
                 axum::http::header::CONTENT_TYPE,
                 HeaderValue::from_static("application/pdf"),
             );
+            resp_headers.insert(
+                axum::http::header::CACHE_CONTROL,
+                HeaderValue::from_static("no-store, no-cache, must-revalidate, max-age=0"),
+            );
+            resp_headers.insert(
+                axum::http::header::PRAGMA,
+                HeaderValue::from_static("no-cache"),
+            );
+            resp_headers.insert(axum::http::header::EXPIRES, HeaderValue::from_static("0"));
             let filename = format!("{}.pdf", invoice.document_number.replace(['/', ' '], "_"));
             if let Ok(disp) = HeaderValue::from_str(&format!("inline; filename=\"{filename}\"")) {
                 resp_headers.insert(axum::http::header::CONTENT_DISPOSITION, disp);
@@ -671,6 +680,15 @@ async fn get_invoice_pdf_by_number_handler(
                 axum::http::header::CONTENT_TYPE,
                 HeaderValue::from_static("application/pdf"),
             );
+            resp_headers.insert(
+                axum::http::header::CACHE_CONTROL,
+                HeaderValue::from_static("no-store, no-cache, must-revalidate, max-age=0"),
+            );
+            resp_headers.insert(
+                axum::http::header::PRAGMA,
+                HeaderValue::from_static("no-cache"),
+            );
+            resp_headers.insert(axum::http::header::EXPIRES, HeaderValue::from_static("0"));
             let filename = format!("{}.pdf", invoice.document_number.replace(['/', ' '], "_"));
             if let Ok(disp) = HeaderValue::from_str(&format!("inline; filename=\"{filename}\"")) {
                 resp_headers.insert(axum::http::header::CONTENT_DISPOSITION, disp);
@@ -2572,7 +2590,7 @@ async fn validate_stock_and_service_integrity(
                     let endpoint = format!(
                         "{}/api/v1/inventory/products/by-code/{}",
                         url.trim_end_matches('/'),
-                        &code
+                        code
                     );
                     let client = reqwest::Client::builder()
                         .timeout(std::time::Duration::from_secs(3))
@@ -2658,7 +2676,7 @@ async fn load_tenant_by_id(
     tenant_id: Uuid,
 ) -> Option<crate::domain::entities::tenant::Tenant> {
     let sql = "SELECT id, slug, company_name, trade_name, nif, address_detail, city, province, postal_code, country, \
-               phone, email, website, commercial_registry, share_capital, currency, tax_office_code, \
+               phone, email, website, logo_data_url, commercial_registry, share_capital, currency, tax_office_code, \
                agt_cert_number, invoice_footer_notes, bank_accounts, status, tax_regime_code, contingency_started_at \
                FROM kudiba_core.tenants WHERE id = $1";
     let row = sqlx::query(sql)
