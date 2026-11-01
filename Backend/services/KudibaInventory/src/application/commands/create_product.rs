@@ -106,6 +106,11 @@ impl CreateProductCommand {
             product = product.with_ref_id(Some(ref_id));
         }
 
+        product = product.with_purchase_packaging(
+            req.purchase_unit_of_measure,
+            req.purchase_conversion_factor,
+        )?;
+
         self.product_repo.save(session.as_mut(), &product).await?;
         Ok(ProductResponse::from(product))
     }

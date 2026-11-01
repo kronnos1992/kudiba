@@ -23,6 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = Config::from_env();
     let pool = connect_with_retry(&config).await?;
+    ensure_purchase_uom_columns(&pool).await;
 
     let app_state = AppState::new(config.clone(), pool);
 
@@ -45,6 +46,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = event_shutdown_tx.send(true);
     info!("KudibaInventory encerrado com sucesso.");
     Ok(())
+}
+
+async fn ensure_purchase_uom_columns(pool: &sqlx::PgPool) {
+    let ddl = r#"
+        ALTER TABLE kudiba_inventory.products
+            ADD COLUMN IF NOT EXISTS purchase_unit_of_measure VARCHAR(20) NOT NULL DEFAULT 'UN',
+            ADD COLUMN IF NOT EXISTS purchase_conversion_factor NUMERIC(15, 4) NOT NULL DEFAULT 1;
+    "#;
+    if let Err(err) = sqlx::query(ddl).execute(pool).await {
+        tracing::warn!(
+            "Não foi possível aplicar migração automática de purchase_unit_of_measure: {}",
+            err
+        );
+    }
 }
 
 async fn connect_with_retry(config: &Config) -> Result<sqlx::PgPool, sqlx::Error> {

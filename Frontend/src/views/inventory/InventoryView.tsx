@@ -135,6 +135,8 @@ export const InventoryView: React.FC = () => {
     is_stockable: true,
     track_lots: false,
     unit_of_measure: 'UN',
+    purchase_unit_of_measure: 'UN',
+    purchase_conversion_factor: '1',
     sale_price: '',
     cost_price: '',
     tax_percentage: '14.00',
@@ -158,6 +160,7 @@ export const InventoryView: React.FC = () => {
     batch_id: '',
     quantity: '1',
     unit_cost: '0',
+    use_purchase_uom: false,
     document_ref: '',
     notes: '',
   });
@@ -298,7 +301,14 @@ export const InventoryView: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_products'] });
       queryClient.invalidateQueries({ queryKey: ['pos_products'] });
       setShowProductModal(false);
+      setEditingProduct(null);
       resetProductForm();
+      toast.success('Artigo registado com sucesso!');
+    },
+    onError: (err: any) => {
+      const detail =
+        err.response?.data?.detail || err.response?.data?.error || 'Erro ao registar artigo.';
+      toast.error(detail);
     },
   });
 
@@ -308,7 +318,15 @@ export const InventoryView: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_products'] });
       queryClient.invalidateQueries({ queryKey: ['pos_products'] });
+      setShowProductModal(false);
       setEditingProduct(null);
+      resetProductForm();
+      toast.success('Artigo atualizado com sucesso!');
+    },
+    onError: (err: any) => {
+      const detail =
+        err.response?.data?.detail || err.response?.data?.error || 'Erro ao atualizar artigo.';
+      toast.error(detail);
     },
   });
 
@@ -346,6 +364,7 @@ export const InventoryView: React.FC = () => {
         batch_id: '',
         quantity: '1',
         unit_cost: '0',
+        use_purchase_uom: false,
         document_ref: '',
         notes: '',
       });
@@ -615,6 +634,7 @@ export const InventoryView: React.FC = () => {
         batch_id: finalBatchId,
         quantity: purchaseForm.quantity,
         unit_cost: purchaseForm.unit_cost,
+        use_purchase_uom: purchaseForm.use_purchase_uom,
         document_ref: purchaseForm.document_ref || undefined,
         notes: purchaseForm.notes || undefined,
       },
@@ -667,6 +687,8 @@ export const InventoryView: React.FC = () => {
       is_stockable: type === 'P',
       track_lots: false,
       unit_of_measure: 'UN',
+      purchase_unit_of_measure: 'UN',
+      purchase_conversion_factor: '1',
       sale_price: '',
       cost_price: '',
       tax_percentage: '14.00',
@@ -828,6 +850,7 @@ export const InventoryView: React.FC = () => {
                     batch_id: '',
                     quantity: '1',
                     unit_cost: '0',
+                    use_purchase_uom: false,
                     document_ref: '',
                     notes: '',
                   });
@@ -842,6 +865,7 @@ export const InventoryView: React.FC = () => {
 
               <button
                 onClick={() => {
+                  setEditingProduct(null);
                   resetProductForm();
                   setShowProductModal(true);
                 }}
@@ -1170,6 +1194,11 @@ export const InventoryView: React.FC = () => {
                                 {p.description}
                               </span>
                             )}
+                            {p.product_type === 'P' && Number(p.purchase_conversion_factor || 1) > 1 && (
+                              <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/50">
+                                Compra: 1 {p.purchase_unit_of_measure || 'CX'} = {Number(p.purchase_conversion_factor)} {p.unit_of_measure || 'UN'}
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             {p.product_type === 'P' ? (
@@ -1318,12 +1347,18 @@ export const InventoryView: React.FC = () => {
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     const defWarehouse = warehouses.find((w) => w.is_default) || warehouses[0];
+                                    const convFactor = Number(p.purchase_conversion_factor || 1);
+                                    const hasBulkPack = convFactor > 1;
+                                    const baseCost = Number(p.cost_price || p.current_cmp || 0);
                                     setPurchaseForm({
                                       warehouse_id: defWarehouse ? defWarehouse.id : '',
                                       product_id: p.id,
                                       batch_id: '',
-                                      quantity: '10',
-                                      unit_cost: String(p.cost_price || p.current_cmp || '0'),
+                                      quantity: hasBulkPack ? '1' : '10',
+                                      unit_cost: hasBulkPack
+                                        ? String(Number((baseCost * convFactor).toFixed(2)))
+                                        : String(baseCost),
+                                      use_purchase_uom: hasBulkPack,
                                       document_ref: '',
                                       notes: `Ressuprimento de ${p.name}`,
                                     });
@@ -1373,6 +1408,8 @@ export const InventoryView: React.FC = () => {
                                     is_stockable: p.is_stockable,
                                     track_lots: p.track_lots,
                                     unit_of_measure: p.unit_of_measure,
+                                    purchase_unit_of_measure: p.purchase_unit_of_measure || p.unit_of_measure || 'UN',
+                                    purchase_conversion_factor: String(Number(p.purchase_conversion_factor || 1)),
                                     sale_price: String(p.sale_price),
                                     cost_price: String(p.cost_price || p.current_cmp),
                                     tax_percentage: String(p.tax_percentage),
@@ -1507,6 +1544,7 @@ export const InventoryView: React.FC = () => {
                   type="text"
                   placeholder="ex: PRD-001 (Automático)"
                   value={productForm.code}
+                  disabled={Boolean(editingProduct)}
                   onChange={(e) => {
                     const val = e.target.value;
                     const autoRef = (!productForm.ref_id || productForm.ref_id.startsWith('REF-'))
@@ -1514,7 +1552,7 @@ export const InventoryView: React.FC = () => {
                       : productForm.ref_id;
                     setProductForm({ ...productForm, code: val, ref_id: autoRef });
                   }}
-                  className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono"
+                  className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono disabled:opacity-60 disabled:cursor-not-allowed"
                 />
               </div>
 
@@ -1560,7 +1598,7 @@ export const InventoryView: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                  Unidade de Medida
+                  Unidade Base (Venda / Stock)
                 </label>
                 <select
                   value={productForm.unit_of_measure}
@@ -1575,6 +1613,79 @@ export const InventoryView: React.FC = () => {
                   <option value="HORA">Hora (HORA)</option>
                 </select>
               </div>
+
+              {productForm.product_type === 'P' && (
+                <div className="md:col-span-2 p-3.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-200/70 dark:border-indigo-800/50 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                      <Boxes className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      Conversão de Compra em Grosso (Caixa / Embalagem &rarr; Venda à Unidade)
+                    </span>
+                    <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">
+                      Opcional
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                        Unidade de Compra (Fornecedor)
+                      </label>
+                      <select
+                        value={productForm.purchase_unit_of_measure || productForm.unit_of_measure || 'UN'}
+                        onChange={(e) => {
+                          const newPurchaseUom = e.target.value;
+                          const baseUom = productForm.unit_of_measure || 'UN';
+                          const currentFactor = Number(productForm.purchase_conversion_factor || 1);
+                          setProductForm({
+                            ...productForm,
+                            purchase_unit_of_measure: newPurchaseUom,
+                            purchase_conversion_factor:
+                              newPurchaseUom === baseUom
+                                ? '1'
+                                : currentFactor <= 1
+                                ? '12'
+                                : String(productForm.purchase_conversion_factor),
+                          });
+                        }}
+                        className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                      >
+                        <option value="UN">Unidade Avulsa (UN)</option>
+                        <option value="CX">Caixa (CX)</option>
+                        <option value="FD">Fardo (FD)</option>
+                        <option value="PACK">Pack / Embalagem (PACK)</option>
+                        <option value="RESMA">Resma (RESMA)</option>
+                        <option value="DZ">Dúzia (DZ)</option>
+                        <option value="SACO">Saco (SACO)</option>
+                        <option value="PAL">Palete (PAL)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                        Qtd. de {productForm.unit_of_measure || 'UN'} por 1 {productForm.purchase_unit_of_measure || 'CX'} *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        placeholder="ex: 50"
+                        value={productForm.purchase_conversion_factor ?? '1'}
+                        onChange={(e) =>
+                          setProductForm({
+                            ...productForm,
+                            purchase_conversion_factor: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold"
+                      />
+                    </div>
+                  </div>
+                  {Number(productForm.purchase_conversion_factor || 1) > 1 && (
+                    <p className="text-xs text-indigo-800 dark:text-indigo-300 bg-white/80 dark:bg-slate-900/60 px-3 py-2 rounded-lg border border-indigo-200/60 dark:border-indigo-800/40">
+                      Regra automática: Ao registar a compra de <strong>1 {productForm.purchase_unit_of_measure || 'CX'}</strong>, o sistema dará entrada automática de <strong>{productForm.purchase_conversion_factor} {productForm.unit_of_measure || 'UN'}</strong> no stock e dividirá o custo da embalagem por <strong>{productForm.purchase_conversion_factor}</strong> para calcular o CMP unitário.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
@@ -1699,15 +1810,25 @@ export const InventoryView: React.FC = () => {
                   updateProductMutation.isPending
                 }
                 onClick={() => {
-                  if (editingProduct) {
+                  const targetProduct =
+                    editingProduct ||
+                    products.find(
+                      (p) =>
+                        productForm.code &&
+                        p.code.trim().toUpperCase() === productForm.code.trim().toUpperCase()
+                    );
+                  if (targetProduct) {
                     updateProductMutation.mutate({
-                      id: editingProduct.id,
+                      id: targetProduct.id,
                       payload: {
                         ref_id: productForm.ref_id ? productForm.ref_id.trim() : undefined,
                         name: productForm.name,
                         description: productForm.description || undefined,
                         barcode: productForm.barcode || undefined,
+                        track_lots: productForm.track_lots,
                         unit_of_measure: productForm.unit_of_measure,
+                        purchase_unit_of_measure: productForm.purchase_unit_of_measure || productForm.unit_of_measure || 'UN',
+                        purchase_conversion_factor: productForm.purchase_conversion_factor || '1',
                         sale_price: productForm.sale_price,
                         cost_price: productForm.cost_price || undefined,
                         tax_percentage: productForm.tax_percentage,
@@ -1721,6 +1842,8 @@ export const InventoryView: React.FC = () => {
                       ...productForm,
                       code: productForm.code ? productForm.code.trim().toUpperCase() : undefined,
                       ref_id: productForm.ref_id ? productForm.ref_id.trim() : undefined,
+                      purchase_unit_of_measure: productForm.purchase_unit_of_measure || productForm.unit_of_measure || 'UN',
+                      purchase_conversion_factor: productForm.purchase_conversion_factor || '1',
                     });
                   }
                 }}
@@ -1998,12 +2121,18 @@ export const InventoryView: React.FC = () => {
                 onClick={() => {
                   const prod = stockDetailProduct;
                   const defWarehouse = warehouses.find((w) => w.is_default) || warehouses[0];
+                  const convFactor = Number(prod.purchase_conversion_factor || 1);
+                  const hasBulkPack = convFactor > 1;
+                  const baseCost = Number(prod.cost_price || prod.current_cmp || 0);
                   setPurchaseForm({
                     warehouse_id: defWarehouse ? defWarehouse.id : '',
                     product_id: prod.id,
                     batch_id: '',
-                    quantity: '10',
-                    unit_cost: String(prod.cost_price || prod.current_cmp || '0'),
+                    quantity: hasBulkPack ? '1' : '10',
+                    unit_cost: hasBulkPack
+                      ? String(Number((baseCost * convFactor).toFixed(2)))
+                      : String(baseCost),
+                    use_purchase_uom: hasBulkPack,
                     document_ref: '',
                     notes: `Ressuprimento de ${prod.name}`,
                   });
@@ -2165,11 +2294,17 @@ export const InventoryView: React.FC = () => {
                   value={purchaseForm.product_id}
                   onChange={(e) => {
                     const prod = products.find((p) => p.id === e.target.value);
+                    const convFactor = prod ? Number(prod.purchase_conversion_factor || 1) : 1;
+                    const hasBulkPack = convFactor > 1;
+                    const baseCost = prod ? Number(prod.cost_price || prod.current_cmp || 0) : 0;
                     setPurchaseForm({
                       ...purchaseForm,
                       product_id: e.target.value,
                       batch_id: '',
-                      unit_cost: prod ? String(prod.cost_price || prod.current_cmp) : '0',
+                      use_purchase_uom: hasBulkPack,
+                      unit_cost: hasBulkPack
+                        ? String(Number((baseCost * convFactor).toFixed(2)))
+                        : String(baseCost),
                     });
                   }}
                   className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
@@ -2177,13 +2312,79 @@ export const InventoryView: React.FC = () => {
                   <option value="">Selecione o produto físico...</option>
                   {products
                     .filter((p) => p.product_type === 'P')
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.code})
-                      </option>
-                    ))}
+                    .map((p) => {
+                      const f = Number(p.purchase_conversion_factor || 1);
+                      return (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.code}){f > 1 ? ` • 1 ${p.purchase_unit_of_measure || 'CX'} = ${f} ${p.unit_of_measure || 'UN'}` : ''}
+                        </option>
+                      );
+                    })}
                 </select>
               </div>
+
+              {(() => {
+                const selectedProd = products.find((p) => p.id === purchaseForm.product_id);
+                const convFactor = selectedProd ? Number(selectedProd.purchase_conversion_factor || 1) : 1;
+                if (!selectedProd || convFactor <= 1) return null;
+                const packUom = selectedProd.purchase_unit_of_measure || 'CX';
+                const baseUom = selectedProd.unit_of_measure || 'UN';
+
+                return (
+                  <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-800/50 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
+                        Modo de Entrada ({packUom} vs. {baseUom})
+                      </span>
+                      <span className="text-[11px] font-mono font-semibold text-indigo-700 dark:text-indigo-300">
+                        1 {packUom} = {convFactor} {baseUom}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!purchaseForm.use_purchase_uom) {
+                            const currentCost = Number(purchaseForm.unit_cost) || 0;
+                            setPurchaseForm({
+                              ...purchaseForm,
+                              use_purchase_uom: true,
+                              unit_cost: String(Number((currentCost * convFactor).toFixed(2))),
+                            });
+                          }
+                        }}
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ${
+                          purchaseForm.use_purchase_uom
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        Em Grosso ({packUom} de {convFactor} {baseUom})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (purchaseForm.use_purchase_uom) {
+                            const currentCost = Number(purchaseForm.unit_cost) || 0;
+                            setPurchaseForm({
+                              ...purchaseForm,
+                              use_purchase_uom: false,
+                              unit_cost: String(Number((currentCost / convFactor).toFixed(2))),
+                            });
+                          }
+                        }}
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ${
+                          !purchaseForm.use_purchase_uom
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        Unidade Avulsa ({baseUom})
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Bloco de Gestão de Lote se o Artigo exigir controlo de lotes */}
               {(() => {
@@ -2302,33 +2503,44 @@ export const InventoryView: React.FC = () => {
                 );
               })()}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                    Quantidade *
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={purchaseForm.quantity}
-                    onChange={(e) => setPurchaseForm({ ...purchaseForm, quantity: e.target.value })}
-                    className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold"
-                  />
-                </div>
+              {(() => {
+                const selectedProd = products.find((p) => p.id === purchaseForm.product_id);
+                const convFactor = selectedProd ? Number(selectedProd.purchase_conversion_factor || 1) : 1;
+                const activeUom =
+                  selectedProd && purchaseForm.use_purchase_uom && convFactor > 1
+                    ? selectedProd.purchase_unit_of_measure || 'CX'
+                    : selectedProd?.unit_of_measure || 'UN';
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                    Custo Unitário de Compra (Kz) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={purchaseForm.unit_cost}
-                    onChange={(e) => setPurchaseForm({ ...purchaseForm, unit_cost: e.target.value })}
-                    className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
-                  />
-                </div>
-              </div>
+                return (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                        Quantidade ({activeUom}) *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={purchaseForm.quantity}
+                        onChange={(e) => setPurchaseForm({ ...purchaseForm, quantity: e.target.value })}
+                        className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                        Custo por {activeUom} (Kz) *
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={purchaseForm.unit_cost}
+                        onChange={(e) => setPurchaseForm({ ...purchaseForm, unit_cost: e.target.value })}
+                        className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
@@ -2363,9 +2575,15 @@ export const InventoryView: React.FC = () => {
 
                 const currentStock = stockByProduct.get(selectedProd.id)?.onHand ?? 0;
                 const currentCmp = Number(selectedProd.cost_price || selectedProd.current_cmp || 0);
-                const addQty = Number(purchaseForm.quantity) || 0;
-                const unitCost = Number(purchaseForm.unit_cost) || 0;
-                const totalCost = addQty * unitCost;
+                const rawQty = Number(purchaseForm.quantity) || 0;
+                const rawUnitCost = Number(purchaseForm.unit_cost) || 0;
+                const convFactor = Number(selectedProd.purchase_conversion_factor || 1);
+                const isBulk = Boolean(purchaseForm.use_purchase_uom && convFactor > 1);
+                const addQty = isBulk ? rawQty * convFactor : rawQty;
+                const unitCost = isBulk ? rawUnitCost / convFactor : rawUnitCost;
+                const totalCost = rawQty * rawUnitCost;
+                const baseUom = selectedProd.unit_of_measure || 'UN';
+                const packUom = selectedProd.purchase_unit_of_measure || 'CX';
 
                 const newTotalStock = currentStock + addQty;
                 const newCmp =
@@ -2378,17 +2596,25 @@ export const InventoryView: React.FC = () => {
                     <div className="font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                       <span>Impacto no Stock &amp; CMP</span>
                       <span className="text-emerald-600 font-mono font-bold">
-                        +{addQty} {selectedProd.unit_of_measure || 'UN'}
+                        +{addQty} {baseUom}
                       </span>
                     </div>
+                    {isBulk && (
+                      <div className="flex justify-between text-indigo-700 dark:text-indigo-300 font-medium">
+                        <span>Conversão Automática:</span>
+                        <span>
+                          {rawQty} {packUom} &times; {convFactor} = <strong>{addQty} {baseUom}</strong> (<KzAmount value={unitCost} />/{baseUom})
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-slate-500 dark:text-slate-400">
                       <span>Stock Resultante:</span>
                       <span className="font-semibold text-slate-800 dark:text-slate-200">
-                        {currentStock} &rarr; <span className="text-blue-600 font-bold">{newTotalStock} {selectedProd.unit_of_measure || 'UN'}</span>
+                        {currentStock} &rarr; <span className="text-blue-600 font-bold">{newTotalStock} {baseUom}</span>
                       </span>
                     </div>
                     <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                      <span>Novo Custo Médio (CMP):</span>
+                      <span>Novo Custo Médio (CMP / {baseUom}):</span>
                       <span className="font-semibold text-slate-800 dark:text-slate-200">
                         <KzAmount value={newCmp} />
                       </span>

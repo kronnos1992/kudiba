@@ -95,6 +95,8 @@ CREATE TABLE IF NOT EXISTS kudiba_inventory.products (
     is_stockable BOOLEAN NOT NULL DEFAULT TRUE,
     track_lots BOOLEAN NOT NULL DEFAULT FALSE,
     unit_of_measure VARCHAR(20) NOT NULL DEFAULT 'UN',
+    purchase_unit_of_measure VARCHAR(20) NOT NULL DEFAULT 'UN',
+    purchase_conversion_factor NUMERIC(15, 4) NOT NULL DEFAULT 1,
     sale_price NUMERIC(15, 4) NOT NULL DEFAULT 0,
     cost_price NUMERIC(15, 4) NOT NULL DEFAULT 0,
     current_cmp NUMERIC(15, 4) NOT NULL DEFAULT 0,

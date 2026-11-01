@@ -19,6 +19,8 @@ pub struct Product {
     pub is_stockable: bool,
     pub track_lots: bool,
     pub unit_of_measure: String,
+    pub purchase_unit_of_measure: String,
+    pub purchase_conversion_factor: Decimal,
     pub sale_price: Decimal,
     pub cost_price: Decimal,
     pub current_cmp: Decimal,
@@ -99,6 +101,7 @@ impl Product {
         };
 
         let clean_code = code.trim().to_uppercase();
+        let clean_uom = unit_of_measure.trim().to_uppercase();
         let default_ref = format!("REF-{}", clean_code);
         let now = Utc::now();
 
@@ -113,7 +116,9 @@ impl Product {
             product_type,
             is_stockable: stockable,
             track_lots: if stockable { track_lots } else { false },
-            unit_of_measure: unit_of_measure.trim().to_uppercase(),
+            unit_of_measure: clean_uom.clone(),
+            purchase_unit_of_measure: clean_uom,
+            purchase_conversion_factor: Decimal::ONE,
             sale_price,
             cost_price,
             current_cmp: cost_price,
@@ -146,6 +151,13 @@ impl Product {
                 self.ref_id = Some(trimmed.to_string());
                 self.updated_at = Utc::now();
             }
+        }
+    }
+
+    pub fn set_track_lots(&mut self, track_lots: Option<bool>) {
+        if let Some(tl) = track_lots {
+            self.track_lots = if self.is_stockable { tl } else { false };
+            self.updated_at = Utc::now();
         }
     }
 
@@ -250,5 +262,71 @@ impl Product {
         }
         self.updated_at = Utc::now();
         Ok(())
+    }
+
+    pub fn with_purchase_packaging(
+        mut self,
+        purchase_unit_of_measure: Option<String>,
+        purchase_conversion_factor: Option<Decimal>,
+    ) -> Result<Self, InventoryError> {
+        self.set_purchase_packaging(purchase_unit_of_measure, purchase_conversion_factor)?;
+        Ok(self)
+    }
+
+    pub fn set_purchase_packaging(
+        &mut self,
+        purchase_unit_of_measure: Option<String>,
+        purchase_conversion_factor: Option<Decimal>,
+    ) -> Result<(), InventoryError> {
+        if let Some(factor) = purchase_conversion_factor {
+            if factor <= Decimal::ZERO {
+                return Err(InventoryError::ValidationError(
+                    "O fator de conversão de compra deve ser maior que zero".to_string(),
+                ));
+            }
+            self.purchase_conversion_factor = factor.round_dp(4);
+        }
+
+        if let Some(u) = purchase_unit_of_measure {
+            let trimmed = u.trim().to_uppercase();
+            if !trimmed.is_empty() {
+                self.purchase_unit_of_measure = trimmed;
+            }
+        }
+
+        if self.purchase_conversion_factor == Decimal::ONE
+            && self.purchase_unit_of_measure.is_empty()
+        {
+            self.purchase_unit_of_measure = self.unit_of_measure.clone();
+        }
+
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    pub fn convert_purchase_to_base(
+        &self,
+        input_quantity: Decimal,
+        input_unit_cost: Decimal,
+        use_purchase_uom: bool,
+    ) -> Result<(Decimal, Decimal), InventoryError> {
+        if input_quantity <= Decimal::ZERO {
+            return Err(InventoryError::InvalidQuantity(
+                "A quantidade de entrada deve ser superior a zero".to_string(),
+            ));
+        }
+        if input_unit_cost < Decimal::ZERO {
+            return Err(InventoryError::InvalidPrice(
+                "O custo unitário não pode ser negativo".to_string(),
+            ));
+        }
+
+        if use_purchase_uom && self.purchase_conversion_factor > Decimal::ONE {
+            let base_qty = (input_quantity * self.purchase_conversion_factor).round_dp(4);
+            let base_cost = (input_unit_cost / self.purchase_conversion_factor).round_dp(4);
+            Ok((base_qty, base_cost))
+        } else {
+            Ok((input_quantity, input_unit_cost))
+        }
     }
 }

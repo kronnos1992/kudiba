@@ -12,6 +12,8 @@ export interface Product {
   is_stockable: boolean;
   track_lots: boolean;
   unit_of_measure: string;
+  purchase_unit_of_measure?: string;
+  purchase_conversion_factor?: string | number;
   sale_price: string | number;
   cost_price: string | number;
   current_cmp: string | number;
@@ -36,6 +38,8 @@ export interface CreateProductPayload {
   is_stockable?: boolean;
   track_lots?: boolean;
   unit_of_measure?: string;
+  purchase_unit_of_measure?: string;
+  purchase_conversion_factor?: string | number;
   sale_price: string;
   cost_price?: string;
   tax_percentage?: string;
@@ -49,7 +53,10 @@ export interface UpdateProductPayload {
   name?: string;
   description?: string;
   barcode?: string;
+  track_lots?: boolean;
   unit_of_measure?: string;
+  purchase_unit_of_measure?: string;
+  purchase_conversion_factor?: string | number;
   sale_price?: string;
   cost_price?: string;
   tax_percentage?: string;
@@ -192,6 +199,8 @@ export interface ReceivePurchasePayload {
   batch_id?: string;
   quantity: string;
   unit_cost: string;
+  use_purchase_uom?: boolean;
+  unit_of_measure?: string;
   document_ref?: string;
   notes?: string;
 }

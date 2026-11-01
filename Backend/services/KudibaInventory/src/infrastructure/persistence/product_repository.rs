@@ -37,6 +37,7 @@ impl ProductRepository for PostgresProductRepository {
         let opt: Option<ProductRow> = sqlx::query_as(
             "SELECT id, tenant_id, code, ref_id, barcode, name, description, \
              product_type::text, is_stockable, track_lots, unit_of_measure, \
+             purchase_unit_of_measure, purchase_conversion_factor, \
              sale_price, cost_price, current_cmp, tax_type, tax_code, \
              tax_percentage, exemption_reason_code, exemption_reason_text, \
              has_withholding_tax, is_active, created_at, updated_at \
@@ -59,6 +60,7 @@ impl ProductRepository for PostgresProductRepository {
         let opt: Option<ProductRow> = sqlx::query_as(
             "SELECT id, tenant_id, code, ref_id, barcode, name, description, \
              product_type::text, is_stockable, track_lots, unit_of_measure, \
+             purchase_unit_of_measure, purchase_conversion_factor, \
              sale_price, cost_price, current_cmp, tax_type, tax_code, \
              tax_percentage, exemption_reason_code, exemption_reason_text, \
              has_withholding_tax, is_active, created_at, updated_at \
@@ -81,6 +83,7 @@ impl ProductRepository for PostgresProductRepository {
         let opt: Option<ProductRow> = sqlx::query_as(
             "SELECT id, tenant_id, code, ref_id, barcode, name, description, \
              product_type::text, is_stockable, track_lots, unit_of_measure, \
+             purchase_unit_of_measure, purchase_conversion_factor, \
              sale_price, cost_price, current_cmp, tax_type, tax_code, \
              tax_percentage, exemption_reason_code, exemption_reason_text, \
              has_withholding_tax, is_active, created_at, updated_at \
@@ -100,21 +103,26 @@ impl ProductRepository for PostgresProductRepository {
             INSERT INTO kudiba_inventory.products (
                 id, tenant_id, code, ref_id, barcode, name, description,
                 product_type, is_stockable, track_lots, unit_of_measure,
+                purchase_unit_of_measure, purchase_conversion_factor,
                 sale_price, cost_price, current_cmp, tax_type, tax_code,
                 tax_percentage, exemption_reason_code, exemption_reason_text,
                 has_withholding_tax, is_active, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7,
                 $8::kudiba_inventory.product_kind, $9, $10, $11,
-                $12, $13, $14, $15, $16,
-                $17, $18, $19, $20, $21, $22, $23
+                $12, $13,
+                $14, $15, $16, $17, $18,
+                $19, $20, $21, $22, $23, $24, $25
             )
             ON CONFLICT (tenant_id, code) DO UPDATE SET
                 ref_id = EXCLUDED.ref_id,
                 barcode = EXCLUDED.barcode,
                 name = EXCLUDED.name,
                 description = EXCLUDED.description,
+                track_lots = EXCLUDED.track_lots,
                 unit_of_measure = EXCLUDED.unit_of_measure,
+                purchase_unit_of_measure = EXCLUDED.purchase_unit_of_measure,
+                purchase_conversion_factor = EXCLUDED.purchase_conversion_factor,
                 sale_price = EXCLUDED.sale_price,
                 cost_price = EXCLUDED.cost_price,
                 current_cmp = EXCLUDED.current_cmp,
@@ -139,6 +147,8 @@ impl ProductRepository for PostgresProductRepository {
         .bind(p.is_stockable)
         .bind(p.track_lots)
         .bind(&p.unit_of_measure)
+        .bind(&p.purchase_unit_of_measure)
+        .bind(p.purchase_conversion_factor)
         .bind(p.sale_price)
         .bind(p.cost_price)
         .bind(p.current_cmp)
@@ -170,18 +180,21 @@ impl ProductRepository for PostgresProductRepository {
                 name = $3,
                 description = $4,
                 unit_of_measure = $5,
-                sale_price = $6,
-                cost_price = $7,
-                current_cmp = $8,
-                tax_type = $9,
-                tax_code = $10,
-                tax_percentage = $11,
-                exemption_reason_code = $12,
-                exemption_reason_text = $13,
-                has_withholding_tax = $14,
-                is_active = $15,
-                updated_at = $16
-            WHERE tenant_id = $17 AND id = $18
+                purchase_unit_of_measure = $6,
+                purchase_conversion_factor = $7,
+                sale_price = $8,
+                cost_price = $9,
+                current_cmp = $10,
+                tax_type = $11,
+                tax_code = $12,
+                tax_percentage = $13,
+                exemption_reason_code = $14,
+                exemption_reason_text = $15,
+                has_withholding_tax = $16,
+                is_active = $17,
+                track_lots = $18,
+                updated_at = $19
+            WHERE tenant_id = $20 AND id = $21
             "#,
         )
         .bind(&p.ref_id)
@@ -189,6 +202,8 @@ impl ProductRepository for PostgresProductRepository {
         .bind(&p.name)
         .bind(&p.description)
         .bind(&p.unit_of_measure)
+        .bind(&p.purchase_unit_of_measure)
+        .bind(p.purchase_conversion_factor)
         .bind(p.sale_price)
         .bind(p.cost_price)
         .bind(p.current_cmp)
@@ -199,6 +214,7 @@ impl ProductRepository for PostgresProductRepository {
         .bind(&p.exemption_reason_text)
         .bind(p.has_withholding_tax)
         .bind(p.is_active)
+        .bind(p.track_lots)
         .bind(p.updated_at)
         .bind(p.tenant_id)
         .bind(p.id)
@@ -240,6 +256,7 @@ impl ProductRepository for PostgresProductRepository {
         let rows: Vec<ProductRow> = sqlx::query_as(
             "SELECT id, tenant_id, code, ref_id, barcode, name, description, \
              product_type::text, is_stockable, track_lots, unit_of_measure, \
+             purchase_unit_of_measure, purchase_conversion_factor, \
              sale_price, cost_price, current_cmp, tax_type, tax_code, \
              tax_percentage, exemption_reason_code, exemption_reason_text, \
              has_withholding_tax, is_active, created_at, updated_at \

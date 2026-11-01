@@ -106,15 +106,32 @@ impl ReceivePurchaseCommand {
             .total_on_hand(session, tenant_id, req.product_id)
             .await?;
 
+        let apply_conversion = match req.use_purchase_uom {
+            Some(flag) => flag,
+            None => req
+                .unit_of_measure
+                .as_deref()
+                .map(|u| {
+                    let clean = u.trim().to_uppercase();
+                    !clean.is_empty()
+                        && clean == product.purchase_unit_of_measure
+                        && product.purchase_unit_of_measure != product.unit_of_measure
+                })
+                .unwrap_or(false),
+        };
+
+        let (base_quantity, base_unit_cost) =
+            product.convert_purchase_to_base(req.quantity, req.unit_cost, apply_conversion)?;
+
         let new_cmp = CmpCalculator::calculate_new_cmp(
             total_on_hand,
             product.current_cmp,
-            req.quantity,
-            req.unit_cost,
+            base_quantity,
+            base_unit_cost,
         )?;
 
         product.set_cmp(new_cmp);
-        product.cost_price = req.unit_cost;
+        product.cost_price = base_unit_cost;
         self.product_repo
             .update_prices_and_cmp(session, &product)
             .await?;
@@ -127,8 +144,32 @@ impl ReceivePurchaseCommand {
             Some(b) => b,
             None => StockBalance::new(tenant_id, req.warehouse_id, req.product_id, None),
         };
-        balance.apply_addition(req.quantity)?;
+        balance.apply_addition(base_quantity)?;
         self.stock_repo.save_balance(session, &balance).await?;
+
+        let enriched_notes = if apply_conversion
+            && product.purchase_conversion_factor > rust_decimal::Decimal::ONE
+        {
+            let conv_note = format!(
+                "Conversão: {} {} × {} = {} {}",
+                req.quantity.normalize(),
+                product.purchase_unit_of_measure,
+                product.purchase_conversion_factor.normalize(),
+                base_quantity.normalize(),
+                product.unit_of_measure
+            );
+            match req
+                .notes
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                Some(existing) => Some(format!("{} ({})", existing, conv_note)),
+                None => Some(conv_note),
+            }
+        } else {
+            req.notes.clone()
+        };
 
         let movement = StockMovement::new(
             tenant_id,
@@ -136,11 +177,11 @@ impl ReceivePurchaseCommand {
             req.product_id,
             req.batch_id,
             StockMovementType::InPurchase,
-            req.quantity,
-            req.unit_cost,
+            base_quantity,
+            base_unit_cost,
             new_cmp,
             req.document_ref.clone(),
-            req.notes.clone(),
+            enriched_notes,
             user_id,
         )?;
 

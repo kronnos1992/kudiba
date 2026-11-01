@@ -79,6 +79,11 @@ impl UpdateProductCommand {
             product.set_ref_id(req.ref_id);
         }
 
+        product.set_track_lots(req.track_lots);
+
+        product
+            .set_purchase_packaging(req.purchase_unit_of_measure, req.purchase_conversion_factor)?;
+
         self.product_repo.update(session, &product).await?;
 
         Ok(ProductResponse::from(product))

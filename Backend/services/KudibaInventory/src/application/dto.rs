@@ -23,6 +23,9 @@ pub struct CreateProductRequest {
     pub is_stockable: Option<bool>,
     pub track_lots: Option<bool>,
     pub unit_of_measure: Option<String>,
+    pub purchase_unit_of_measure: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_decimal_flexible_opt")]
+    pub purchase_conversion_factor: Option<Decimal>,
     pub sale_price: Decimal,
     pub cost_price: Option<Decimal>,
     pub tax_percentage: Option<Decimal>,
@@ -43,7 +46,11 @@ pub struct UpdateProductRequest {
     pub name: Option<String>,
     pub description: Option<String>,
     pub barcode: Option<String>,
+    pub track_lots: Option<bool>,
     pub unit_of_measure: Option<String>,
+    pub purchase_unit_of_measure: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_decimal_flexible_opt")]
+    pub purchase_conversion_factor: Option<Decimal>,
     pub sale_price: Option<Decimal>,
     pub cost_price: Option<Decimal>,
     pub tax_percentage: Option<Decimal>,
@@ -66,6 +73,8 @@ pub struct ProductResponse {
     pub is_stockable: bool,
     pub track_lots: bool,
     pub unit_of_measure: String,
+    pub purchase_unit_of_measure: String,
+    pub purchase_conversion_factor: Decimal,
     pub sale_price: Decimal,
     pub cost_price: Decimal,
     pub current_cmp: Decimal,
@@ -94,6 +103,8 @@ impl From<Product> for ProductResponse {
             is_stockable: p.is_stockable,
             track_lots: p.track_lots,
             unit_of_measure: p.unit_of_measure,
+            purchase_unit_of_measure: p.purchase_unit_of_measure,
+            purchase_conversion_factor: p.purchase_conversion_factor,
             sale_price: p.sale_price,
             cost_price: p.cost_price,
             current_cmp: p.current_cmp,
@@ -311,6 +322,10 @@ pub struct ReceivePurchaseRequest {
     pub batch_id: Option<Uuid>,
     pub quantity: Decimal,
     pub unit_cost: Decimal,
+    #[serde(default)]
+    pub use_purchase_uom: Option<bool>,
+    #[serde(default)]
+    pub unit_of_measure: Option<String>,
     pub document_ref: Option<String>,
     pub notes: Option<String>,
 }

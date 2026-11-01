@@ -929,3 +929,49 @@ fn test_invoicing_outbox_event_payload_compat() {
     assert_eq!(parsed.lines[0].product_code, "ART-001");
     assert_eq!(parsed.lines[0].quantity, rust_decimal::Decimal::from(5));
 }
+
+#[test]
+fn test_conversao_automatica_compra_em_grosso_caixas_para_unidades() {
+    let tenant_id = Uuid::new_v4();
+
+    // Esferográfica: vendida à unidade (UN) a 150 Kz, comprada em Caixas (CX) de 50 unidades
+    let pen = Product::new(
+        tenant_id,
+        "ESF-001".to_string(),
+        Some("5600000000101".to_string()),
+        "Esferográfica Azul".to_string(),
+        None,
+        ProductType::Goods,
+        Some(true),
+        false,
+        "UN".to_string(),
+        dec!(150),
+        dec!(100),
+        dec!(14),
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+    .with_purchase_packaging(Some("CX".to_string()), Some(dec!(50)))
+    .unwrap();
+
+    assert_eq!(pen.unit_of_measure, "UN");
+    assert_eq!(pen.purchase_unit_of_measure, "CX");
+    assert_eq!(pen.purchase_conversion_factor, dec!(50));
+
+    // Compra de 5 Caixas a 5.000 Kz cada caixa -> 250 UN a 100 Kz/UN
+    let (base_qty, base_unit_cost) = pen
+        .convert_purchase_to_base(dec!(5), dec!(5000), true)
+        .unwrap();
+    assert_eq!(base_qty, dec!(250));
+    assert_eq!(base_unit_cost, dec!(100));
+
+    let mut balance = StockBalance::new(tenant_id, Uuid::new_v4(), pen.id, Some(dec!(20)));
+    balance.apply_addition(base_qty).unwrap();
+    assert_eq!(balance.quantity_on_hand, dec!(250));
+
+    // Venda de 1 esferográfica por vez -> reduz 1 UN
+    balance.apply_deduction(dec!(1), false).unwrap();
+    assert_eq!(balance.quantity_on_hand, dec!(249));
+}
