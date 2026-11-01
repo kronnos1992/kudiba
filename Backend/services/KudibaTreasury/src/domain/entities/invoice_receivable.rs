@@ -70,11 +70,12 @@ impl InvoiceReceivable {
         }
 
         let document_type = document_type.trim().to_uppercase();
-        let (status, paid_amount, remaining_amount) = if matches!(document_type.as_str(), "FR" | "VD" | "NC") {
-            (ReceivableStatus::Settled, gross_total, Decimal::ZERO)
-        } else {
-            (ReceivableStatus::Outstanding, Decimal::ZERO, gross_total)
-        };
+        let (status, paid_amount, remaining_amount) =
+            if matches!(document_type.as_str(), "FR" | "VD" | "NC") {
+                (ReceivableStatus::Settled, gross_total, Decimal::ZERO)
+            } else {
+                (ReceivableStatus::Outstanding, Decimal::ZERO, gross_total)
+            };
 
         let now = Utc::now();
         Ok(Self {

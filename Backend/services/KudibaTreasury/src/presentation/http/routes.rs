@@ -752,7 +752,10 @@ pub async fn cash_flow_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(query): Query<CashFlowQuery>,
-) -> Result<Json<crate::application::queries::cash_flow::CashFlowReport>, (StatusCode, Json<ProblemDetail>)> {
+) -> Result<
+    Json<crate::application::queries::cash_flow::CashFlowReport>,
+    (StatusCode, Json<ProblemDetail>),
+> {
     let tenant_id = extract_tenant_id(&headers)?;
     let report = crate::application::queries::cash_flow::fetch(
         &state.db_pool,
@@ -784,7 +787,11 @@ pub async fn list_payables_handler(
     let tenant_id = extract_tenant_id(&headers)?;
     let payables = state
         .payable_cmd
-        .list_payables(tenant_id, query.status.as_deref(), query.activity_type.as_deref())
+        .list_payables(
+            tenant_id,
+            query.status.as_deref(),
+            query.activity_type.as_deref(),
+        )
         .await
         .map_err(map_domain_error)?;
 

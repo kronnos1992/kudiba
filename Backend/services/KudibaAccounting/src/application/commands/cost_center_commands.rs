@@ -510,7 +510,9 @@ impl CostCenterService {
             ),
         ];
 
-        for (id, code, name, desc, parent_id, ctype, branch, dept, resp, budget, alert_pct) in centers {
+        for (id, code, name, desc, parent_id, ctype, branch, dept, resp, budget, alert_pct) in
+            centers
+        {
             sqlx::query(
                 r#"
                 INSERT INTO kudiba_accounting.cost_centers (
@@ -541,13 +543,48 @@ impl CostCenterService {
 
         let current_month = Utc::now().month() as i32;
         let budgets = vec![
-            (cc_ti_id, Decimal::new(1_500_000, 0), Decimal::new(150_000, 0), "Licenças cloud e contrato manutenção UPS"),
-            (cc_rh_id, Decimal::new(1_400_000, 0), Decimal::new(80_000, 0), "Formação Lei Geral do Trabalho e Seguros"),
-            (cc_vnd_id, Decimal::new(2_800_000, 0), Decimal::new(220_000, 0), "Campanha comercial e deslocações clientes"),
-            (cc_ops_id, Decimal::new(5_500_000, 0), Decimal::new(480_000, 0), "Encomenda de peças de revisão de frota"),
-            (cc_fin_id, Decimal::new(1_500_000, 0), Decimal::new(90_000, 0), "Auditoria externa e certificação OCPCA"),
-            (cc_ben_adm_id, Decimal::new(900_000, 0), Decimal::new(60_000, 0), "Serviços de segurança e conservação Benguela"),
-            (cc_ben_vnd_id, Decimal::new(1_200_000, 0), Decimal::new(110_000, 0), "Logística comercial Lobito/Benguela"),
+            (
+                cc_ti_id,
+                Decimal::new(1_500_000, 0),
+                Decimal::new(150_000, 0),
+                "Licenças cloud e contrato manutenção UPS",
+            ),
+            (
+                cc_rh_id,
+                Decimal::new(1_400_000, 0),
+                Decimal::new(80_000, 0),
+                "Formação Lei Geral do Trabalho e Seguros",
+            ),
+            (
+                cc_vnd_id,
+                Decimal::new(2_800_000, 0),
+                Decimal::new(220_000, 0),
+                "Campanha comercial e deslocações clientes",
+            ),
+            (
+                cc_ops_id,
+                Decimal::new(5_500_000, 0),
+                Decimal::new(480_000, 0),
+                "Encomenda de peças de revisão de frota",
+            ),
+            (
+                cc_fin_id,
+                Decimal::new(1_500_000, 0),
+                Decimal::new(90_000, 0),
+                "Auditoria externa e certificação OCPCA",
+            ),
+            (
+                cc_ben_adm_id,
+                Decimal::new(900_000, 0),
+                Decimal::new(60_000, 0),
+                "Serviços de segurança e conservação Benguela",
+            ),
+            (
+                cc_ben_vnd_id,
+                Decimal::new(1_200_000, 0),
+                Decimal::new(110_000, 0),
+                "Logística comercial Lobito/Benguela",
+            ),
         ];
 
         for (cid, approved, committed, note) in budgets {
@@ -596,10 +633,26 @@ impl CostCenterService {
         .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
         let ende_lines = vec![
-            (cc_ti_id, Decimal::new(30, 0), "30% — Datacenter, servidores e refrigeração dedicada 24/7"),
-            (cc_rh_id, Decimal::new(20, 0), "20% — Piso administrativo RH e sala de formação"),
-            (cc_vnd_id, Decimal::new(35, 0), "35% — Showroom comercial e atendimento ao cliente"),
-            (cc_fin_id, Decimal::new(15, 0), "15% — Gabinetes de Contabilidade e Tesouraria"),
+            (
+                cc_ti_id,
+                Decimal::new(30, 0),
+                "30% — Datacenter, servidores e refrigeração dedicada 24/7",
+            ),
+            (
+                cc_rh_id,
+                Decimal::new(20, 0),
+                "20% — Piso administrativo RH e sala de formação",
+            ),
+            (
+                cc_vnd_id,
+                Decimal::new(35, 0),
+                "35% — Showroom comercial e atendimento ao cliente",
+            ),
+            (
+                cc_fin_id,
+                Decimal::new(15, 0),
+                "15% — Gabinetes de Contabilidade e Tesouraria",
+            ),
         ];
         for (cid, pct, just) in ende_lines {
             sqlx::query(
@@ -644,10 +697,26 @@ impl CostCenterService {
         .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
         let net_lines = vec![
-            (cc_ti_id, Decimal::new(40, 0), "40% — Infraestrutura VPN, servidores cloud e backups"),
-            (cc_vnd_id, Decimal::new(30, 0), "30% — Terminais POS, CRM comercial e equipa de vendas"),
-            (cc_fin_id, Decimal::new(15, 0), "15% — Submissão SAF-T AGT, Homebanking e Contabilidade"),
-            (cc_rh_id, Decimal::new(15, 0), "15% — Portal de RH, relógio de ponto e processamento salarial"),
+            (
+                cc_ti_id,
+                Decimal::new(40, 0),
+                "40% — Infraestrutura VPN, servidores cloud e backups",
+            ),
+            (
+                cc_vnd_id,
+                Decimal::new(30, 0),
+                "30% — Terminais POS, CRM comercial e equipa de vendas",
+            ),
+            (
+                cc_fin_id,
+                Decimal::new(15, 0),
+                "15% — Submissão SAF-T AGT, Homebanking e Contabilidade",
+            ),
+            (
+                cc_rh_id,
+                Decimal::new(15, 0),
+                "15% — Portal de RH, relógio de ponto e processamento salarial",
+            ),
         ];
         for (cid, pct, just) in net_lines {
             sqlx::query(
@@ -692,8 +761,16 @@ impl CostCenterService {
         .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
         let beng_lines = vec![
-            (cc_ben_adm_id, Decimal::new(40, 0), "40% — Escritórios administrativos (80 m²)"),
-            (cc_ben_vnd_id, Decimal::new(60, 0), "60% — Loja comercial e showroom Benguela (120 m²)"),
+            (
+                cc_ben_adm_id,
+                Decimal::new(40, 0),
+                "40% — Escritórios administrativos (80 m²)",
+            ),
+            (
+                cc_ben_vnd_id,
+                Decimal::new(60, 0),
+                "60% — Loja comercial e showroom Benguela (120 m²)",
+            ),
         ];
         for (cid, pct, just) in beng_lines {
             sqlx::query(
@@ -1328,7 +1405,10 @@ impl CostCenterService {
         Ok(())
     }
 
-    pub async fn list_cost_centers(&self, tenant_id: Uuid) -> Result<Vec<CostCenterDto>, DomainError> {
+    pub async fn list_cost_centers(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<CostCenterDto>, DomainError> {
         self.ensure_seeded(tenant_id).await?;
 
         let rows = sqlx::query(
@@ -1409,7 +1489,8 @@ impl CostCenterService {
             let committed_amount: Decimal = r.try_get("committed_amount").unwrap_or_default();
             let realized_opex: Decimal = r.try_get("realized_opex").unwrap_or_default();
             let realized_capex: Decimal = r.try_get("realized_capex").unwrap_or_default();
-            let monthly_depreciation: Decimal = r.try_get("monthly_depreciation").unwrap_or_default();
+            let monthly_depreciation: Decimal =
+                r.try_get("monthly_depreciation").unwrap_or_default();
             let alert_threshold_pct: Decimal = r
                 .try_get("alert_threshold_pct")
                 .unwrap_or_else(|_| Decimal::new(80, 0));
@@ -1512,14 +1593,17 @@ impl CostCenterService {
             .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
             if parent_exists == 0 {
                 return Err(DomainError::ValidationError(
-                    "O centro de custos superior selecionado não pertence a esta empresa.".to_string(),
+                    "O centro de custos superior selecionado não pertence a esta empresa."
+                        .to_string(),
                 ));
             }
         }
 
         let id = Uuid::new_v4();
         let center_type = req.center_type.unwrap_or_else(|| "COST_CENTER".to_string());
-        let branch_name = req.branch_name.unwrap_or_else(|| "Sede - Luanda".to_string());
+        let branch_name = req
+            .branch_name
+            .unwrap_or_else(|| "Sede - Luanda".to_string());
         let valid_from = req
             .valid_from
             .unwrap_or_else(|| NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
@@ -1595,9 +1679,9 @@ impl CostCenterService {
         .await;
 
         let all = self.list_cost_centers(tenant_id).await?;
-        all.into_iter()
-            .find(|c| c.id == id)
-            .ok_or_else(|| DomainError::NotFound("Centro de custos recém-criado não encontrado".to_string()))
+        all.into_iter().find(|c| c.id == id).ok_or_else(|| {
+            DomainError::NotFound("Centro de custos recém-criado não encontrado".to_string())
+        })
     }
 
     pub async fn update_cost_center(
@@ -1613,7 +1697,9 @@ impl CostCenterService {
         }
 
         let center_type = req.center_type.unwrap_or_else(|| "COST_CENTER".to_string());
-        let branch_name = req.branch_name.unwrap_or_else(|| "Sede - Luanda".to_string());
+        let branch_name = req
+            .branch_name
+            .unwrap_or_else(|| "Sede - Luanda".to_string());
         let valid_from = req
             .valid_from
             .unwrap_or_else(|| NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
@@ -1704,7 +1790,9 @@ impl CostCenterService {
             "Centro atualizado (Ativo: {}, Orçamento: {} Kz, Responsável: {}).",
             req.is_active,
             budget,
-            req.responsible_name.clone().unwrap_or_else(|| "Não atribuído".to_string())
+            req.responsible_name
+                .clone()
+                .unwrap_or_else(|| "Não atribuído".to_string())
         ))
         .execute(&self.pool)
         .await;
@@ -1919,11 +2007,16 @@ impl CostCenterService {
             .allocation_date
             .unwrap_or_else(|| Utc::now().date_naive());
         let batch_id = Uuid::new_v4();
-        let tracking_scope = req
-            .tracking_scope
-            .clone()
-            .unwrap_or_else(|| if req.is_capex { "ATIVO_UNIDADE".to_string() } else { "DOCUMENTO".to_string() });
-        let useful_life = req.useful_life_months.or(if req.is_capex { Some(48) } else { None });
+        let tracking_scope = req.tracking_scope.clone().unwrap_or_else(|| {
+            if req.is_capex {
+                "ATIVO_UNIDADE".to_string()
+            } else {
+                "DOCUMENTO".to_string()
+            }
+        });
+        let useful_life = req
+            .useful_life_months
+            .or(if req.is_capex { Some(48) } else { None });
 
         let mut tx = self
             .pool
@@ -2470,7 +2563,9 @@ impl CostCenterService {
             .map(|r| CostAllocationRecordDto {
                 id: r.get("id"),
                 batch_id: r.get("batch_id"),
-                tracking_scope: r.try_get("tracking_scope").unwrap_or_else(|_| "DOCUMENTO".to_string()),
+                tracking_scope: r
+                    .try_get("tracking_scope")
+                    .unwrap_or_else(|_| "DOCUMENTO".to_string()),
                 source_module: r.get("source_module"),
                 source_document_ref: r.get("source_document_ref"),
                 supplier_name: r.try_get("supplier_name").ok().flatten(),
@@ -2655,13 +2750,13 @@ impl CostCenterService {
 
         let mut by_department: Vec<DepartmentCostSummaryDto> = Vec::new();
         for c in &centers {
-            if c.parent_cost_center_id.is_none() && c.monthly_budget == Decimal::ZERO && c.realized_opex == Decimal::ZERO {
+            if c.parent_cost_center_id.is_none()
+                && c.monthly_budget == Decimal::ZERO
+                && c.realized_opex == Decimal::ZERO
+            {
                 continue;
             }
-            let dept = c
-                .department_name
-                .clone()
-                .unwrap_or_else(|| c.name.clone());
+            let dept = c.department_name.clone().unwrap_or_else(|| c.name.clone());
             if let Some(existing) = by_department
                 .iter_mut()
                 .find(|d| d.department_name == dept && d.branch_name == c.branch_name)
@@ -2692,7 +2787,10 @@ impl CostCenterService {
 
         let mut by_branch: Vec<BranchCostSummaryDto> = Vec::new();
         for c in &centers {
-            if let Some(b) = by_branch.iter_mut().find(|x| x.branch_name == c.branch_name) {
+            if let Some(b) = by_branch
+                .iter_mut()
+                .find(|x| x.branch_name == c.branch_name)
+            {
                 if c.parent_cost_center_id.is_some() {
                     b.centers_count += 1;
                 }
@@ -2703,7 +2801,11 @@ impl CostCenterService {
             } else {
                 by_branch.push(BranchCostSummaryDto {
                     branch_name: c.branch_name.clone(),
-                    centers_count: if c.parent_cost_center_id.is_some() { 1 } else { 0 },
+                    centers_count: if c.parent_cost_center_id.is_some() {
+                        1
+                    } else {
+                        0
+                    },
                     total_budget: c.monthly_budget,
                     realized_opex: c.realized_opex,
                     committed_amount: c.committed_amount,
@@ -2734,8 +2836,16 @@ impl CostCenterService {
                         by_project_and_asset.push(ProjectAssetSummaryDto {
                             dimension_type: "PROJETO".to_string(),
                             code: prj.clone(),
-                            total_opex: if a.is_capex { Decimal::ZERO } else { a.allocated_amount },
-                            total_capex: if a.is_capex { a.allocated_amount } else { Decimal::ZERO },
+                            total_opex: if a.is_capex {
+                                Decimal::ZERO
+                            } else {
+                                a.allocated_amount
+                            },
+                            total_capex: if a.is_capex {
+                                a.allocated_amount
+                            } else {
+                                Decimal::ZERO
+                            },
                             monthly_depreciation: a.monthly_depreciation,
                             total_units: a.allocated_units,
                             unit_measure: a.unit_measure.clone(),
@@ -2764,8 +2874,16 @@ impl CostCenterService {
                         by_project_and_asset.push(ProjectAssetSummaryDto {
                             dimension_type: "VIATURA_EQUIPAMENTO".to_string(),
                             code: veh.clone(),
-                            total_opex: if a.is_capex { Decimal::ZERO } else { a.allocated_amount },
-                            total_capex: if a.is_capex { a.allocated_amount } else { Decimal::ZERO },
+                            total_opex: if a.is_capex {
+                                Decimal::ZERO
+                            } else {
+                                a.allocated_amount
+                            },
+                            total_capex: if a.is_capex {
+                                a.allocated_amount
+                            } else {
+                                Decimal::ZERO
+                            },
                             monthly_depreciation: a.monthly_depreciation,
                             total_units: a.allocated_units,
                             unit_measure: a.unit_measure.clone(),

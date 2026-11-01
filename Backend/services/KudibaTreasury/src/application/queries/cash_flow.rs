@@ -1,4 +1,4 @@
-use chrono::{Datelike, DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
@@ -150,8 +150,16 @@ pub async fn fetch(
         NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap_or(today)
     });
     let p_end = period_end.unwrap_or_else(|| {
-        let next_month = if today.month() == 12 { 1 } else { today.month() + 1 };
-        let next_year = if today.month() == 12 { today.year() + 1 } else { today.year() };
+        let next_month = if today.month() == 12 {
+            1
+        } else {
+            today.month() + 1
+        };
+        let next_year = if today.month() == 12 {
+            today.year() + 1
+        } else {
+            today.year()
+        };
         NaiveDate::from_ymd_opt(next_year, next_month, 1)
             .unwrap_or(today)
             .pred_opt()
@@ -166,7 +174,8 @@ pub async fn fetch(
         current_liquidity.total_available_aoa,
         pool,
         tenant_id,
-    ).await?;
+    )
+    .await?;
     let alerts = generate_alerts(pool, tenant_id, &forecast).await?;
 
     Ok(CashFlowReport {
@@ -281,7 +290,9 @@ async fn fetch_realized_flow(
     let mut total_receipts = Decimal::ZERO;
 
     for r in receipt_rows {
-        let method: String = r.try_get("method").unwrap_or_else(|_| "TRANSFERENCIA".to_string());
+        let method: String = r
+            .try_get("method")
+            .unwrap_or_else(|_| "TRANSFERENCIA".to_string());
         let amount: Decimal = r.try_get("amount").unwrap_or(Decimal::ZERO);
         let count: i64 = r.try_get("count").unwrap_or(0);
         total_receipts += amount;
@@ -338,8 +349,12 @@ async fn fetch_realized_flow(
     let mut outflows_by_category = Vec::new();
 
     for r in payable_settlements {
-        let cat: String = r.try_get("category").unwrap_or_else(|_| "FORNECEDORES".to_string());
-        let act: String = r.try_get("activity_type").unwrap_or_else(|_| "OPERATIONAL".to_string());
+        let cat: String = r
+            .try_get("category")
+            .unwrap_or_else(|_| "FORNECEDORES".to_string());
+        let act: String = r
+            .try_get("activity_type")
+            .unwrap_or_else(|_| "OPERATIONAL".to_string());
         let total: Decimal = r.try_get("total").unwrap_or(Decimal::ZERO);
 
         match act.as_str() {
@@ -500,7 +515,9 @@ async fn build_projections(
     let mut payables_by_date: HashMap<NaiveDate, Decimal> = HashMap::new();
     for row in payables_schedule {
         if let Ok(d) = row.try_get::<NaiveDate, _>("due_date") {
-            let amt = row.try_get::<Decimal, _>("daily_payables").unwrap_or(Decimal::ZERO);
+            let amt = row
+                .try_get::<Decimal, _>("daily_payables")
+                .unwrap_or(Decimal::ZERO);
             payables_by_date.insert(d, amt);
         }
     }

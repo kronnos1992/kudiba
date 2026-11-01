@@ -123,7 +123,11 @@ impl StatementCommands {
         operator_user_id: &str,
         req: ReconcileLineRequest,
     ) -> Result<BankStatementLineResponse, DomainError> {
-        let mut tx = self.pool.begin().await.map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
         let line_row = sqlx::query(
             "SELECT bsl.id, bsl.statement_id, bsl.tenant_id, bsl.line_date, bsl.description, \
@@ -138,7 +142,9 @@ impl StatementCommands {
         .fetch_optional(&mut *tx)
         .await
         .map_err(|e| DomainError::DatabaseError(e.to_string()))?
-        .ok_or_else(|| DomainError::NotFound(format!("Linha de extrato '{}' não encontrada", line_id)))?;
+        .ok_or_else(|| {
+            DomainError::NotFound(format!("Linha de extrato '{}' não encontrada", line_id))
+        })?;
 
         let is_reconciled: bool = line_row.try_get("is_reconciled").unwrap_or(false);
         if is_reconciled {
@@ -186,7 +192,9 @@ impl StatementCommands {
         .await
         .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
-        tx.commit().await.map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        tx.commit()
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
         Ok(BankStatementLineResponse {
             id: line_id,

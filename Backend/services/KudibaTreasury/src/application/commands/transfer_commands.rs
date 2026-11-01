@@ -41,7 +41,11 @@ impl TransferCommands {
         let currency = req.currency.unwrap_or_else(|| "AOA".to_string());
         let total_source_debit = req.amount + fee;
 
-        let mut tx = self.pool.begin().await.map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
         let mut source_name = String::new();
         let mut target_name = String::new();
@@ -180,7 +184,11 @@ impl TransferCommands {
 
         let transfer_id = Uuid::new_v4();
         let now = Utc::now();
-        let transfer_number = format!("TRF-INT-{}-{}", now.format("%Y%m%d"), &transfer_id.to_string()[..6].to_uppercase());
+        let transfer_number = format!(
+            "TRF-INT-{}-{}",
+            now.format("%Y%m%d"),
+            &transfer_id.to_string()[..6].to_uppercase()
+        );
 
         sqlx::query(
             r#"
@@ -212,7 +220,9 @@ impl TransferCommands {
         .await
         .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
-        tx.commit().await.map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        tx.commit()
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
         Ok(CashTransferResponse {
             id: transfer_id,
@@ -267,7 +277,9 @@ impl TransferCommands {
                 amount: r.try_get("amount").unwrap_or(Decimal::ZERO),
                 fee_amount: r.try_get("fee_amount").unwrap_or(Decimal::ZERO),
                 currency: r.try_get("currency").unwrap_or_else(|_| "AOA".to_string()),
-                status: r.try_get("status").unwrap_or_else(|_| "COMPLETED".to_string()),
+                status: r
+                    .try_get("status")
+                    .unwrap_or_else(|_| "COMPLETED".to_string()),
                 operator_user_id: r.try_get("operator_user_id").unwrap_or_default(),
                 notes: r.try_get("notes").ok(),
                 transferred_at: r.try_get("transferred_at").unwrap(),

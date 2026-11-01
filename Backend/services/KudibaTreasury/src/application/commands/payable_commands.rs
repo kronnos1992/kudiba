@@ -51,8 +51,12 @@ impl PayableCommands {
         let now = Utc::now();
         let issue_date = req.issue_date.unwrap_or_else(|| now.date_naive());
         let currency = req.currency.unwrap_or_else(|| "AOA".to_string());
-        let activity_type = req.activity_type.unwrap_or_else(|| "OPERATIONAL".to_string());
-        let category = req.category.unwrap_or_else(|| "FORNECEDORES_MERCADORIAS".to_string());
+        let activity_type = req
+            .activity_type
+            .unwrap_or_else(|| "OPERATIONAL".to_string());
+        let category = req
+            .category
+            .unwrap_or_else(|| "FORNECEDORES_MERCADORIAS".to_string());
 
         sqlx::query(
             r#"
@@ -129,7 +133,11 @@ impl PayableCommands {
             ));
         }
 
-        let mut tx = self.pool.begin().await.map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
         let payable_row = sqlx::query(
             "SELECT id, net_payable, amount_paid, status::text AS status, invoice_number, supplier_name \
@@ -144,7 +152,8 @@ impl PayableCommands {
         .ok_or_else(|| DomainError::NotFound(format!("Conta a pagar '{}' não encontrada", payable_id)))?;
 
         let net_payable: Decimal = payable_row.try_get("net_payable").unwrap_or(Decimal::ZERO);
-        let current_amount_paid: Decimal = payable_row.try_get("amount_paid").unwrap_or(Decimal::ZERO);
+        let current_amount_paid: Decimal =
+            payable_row.try_get("amount_paid").unwrap_or(Decimal::ZERO);
         let remaining = net_payable - current_amount_paid;
 
         if req.amount_paid > remaining {
@@ -226,7 +235,9 @@ impl PayableCommands {
         .await
         .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
-        tx.commit().await.map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        tx.commit()
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
         Ok(PayableSettlementResponse {
             id: settlement_id,
@@ -277,8 +288,12 @@ impl PayableCommands {
                 supplier_name: r.try_get("supplier_name").unwrap_or_default(),
                 supplier_nif: r.try_get("supplier_nif").ok(),
                 invoice_number: r.try_get("invoice_number").unwrap_or_default(),
-                activity_type: r.try_get("activity_type").unwrap_or_else(|_| "OPERATIONAL".to_string()),
-                category: r.try_get("category").unwrap_or_else(|_| "FORNECEDORES".to_string()),
+                activity_type: r
+                    .try_get("activity_type")
+                    .unwrap_or_else(|_| "OPERATIONAL".to_string()),
+                category: r
+                    .try_get("category")
+                    .unwrap_or_else(|_| "FORNECEDORES".to_string()),
                 currency: r.try_get("currency").unwrap_or_else(|_| "AOA".to_string()),
                 gross_total: r.try_get("gross_total").unwrap_or(Decimal::ZERO),
                 withholding_rate: r.try_get("withholding_rate").unwrap_or(Decimal::ZERO),
@@ -288,7 +303,9 @@ impl PayableCommands {
                 due_date: r.try_get("due_date").unwrap(),
                 issue_date: r.try_get("issue_date").unwrap(),
                 payment_method: r.try_get("payment_method").ok(),
-                status: r.try_get("status").unwrap_or_else(|_| "OUTSTANDING".to_string()),
+                status: r
+                    .try_get("status")
+                    .unwrap_or_else(|_| "OUTSTANDING".to_string()),
                 notes: r.try_get("notes").ok(),
                 created_at: r.try_get("created_at").unwrap(),
                 updated_at: r.try_get("updated_at").unwrap(),
@@ -326,7 +343,9 @@ impl PayableCommands {
                 bank_account_id: r.try_get("bank_account_id").ok(),
                 session_id: r.try_get("session_id").ok(),
                 amount_paid: r.try_get("amount_paid").unwrap_or(Decimal::ZERO),
-                payment_method: r.try_get("payment_method").unwrap_or_else(|_| "TRANSFERENCIA".to_string()),
+                payment_method: r
+                    .try_get("payment_method")
+                    .unwrap_or_else(|_| "TRANSFERENCIA".to_string()),
                 payment_reference: r.try_get("payment_reference").ok(),
                 settled_at: r.try_get("settled_at").unwrap(),
                 operator_user_id: r.try_get("operator_user_id").unwrap_or_default(),

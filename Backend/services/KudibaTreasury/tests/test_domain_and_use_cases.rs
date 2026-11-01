@@ -1344,19 +1344,22 @@ async fn test_partial_invoice_payment_lifecycle() {
     assert_eq!(rec.remaining_amount, dec!(100000.00));
 
     // First partial payment of 50% (50 000 Kz)
-    rec.apply_payment(dec!(50000.00)).expect("partial payment 50k");
+    rec.apply_payment(dec!(50000.00))
+        .expect("partial payment 50k");
     assert_eq!(rec.status, ReceivableStatus::Partial);
     assert_eq!(rec.paid_amount, dec!(50000.00));
     assert_eq!(rec.remaining_amount, dec!(50000.00));
 
     // Second partial payment of 25 000 Kz
-    rec.apply_payment(dec!(25000.00)).expect("partial payment 25k");
+    rec.apply_payment(dec!(25000.00))
+        .expect("partial payment 25k");
     assert_eq!(rec.status, ReceivableStatus::Partial);
     assert_eq!(rec.paid_amount, dec!(75000.00));
     assert_eq!(rec.remaining_amount, dec!(25000.00));
 
     // Final payment of remaining 25 000 Kz (full settlement)
-    rec.apply_payment(dec!(25000.00)).expect("final payment 25k");
+    rec.apply_payment(dec!(25000.00))
+        .expect("final payment 25k");
     assert_eq!(rec.status, ReceivableStatus::Settled);
     assert_eq!(rec.paid_amount, dec!(100000.00));
     assert_eq!(rec.remaining_amount, dec!(0.00));
