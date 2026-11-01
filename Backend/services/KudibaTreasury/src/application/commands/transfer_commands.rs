@@ -187,7 +187,7 @@ impl TransferCommands {
         let transfer_number = format!(
             "TRF-INT-{}-{}",
             now.format("%Y%m%d"),
-            &transfer_id.to_string()[..6].to_uppercase()
+            transfer_id.to_string()[..6].to_uppercase()
         );
 
         sqlx::query(

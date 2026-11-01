@@ -817,7 +817,7 @@ impl CostCenterService {
                 Decimal::new(4, 0),
                 "PAT-TI-001, PAT-TI-002, PAT-TI-003, PAT-TI-004",
                 "Eng.º Osvaldo Neto",
-                Decimal::new(416_666_7, 2),
+                Decimal::new(4_166_667, 2),
                 "4 computadores atribuídos ao Departamento de TI (Kz 2.000.000 CAPEX | Quota mensal de amortização 73.1: Kz 41.666,67).",
             ),
             (
@@ -828,7 +828,7 @@ impl CostCenterService {
                 Decimal::new(3, 0),
                 "PAT-RH-001, PAT-RH-002, PAT-RH-003",
                 "Dra. Helena Sebastião",
-                Decimal::new(312_500_0, 2),
+                Decimal::new(3_125_000, 2),
                 "3 computadores atribuídos ao Departamento de RH (Kz 1.500.000 CAPEX | Quota mensal de amortização 73.1: Kz 31.250,00).",
             ),
             (
@@ -839,7 +839,7 @@ impl CostCenterService {
                 Decimal::new(3, 0),
                 "PAT-VND-001, PAT-VND-002, PAT-VND-003",
                 "Paulo Cassule",
-                Decimal::new(312_500_0, 2),
+                Decimal::new(3_125_000, 2),
                 "3 computadores atribuídos ao Departamento Comercial / Vendas (Kz 1.500.000 CAPEX | Quota mensal de amortização 73.1: Kz 31.250,00).",
             ),
         ];
@@ -2783,7 +2783,7 @@ impl CostCenterService {
                 });
             }
         }
-        by_department.sort_by(|a, b| b.realized_opex.cmp(&a.realized_opex));
+        by_department.sort_by_key(|a| std::cmp::Reverse(a.realized_opex));
 
         let mut by_branch: Vec<BranchCostSummaryDto> = Vec::new();
         for c in &centers {
