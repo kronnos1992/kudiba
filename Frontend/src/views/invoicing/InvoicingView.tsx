@@ -2122,7 +2122,7 @@ export const InvoicingView: React.FC = () => {
               <div className="border-t border-slate-200 pt-4 text-center text-[10px] text-slate-500 space-y-1">
                 <p className="font-mono font-bold text-slate-700">
                   {selectedInvoice.validationChars}-Processado por programa validado nº{' '}
-                  {activeTenant?.agt_cert_number || '999/AGT/2026'} Kudiba ERP
+                  {activeTenant?.agt_cert_number || 'FE/528/AGT/2026'} Kudiba ERP
                 </p>
                 <p>
                   {activeTenant?.invoice_footer_notes ||

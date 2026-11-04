@@ -149,7 +149,7 @@ export const LoginView: React.FC = () => {
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-900/40 border border-emerald-500/30 backdrop-blur-md">
               <BadgeCheck className="w-4 h-4 text-emerald-400 shrink-0" />
               <span className="text-xs font-semibold text-emerald-200 tracking-wide">
-                Certificação AGT n.º 42/AGT/2026
+                Certificação AGT n.º FE/528/AGT/2026
               </span>
             </div>
           </div>

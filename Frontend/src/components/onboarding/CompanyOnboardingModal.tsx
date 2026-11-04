@@ -97,7 +97,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
 
   const [taxRegimeCode, setTaxRegimeCode] = useState('REGIME_GERAL');
   const [taxOfficeCode, setTaxOfficeCode] = useState('1.ª Repartição Fiscal de Luanda');
-  const [agtCertNumber, setAgtCertNumber] = useState('');
+  const [agtCertNumber, setAgtCertNumber] = useState('FE/528/AGT/2026');
   const [defaultWithholdingRate, setDefaultWithholdingRate] = useState<number>(6.5);
   const [invoiceFooterNotes, setInvoiceFooterNotes] = useState(
     'Os bens ou serviços foram colocados à disposição do adquirente na data e local do presente documento.'
@@ -133,7 +133,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
     setWebsite(activeTenant.website || '');
     setTaxRegimeCode(activeTenant.tax_regime_code || 'REGIME_GERAL');
     setTaxOfficeCode(activeTenant.tax_office_code || '1.ª Repartição Fiscal de Luanda');
-    setAgtCertNumber(activeTenant.agt_cert_number || '');
+    setAgtCertNumber(activeTenant.agt_cert_number || 'FE/528/AGT/2026');
     setDefaultWithholdingRate(activeTenant.default_withholding_rate ?? 6.5);
     setInvoiceFooterNotes(
       activeTenant.invoice_footer_notes ||

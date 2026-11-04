@@ -146,7 +146,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
     website: '',
     tax_regime_code: 'REGIME_GERAL',
     tax_office_code: '1.ª Repartição Fiscal de Luanda',
-    agt_cert_number: 'AGT/2026/0042',
+    agt_cert_number: 'FE/528/AGT/2026',
     default_withholding_rate: 6.5,
     invoice_footer_notes:
       'Os bens ou serviços foram colocados à disposição do adquirente na data e local do presente documento.',
@@ -217,7 +217,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
       website: src.website || '',
       tax_regime_code: src.tax_regime_code || 'REGIME_GERAL',
       tax_office_code: src.tax_office_code || '1.ª Repartição Fiscal de Luanda',
-      agt_cert_number: src.agt_cert_number || 'AGT/2026/0042',
+      agt_cert_number: src.agt_cert_number || 'FE/528/AGT/2026',
       default_withholding_rate: src.default_withholding_rate ?? 6.5,
       invoice_footer_notes:
         src.invoice_footer_notes ||
@@ -581,7 +581,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
             Certificado:{' '}
             <span className="font-mono text-emerald-600">
-              {companyForm.agt_cert_number || 'AGT/2026/0042'}
+              {companyForm.agt_cert_number || 'FE/528/AGT/2026'}
             </span>
           </div>
         </div>
@@ -1057,7 +1057,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                     onChange={(e) =>
                       setCompanyForm((prev) => ({ ...prev, agt_cert_number: e.target.value }))
                     }
-                    placeholder="AGT/2026/0042"
+                    placeholder="FE/528/AGT/2026"
                     className="input-field font-mono"
                   />
                 </div>
@@ -1515,7 +1515,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                   <div className="text-[10px] text-center text-slate-600 space-y-0.5">
                     <p>
                       Processado por programa validado n.º{' '}
-                      <span className="font-bold">{companyForm.agt_cert_number || 'AGT/2026/0042'}</span>
+                      <span className="font-bold">{companyForm.agt_cert_number || 'FE/528/AGT/2026'}</span>
                     </p>
                     <p className="text-[9px] text-slate-500">
                       Dec. Pres. n.º 71/25 • Chave RSA-2048
@@ -2038,7 +2038,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                                       <span className="text-2xs text-slate-400 font-bold block mb-1">Certificação AGT</span>
                                       <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                                         <CheckCircle2 className="w-3.5 h-3.5" />
-                                        Certificado AGT/2026/0042
+                                        Certificado FE/528/AGT/2026
                                       </span>
                                     </div>
                                     <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">

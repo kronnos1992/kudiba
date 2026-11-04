@@ -116,7 +116,7 @@ VALUES (
     'AOA',
     'REGIME_GERAL',
     '1.ª Repartição Fiscal de Luanda',
-    '42/AGT/2026',
+    'FE/528/AGT/2026',
     6.50,
     'Os bens e serviços foram colocados à disposição do adquirente na data e local do documento.',
     '[{"bank_name": "Banco Angolano de Investimentos (BAI)", "iban": "AO06.0040.0000.1234.5678.9012.3", "account_number": "123456789.10.001", "swift": "BAIPAOPL", "currency": "AOA", "is_primary": true}]'::jsonb,

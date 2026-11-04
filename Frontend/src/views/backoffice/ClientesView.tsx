@@ -1070,7 +1070,7 @@ export const ClientesView: React.FC = () => {
               </div>
 
               <div className="border-t border-white/10 pt-4 mt-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[11px] text-white/60">
-                <span>Software de Gestão Comercial Certificado conforme Decreto Presidencial n.º 71/25 (AGT/2026/0042)</span>
+                <span>Software de Gestão Comercial Certificado conforme Decreto Presidencial n.º 71/25 (FE/528/AGT/2026)</span>
                 <span className="font-mono text-emerald-400 font-bold">Autenticado Kudiba Cloud B2B</span>
               </div>
             </div>

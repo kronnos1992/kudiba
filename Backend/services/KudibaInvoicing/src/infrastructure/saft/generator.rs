@@ -126,9 +126,14 @@ impl SaftXmlGenerator {
     fn append_header(xml: &mut String, meta: &SaftExportMetadata) -> Result<(), DomainError> {
         let (start_date, end_date) = compute_period_dates(meta.fiscal_year, meta.fiscal_month)?;
         let date_created = Utc::now().format("%Y-%m-%d").to_string();
-        let cert_number = meta.tenant.agt_cert_number.as_deref().ok_or_else(|| {
-            DomainError::invalid("Número de validação/certificação não cadastrado.")
-        })?;
+        let raw_cert = meta
+            .tenant
+            .agt_cert_number
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("528/AGT/2026");
+        let cert_number = raw_cert.strip_prefix("FE/").unwrap_or(raw_cert);
         let address_detail = meta
             .tenant
             .address_detail
@@ -199,7 +204,9 @@ impl SaftXmlGenerator {
             "    <SoftwareValidationNumber>{}</SoftwareValidationNumber>",
             xml_escape(cert_number)
         );
-        xml.push_str("    <ProductID>Kudiba ERP/Motor Fiscal</ProductID>\n");
+        xml.push_str(
+            "    <ProductID>Kudiba ERP/YHADI SOLUÇÕES - PRESTAÇÃO DE SERVIÇOS, (SU), LDA</ProductID>\n",
+        );
         let _ = writeln!(
             xml,
             "    <ProductVersion>{}</ProductVersion>",
@@ -627,7 +634,7 @@ mod tests {
             share_capital: Some("5.000.000,00 AOA".to_string()),
             currency: Some("AOA".to_string()),
             tax_office_code: Some("REP-01".to_string()),
-            agt_cert_number: Some("42/AGT/2026".to_string()),
+            agt_cert_number: Some("FE/528/AGT/2026".to_string()),
             invoice_footer_notes: None,
             bank_accounts: Vec::new(),
             status: "ACTIVE".to_string(),
@@ -639,7 +646,7 @@ mod tests {
             tenant: &tenant,
             fiscal_year: 2026,
             fiscal_month: Some(10),
-            software_version: "1.0.0",
+            software_version: "v1.0",
         };
 
         let lines = vec![
@@ -710,7 +717,11 @@ mod tests {
 
         assert!(xml.contains("xmlns=\"urn:OECD:StandardAuditFile-Tax:AO_1.01_01\""));
         assert!(xml.contains("<CompanyID>5001234567</CompanyID>"));
-        assert!(xml.contains("<SoftwareValidationNumber>42/AGT/2026</SoftwareValidationNumber>"));
+        assert!(xml.contains("<SoftwareValidationNumber>528/AGT/2026</SoftwareValidationNumber>"));
+        assert!(xml.contains(
+            "<ProductID>Kudiba ERP/YHADI SOLUÇÕES - PRESTAÇÃO DE SERVIÇOS, (SU), LDA</ProductID>"
+        ));
+        assert!(xml.contains("<ProductVersion>v1.0</ProductVersion>"));
         assert!(xml.contains("<InvoiceNo>FT KUD26/000001</InvoiceNo>"));
         assert!(xml.contains("<TaxExemptionCode>M04</TaxExemptionCode>"));
         assert!(xml.contains("<TaxExemptionReason>Isenção de bens da Cesta Básica (Lei n.º 42/20)</TaxExemptionReason>"));

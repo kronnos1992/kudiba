@@ -69,6 +69,7 @@ services:
       - AGT_PLATFORM_URL=https://sifphml.minfin.gov.ao/sigt/fe/v1
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - AGT_KEY_VERSION=1
+      - AGT_SOFTWARE_CERT=${AGT_SOFTWARE_CERT:-FE/528/AGT/2026}
       - DB_MAX_CONNECTIONS=20
       - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER:-kudiba}:${RABBITMQ_DEFAULT_PASS:-kudiba_rabbit_pass}@rabbitmq:5672/%2f
     depends_on:

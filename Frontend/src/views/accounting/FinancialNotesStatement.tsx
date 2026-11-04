@@ -393,7 +393,7 @@ export const FinancialNotesStatement: React.FC<FinancialNotesStatementProps> = (
                     <div>
                       <span className="text-slate-400 block font-sans">Certificação AGT:</span>
                       <span className="font-bold text-slate-700 dark:text-slate-200">
-                        {activeTenant?.agt_cert_number || '42/AGT/2026'}
+                        {activeTenant?.agt_cert_number || 'FE/528/AGT/2026'}
                       </span>
                     </div>
                     <div>

@@ -117,9 +117,10 @@ impl Config {
                 .unwrap_or(20),
             agt_key_version: env::var("AGT_KEY_VERSION").unwrap_or_else(|_| "1".to_string()),
             agt_software_cert: env::var("AGT_SOFTWARE_CERT")
-                .unwrap_or_default()
-                .trim()
-                .to_string(),
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "FE/528/AGT/2026".to_string()),
             agt_private_key_path: env::var("AGT_RSA_PRIVATE_KEY_PATH")
                 .ok()
                 .filter(|s| !s.trim().is_empty()),

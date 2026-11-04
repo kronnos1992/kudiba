@@ -224,7 +224,7 @@ O servidor gRPC roda concorrentemente na porta configurada (`GRPC_PORT`, padrão
 | `DB_MAX_CONNECTIONS` | `20` | Dimensão máxima do pool de conexões com o PostgreSQL |
 | `ENVIRONMENT` | `development` | Ambiente de execução (`development`, `staging`, `production`) |
 | `AGT_KEY_VERSION` | `1` | Versão da chave privada RSA registada no portal da AGT |
-| `AGT_SOFTWARE_CERT` | *(não definido)* | Número de validação atribuído pela AGT; manter vazio até à aprovação |
+| `AGT_SOFTWARE_CERT` | `FE/528/AGT/2026` | Número oficial de certificação de software atribuído pela AGT |
 | `AGT_RSA_PRIVATE_KEY_PATH` | *(opcional)* | Caminho absoluto no disco para o arquivo PEM da chave privada RSA |
 | `AGT_RSA_PRIVATE_KEY_PEM` | *(opcional)* | Conteúdo textual direto em PEM da chave privada RSA-2048 |
 | `AGT_PLATFORM_URL` | `https://webservices.agt.minfin.gov.ao/...` | URL base dos webservices de faturação eletrónica da AGT |

@@ -433,7 +433,7 @@ VALUES (
     'demo',
     'Kudiba Comercial & Serviços Lda',
     '5001234567',
-    '42/AGT/2026',
+    'FE/528/AGT/2026',
     'REGIME_GERAL'
 ) ON CONFLICT (slug) DO NOTHING;
 

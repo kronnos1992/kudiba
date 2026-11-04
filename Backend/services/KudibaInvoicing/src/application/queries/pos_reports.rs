@@ -404,13 +404,17 @@ impl PosReportsUseCase {
                     .unwrap_or_else(|_| "Kudiba ERP".to_string()),
                 row.try_get("nif")
                     .unwrap_or_else(|_| "999999999".to_string()),
-                row.try_get("agt_cert_number")
-                    .unwrap_or_else(|_| "Não homologado pela AGT".to_string()),
+                row.try_get::<Option<String>, _>("agt_cert_number")
+                    .ok()
+                    .flatten()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "FE/528/AGT/2026".to_string()),
             ),
             None => (
                 "Kudiba ERP".to_string(),
                 "999999999".to_string(),
-                "Não homologado pela AGT".to_string(),
+                "FE/528/AGT/2026".to_string(),
             ),
         };
 

@@ -2148,7 +2148,7 @@ export const PosView: React.FC = () => {
 
               <div className="text-center text-[10px] space-y-0.5">
                 <p className="font-bold">Validação: {issuedInvoice.validationChars}-Processado por</p>
-                <p>Software Certificado nº 000/AGT/2026 Kudiba</p>
+                <p>Software Certificado nº FE/528/AGT/2026 Kudiba</p>
                 <p className="font-mono text-[9px] text-slate-500 break-all">
                   Hash: {issuedInvoice.hashSha256?.substring(0, 32)}...
                 </p>

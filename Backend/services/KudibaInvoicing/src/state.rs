@@ -154,7 +154,7 @@ impl AppState {
                 read_session_factory.clone(),
                 tenant_repository.clone(),
                 invoice_repository.clone(),
-                config.service_version,
+                "v1.0",
             )),
             fiscal_reports: Arc::new(FiscalReportsUseCase::new(read_session_factory.clone())),
             pos_reports: Arc::new(
