@@ -81,6 +81,9 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
   const [companyName, setCompanyName] = useState('');
   const [tradeName, setTradeName] = useState('');
   const [nif, setNif] = useState('');
+  const [alvaraNumber, setAlvaraNumber] = useState('');
+  const [alvaraIssueDate, setAlvaraIssueDate] = useState('');
+  const [alvaraExpiryDate, setAlvaraExpiryDate] = useState('');
   const [commercialRegistry, setCommercialRegistry] = useState('');
   const [shareCapital, setShareCapital] = useState('');
   const [currency, setCurrency] = useState('AOA');
@@ -119,6 +122,9 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
     setCompanyName(activeTenant.company_name || activeTenant.name || '');
     setTradeName(activeTenant.trade_name || activeTenant.name || '');
     setNif(activeTenant.nif || activeTenant.taxId || '');
+    setAlvaraNumber(activeTenant.alvara_number || '');
+    setAlvaraIssueDate(activeTenant.alvara_issue_date || '');
+    setAlvaraExpiryDate(activeTenant.alvara_expiry_date || '');
     setCommercialRegistry(activeTenant.commercial_registry || '');
     setShareCapital(activeTenant.share_capital || '');
     setCurrency(activeTenant.currency || 'AOA');
@@ -231,6 +237,9 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
         company_name: companyName.trim(),
         trade_name: tradeName.trim() || companyName.trim(),
         nif: nif.trim(),
+        alvara_number: alvaraNumber.trim() || null,
+        alvara_issue_date: alvaraIssueDate || null,
+        alvara_expiry_date: alvaraExpiryDate || null,
         commercial_registry: commercialRegistry.trim() || null,
         share_capital: shareCapital.trim() || null,
         currency,
@@ -425,6 +434,43 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
                     onChange={(e) => setNif(e.target.value)}
                     placeholder="Ex: 5417123456"
                     className="input-field font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                    N.º do Alvará Comercial
+                  </label>
+                  <input
+                    type="text"
+                    value={alvaraNumber}
+                    onChange={(e) => setAlvaraNumber(e.target.value)}
+                    placeholder="Ex: ALV-2026/00412"
+                    className="input-field font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                    Data de Emissão do Alvará
+                  </label>
+                  <input
+                    type="date"
+                    value={alvaraIssueDate}
+                    onChange={(e) => setAlvaraIssueDate(e.target.value)}
+                    className="input-field"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                    Data de Validade do Alvará
+                  </label>
+                  <input
+                    type="date"
+                    value={alvaraExpiryDate}
+                    onChange={(e) => setAlvaraExpiryDate(e.target.value)}
+                    className="input-field"
                   />
                 </div>
 

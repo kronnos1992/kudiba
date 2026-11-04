@@ -75,6 +75,9 @@ class SqlAlchemyTenantRepository(ITenantRepository):
             m.email = tenant.email
             m.website = tenant.website
             m.logo_data_url = tenant.logo_data_url
+            m.alvara_number = tenant.alvara_number
+            m.alvara_issue_date = tenant.alvara_issue_date
+            m.alvara_expiry_date = tenant.alvara_expiry_date
             m.commercial_registry = tenant.commercial_registry
             m.share_capital = tenant.share_capital
             m.currency = tenant.currency or "AOA"
@@ -109,6 +112,9 @@ class SqlAlchemyTenantRepository(ITenantRepository):
             email=m.email,
             website=m.website,
             logo_data_url=m.logo_data_url,
+            alvara_number=getattr(m, "alvara_number", None),
+            alvara_issue_date=getattr(m, "alvara_issue_date", None),
+            alvara_expiry_date=getattr(m, "alvara_expiry_date", None),
             commercial_registry=m.commercial_registry,
             share_capital=m.share_capital,
             currency=m.currency or "AOA",

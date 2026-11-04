@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Optional
 
 from sqlalchemy import delete, select
@@ -48,6 +48,9 @@ class SqlAlchemyTenantProvisioner(ITenantProvisioner):
         slug: str,
         company_name: str,
         nif: str,
+        alvara_number: Optional[str] = None,
+        alvara_issue_date: Optional[date] = None,
+        alvara_expiry_date: Optional[date] = None,
         license_valid_until: datetime,
         modules: List[str],
         admin_email: Optional[str] = None,
@@ -62,6 +65,9 @@ class SqlAlchemyTenantProvisioner(ITenantProvisioner):
                     slug=slug,
                     company_name=company_name,
                     nif=nif,
+                    alvara_number=alvara_number,
+                    alvara_issue_date=alvara_issue_date,
+                    alvara_expiry_date=alvara_expiry_date,
                     status="ACTIVE",
                     license_valid_until=license_valid_until,
                     subscribed_modules=modules,

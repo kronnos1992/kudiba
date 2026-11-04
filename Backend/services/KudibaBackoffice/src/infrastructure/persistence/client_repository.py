@@ -34,6 +34,7 @@ class SqlAlchemyClientRepository(IClientRepository):
                     or_(
                         ClientModel.company_name.ilike(term),
                         ClientModel.nif.ilike(term),
+                        ClientModel.alvara_number.ilike(term),
                         ClientModel.contact_email.ilike(term),
                     )
                 )
@@ -50,6 +51,9 @@ class SqlAlchemyClientRepository(IClientRepository):
             if m is None:
                 return
             m.company_name = client.company_name
+            m.alvara_number = client.alvara_number
+            m.alvara_issue_date = client.alvara_issue_date
+            m.alvara_expiry_date = client.alvara_expiry_date
             m.contact_name = client.contact_name
             m.contact_email = client.contact_email
             m.contact_phone = client.contact_phone
@@ -62,6 +66,9 @@ class SqlAlchemyClientRepository(IClientRepository):
             tenant_id=m.tenant_id,
             company_name=m.company_name,
             nif=m.nif,
+            alvara_number=m.alvara_number,
+            alvara_issue_date=m.alvara_issue_date,
+            alvara_expiry_date=m.alvara_expiry_date,
             contact_name=m.contact_name,
             contact_email=m.contact_email,
             contact_phone=m.contact_phone,
@@ -77,6 +84,9 @@ class SqlAlchemyClientRepository(IClientRepository):
             tenant_id=client.tenant_id,
             company_name=client.company_name,
             nif=client.nif,
+            alvara_number=client.alvara_number,
+            alvara_issue_date=client.alvara_issue_date,
+            alvara_expiry_date=client.alvara_expiry_date,
             contact_name=client.contact_name,
             contact_email=client.contact_email,
             contact_phone=client.contact_phone,

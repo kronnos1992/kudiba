@@ -17,6 +17,9 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ExternalLink,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge, StatusType } from '../../components/common/StatusBadge';
@@ -24,6 +27,7 @@ import { SortableHeader } from '../../components/common/SortableHeader';
 import { useTableSort } from '../../hooks/useTableSort';
 import { backofficeApi } from '../../api/backoffice';
 import {
+  AlvaraVerificationResult,
   BackofficeClient,
   CreateClientPayload,
   License,
@@ -109,9 +113,19 @@ const errorMessage = (error: unknown): string => {
   return detail || 'Ocorreu um erro ao processar o pedido.';
 };
 
+const defaultIssueDate = () => new Date().toISOString().slice(0, 10);
+const defaultExpiryDate = () => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 5);
+  return d.toISOString().slice(0, 10);
+};
+
 const emptyForm: CreateClientPayload = {
   company_name: '',
   nif: '',
+  alvara_number: '',
+  alvara_issue_date: defaultIssueDate(),
+  alvara_expiry_date: defaultExpiryDate(),
   modules: [],
   contact_name: '',
   contact_email: '',
@@ -136,6 +150,8 @@ export const ClientesView: React.FC = () => {
   const [form, setForm] = useState<CreateClientPayload>(emptyForm);
   const [adminForm, setAdminForm] = useState({ email: '', full_name: '', password: '' });
   const [renewForm, setRenewForm] = useState<RenewLicensePayload>({});
+  const [formAlvaraCheck, setFormAlvaraCheck] = useState<AlvaraVerificationResult | null>(null);
+  const [detailAlvaraCheck, setDetailAlvaraCheck] = useState<AlvaraVerificationResult | null>(null);
 
   const { data: modules = [] } = useQuery({
     queryKey: ['backoffice_modules'],
@@ -176,9 +192,27 @@ export const ClientesView: React.FC = () => {
       invalidate();
       setShowCreateModal(false);
       setForm(emptyForm);
+      setFormAlvaraCheck(null);
       setAdminForm({ email: '', full_name: '', password: '' });
       setCreateAdmin(false);
     },
+  });
+
+  const verifyFormAlvaraMutation = useMutation({
+    mutationFn: () =>
+      backofficeApi.verifyAlvara({
+        alvara_number: form.alvara_number,
+        nif: form.nif || null,
+        alvara_issue_date: form.alvara_issue_date || null,
+        alvara_expiry_date: form.alvara_expiry_date || null,
+        probe_remote: true,
+      }),
+    onSuccess: (res) => setFormAlvaraCheck(res),
+  });
+
+  const verifyClientAlvaraMutation = useMutation({
+    mutationFn: (clientId: string) => backofficeApi.verifyClientAlvara(clientId, true),
+    onSuccess: (res) => setDetailAlvaraCheck(res),
   });
 
   const renewMutation = useMutation({
@@ -269,7 +303,14 @@ export const ClientesView: React.FC = () => {
   const expiredCount = clients.filter((c) => c.license_status === 'EXPIRED').length;
   const suspendedCount = clients.filter((c) => c.license_status === 'SUSPENDED').length;
 
-  const canSubmitCreate = form.company_name.trim().length >= 2 && form.nif.trim().length >= 3 && form.modules.length > 0;
+  const canSubmitCreate =
+    form.company_name.trim().length >= 2 &&
+    form.nif.trim().length >= 3 &&
+    form.alvara_number.trim().length >= 2 &&
+    Boolean(form.alvara_issue_date) &&
+    Boolean(form.alvara_expiry_date) &&
+    form.alvara_expiry_date > form.alvara_issue_date &&
+    form.modules.length > 0;
 
   return (
     <div className="space-y-6">
@@ -348,7 +389,7 @@ export const ClientesView: React.FC = () => {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Pesquisar por nome, NIF ou e-mail…"
+              placeholder="Pesquisar por nome, NIF, alvará ou e-mail…"
               className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
             />
           </div>
@@ -448,7 +489,25 @@ export const ClientesView: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-4 py-3.5 font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
-                        {client.nif}
+                        <div>{client.nif}</div>
+                        {client.alvara_number && (
+                          <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400">
+                            Alvará: {client.alvara_number}
+                            {client.alvara_expiry_date ? (
+                              <span
+                                className={`ml-1.5 px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                  client.alvara_status === 'EXPIRED'
+                                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                                    : client.alvara_status === 'EXPIRING_SOON'
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                }`}
+                              >
+                                Val: {formatDate(client.alvara_expiry_date)}
+                              </span>
+                            ) : null}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3.5">
                         <div className="flex flex-wrap gap-1.5 max-w-[280px]">
@@ -579,6 +638,11 @@ export const ClientesView: React.FC = () => {
                                 <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
                                   {client.company_name}
                                   <span className="text-xs font-mono font-bold text-emerald-600">NIF: {client.nif}</span>
+                                  {client.alvara_number && (
+                                    <span className="text-xs font-mono font-semibold text-slate-500 dark:text-slate-400">
+                                      • Alvará: {client.alvara_number}
+                                    </span>
+                                  )}
                                 </h4>
                               </div>
                               <div className="flex items-center gap-2">
@@ -663,6 +727,42 @@ export const ClientesView: React.FC = () => {
                   className={inputClass}
                 />
               </Field>
+              <Field label="N.º do Alvará Comercial" required>
+                <input
+                  required
+                  placeholder="Ex: ALV-2026/00412"
+                  value={form.alvara_number}
+                  onChange={(e) => {
+                    setForm({ ...form, alvara_number: e.target.value });
+                    setFormAlvaraCheck(null);
+                  }}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Data de Emissão do Alvará" required>
+                <input
+                  required
+                  type="date"
+                  value={form.alvara_issue_date}
+                  onChange={(e) => {
+                    setForm({ ...form, alvara_issue_date: e.target.value });
+                    setFormAlvaraCheck(null);
+                  }}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Data de Validade do Alvará" required>
+                <input
+                  required
+                  type="date"
+                  value={form.alvara_expiry_date}
+                  onChange={(e) => {
+                    setForm({ ...form, alvara_expiry_date: e.target.value });
+                    setFormAlvaraCheck(null);
+                  }}
+                  className={inputClass}
+                />
+              </Field>
               <Field label="Nome do Contacto">
                 <input
                   value={form.contact_name || ''}
@@ -705,6 +805,31 @@ export const ClientesView: React.FC = () => {
                   className={inputClass}
                 />
               </Field>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    Verificação Oficial do Alvará Comercial
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Valide o prazo de vigência e consulte o alvará nas plataformas oficiais (SILAC/MINDCOM, GUE, SEPE e AGT)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={form.alvara_number.trim().length < 2 || verifyFormAlvaraMutation.isPending}
+                  onClick={() => verifyFormAlvaraMutation.mutate()}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  {verifyFormAlvaraMutation.isPending ? 'A verificar…' : 'Testar Validade do Alvará'}
+                </button>
+              </div>
+
+              {formAlvaraCheck && <AlvaraVerificationCard result={formAlvaraCheck} />}
             </div>
 
             <div>
@@ -921,19 +1046,49 @@ export const ClientesView: React.FC = () => {
       {/* Modal: Detalhe */}
       {detailClient && (
         <Modal
-          onClose={() => setDetailClient(null)}
+          onClose={() => {
+            setDetailClient(null);
+            setDetailAlvaraCheck(null);
+          }}
           title={detail?.company_name || detailClient.company_name}
           icon={<Eye className="w-5 h-5 text-emerald-600" />}
           wide
         >
           <div className="space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
               <Info label="NIF" value={detail?.nif || detailClient.nif} />
+              <Info label="N.º do Alvará" value={detail?.alvara_number || detailClient.alvara_number || '—'} />
+              <Info label="Emissão do Alvará" value={formatDate(detail?.alvara_issue_date || detailClient.alvara_issue_date)} />
+              <Info label="Validade do Alvará" value={formatDate(detail?.alvara_expiry_date || detailClient.alvara_expiry_date)} />
               <Info label="Contacto" value={detail?.contact_name || '—'} />
               <Info label="E-mail" value={detail?.contact_email || '—'} />
               <Info label="Telefone" value={detail?.contact_phone || '—'} />
-              <Info label="Plano" value={detail?.license?.plan || '—'} />
-              <Info label="Seats" value={String(detail?.license?.seats ?? '—')} />
+              <Info label="Plano / Seats" value={`${detail?.license?.plan || '—'} (${detail?.license?.seats ?? '—'})`} />
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    Validação do Alvará Comercial nas Plataformas Oficiais
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Teste o estado de validade e aceda directamente ao SILAC/MINDCOM, Guiché Único (GUE), SEPE e Portal AGT
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={verifyClientAlvaraMutation.isPending}
+                  onClick={() => verifyClientAlvaraMutation.mutate(detailClient.id)}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  {verifyClientAlvaraMutation.isPending ? 'A consultar plataformas…' : 'Testar Validade nas Plataformas Oficiais'}
+                </button>
+              </div>
+
+              {detailAlvaraCheck && <AlvaraVerificationCard result={detailAlvaraCheck} />}
             </div>
 
             <div>
@@ -996,6 +1151,8 @@ export const ClientesView: React.FC = () => {
                     </h3>
                     <p className="text-xs text-white/70 font-mono">
                       NIF: {certificateClient.nif}
+                      {certificateClient.alvara_number ? ` • Alvará: ${certificateClient.alvara_number}` : ''}
+                      {certificateClient.alvara_expiry_date ? ` (Val: ${formatDate(certificateClient.alvara_expiry_date)})` : ''}
                     </p>
                   </div>
                 </div>
@@ -1103,6 +1260,75 @@ const Info: React.FC<{ label: string; value: string }> = ({ label, value }) => (
     <span className="block text-slate-800 dark:text-slate-100">{value}</span>
   </div>
 );
+
+const AlvaraVerificationCard: React.FC<{ result: AlvaraVerificationResult }> = ({ result }) => {
+  const isOk = result.status === 'VALID';
+  const isWarn = result.status === 'EXPIRING_SOON';
+  const badgeColor = isOk
+    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300'
+    : isWarn
+    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300'
+    : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300';
+
+  const statusLabel =
+    result.status === 'VALID'
+      ? 'ALVARÁ VÁLIDO'
+      : result.status === 'EXPIRING_SOON'
+      ? 'A EXPIRAR BREVEMENTE'
+      : result.status === 'EXPIRED'
+      ? 'ALVARÁ EXPIRADO'
+      : 'DADOS INVÁLIDOS';
+
+  return (
+    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 space-y-2.5 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {result.valid ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          )}
+          <span className="font-bold text-slate-800 dark:text-slate-100">{result.message}</span>
+        </div>
+        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeColor}`}>
+          {statusLabel}
+        </span>
+      </div>
+
+      {result.official_platforms && result.official_platforms.length > 0 && (
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+          <span className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5">
+            Plataformas Oficiais de Consulta e Verificação (Angola):
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {result.official_platforms.map((p) => (
+              <a
+                key={p.id}
+                href={p.verification_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-800 hover:border-emerald-500 dark:hover:border-emerald-500 bg-slate-50/60 dark:bg-slate-800/40 transition-colors"
+              >
+                <div className="min-w-0">
+                  <span className="block font-bold text-slate-800 dark:text-slate-100 truncate">
+                    {p.name}
+                  </span>
+                  <span className="block text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                    {p.entity}
+                    {p.reachable !== null && p.reachable !== undefined
+                      ? ` • ${p.reachable ? `Online (${p.latency_ms ?? 0}ms)` : 'Consulta via Browser'}`
+                      : ''}
+                  </span>
+                </div>
+                <ExternalLink className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const ErrorText: React.FC<{ text: string }> = ({ text }) => (
   <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900 rounded-lg px-3 py-2">

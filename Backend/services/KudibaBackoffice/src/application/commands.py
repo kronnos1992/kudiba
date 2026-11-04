@@ -5,6 +5,7 @@ import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import List, Optional, Sequence
 
+from src.application.alvara_verifier import evaluate_alvara_status
 from src.application.dto import (
     ClientDetailDto,
     ClientDto,
@@ -61,6 +62,19 @@ def license_to_dto(license_entity: License) -> LicenseDto:
     )
 
 
+def derive_client_alvara_status(client: Client) -> str:
+    if not client.alvara_number:
+        return "MISSING"
+    if client.alvara_issue_date is None and client.alvara_expiry_date is None:
+        return "UNVERIFIED"
+    status, _, _, _, _, _ = evaluate_alvara_status(
+        client.alvara_number,
+        client.alvara_issue_date,
+        client.alvara_expiry_date,
+    )
+    return status
+
+
 def build_client_detail(
     client: Client,
     current: Optional[License],
@@ -71,6 +85,10 @@ def build_client_detail(
         tenant_id=client.tenant_id,
         company_name=client.company_name,
         nif=client.nif,
+        alvara_number=client.alvara_number,
+        alvara_issue_date=client.alvara_issue_date,
+        alvara_expiry_date=client.alvara_expiry_date,
+        alvara_status=derive_client_alvara_status(client),
         contact_name=client.contact_name,
         contact_email=client.contact_email,
         contact_phone=client.contact_phone,
@@ -120,13 +138,25 @@ class CreateClientUseCase:
             raise DomainError("Indique o nome completo do administrador.")
 
         nif = cmd.nif.strip()
+        alvara_number = (cmd.alvara_number or "").strip()
+        if not alvara_number:
+            raise DomainError("Indique o número do alvará comercial do cliente.")
+        today = date.today()
+        if cmd.alvara_issue_date is not None and cmd.alvara_issue_date > today:
+            raise DomainError("A data de emissão do alvará não pode ser posterior à data actual.")
+        if cmd.alvara_issue_date is not None and cmd.alvara_expiry_date is not None:
+            if cmd.alvara_expiry_date <= cmd.alvara_issue_date:
+                raise DomainError(
+                    "A data de validade do alvará deve ser posterior à data de emissão."
+                )
+        if cmd.alvara_expiry_date is not None and cmd.alvara_expiry_date < today:
+            raise DomainError("O alvará comercial informado já se encontra expirado.")
         if await self.client_repo.find_by_nif(nif) or await self.provisioner.nif_exists(nif):
             raise ConflictError(f"Já existe um cliente registado com o NIF {nif}.")
         if cmd.admin_email and await self.provisioner.email_exists(cmd.admin_email.strip().lower()):
             raise ConflictError(f"Já existe um utilizador com o e-mail {cmd.admin_email}.")
 
         slug = await self._unique_slug(cmd.company_name)
-        today = date.today()
         valid_until = add_one_year(today)
 
         client = Client(
@@ -134,6 +164,9 @@ class CreateClientUseCase:
             tenant_id=uuid.uuid4(),
             company_name=cmd.company_name.strip(),
             nif=nif,
+            alvara_number=alvara_number,
+            alvara_issue_date=cmd.alvara_issue_date,
+            alvara_expiry_date=cmd.alvara_expiry_date,
             contact_name=cmd.contact_name,
             contact_email=cmd.contact_email,
             contact_phone=cmd.contact_phone,
@@ -159,6 +192,9 @@ class CreateClientUseCase:
             slug=slug,
             company_name=client.company_name,
             nif=nif,
+            alvara_number=alvara_number,
+            alvara_issue_date=cmd.alvara_issue_date,
+            alvara_expiry_date=cmd.alvara_expiry_date,
             license_valid_until=_mirror_datetime(valid_until),
             modules=modules,
             admin_email=cmd.admin_email.strip().lower() if cmd.admin_email else None,
@@ -199,6 +235,20 @@ class UpdateClientUseCase:
             raise EntityNotFoundError("Cliente", str(cmd.client_id))
         if cmd.company_name is not None:
             client.company_name = cmd.company_name.strip()
+        if cmd.alvara_number is not None:
+            client.alvara_number = cmd.alvara_number.strip() or None
+        if cmd.alvara_issue_date is not None:
+            client.alvara_issue_date = cmd.alvara_issue_date
+        if cmd.alvara_expiry_date is not None:
+            client.alvara_expiry_date = cmd.alvara_expiry_date
+        if (
+            client.alvara_issue_date is not None
+            and client.alvara_expiry_date is not None
+            and client.alvara_expiry_date <= client.alvara_issue_date
+        ):
+            raise DomainError(
+                "A data de validade do alvará deve ser posterior à data de emissão."
+            )
         if cmd.contact_name is not None:
             client.contact_name = cmd.contact_name
         if cmd.contact_email is not None:
@@ -308,6 +358,9 @@ class SyncTenantsUseCase:
                 tenant_id=t.id,
                 company_name=t.company_name.strip(),
                 nif=t.nif.strip(),
+                alvara_number=t.alvara_number,
+                alvara_issue_date=t.alvara_issue_date,
+                alvara_expiry_date=t.alvara_expiry_date,
                 contact_email=t.email,
                 contact_phone=t.phone,
                 notes=f"Importado automaticamente do tenant de onboarding '{t.slug}'.",

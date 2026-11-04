@@ -10,6 +10,9 @@ class Client:
     tenant_id: uuid.UUID
     company_name: str
     nif: str
+    alvara_number: Optional[str] = None
+    alvara_issue_date: Optional[date] = None
+    alvara_expiry_date: Optional[date] = None
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
@@ -52,6 +55,9 @@ class TenantRecord:
     company_name: str
     nif: str
     status: str
+    alvara_number: Optional[str] = None
+    alvara_issue_date: Optional[date] = None
+    alvara_expiry_date: Optional[date] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     license_valid_until: Optional[datetime] = None

@@ -55,6 +55,32 @@ app_state = create_app_state(settings, session_factory, auth_session_factory)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "ALTER TABLE kudiba_backoffice.clients "
+                    "ADD COLUMN IF NOT EXISTS alvara_number VARCHAR(64), "
+                    "ADD COLUMN IF NOT EXISTS alvara_issue_date DATE, "
+                    "ADD COLUMN IF NOT EXISTS alvara_expiry_date DATE"
+                )
+            )
+    except Exception as e:
+        logger.warning("Migração automática de alvara em kudiba_backoffice ignorada: %s", e)
+
+    try:
+        async with auth_engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "ALTER TABLE kudiba_core.tenants "
+                    "ADD COLUMN IF NOT EXISTS alvara_number VARCHAR(64), "
+                    "ADD COLUMN IF NOT EXISTS alvara_issue_date DATE, "
+                    "ADD COLUMN IF NOT EXISTS alvara_expiry_date DATE"
+                )
+            )
+    except Exception as e:
+        logger.warning("Migração automática de alvara em kudiba_core.tenants ignorada: %s", e)
+
     yield
     await engine.dispose()
     await auth_engine.dispose()

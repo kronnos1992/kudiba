@@ -132,6 +132,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
     company_name: '',
     trade_name: '',
     nif: '',
+    alvara_number: '',
+    alvara_issue_date: '',
+    alvara_expiry_date: '',
     commercial_registry: '',
     share_capital: '',
     currency: 'AOA',
@@ -203,6 +206,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
       company_name: src.company_name || (src as any).name || '',
       trade_name: src.trade_name || (src as any).name || '',
       nif: src.nif || (src as any).taxId || '',
+      alvara_number: src.alvara_number || '',
+      alvara_issue_date: src.alvara_issue_date || '',
+      alvara_expiry_date: src.alvara_expiry_date || '',
       commercial_registry: src.commercial_registry || '',
       share_capital: src.share_capital || '',
       currency: src.currency || 'AOA',
@@ -386,6 +392,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
         company_name: companyForm.company_name.trim(),
         trade_name: companyForm.trade_name.trim() || companyForm.company_name.trim(),
         nif: companyForm.nif.trim(),
+        alvara_number: companyForm.alvara_number.trim() || null,
+        alvara_issue_date: companyForm.alvara_issue_date || null,
+        alvara_expiry_date: companyForm.alvara_expiry_date || null,
         commercial_registry: companyForm.commercial_registry.trim() || null,
         share_capital: companyForm.share_capital.trim() || null,
         currency: companyForm.currency,
@@ -748,6 +757,49 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                     onChange={(e) => setCompanyForm((prev) => ({ ...prev, nif: e.target.value }))}
                     placeholder="Ex: 5417123456"
                     className="input-field font-mono font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block mb-1">
+                    N.º do Alvará Comercial
+                  </label>
+                  <input
+                    type="text"
+                    value={companyForm.alvara_number}
+                    onChange={(e) =>
+                      setCompanyForm((prev) => ({ ...prev, alvara_number: e.target.value }))
+                    }
+                    placeholder="Ex: ALV-2026/00412"
+                    className="input-field font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block mb-1">
+                    Data de Emissão do Alvará
+                  </label>
+                  <input
+                    type="date"
+                    value={companyForm.alvara_issue_date}
+                    onChange={(e) =>
+                      setCompanyForm((prev) => ({ ...prev, alvara_issue_date: e.target.value }))
+                    }
+                    className="input-field"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block mb-1">
+                    Data de Validade do Alvará
+                  </label>
+                  <input
+                    type="date"
+                    value={companyForm.alvara_expiry_date}
+                    onChange={(e) =>
+                      setCompanyForm((prev) => ({ ...prev, alvara_expiry_date: e.target.value }))
+                    }
+                    className="input-field"
                   />
                 </div>
 

@@ -18,6 +18,9 @@ CREATE TABLE IF NOT EXISTS kudiba_backoffice.clients (
     tenant_id UUID NOT NULL UNIQUE,
     company_name VARCHAR(255) NOT NULL,
     nif VARCHAR(20) NOT NULL UNIQUE,
+    alvara_number VARCHAR(64),
+    alvara_issue_date DATE,
+    alvara_expiry_date DATE,
     contact_name VARCHAR(255),
     contact_email VARCHAR(255),
     contact_phone VARCHAR(32),
@@ -25,6 +28,11 @@ CREATE TABLE IF NOT EXISTS kudiba_backoffice.clients (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE kudiba_backoffice.clients
+    ADD COLUMN IF NOT EXISTS alvara_number VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS alvara_issue_date DATE,
+    ADD COLUMN IF NOT EXISTS alvara_expiry_date DATE;
 
 -- -----------------------------------------------------------------------------
 -- 2. LICENÇAS ANUAIS (períodos de subscrição com módulos escolhidos)

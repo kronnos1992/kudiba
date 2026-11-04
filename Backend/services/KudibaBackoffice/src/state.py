@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src.application.alvara_verifier import VerifyAlvaraUseCase
 from src.application.commands import (
     CreateClientUseCase,
     RenewLicenseUseCase,
@@ -37,6 +38,7 @@ class AppState:
     get_client: GetClientUseCase
     get_platform_summary: GetPlatformSummaryUseCase
     get_platform_commercial_summary: GetPlatformCommercialSummaryUseCase
+    verify_alvara: VerifyAlvaraUseCase
     tenant_provisioner: SqlAlchemyTenantProvisioner
 
 
@@ -69,5 +71,6 @@ def create_app_state(
         get_platform_commercial_summary=GetPlatformCommercialSummaryUseCase(
             client_repo, sync=sync_tenants
         ),
+        verify_alvara=VerifyAlvaraUseCase(),
         tenant_provisioner=provisioner,
     )

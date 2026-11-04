@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import List, Optional
 
-from sqlalchemy import ARRAY, Boolean, DateTime, String
+from sqlalchemy import ARRAY, Boolean, Date, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -23,6 +23,9 @@ class TenantModel(AuthBase):
     slug: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     company_name: Mapped[str] = mapped_column(String(255), nullable=False)
     nif: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    alvara_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    alvara_issue_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    alvara_expiry_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)

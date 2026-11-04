@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS kudiba_core.tenants (
     city VARCHAR(128),
     country VARCHAR(2),
     commercial_registry VARCHAR(64),
+    alvara_number VARCHAR(64),
+    alvara_issue_date DATE,
+    alvara_expiry_date DATE,
     tax_office_code VARCHAR(32),
     agt_cert_number VARCHAR(64),
     status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE', -- ACTIVE, SUSPENDED, CONTINGENCY

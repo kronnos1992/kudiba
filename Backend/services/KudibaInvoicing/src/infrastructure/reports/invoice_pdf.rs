@@ -183,6 +183,12 @@ impl InvoicePdfGenerator {
             .unwrap_or("999999999");
 
         let mut nif_line = format!("NIF: {}", issuer_nif);
+        if let Some(alvara) = tenant
+            .and_then(|t| t.alvara_number.as_deref())
+            .filter(|s| !s.trim().is_empty())
+        {
+            nif_line.push_str(&format!(" | Alvará: {}", alvara));
+        }
         if let Some(reg) = tenant
             .and_then(|t| t.commercial_registry.as_deref())
             .filter(|s| !s.trim().is_empty())
@@ -1712,6 +1718,7 @@ mod tests {
                 "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
                     .to_string(),
             ),
+            alvara_number: None,
             commercial_registry: None,
             share_capital: None,
             currency: Some("AOA".to_string()),

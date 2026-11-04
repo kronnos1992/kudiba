@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -17,6 +18,9 @@ from src.presentation.http.deps import SecurityContext, get_app_state, require_p
 class CreateClientHttpRequest(BaseModel):
     company_name: str = Field(..., min_length=2, max_length=255)
     nif: str = Field(..., min_length=3, max_length=20)
+    alvara_number: str = Field(..., min_length=2, max_length=64, description="Número do Alvará Comercial")
+    alvara_issue_date: date = Field(..., description="Data de Emissão do Alvará Comercial")
+    alvara_expiry_date: date = Field(..., description="Data de Validade do Alvará Comercial")
     modules: List[str] = Field(..., min_length=1)
     contact_name: Optional[str] = Field(None, max_length=255)
     contact_email: Optional[EmailStr] = None
@@ -31,10 +35,21 @@ class CreateClientHttpRequest(BaseModel):
 
 class UpdateClientHttpRequest(BaseModel):
     company_name: Optional[str] = Field(None, min_length=2, max_length=255)
+    alvara_number: Optional[str] = Field(None, max_length=64, description="Número do Alvará Comercial")
+    alvara_issue_date: Optional[date] = Field(None, description="Data de Emissão do Alvará Comercial")
+    alvara_expiry_date: Optional[date] = Field(None, description="Data de Validade do Alvará Comercial")
     contact_name: Optional[str] = Field(None, max_length=255)
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = Field(None, max_length=32)
     notes: Optional[str] = None
+
+
+class VerifyAlvaraHttpRequest(BaseModel):
+    alvara_number: str = Field(..., min_length=2, max_length=64)
+    nif: Optional[str] = Field(None, max_length=20)
+    alvara_issue_date: Optional[date] = None
+    alvara_expiry_date: Optional[date] = None
+    probe_remote: bool = Field(default=True)
 
 
 class RenewLicenseHttpRequest(BaseModel):
@@ -114,6 +129,9 @@ def create_backoffice_router() -> APIRouter:
         cmd = CreateClientCommand(
             company_name=req.company_name,
             nif=req.nif,
+            alvara_number=req.alvara_number,
+            alvara_issue_date=req.alvara_issue_date,
+            alvara_expiry_date=req.alvara_expiry_date,
             modules=req.modules,
             contact_name=req.contact_name,
             contact_email=req.contact_email,
@@ -126,6 +144,46 @@ def create_backoffice_router() -> APIRouter:
             admin_password=req.admin_password,
         )
         return await app_state.create_client.execute(cmd)
+
+    @router.post(
+        "/alvara/verify",
+        summary="Verificar Validade do Alvará Comercial",
+        description="Valida o formato, datas de emissão/validade e testa conectividade/links das plataformas oficiais de Angola (SILAC/MINDCOM, GUE, SEPE e AGT).",
+    )
+    async def verify_alvara(
+        req: VerifyAlvaraHttpRequest,
+        request: Request,
+        _: SecurityContext = Depends(require_platform_admin),
+    ):
+        app_state = get_app_state(request)
+        return await app_state.verify_alvara.execute(
+            alvara_number=req.alvara_number,
+            nif=req.nif,
+            alvara_issue_date=req.alvara_issue_date,
+            alvara_expiry_date=req.alvara_expiry_date,
+            probe_remote=req.probe_remote,
+        )
+
+    @router.post(
+        "/clients/{client_id}/verify-alvara",
+        summary="Verificar Alvará Comercial do Cliente",
+        description="Executa a verificação do alvará comercial registado no cliente e devolve os links e estado nas plataformas oficiais.",
+    )
+    async def verify_client_alvara(
+        client_id: uuid.UUID,
+        request: Request,
+        probe_remote: bool = Query(default=True),
+        _: SecurityContext = Depends(require_platform_admin),
+    ):
+        app_state = get_app_state(request)
+        detail = await app_state.get_client.execute(client_id)
+        return await app_state.verify_alvara.execute(
+            alvara_number=detail.alvara_number or "",
+            nif=detail.nif,
+            alvara_issue_date=detail.alvara_issue_date,
+            alvara_expiry_date=detail.alvara_expiry_date,
+            probe_remote=probe_remote,
+        )
 
     @router.get(
         "/clients/{client_id}",
@@ -155,6 +213,9 @@ def create_backoffice_router() -> APIRouter:
         cmd = UpdateClientCommand(
             client_id=client_id,
             company_name=req.company_name,
+            alvara_number=req.alvara_number,
+            alvara_issue_date=req.alvara_issue_date,
+            alvara_expiry_date=req.alvara_expiry_date,
             contact_name=req.contact_name,
             contact_email=req.contact_email,
             contact_phone=req.contact_phone,

@@ -265,6 +265,7 @@ mod tests {
                     email: None,
                     website: None,
                     logo_data_url: None,
+                    alvara_number: None,
                     commercial_registry: None,
                     share_capital: None,
                     currency: Some("AOA".to_string()),

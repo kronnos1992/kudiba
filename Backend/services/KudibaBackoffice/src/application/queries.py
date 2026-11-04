@@ -1,7 +1,7 @@
 from typing import List, Optional
 from datetime import date, datetime, timezone
 
-from src.application.commands import build_client_detail, license_to_dto
+from src.application.commands import build_client_detail, derive_client_alvara_status, license_to_dto
 from src.application.dto import (
     ClientDetailDto,
     ClientDto,
@@ -39,6 +39,10 @@ class ListClientsUseCase:
                 tenant_id=client.tenant_id,
                 company_name=client.company_name,
                 nif=client.nif,
+                alvara_number=client.alvara_number,
+                alvara_issue_date=client.alvara_issue_date,
+                alvara_expiry_date=client.alvara_expiry_date,
+                alvara_status=derive_client_alvara_status(client),
                 contact_name=client.contact_name,
                 contact_email=client.contact_email,
                 contact_phone=client.contact_phone,

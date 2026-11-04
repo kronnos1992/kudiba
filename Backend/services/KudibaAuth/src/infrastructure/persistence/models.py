@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
-from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, ForeignKey, ForeignKeyConstraint, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import ARRAY, BigInteger, Boolean, Date, DateTime, ForeignKey, ForeignKeyConstraint, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
 
@@ -50,6 +50,9 @@ class TenantModel(Base):
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     website: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     logo_data_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    alvara_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    alvara_issue_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    alvara_expiry_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     commercial_registry: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     share_capital: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), default="AOA", nullable=False)

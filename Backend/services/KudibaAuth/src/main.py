@@ -42,6 +42,19 @@ async def lifespan(app: FastAPI):
     # Armazena app_state no estado global da aplicação
     app.state.app_state = app_state
 
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "ALTER TABLE kudiba_core.tenants "
+                    "ADD COLUMN IF NOT EXISTS alvara_number VARCHAR(64), "
+                    "ADD COLUMN IF NOT EXISTS alvara_issue_date DATE, "
+                    "ADD COLUMN IF NOT EXISTS alvara_expiry_date DATE"
+                )
+            )
+    except Exception as e:
+        logger.warning("Migração automática de alvara em kudiba_core.tenants ignorada: %s", e)
+
     # Auto-bootstrap do utilizador SYSADMIN se ativado no deploy
     if settings.bootstrap_sysadmin_enabled:
         try:

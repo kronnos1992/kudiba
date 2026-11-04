@@ -25,6 +25,10 @@ class ClientDto:
     tenant_id: uuid.UUID
     company_name: str
     nif: str
+    alvara_number: Optional[str]
+    alvara_issue_date: Optional[date]
+    alvara_expiry_date: Optional[date]
+    alvara_status: str
     contact_name: Optional[str]
     contact_email: Optional[str]
     contact_phone: Optional[str]
@@ -45,6 +49,9 @@ class CreateClientCommand:
     company_name: str
     nif: str
     modules: List[str]
+    alvara_number: Optional[str] = None
+    alvara_issue_date: Optional[date] = None
+    alvara_expiry_date: Optional[date] = None
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
@@ -60,10 +67,42 @@ class CreateClientCommand:
 class UpdateClientCommand:
     client_id: uuid.UUID
     company_name: Optional[str] = None
+    alvara_number: Optional[str] = None
+    alvara_issue_date: Optional[date] = None
+    alvara_expiry_date: Optional[date] = None
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
     notes: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class AlvaraPlatformCheckDto:
+    id: str
+    name: str
+    entity: str
+    portal_url: str
+    verification_url: str
+    reachable: Optional[bool]
+    latency_ms: Optional[int]
+    status_message: str
+
+
+@dataclass(frozen=True)
+class AlvaraVerificationResultDto:
+    alvara_number: str
+    nif: Optional[str]
+    alvara_issue_date: Optional[date]
+    alvara_expiry_date: Optional[date]
+    valid: bool
+    status: str
+    format_valid: bool
+    dates_valid: bool
+    is_expired: bool
+    days_remaining: Optional[int]
+    message: str
+    checked_at: datetime
+    official_platforms: List[AlvaraPlatformCheckDto] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

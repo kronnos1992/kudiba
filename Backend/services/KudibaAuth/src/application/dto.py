@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 
@@ -35,6 +35,9 @@ class TenantSummaryDto:
     email: Optional[str] = None
     website: Optional[str] = None
     logo_data_url: Optional[str] = None
+    alvara_number: Optional[str] = None
+    alvara_issue_date: Optional[date] = None
+    alvara_expiry_date: Optional[date] = None
     commercial_registry: Optional[str] = None
     share_capital: Optional[str] = None
     currency: str = "AOA"
@@ -76,6 +79,9 @@ class TenantSettingsDto:
     status: str
     subscribed_modules: List[str] = field(default_factory=list)
     license_valid_until: Optional[datetime] = None
+    alvara_number: Optional[str] = None
+    alvara_issue_date: Optional[date] = None
+    alvara_expiry_date: Optional[date] = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +100,9 @@ class UpdateTenantSettingsCommand:
     email: Optional[str] = None
     website: Optional[str] = None
     logo_data_url: Optional[str] = None
+    alvara_number: Optional[str] = None
+    alvara_issue_date: Optional[date] = None
+    alvara_expiry_date: Optional[date] = None
     commercial_registry: Optional[str] = None
     share_capital: Optional[str] = None
     currency: Optional[str] = None

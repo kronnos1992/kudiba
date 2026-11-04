@@ -1,7 +1,7 @@
 import asyncio
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 import asyncpg
@@ -93,6 +93,9 @@ class UpdateTenantSettingsHttpRequest(BaseModel):
     email: Optional[str] = Field(None, max_length=255, description="E-mail oficial nos documentos")
     website: Optional[str] = Field(None, max_length=255, description="Website oficial")
     logo_data_url: Optional[str] = Field(None, description="Logótipo da empresa em Base64 Data URL ou URL")
+    alvara_number: Optional[str] = Field(None, max_length=64, description="Número do Alvará Comercial")
+    alvara_issue_date: Optional[date] = Field(None, description="Data de Emissão do Alvará Comercial")
+    alvara_expiry_date: Optional[date] = Field(None, description="Data de Validade do Alvará Comercial")
     commercial_registry: Optional[str] = Field(None, max_length=64, description="Conservatória / Matrícula Comercial")
     share_capital: Optional[str] = Field(None, max_length=64, description="Capital Social")
     currency: Optional[str] = Field(None, max_length=3, description="Moeda operacional (AOA, USD, EUR)")
@@ -315,6 +318,9 @@ def create_auth_router() -> APIRouter:
             email=req.email,
             website=req.website,
             logo_data_url=req.logo_data_url,
+            alvara_number=req.alvara_number,
+            alvara_issue_date=req.alvara_issue_date,
+            alvara_expiry_date=req.alvara_expiry_date,
             commercial_registry=req.commercial_registry,
             share_capital=req.share_capital,
             currency=req.currency,

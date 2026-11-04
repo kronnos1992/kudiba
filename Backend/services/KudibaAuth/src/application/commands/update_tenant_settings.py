@@ -85,6 +85,24 @@ class UpdateTenantSettingsUseCase:
             if cmd.logo_data_url is not None:
                 tenant.logo_data_url = _clean_opt(cmd.logo_data_url)
 
+            if cmd.alvara_number is not None:
+                tenant.alvara_number = _clean_opt(cmd.alvara_number)
+
+            if cmd.alvara_issue_date is not None:
+                tenant.alvara_issue_date = cmd.alvara_issue_date
+
+            if cmd.alvara_expiry_date is not None:
+                tenant.alvara_expiry_date = cmd.alvara_expiry_date
+
+            if (
+                tenant.alvara_issue_date is not None
+                and tenant.alvara_expiry_date is not None
+                and tenant.alvara_expiry_date <= tenant.alvara_issue_date
+            ):
+                raise DomainError(
+                    "A data de validade do alvará comercial deve ser posterior à data de emissão."
+                )
+
             if cmd.commercial_registry is not None:
                 tenant.commercial_registry = _clean_opt(cmd.commercial_registry)
 

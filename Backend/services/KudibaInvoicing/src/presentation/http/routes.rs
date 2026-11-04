@@ -2676,7 +2676,7 @@ async fn load_tenant_by_id(
     tenant_id: Uuid,
 ) -> Option<crate::domain::entities::tenant::Tenant> {
     let sql = "SELECT id, slug, company_name, trade_name, nif, address_detail, city, province, postal_code, country, \
-               phone, email, website, logo_data_url, commercial_registry, share_capital, currency, tax_office_code, \
+               phone, email, website, logo_data_url, alvara_number, commercial_registry, share_capital, currency, tax_office_code, \
                agt_cert_number, invoice_footer_notes, bank_accounts, status, tax_regime_code, contingency_started_at \
                FROM kudiba_core.tenants WHERE id = $1";
     let row = sqlx::query(sql)
@@ -2737,6 +2737,8 @@ struct UpsertFiscalTenantRequest {
     pub website: Option<String>,
     #[serde(alias = "logo_data_url")]
     pub logo_data_url: Option<String>,
+    #[serde(alias = "alvara_number")]
+    pub alvara_number: Option<String>,
     #[serde(alias = "commercial_registry")]
     pub commercial_registry: Option<String>,
     #[serde(alias = "share_capital")]
@@ -2811,7 +2813,7 @@ async fn upsert_fiscal_tenant_handler(
             id, slug, company_name, trade_name, nif,
             address_detail, city, province, postal_code, country,
             phone, email, website, logo_data_url,
-            commercial_registry, share_capital, currency,
+            alvara_number, commercial_registry, share_capital, currency,
             tax_regime_code, tax_office_code, agt_cert_number,
             default_withholding_rate, invoice_footer_notes, bank_accounts,
             onboarding_completed, status
@@ -2819,10 +2821,10 @@ async fn upsert_fiscal_tenant_handler(
             $1, $2, $3, $4, $5,
             $6, $7, $8, $9, $10,
             $11, $12, $13, $14,
-            $15, $16, $17,
-            $18, $19, $20,
-            $21, $22, $23::jsonb,
-            $24, 'ACTIVE'
+            $15, $16, $17, $18,
+            $19, $20, $21,
+            $22, $23, $24::jsonb,
+            $25, 'ACTIVE'
         )
         ON CONFLICT (id) DO UPDATE SET
             company_name = EXCLUDED.company_name,
@@ -2837,6 +2839,7 @@ async fn upsert_fiscal_tenant_handler(
             email = EXCLUDED.email,
             website = EXCLUDED.website,
             logo_data_url = COALESCE(EXCLUDED.logo_data_url, kudiba_core.tenants.logo_data_url),
+            alvara_number = COALESCE(EXCLUDED.alvara_number, kudiba_core.tenants.alvara_number),
             commercial_registry = EXCLUDED.commercial_registry,
             share_capital = EXCLUDED.share_capital,
             currency = EXCLUDED.currency,
@@ -2865,6 +2868,7 @@ async fn upsert_fiscal_tenant_handler(
         .bind(payload.email.as_deref().map(str::trim))
         .bind(payload.website.as_deref().map(str::trim))
         .bind(payload.logo_data_url.as_deref())
+        .bind(payload.alvara_number.as_deref().map(str::trim))
         .bind(payload.commercial_registry.as_deref().map(str::trim))
         .bind(payload.share_capital.as_deref().map(str::trim))
         .bind(&currency)

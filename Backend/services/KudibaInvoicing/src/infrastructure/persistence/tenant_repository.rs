@@ -9,14 +9,14 @@ use crate::domain::ports::tenant_repository::TenantRepository;
 
 const SELECT_TENANT_BY_ID: &str =
     "SELECT id, slug, company_name, trade_name, nif, address_detail, city, province, postal_code, country, \
-     phone, email, website, logo_data_url, commercial_registry, share_capital, currency, tax_office_code, \
+     phone, email, website, logo_data_url, alvara_number, commercial_registry, share_capital, currency, tax_office_code, \
      agt_cert_number, invoice_footer_notes, bank_accounts::text AS bank_accounts, status, tax_regime_code, contingency_started_at \
      FROM kudiba_core.tenants WHERE id = $1";
 
 #[allow(dead_code)]
 const SELECT_TENANT_BY_SLUG: &str =
     "SELECT id, slug, company_name, trade_name, nif, address_detail, city, province, postal_code, country, \
-     phone, email, website, logo_data_url, commercial_registry, share_capital, currency, tax_office_code, \
+     phone, email, website, logo_data_url, alvara_number, commercial_registry, share_capital, currency, tax_office_code, \
      agt_cert_number, invoice_footer_notes, bank_accounts::text AS bank_accounts, status, tax_regime_code, contingency_started_at \
      FROM kudiba_core.tenants WHERE slug = $1";
 
@@ -50,6 +50,7 @@ impl PgTenantRepository {
             email: row.try_get("email").ok().flatten(),
             website: row.try_get("website").ok().flatten(),
             logo_data_url: row.try_get("logo_data_url").ok().flatten(),
+            alvara_number: row.try_get("alvara_number").ok().flatten(),
             commercial_registry: row.try_get("commercial_registry")?,
             share_capital: row.try_get("share_capital").ok().flatten(),
             currency: row.try_get("currency").ok().flatten(),

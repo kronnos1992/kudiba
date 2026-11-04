@@ -1,10 +1,12 @@
 import { apiClient } from './client';
 import {
+  AlvaraVerificationResult,
   BackofficeClient,
   BackofficeModule,
   CreateClientPayload,
   RenewLicensePayload,
   UpdateClientPayload,
+  VerifyAlvaraPayload,
 } from '../types/backoffice';
 
 export const backofficeApi = {
@@ -61,6 +63,26 @@ export const backofficeApi = {
   getSummary: async (): Promise<import('../types/backoffice').PlatformSummary> => {
     const res = await apiClient.get<import('../types/backoffice').PlatformSummary>(
       '/api/v1/backoffice/summary'
+    );
+    return res.data;
+  },
+
+  verifyAlvara: async (payload: VerifyAlvaraPayload): Promise<AlvaraVerificationResult> => {
+    const res = await apiClient.post<AlvaraVerificationResult>(
+      '/api/v1/backoffice/alvara/verify',
+      payload
+    );
+    return res.data;
+  },
+
+  verifyClientAlvara: async (
+    clientId: string,
+    probeRemote = true
+  ): Promise<AlvaraVerificationResult> => {
+    const res = await apiClient.post<AlvaraVerificationResult>(
+      `/api/v1/backoffice/clients/${clientId}/verify-alvara`,
+      null,
+      { params: { probe_remote: probeRemote } }
     );
     return res.data;
   },

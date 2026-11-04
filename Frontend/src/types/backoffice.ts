@@ -20,11 +20,52 @@ export interface License {
   created_at?: string | null;
 }
 
+export type AlvaraStatus = 'VALID' | 'EXPIRING_SOON' | 'EXPIRED' | 'INVALID' | 'UNVERIFIED' | 'MISSING';
+
+export interface AlvaraPlatformCheck {
+  id: string;
+  name: string;
+  entity: string;
+  portal_url: string;
+  verification_url: string;
+  reachable?: boolean | null;
+  latency_ms?: number | null;
+  status_message: string;
+}
+
+export interface AlvaraVerificationResult {
+  alvara_number: string;
+  nif?: string | null;
+  alvara_issue_date?: string | null;
+  alvara_expiry_date?: string | null;
+  valid: boolean;
+  status: AlvaraStatus | string;
+  format_valid: boolean;
+  dates_valid: boolean;
+  is_expired: boolean;
+  days_remaining?: number | null;
+  message: string;
+  checked_at: string;
+  official_platforms: AlvaraPlatformCheck[];
+}
+
+export interface VerifyAlvaraPayload {
+  alvara_number: string;
+  nif?: string | null;
+  alvara_issue_date?: string | null;
+  alvara_expiry_date?: string | null;
+  probe_remote?: boolean;
+}
+
 export interface BackofficeClient {
   id: string;
   tenant_id: string;
   company_name: string;
   nif: string;
+  alvara_number?: string | null;
+  alvara_issue_date?: string | null;
+  alvara_expiry_date?: string | null;
+  alvara_status?: AlvaraStatus | string;
   contact_name?: string | null;
   contact_email?: string | null;
   contact_phone?: string | null;
@@ -39,6 +80,9 @@ export interface BackofficeClient {
 export interface CreateClientPayload {
   company_name: string;
   nif: string;
+  alvara_number: string;
+  alvara_issue_date: string;
+  alvara_expiry_date: string;
   modules: string[];
   contact_name?: string | null;
   contact_email?: string | null;
@@ -53,6 +97,9 @@ export interface CreateClientPayload {
 
 export interface UpdateClientPayload {
   company_name?: string;
+  alvara_number?: string | null;
+  alvara_issue_date?: string | null;
+  alvara_expiry_date?: string | null;
   contact_name?: string | null;
   contact_email?: string | null;
   contact_phone?: string | null;

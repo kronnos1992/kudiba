@@ -114,6 +114,9 @@ export interface UpdateTenantSettingsPayload {
   website?: string | null;
   logo_data_url?: string | null;
   commercial_registry?: string | null;
+  alvara_number?: string | null;
+  alvara_issue_date?: string | null;
+  alvara_expiry_date?: string | null;
   share_capital?: string | null;
   currency?: string;
   tax_regime_code?: string;

@@ -1,6 +1,6 @@
 import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import date, datetime
 from typing import Dict, List, Optional, Sequence
 
 from src.domain.entities import Client, License, TenantRecord
@@ -75,6 +75,9 @@ class ITenantProvisioner(ABC):
         slug: str,
         company_name: str,
         nif: str,
+        alvara_number: Optional[str] = None,
+        alvara_issue_date: Optional[date] = None,
+        alvara_expiry_date: Optional[date] = None,
         license_valid_until: datetime,
         modules: List[str],
         admin_email: Optional[str] = None,
