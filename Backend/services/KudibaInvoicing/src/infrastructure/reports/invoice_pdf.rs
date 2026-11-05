@@ -200,21 +200,28 @@ impl InvoicePdfGenerator {
         );
         header_y -= 9.5;
 
-        if let Some(cap) = tenant
-            .and_then(|t| t.share_capital.as_deref())
+        let phone = tenant
+            .and_then(|t| t.phone.as_deref())
             .filter(|s| !s.trim().is_empty())
-        {
-            Self::add_text(
-                &mut operations,
-                "F1",
-                7.2,
-                header_left_x,
-                header_y,
-                &format!("Capital Social: {}", cap),
-                (0.35, 0.35, 0.35),
-            );
-            header_y -= 9.5;
-        }
+            .unwrap_or("+244 923 000 000");
+        let email = tenant
+            .and_then(|t| t.email.as_deref())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("geral@kudiba.ao");
+        let website = tenant
+            .and_then(|t| t.website.as_deref())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("https://kudiba.ao");
+        Self::add_text(
+            &mut operations,
+            "F1",
+            6.8,
+            header_left_x,
+            header_y,
+            &format!("Tel: {} | {} | {}", phone, email, website),
+            (0.4, 0.4, 0.4),
+        );
+        header_y -= 9.5;
 
         let issuer_addr = invoice
             .issuer_address
@@ -240,31 +247,6 @@ impl InvoicePdfGenerator {
             &format!("{}, {} - {}", issuer_addr, issuer_city, issuer_country),
             (0.35, 0.35, 0.35),
         );
-        header_y -= 9.5;
-
-        if let Some(t) = tenant {
-            let mut contacts = Vec::new();
-            if let Some(p) = t.phone.as_deref().filter(|s| !s.trim().is_empty()) {
-                contacts.push(format!("Tel: {}", p));
-            }
-            if let Some(e) = t.email.as_deref().filter(|s| !s.trim().is_empty()) {
-                contacts.push(e.to_string());
-            }
-            if let Some(w) = t.website.as_deref().filter(|s| !s.trim().is_empty()) {
-                contacts.push(w.to_string());
-            }
-            if !contacts.is_empty() {
-                Self::add_text(
-                    &mut operations,
-                    "F1",
-                    6.8,
-                    header_left_x,
-                    header_y,
-                    &contacts.join(" | "),
-                    (0.4, 0.4, 0.4),
-                );
-            }
-        }
 
         // Tipo e Identificação do Documento (Lado Direito - alinhado à direita para criar intervalo central)
         let doc_title = match invoice.document_type.as_str() {
@@ -2098,9 +2080,9 @@ mod tests {
             province: Some("Luanda".to_string()),
             postal_code: None,
             country: Some("Angola".to_string()),
-            phone: Some("+244 923 000 000".to_string()),
-            email: Some("geral@kudiba.ao".to_string()),
-            website: Some("https://kudiba.ao".to_string()),
+            phone: None,
+            email: None,
+            website: None,
             logo_data_url: None,
             currency: Some("AOA".to_string()),
             tax_office_code: Some("01".to_string()),

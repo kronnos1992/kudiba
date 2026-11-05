@@ -84,7 +84,7 @@ const SELECT_INVOICES_BY_PERIOD_PAGINATED: &str =
      WHERE tenant_id = $1 \
        AND EXTRACT(YEAR FROM issued_at)::INT = $2 \
        AND ($3::INT IS NULL OR EXTRACT(MONTH FROM issued_at)::INT = $3) \
-     ORDER BY issued_at ASC, sequence_number ASC \
+     ORDER BY issued_at DESC, sequence_number DESC \
      LIMIT $4 OFFSET $5";
 
 const SELECT_LINES_FOR_INVOICES: &str =
