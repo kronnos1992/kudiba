@@ -1,4 +1,5 @@
 import re
+import logging
 import secrets
 import unicodedata
 import uuid
@@ -25,12 +26,15 @@ from src.domain.error import (
 )
 from src.domain.modules import validate_modules
 from src.domain.ports import (
+    IChartProvisioner,
     IClientRepository,
     ILicenseRepository,
     ITenantProvisioner,
     ITenantReader,
 )
 from src.infrastructure.security.password_hasher import Argon2PasswordHasher
+
+logger = logging.getLogger(__name__)
 
 
 def add_one_year(value: date) -> date:
@@ -97,6 +101,8 @@ def build_client_detail(
         license=license_to_dto(current) if current else None,
         created_at=client.created_at,
         updated_at=client.updated_at,
+        sector_code=client.sector_code,
+        accounting_template_code=client.accounting_template_code,
     )
     return ClientDetailDto(
         **base.__dict__,
@@ -121,10 +127,12 @@ class CreateClientUseCase:
         client_repo: IClientRepository,
         license_repo: ILicenseRepository,
         provisioner: ITenantProvisioner,
+        chart_provisioner: Optional[IChartProvisioner] = None,
     ):
         self.client_repo = client_repo
         self.license_repo = license_repo
         self.provisioner = provisioner
+        self.chart_provisioner = chart_provisioner
 
     async def execute(self, cmd: CreateClientCommand) -> ClientDetailDto:
         modules = validate_modules(cmd.modules)
@@ -137,19 +145,38 @@ class CreateClientUseCase:
         if cmd.admin_email and not cmd.admin_full_name:
             raise DomainError("Indique o nome completo do administrador.")
 
+        sector_code = (cmd.sector_code or "GERAL").strip().upper()
+        if not re.fullmatch(r"[A-Z0-9_\-]{2,32}", sector_code):
+            raise DomainError("O código do setor de atividade é inválido.")
+        accounting_template_code = (cmd.accounting_template_code or "PGC_GENERIC").strip().upper()
+        if not re.fullmatch(r"[A-Z0-9_\-]{2,64}", accounting_template_code):
+            raise DomainError("O código do template de plano de contas é inválido.")
+
         nif = cmd.nif.strip()
         alvara_number = (cmd.alvara_number or "").strip()
         if not alvara_number:
             raise DomainError("Indique o número do alvará comercial do cliente.")
         today = date.today()
-        if cmd.alvara_issue_date is not None and cmd.alvara_issue_date > today:
+
+        issue_date = cmd.alvara_issue_date
+        expiry_date = cmd.alvara_expiry_date
+        if issue_date is None or expiry_date is None:
+            year_match = re.search(r"\b(20[12][0-9])\b", alvara_number)
+            if year_match:
+                year = int(year_match.group(1))
+                issue_date = issue_date or date(year, 1, 15)
+                expiry_date = expiry_date or date(year + 5, 1, 15)
+            else:
+                issue_date = issue_date or date(today.year, 1, 15)
+                expiry_date = expiry_date or date(today.year + 5, 1, 15)
+
+        if issue_date > today:
             raise DomainError("A data de emissão do alvará não pode ser posterior à data actual.")
-        if cmd.alvara_issue_date is not None and cmd.alvara_expiry_date is not None:
-            if cmd.alvara_expiry_date <= cmd.alvara_issue_date:
-                raise DomainError(
-                    "A data de validade do alvará deve ser posterior à data de emissão."
-                )
-        if cmd.alvara_expiry_date is not None and cmd.alvara_expiry_date < today:
+        if expiry_date <= issue_date:
+            raise DomainError(
+                "A data de validade do alvará deve ser posterior à data de emissão."
+            )
+        if expiry_date < today:
             raise DomainError("O alvará comercial informado já se encontra expirado.")
         if await self.client_repo.find_by_nif(nif) or await self.provisioner.nif_exists(nif):
             raise ConflictError(f"Já existe um cliente registado com o NIF {nif}.")
@@ -165,12 +192,14 @@ class CreateClientUseCase:
             company_name=cmd.company_name.strip(),
             nif=nif,
             alvara_number=alvara_number,
-            alvara_issue_date=cmd.alvara_issue_date,
-            alvara_expiry_date=cmd.alvara_expiry_date,
+            alvara_issue_date=issue_date,
+            alvara_expiry_date=expiry_date,
             contact_name=cmd.contact_name,
             contact_email=cmd.contact_email,
             contact_phone=cmd.contact_phone,
             notes=cmd.notes,
+            sector_code=sector_code,
+            accounting_template_code=accounting_template_code,
         )
         license_entity = License(
             id=uuid.uuid4(),
@@ -193,8 +222,10 @@ class CreateClientUseCase:
             company_name=client.company_name,
             nif=nif,
             alvara_number=alvara_number,
-            alvara_issue_date=cmd.alvara_issue_date,
-            alvara_expiry_date=cmd.alvara_expiry_date,
+            alvara_issue_date=issue_date,
+            alvara_expiry_date=expiry_date,
+            sector_code=sector_code,
+            accounting_template_code=accounting_template_code,
             license_valid_until=_mirror_datetime(valid_until),
             modules=modules,
             admin_email=cmd.admin_email.strip().lower() if cmd.admin_email else None,
@@ -204,6 +235,17 @@ class CreateClientUseCase:
         try:
             await self.client_repo.save(client)
             await self.license_repo.save(license_entity)
+            if self.chart_provisioner:
+                try:
+                    await self.chart_provisioner.provision_chart(
+                        client.tenant_id,
+                        accounting_template_code,
+                        applied_by=cmd.admin_email or "BACKOFFICE",
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Aviso ao provisionar plano de contas {accounting_template_code} para {client.company_name}: {e}"
+                    )
         except Exception:
             await self.provisioner.delete_tenant(client.tenant_id)
             raise

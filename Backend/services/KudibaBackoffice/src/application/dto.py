@@ -37,6 +37,8 @@ class ClientDto:
     license: Optional[LicenseDto]
     created_at: datetime
     updated_at: datetime
+    sector_code: str = "GERAL"
+    accounting_template_code: str = "PGC_GENERIC"
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,8 @@ class CreateClientCommand:
     admin_email: Optional[str] = None
     admin_full_name: Optional[str] = None
     admin_password: Optional[str] = None
+    sector_code: str = "GERAL"
+    accounting_template_code: str = "PGC_GENERIC"
 
 
 @dataclass(frozen=True)
@@ -103,6 +107,7 @@ class AlvaraVerificationResultDto:
     message: str
     checked_at: datetime
     official_platforms: List[AlvaraPlatformCheckDto] = field(default_factory=list)
+    auto_filled: bool = False
 
 
 @dataclass(frozen=True)

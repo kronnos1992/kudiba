@@ -24,7 +24,7 @@ from src.application.queries import (
 )
 from src.infrastructure.security import SecretCipher
 from src.main import app
-from tests.fakes import FakeEventPublisher, InMemoryIntegrationRepository
+from tests.fakes import FakeAuditRepository, FakeEventPublisher, InMemoryIntegrationRepository
 
 TENANT = str(uuid4())
 
@@ -46,6 +46,7 @@ def build_state(repository, publisher):
         get_endpoint=GetEndpointUseCase(repository),
         list_mappings=ListMappingsUseCase(repository),
         list_runs=ListRunsUseCase(repository),
+        audit_repo=FakeAuditRepository(),
     )
 
 
@@ -60,6 +61,16 @@ def client():
 
 def headers():
     return {"X-Resolved-Tenant-ID": TENANT}
+
+
+@pytest.mark.asyncio
+async def test_system_audit_trail_endpoint(client):
+    async with client as http:
+        response = await http.get("/api/v1/integrations/system-audit-trail", headers=headers())
+    assert response.status_code == 200
+    data = response.json()
+    assert "items" in data
+    assert "total" in data
 
 
 @pytest.mark.asyncio

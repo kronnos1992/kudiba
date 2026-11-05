@@ -13,7 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB, ENUM as PgEnum
+from sqlalchemy.dialects.postgresql import UUID, JSONB, INET, ENUM as PgEnum
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
 
 Base = declarative_base()
@@ -580,5 +580,25 @@ class ConflictAuditLogModel(Base):
     )
 
     case: Mapped["ConflictCaseModel"] = relationship("ConflictCaseModel", back_populates="audit_logs")
+
+
+class SystemAuditTrailModel(Base):
+    __tablename__ = "system_audit_trail"
+    __table_args__ = {"schema": "kudiba_audit"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    module: Mapped[str] = mapped_column(String(50), nullable=False)
+    action: Mapped[str] = mapped_column(String(100), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    document_reference: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    actor_user_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    actor_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(INET, nullable=True)
+    details: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
 
 

@@ -47,6 +47,22 @@ export interface AlvaraVerificationResult {
   message: string;
   checked_at: string;
   official_platforms: AlvaraPlatformCheck[];
+  auto_filled?: boolean;
+}
+
+export interface AccountingTemplate {
+  code: string;
+  name: string;
+  sector_code: string;
+  regulator?: string | null;
+  legal_reference?: string | null;
+  version?: string | null;
+  effective_from?: string | null;
+  effective_to?: string | null;
+  status: string;
+  description?: string | null;
+  portal_url?: string | null;
+  account_count?: number;
 }
 
 export interface VerifyAlvaraPayload {
@@ -66,6 +82,8 @@ export interface BackofficeClient {
   alvara_issue_date?: string | null;
   alvara_expiry_date?: string | null;
   alvara_status?: AlvaraStatus | string;
+  sector_code?: string;
+  accounting_template_code?: string;
   contact_name?: string | null;
   contact_email?: string | null;
   contact_phone?: string | null;
@@ -81,8 +99,10 @@ export interface CreateClientPayload {
   company_name: string;
   nif: string;
   alvara_number: string;
-  alvara_issue_date: string;
-  alvara_expiry_date: string;
+  alvara_issue_date?: string;
+  alvara_expiry_date?: string;
+  sector_code?: string;
+  accounting_template_code?: string;
   modules: string[];
   contact_name?: string | null;
   contact_email?: string | null;

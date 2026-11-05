@@ -236,16 +236,20 @@ async fn fetch_liquidity_details(
     }
 
     let cash_row = sqlx::query(
-        "SELECT COALESCE(SUM(opening_balance), 0) AS total_opening \
-         FROM kudiba_treasury.cash_sessions \
-         WHERE tenant_id = $1 AND status = 'OPEN'",
+        "SELECT \
+            COALESCE(SUM(cs.opening_balance), 0) + \
+            COALESCE(SUM(CASE WHEN cm.movement_type IN ('SALE_RECEIPT', 'SUPPLY') THEN cm.amount ELSE 0 END), 0) - \
+            COALESCE(SUM(CASE WHEN cm.movement_type IN ('BLEED', 'EXPENSE') THEN cm.amount ELSE 0 END), 0) AS total_cash \
+         FROM kudiba_treasury.cash_sessions cs \
+         LEFT JOIN kudiba_treasury.cash_movements cm ON cm.session_id = cs.id \
+         WHERE cs.tenant_id = $1 AND cs.status = 'OPEN'",
     )
     .bind(tenant_id)
     .fetch_one(pool)
     .await
     .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
-    let cash_in_hand_aoa: Decimal = cash_row.try_get("total_opening").unwrap_or(dec!(500000.0));
+    let cash_in_hand_aoa: Decimal = cash_row.try_get("total_cash").unwrap_or(Decimal::ZERO);
     let total_available_aoa = bank_balances_aoa + cash_in_hand_aoa;
     let pending_clearance_aoa = if total_available_aoa > reconciled_balance_aoa {
         total_available_aoa - reconciled_balance_aoa

@@ -26,6 +26,10 @@ class TenantModel(AuthBase):
     alvara_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     alvara_issue_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     alvara_expiry_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    sector_code: Mapped[str] = mapped_column(String(32), nullable=False, default="GERAL")
+    accounting_template_code: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="PGC_GENERIC"
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)

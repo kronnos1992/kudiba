@@ -34,6 +34,7 @@ export interface CashSession {
   closing_balance_counted: string | number | null;
   closing_balance_system: string | number | null;
   discrepancy: string | number | null;
+  current_balance?: string | number | null;
   status: SessionStatusType;
   notes: string | null;
   created_at: string;

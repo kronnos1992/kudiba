@@ -67,7 +67,21 @@ impl TreasuryQueries {
             .session_repo
             .find_open_session_by_register(tenant_id, register_id)
             .await?;
-        Ok(session.map(Into::into))
+        match session {
+            Some(s) => {
+                let movements = self
+                    .movement_repo
+                    .list_by_session(tenant_id, s.id)
+                    .await
+                    .unwrap_or_default();
+                let (_, _, _, _, expected) =
+                    ReconciliationService::calculate_system_balance(s.opening_balance, &movements);
+                let mut resp = CashSessionResponse::from(s);
+                resp.current_balance = Some(expected);
+                Ok(Some(resp))
+            }
+            None => Ok(None),
+        }
     }
 
     pub async fn get_cash_session(
@@ -80,7 +94,16 @@ impl TreasuryQueries {
             .find_by_id(tenant_id, id)
             .await?
             .ok_or_else(|| DomainError::NotFound(format!("Sessão '{}' não encontrada", id)))?;
-        Ok(session.into())
+        let movements = self
+            .movement_repo
+            .list_by_session(tenant_id, session.id)
+            .await
+            .unwrap_or_default();
+        let (_, _, _, _, expected) =
+            ReconciliationService::calculate_system_balance(session.opening_balance, &movements);
+        let mut resp = CashSessionResponse::from(session);
+        resp.current_balance = Some(expected);
+        Ok(resp)
     }
 
     pub async fn get_session_report(

@@ -17,6 +17,8 @@ class Client:
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
     notes: Optional[str] = None
+    sector_code: str = "GERAL"
+    accounting_template_code: str = "PGC_GENERIC"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 

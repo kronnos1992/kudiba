@@ -22,6 +22,7 @@ impl PayableCommands {
     pub async fn create_payable(
         &self,
         tenant_id: Uuid,
+        actor_user_id: &str,
         req: CreatePayableRequest,
     ) -> Result<InvoicePayableResponse, DomainError> {
         if req.supplier_name.trim().is_empty() {
@@ -94,6 +95,55 @@ impl PayableCommands {
         .execute(&self.pool)
         .await
         .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+        let audit_details = serde_json::json!({
+            "payable_id": id.to_string(),
+            "supplier_name": &req.supplier_name,
+            "supplier_nif": &req.supplier_nif,
+            "invoice_number": &req.invoice_number,
+            "activity_type": &activity_type,
+            "category": &category,
+            "currency": &currency,
+            "gross_total": req.gross_total.to_string(),
+            "withholding_rate": rate.to_string(),
+            "withholding_amount": withholding_amount.to_string(),
+            "net_payable": net_payable.to_string(),
+            "due_date": req.due_date.to_string(),
+            "issue_date": issue_date.to_string(),
+            "payment_method": &req.payment_method,
+            "notes": &req.notes
+        });
+
+        if let Err(err) = sqlx::query(
+            r#"
+            INSERT INTO kudiba_audit.system_audit_trail
+                (tenant_id, module, action, entity_type, entity_id, document_reference, actor_user_id, actor_name, details, created_at)
+            VALUES ($1, 'TESOURARIA', 'REGISTO_FACTURA_FORNECEDOR', 'FACTURA_FORNECEDOR', $2, $3, $4, $4, $5, NOW())
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(id.to_string())
+        .bind(&req.invoice_number)
+        .bind(actor_user_id)
+        .bind(audit_details)
+        .execute(&self.pool)
+        .await
+        {
+            tracing::warn!(
+                target: "audit::treasury",
+                payable_id = %id,
+                error = %err,
+                "Falha ao registar factura de fornecedor na trilha de auditoria"
+            );
+        }
+
+        tracing::info!(
+            target: "audit::treasury",
+            payable_id = %id,
+            invoice_number = %req.invoice_number,
+            supplier = %req.supplier_name,
+            "[AUDIT_TREASURY] Factura de fornecedor registada e auditada"
+        );
 
         Ok(InvoicePayableResponse {
             id,
@@ -238,6 +288,30 @@ impl PayableCommands {
         tx.commit()
             .await
             .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+        let audit_details = serde_json::json!({
+            "settlement_id": settlement_id,
+            "payable_id": payable_id,
+            "amount_paid": req.amount_paid,
+            "payment_method": &payment_method_str,
+            "payment_reference": &req.payment_reference,
+            "notes": &req.notes
+        });
+
+        let _ = sqlx::query(
+            r#"
+            INSERT INTO kudiba_audit.system_audit_trail
+                (tenant_id, module, action, entity_type, entity_id, document_reference, actor_user_id, actor_name, details, created_at)
+            VALUES ($1, 'TESOURARIA', 'LIQUIDACAO_FACTURA_FORNECEDOR', 'LIQUIDACAO_PAGAMENTO', $2, $3, $4, $4, $5, NOW())
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(settlement_id.to_string())
+        .bind(req.payment_reference.as_deref().unwrap_or("PAGAMENTO_FORNECEDOR"))
+        .bind(operator_user_id.to_string())
+        .bind(audit_details)
+        .execute(&self.pool)
+        .await;
 
         Ok(PayableSettlementResponse {
             id: settlement_id,

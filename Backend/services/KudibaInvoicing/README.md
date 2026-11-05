@@ -147,11 +147,10 @@ Backend/services/KudibaInvoicing/
   * **Apache Kafka / Redpanda** para streaming de eventos de alta vazão.
   * **In-Memory Broadcast Channel** para distribuição em tempo real no cluster gRPC.
 
-### 13. Conector Webservices da AGT (Comunicação em Tempo Real)
-* **Heartbeat & Detecção de Contingência (`GET /api/v1/fiscal/agt/status`)**:
-  * Monitora a conectividade com o portal da AGT, mede a latência em tempo real e sinaliza automaticamente o modo de contingência fiscal se o canal estiver indisponível.
-* **Despacho em Lote (`POST /api/v1/fiscal/agt/sync`)**:
-  * Agrupa documentos fiscais do período com hashes encadeados e assinaturas RSA em Base64 e submete ao endpoint oficial com protocolo de entrega `AGT-REC-YYYYMMDD-...`.
+### 13. Integração com os Webservices da AGT
+* O contrato oficial de registo de documentos (`POST /sigt/fe/v1/registarFactura`) está documentado em [`docs/agt/registar-factura.md`](../../../docs/agt/registar-factura.md). A AGT usa Basic Authentication e processamento assíncrono: a resposta inicial contém um `requestID`, que não representa validação final.
+* O conector actual ainda não envia documentos à AGT. `POST /api/v1/fiscal/agt/sync` está bloqueado até ser implementado o contrato oficial; `GET /api/v1/fiscal/agt/status` não é um health-check da AGT nem consulta o estado de uma factura.
+* A assinatura RSA Base64 local não substitui o JWS Compact RS256 pedido pela AGT. Não indicar uma factura como aceite pela AGT até a resposta final ser consultada e validada.
 
 ### 14. Suporte a Read-Replicas do PostgreSQL
 * O microserviço suporta separação transparente de tráfego de leitura e escrita:
@@ -227,7 +226,7 @@ O servidor gRPC roda concorrentemente na porta configurada (`GRPC_PORT`, padrão
 | `AGT_SOFTWARE_CERT` | `FE/528/AGT/2026` | Número oficial de certificação de software atribuído pela AGT |
 | `AGT_RSA_PRIVATE_KEY_PATH` | *(opcional)* | Caminho absoluto no disco para o arquivo PEM da chave privada RSA |
 | `AGT_RSA_PRIVATE_KEY_PEM` | *(opcional)* | Conteúdo textual direto em PEM da chave privada RSA-2048 |
-| `AGT_PLATFORM_URL` | `https://webservices.agt.minfin.gov.ao/...` | URL base dos webservices de faturação eletrónica da AGT |
+| `AGT_PLATFORM_URL` | `https://sifphml.minfin.gov.ao/sigt/fe/v1` | URL base de homologação dos webservices de faturação eletrónica da AGT |
 | `AGT_API_TOKEN` | *(opcional)* | Token Bearer de autorização mútua com a AGT |
 | `AGT_TIMEOUT_SECS` | `15` | Timeout em segundos para chamadas HTTP externas à AGT |
 | `OUTBOX_POLL_INTERVAL_MS` | `1000` | Frequência de leitura da transactional outbox (em milissegundos) |
@@ -235,7 +234,7 @@ O servidor gRPC roda concorrentemente na porta configurada (`GRPC_PORT`, padrão
 | `RABBITMQ_URL` | *(opcional)* | URL de ligação ao RabbitMQ (ex: `amqp://guest:guest@localhost:5672`) |
 | `KAFKA_BROKERS` | *(opcional)* | Lista de brokers Kafka / Redpanda (ex: `localhost:9092`) |
 
-**Estado AGT:** o URL base predefinido é o endpoint REST de homologação (`https://sifphml.minfin.gov.ao/sigt/fe/v1`). A submissão está bloqueada até à implementação do contrato oficial; `AGT_API_TOKEN` não autoriza chamadas válidas, pois a AGT documenta Basic Authentication. Não configure um número de certificação até este ser atribuído pela AGT.
+**Estado AGT:** o cliente ainda não está integrado com os serviços oficiais. A autenticação documentada é Basic Auth, com credenciais emitidas pela AGT, e as assinaturas são JWS RS256. `AGT_API_TOKEN` é uma configuração legada e não deve ser usado para este serviço. Não configure credenciais nem números de certificação fictícios.
 
 ---
 

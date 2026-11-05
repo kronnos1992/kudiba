@@ -48,6 +48,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_accounting"
 if [ -f /docker-entrypoint-initdb.d/22-cost-centers-analytical-accounting.sql ]; then
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_accounting" -f /docker-entrypoint-initdb.d/22-cost-centers-analytical-accounting.sql
 fi
+if [ -f /docker-entrypoint-initdb.d/25-accounting-chart-templates.sql ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_accounting" -f /docker-entrypoint-initdb.d/25-accounting-chart-templates.sql
+fi
 
 # 7. Inicialização do schema de recursos humanos e payroll no banco 'kudiba_payroll'
 echo "Aplicando schema de payroll no banco 'kudiba_payroll'..."
@@ -66,6 +69,12 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_integration
 # 8b. Inicialização do schema de clientes & licenças no banco 'kudiba_backoffice'
 echo "Aplicando schema de backoffice no banco 'kudiba_backoffice'..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_backoffice" -f /docker-entrypoint-initdb.d/09-backoffice-schema.sql
+
+# 8b2. Inicialização do schema e tabela de auditoria universal em todos os bancos de dados
+echo "Aplicando schema de auditoria universal 'kudiba_audit' em todos os bancos de dados..."
+for DB_TARGET in "kudiba_invoicing" "kudiba_auth" "kudiba_inventory" "kudiba_treasury" "kudiba_accounting" "kudiba_payroll" "kudiba_integrations" "kudiba_backoffice"; do
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$DB_TARGET" -f /docker-entrypoint-initdb.d/24-universal-system-audit-trail.sql
+done
 
 # 8c. Colunas de licença e parametrização no tenant (idempotente; cobre volumes anteriores)
 echo "Sincronizando colunas de licença e parametrização em kudiba_core.tenants..."
@@ -92,10 +101,19 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$DB_TARGET" <<-EOS
         ADD COLUMN IF NOT EXISTS invoice_footer_notes TEXT,
         ADD COLUMN IF NOT EXISTS bank_accounts JSONB NOT NULL DEFAULT '[]'::jsonb,
         ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS sector_code VARCHAR(32) NOT NULL DEFAULT 'GERAL',
+        ADD COLUMN IF NOT EXISTS accounting_template_code VARCHAR(64) NOT NULL DEFAULT 'PGC_GENERIC',
         ADD COLUMN IF NOT EXISTS license_valid_until TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS subscribed_modules TEXT[],
         ADD COLUMN IF NOT EXISTS database_connections JSONB NOT NULL DEFAULT '{}'::jsonb;
 EOSQL
+done
+
+# 8c0. Perfil contabilístico do tenant (setor + template de plano de contas)
+for DB_TARGET in "kudiba_auth" "kudiba_invoicing"; do
+    if [ -f /docker-entrypoint-initdb.d/26-tenant-accounting-profile.sql ]; then
+        psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$DB_TARGET" -f /docker-entrypoint-initdb.d/26-tenant-accounting-profile.sql
+    fi
 done
 
 # 8c1. Migrações RBAC e parametrização avançada no banco 'kudiba_auth'
@@ -124,8 +142,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_auth" <<-EO
 EOSQL
 
 # 8d. Bootstrap do utilizador SYSADMIN (Superadministrador do Sistema)
-echo "Provisionando utilizador inicial SYSADMIN no banco 'kudiba_auth'..."
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_auth" -f /docker-entrypoint-initdb.d/15-bootstrap-sysadmin.sql
+echo "Provisionando utilizador inicial SYSADMIN no banco 'kudiba_auth'..."psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_auth" -f /docker-entrypoint-initdb.d/15-bootstrap-sysadmin.sql
 
 # 8e. Papéis de aplicação sem privilégios de superutilizador ou bypass de RLS
 echo "Provisionando papéis de aplicação para os serviços Rust..."
@@ -161,9 +178,16 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/18-treasury-cash-flow-payables.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/19-seed-treasury-cashflow.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/06-accounting-schema.sql
+if [ -f /docker-entrypoint-initdb.d/25-accounting-chart-templates.sql ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/25-accounting-chart-templates.sql
+fi
+if [ -f /docker-entrypoint-initdb.d/26-tenant-accounting-profile.sql ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/26-tenant-accounting-profile.sql
+fi
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/07-payroll-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/08-integrations-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/15-bootstrap-sysadmin.sql
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/24-universal-system-audit-trail.sql
 
 echo "================================================================="
 echo "Inicialização de Bancos Concluída com Sucesso!"

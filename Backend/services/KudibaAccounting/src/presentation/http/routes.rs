@@ -7,6 +7,7 @@ use axum::{
 };
 use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::application::commands::cost_center_commands::{
@@ -488,6 +489,17 @@ pub async fn reverse_entry_handler(
         .await
         .map_err(map_domain_error)?;
 
+    let entry_id = reversed.id;
+    let entry_number = reversed.entry_number;
+    let entry_period = reversed.period;
+    let total_debit = reversed.total_debit;
+    let total_credit = reversed.total_credit;
+    let doc_ref = reversed
+        .source_document_ref
+        .clone()
+        .unwrap_or_else(|| reversed.description.clone());
+    let entry_desc = reversed.description.clone();
+
     let resp = JournalEntryResponse {
         id: reversed.id,
         entry_number: reversed.entry_number,
@@ -514,6 +526,32 @@ pub async fn reverse_entry_handler(
             })
             .collect(),
     };
+
+    let actor_str = headers
+        .get("X-Resolved-User-ID")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("contabilista_sistema");
+    let _ = sqlx::query(
+        r#"
+        INSERT INTO kudiba_audit.system_audit_trail
+            (tenant_id, module, action, entity_type, entity_id, document_reference, actor_user_id, actor_name, details, created_at)
+        VALUES ($1, 'CONTABILIDADE', 'ESTORNO_LANCAMENTO_CONTABIL', 'LANCAMENTO_CONTABILISTICO', $2, $3, $4, 'Contabilidade PGC', $5, NOW())
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(entry_id.to_string())
+    .bind(&doc_ref)
+    .bind(actor_str)
+    .bind(serde_json::json!({
+        "entry_id": entry_id,
+        "entry_number": entry_number,
+        "total_debit": total_debit,
+        "total_credit": total_credit,
+        "description": entry_desc,
+        "period": entry_period,
+    }))
+    .execute(&state.pool)
+    .await;
 
     Ok((StatusCode::OK, Json(resp)))
 }
@@ -815,6 +853,163 @@ pub async fn reclassify_allocation_handler(
     Ok((StatusCode::CREATED, Json(res)))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SystemAuditTrailQueryParams {
+    pub module: Option<String>,
+    pub action: Option<String>,
+    pub search: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemAuditTrailEntry {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub module: String,
+    pub action: String,
+    pub entity_type: String,
+    pub entity_id: Option<String>,
+    pub document_reference: Option<String>,
+    pub actor_user_id: Option<String>,
+    pub actor_name: Option<String>,
+    pub ip_address: Option<String>,
+    pub details: serde_json::Value,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+fn ensure_audit_access(headers: &HeaderMap) -> Result<(), (StatusCode, Json<ProblemDetail>)> {
+    let allowed = headers
+        .get("X-Resolved-Roles")
+        .and_then(|h| h.to_str().ok())
+        .map(|raw| {
+            raw.split(',')
+                .map(|role| role.trim().to_uppercase())
+                .any(|role| {
+                    matches!(
+                        role.as_str(),
+                        "ADMIN"
+                            | "ADMINISTRADOR"
+                            | "SYSADMIN"
+                            | "SUPER_ADMIN"
+                            | "AUDITOR"
+                            | "GESTOR"
+                            | "CONTABILISTA"
+                    )
+                })
+        })
+        .unwrap_or(false);
+
+    if allowed {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::FORBIDDEN,
+            Json(ProblemDetail::new(
+                StatusCode::FORBIDDEN,
+                "Acesso Negado",
+                "Apenas perfis de administração, auditoria ou gestão podem consultar a trilha de auditoria.",
+                "AUDIT_ACCESS_DENIED",
+            )),
+        ))
+    }
+}
+
+pub async fn system_audit_trail_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<SystemAuditTrailQueryParams>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ProblemDetail>)> {
+    ensure_audit_access(&headers)?;
+    let tenant_id = extract_tenant_id(&headers)?;
+
+    let limit = params.limit.unwrap_or(150).clamp(1, 500);
+    let offset = params.offset.unwrap_or(0).max(0);
+
+    let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+        "SELECT id, tenant_id, module, action, entity_type, entity_id, document_reference, \
+         actor_user_id, actor_name, ip_address::text AS ip_address, details::text AS details, \
+         created_at FROM kudiba_audit.system_audit_trail WHERE tenant_id = ",
+    );
+    builder.push_bind(tenant_id);
+
+    if let Some(ref m) = params.module {
+        if !m.trim().is_empty() && m.trim().to_uppercase() != "ALL" {
+            builder.push(" AND UPPER(module) = ");
+            builder.push_bind(m.trim().to_uppercase());
+        }
+    }
+
+    if let Some(ref a) = params.action {
+        if !a.trim().is_empty() && a.trim().to_uppercase() != "ALL" {
+            builder.push(" AND UPPER(action) = ");
+            builder.push_bind(a.trim().to_uppercase());
+        }
+    }
+
+    if let Some(ref q) = params.search {
+        let clean_q = q.trim();
+        if !clean_q.is_empty() {
+            builder.push(" AND (document_reference ILIKE ");
+            builder.push_bind(format!("%{}%", clean_q));
+            builder.push(" OR action ILIKE ");
+            builder.push_bind(format!("%{}%", clean_q));
+            builder.push(" OR actor_name ILIKE ");
+            builder.push_bind(format!("%{}%", clean_q));
+            builder.push(" OR entity_type ILIKE ");
+            builder.push_bind(format!("%{}%", clean_q));
+            builder.push(")");
+        }
+    }
+
+    builder.push(" ORDER BY created_at DESC LIMIT ");
+    builder.push_bind(limit);
+    builder.push(" OFFSET ");
+    builder.push_bind(offset);
+
+    let rows = builder
+        .build()
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|err| map_domain_error(DomainError::DatabaseError(err.to_string())))?;
+
+    let items: Vec<SystemAuditTrailEntry> = rows
+        .iter()
+        .map(|r| {
+            let details_str: String = r.get("details");
+            let details = serde_json::from_str(&details_str).unwrap_or(serde_json::Value::Null);
+
+            SystemAuditTrailEntry {
+                id: r.get("id"),
+                tenant_id: r.get("tenant_id"),
+                module: r.get("module"),
+                action: r.get("action"),
+                entity_type: r.get("entity_type"),
+                entity_id: r.get("entity_id"),
+                document_reference: r.get("document_reference"),
+                actor_user_id: r.get("actor_user_id"),
+                actor_name: r.get("actor_name"),
+                ip_address: r.get("ip_address"),
+                details,
+                created_at: r.get("created_at"),
+            }
+        })
+        .collect();
+
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM kudiba_audit.system_audit_trail WHERE tenant_id = $1",
+    )
+    .bind(tenant_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|err| map_domain_error(DomainError::DatabaseError(err.to_string())))?;
+
+    Ok(Json(serde_json::json!({
+        "items": items,
+        "total": total
+    })))
+}
+
 async fn tenant_scope_middleware(
     req: axum::extract::Request,
     next: axum::middleware::Next,
@@ -901,6 +1096,10 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/v1/accounting/cost-centers/reclassify",
             post(reclassify_allocation_handler),
+        )
+        .route(
+            "/api/v1/accounting/system-audit-trail",
+            get(system_audit_trail_handler),
         )
         .layer(axum::middleware::from_fn(tenant_scope_middleware))
         .with_state(state)

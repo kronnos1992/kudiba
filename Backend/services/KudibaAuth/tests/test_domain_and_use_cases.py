@@ -305,6 +305,7 @@ class MockCacheService(ICacheService):
 class MockAuditRepository(IAuditRepository):
     def __init__(self):
         self.events = []
+        self.system_events = []
 
     async def record_event(self, action, user_id=None, tenant_id=None, email_attempted=None, ip_address=None, user_agent=None, details=None):
         self.events.append({"action": action, "user_id": user_id, "tenant_id": tenant_id})
@@ -314,6 +315,25 @@ class MockAuditRepository(IAuditRepository):
 
     async def count_events(self, tenant_id):
         return len([e for e in self.events if e.get("tenant_id") == tenant_id])
+
+    async def record_system_event(self, **kwargs):
+        self.system_events.append(kwargs)
+
+    async def list_system_events(self, tenant_id, module=None, action=None, limit=100, offset=0):
+        res = [e for e in self.system_events if e.get("tenant_id") == tenant_id]
+        if module:
+            res = [e for e in res if e.get("module") == module]
+        if action:
+            res = [e for e in res if e.get("action") == action]
+        return res[offset : offset + limit]
+
+    async def count_system_events(self, tenant_id, module=None, action=None):
+        res = [e for e in self.system_events if e.get("tenant_id") == tenant_id]
+        if module:
+            res = [e for e in res if e.get("module") == module]
+        if action:
+            res = [e for e in res if e.get("action") == action]
+        return len(res)
 
 
 class MockRoleRepository(IRoleRepository):

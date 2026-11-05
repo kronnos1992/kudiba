@@ -267,6 +267,7 @@ async fn issue_invoice_handler(
             state.config.treasury_service_url.as_deref(),
             command.tenant_id,
             session_id,
+            &headers,
         )
         .await
         {
@@ -512,7 +513,7 @@ async fn cancel_invoice_handler(
     };
 
     let command = CancelInvoiceCommand {
-        actor_user_id: Some(actor),
+        actor_user_id: Some(actor.clone()),
         tenant_id: payload.tenant_id,
         invoice_id: id,
         reason: payload.reason,
@@ -521,7 +522,34 @@ async fn cancel_invoice_handler(
     };
 
     match state.cancel_invoice.execute(command).await {
-        Ok(result) => (StatusCode::CREATED, Json(result)).into_response(),
+        Ok(result) => {
+            let details = serde_json::json!({
+                "original_invoice_id": result.original_invoice_id,
+                "original_document_number": result.original_document_number,
+                "credit_note_id": result.credit_note_id,
+                "credit_note_document_number": result.credit_note_document_number,
+                "amount_refunded": result.amount_refunded,
+                "reason": result.reason,
+            })
+            .to_string();
+
+            let _ = sqlx::query(
+                r#"
+                INSERT INTO kudiba_audit.system_audit_trail
+                    (tenant_id, module, action, entity_type, entity_id, document_reference, actor_user_id, actor_name, details, created_at)
+                VALUES ($1, 'FATURACAO', 'CANCELAMENTO_DOCUMENTO', 'DOCUMENTO_FISCAL', $2, $3, $4, $4, $5::jsonb, NOW())
+                "#,
+            )
+            .bind(payload.tenant_id)
+            .bind(result.original_invoice_id.to_string())
+            .bind(&result.original_document_number)
+            .bind(&actor)
+            .bind(details)
+            .execute(&state.pool)
+            .await;
+
+            (StatusCode::CREATED, Json(result)).into_response()
+        }
         Err(err) => domain_error(err),
     }
 }
@@ -2118,7 +2146,44 @@ async fn pos_fecho_z_handler(
     };
 
     match state.pos_reports.execute_fecho_z(command).await {
-        Ok(report) => (StatusCode::CREATED, Json(report)).into_response(),
+        Ok(report) => {
+            let actor_str = headers
+                .get("x-user-id")
+                .or_else(|| headers.get("X-Resolved-User-ID"))
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("operador_pos");
+            let doc_ref = report
+                .z_report_number
+                .clone()
+                .unwrap_or_else(|| format!("Z-{}", report.date));
+            let details = serde_json::json!({
+                "z_report_number": report.z_report_number,
+                "z_report_sequence": report.z_report_sequence,
+                "date": report.date,
+                "gross_sales_total": report.gross_sales_total,
+                "vat_total": report.vat_total,
+                "final_total": report.final_total,
+                "invoices_count": report.invoices_count,
+            })
+            .to_string();
+
+            let _ = sqlx::query(
+                r#"
+                INSERT INTO kudiba_audit.system_audit_trail
+                    (tenant_id, module, action, entity_type, entity_id, document_reference, actor_user_id, actor_name, details, created_at)
+                VALUES ($1, 'FATURACAO', 'FECHO_FISCAL_Z', 'FECHO_Z', $2, $3, $4, 'Operador POS', $5::jsonb, NOW())
+                "#,
+            )
+            .bind(tenant_id)
+            .bind(doc_ref.clone())
+            .bind(&doc_ref)
+            .bind(actor_str)
+            .bind(details)
+            .execute(&state.pool)
+            .await;
+
+            (StatusCode::CREATED, Json(report)).into_response()
+        }
         Err(err) => domain_error(err),
     }
 }
@@ -2415,6 +2480,7 @@ async fn validate_cash_session(
     treasury_service_url: Option<&str>,
     tenant_id: Uuid,
     session_id: Uuid,
+    headers: &HeaderMap,
 ) -> Result<(), ApiError> {
     if let Some(url) = treasury_service_url {
         let endpoint = format!(
@@ -2427,12 +2493,20 @@ async fn validate_cash_session(
             .build()
             .unwrap_or_default();
 
-        if let Ok(resp) = client
+        let mut request = client
             .get(&endpoint)
-            .header("X-Resolved-Tenant-ID", tenant_id.to_string())
-            .send()
-            .await
-        {
+            .header("X-Resolved-Tenant-ID", tenant_id.to_string());
+        for header_name in [
+            "X-Resolved-Branch-ID",
+            "X-Resolved-User-ID",
+            "X-Resolved-Roles",
+        ] {
+            if let Some(value) = headers.get(header_name) {
+                request = request.header(header_name, value);
+            }
+        }
+
+        if let Ok(resp) = request.send().await {
             if resp.status() == reqwest::StatusCode::NOT_FOUND {
                 return Err(ApiError::new(
                     StatusCode::UNPROCESSABLE_ENTITY,

@@ -63,6 +63,7 @@ def test_all_hr_and_payroll_routes_are_registered():
         "/api/v1/payroll/payslips/{payslip_id}",
         "/api/v1/payroll/payslips/{payslip_id}/pay",
         "/api/v1/payroll/payslips/{payslip_id}/pdf",
+        "/api/v1/payroll/system-audit-trail",
     ]
     for path in expected:
         assert path in paths, f"Rota em falta: {path}"

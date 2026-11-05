@@ -12,6 +12,14 @@ from src.main import app
 
 
 @pytest.mark.asyncio
+async def test_system_audit_trail_requires_auth():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get("/api/v1/backoffice/system-audit-trail")
+        assert response.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_health_endpoint():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -202,5 +210,72 @@ async def test_verify_alvara_checks_validity_and_returns_official_platforms():
     assert expired_res.valid is False
     assert expired_res.status == "EXPIRED"
     assert expired_res.is_expired is True
+
+
+class _FakeChartProvisioner:
+    def __init__(self):
+        self.calls = []
+
+    async def list_templates(self):
+        return [
+            {
+                "code": "PGC_GENERIC",
+                "name": "Plano Geral de Contabilidade (PGC)",
+                "sector_code": "GERAL",
+                "regulator": "MINFIN / AGT",
+                "portal_url": "https://portaldocontribuinte.minfin.gov.ao",
+                "account_count": 153,
+            },
+            {
+                "code": "PCESR_01_26",
+                "name": "Plano de Contas para as Empresas de Seguros e Resseguros (PCESR)",
+                "sector_code": "SEGUROS",
+                "regulator": "ARSEG",
+                "portal_url": "https://www.arseg.ao",
+                "account_count": 36,
+            },
+        ]
+
+    async def provision_chart(self, tenant_id, template_code, *, mode="SEED", applied_by=None):
+        self.calls.append({"tenant_id": tenant_id, "template_code": template_code, "mode": mode})
+        return 36
+
+
+@pytest.mark.asyncio
+async def test_verify_alvara_auto_infers_dates_when_omitted():
+    verifier = VerifyAlvaraUseCase()
+    res = await verifier.execute(alvara_number="ALV-2024/09871", probe_remote=False)
+    assert res.valid is True
+    assert res.auto_filled is True
+    assert res.alvara_issue_date == date(2024, 1, 15)
+    assert res.alvara_expiry_date == date(2029, 1, 15)
+    assert res.days_remaining > 0
+
+
+@pytest.mark.asyncio
+async def test_create_client_auto_fills_dates_and_provisions_sector_chart():
+    client_repo = _FakeClientRepo()
+    license_repo = _FakeLicenseRepo()
+    provisioner = _FakeProvisioner()
+    chart_provisioner = _FakeChartProvisioner()
+    use_case = CreateClientUseCase(client_repo, license_repo, provisioner, chart_provisioner=chart_provisioner)
+
+    res = await use_case.execute(
+        CreateClientCommand(
+            company_name="Seguradora Aliança Angolana, S.A.",
+            nif="5418123456",
+            alvara_number="ALV-2025/00099",
+            sector_code="SEGUROS",
+            accounting_template_code="PCESR_01_26",
+            modules=["invoicing", "accounting"],
+        )
+    )
+    assert res.sector_code == "SEGUROS"
+    assert res.accounting_template_code == "PCESR_01_26"
+    assert res.alvara_issue_date == date(2025, 1, 15)
+    assert res.alvara_expiry_date == date(2030, 1, 15)
+    assert len(chart_provisioner.calls) == 1
+    assert chart_provisioner.calls[0]["template_code"] == "PCESR_01_26"
+
 
 

@@ -51,6 +51,8 @@ class ListClientsUseCase:
                 license=license_to_dto(current_map[client.id]) if client.id in current_map else None,
                 created_at=client.created_at,
                 updated_at=client.updated_at,
+                sector_code=getattr(client, "sector_code", "GERAL") or "GERAL",
+                accounting_template_code=getattr(client, "accounting_template_code", "PGC_GENERIC") or "PGC_GENERIC",
             )
             for client in clients
         ]

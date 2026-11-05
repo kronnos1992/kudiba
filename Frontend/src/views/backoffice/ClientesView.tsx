@@ -26,6 +26,7 @@ import { StatusBadge, StatusType } from '../../components/common/StatusBadge';
 import { SortableHeader } from '../../components/common/SortableHeader';
 import { useTableSort } from '../../hooks/useTableSort';
 import { backofficeApi } from '../../api/backoffice';
+import { validateCompanyNif } from '../../utils/validators';
 import {
   AlvaraVerificationResult,
   BackofficeClient,
@@ -120,12 +121,74 @@ const defaultExpiryDate = () => {
   return d.toISOString().slice(0, 10);
 };
 
+const SECTOR_CONFIG: Record<
+  string,
+  {
+    label: string;
+    shortLabel: string;
+    regulator: string;
+    legalReference: string;
+    portalUrl: string;
+    portalName: string;
+    defaultTemplate: string;
+    color: string;
+    badge: string;
+  }
+> = {
+  GERAL: {
+    label: 'Sector Geral (Comércio, Indústria & Serviços)',
+    shortLabel: 'Geral',
+    regulator: 'MINFIN / AGT',
+    legalReference: 'Decreto n.º 82/01 — Plano Geral de Contabilidade',
+    portalUrl: 'https://portaldocontribuinte.minfin.gov.ao',
+    portalName: 'Portal do Contribuinte AGT / MINFIN',
+    defaultTemplate: 'PGC_GENERIC',
+    color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+    badge: 'border-emerald-300 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300',
+  },
+  SEGUROS: {
+    label: 'Sector Segurador & Fundos de Pensões',
+    shortLabel: 'Seguros',
+    regulator: 'ARSEG',
+    legalReference: 'Norma Regulamentar n.º 01/26 e NR n.º 05/23 — PCESR',
+    portalUrl: 'https://www.arseg.ao',
+    portalName: 'Agência de Regulação e Supervisão de Seguros (ARSEG)',
+    defaultTemplate: 'PCESR_01_26',
+    color: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+    badge: 'border-indigo-300 text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300',
+  },
+  BANCA: {
+    label: 'Sector Bancário & Instituições Financeiras',
+    shortLabel: 'Banca',
+    regulator: 'BNA',
+    legalReference: 'Aviso n.º 05/2019 e Instrutivo n.º 14/2019 (CONTIF / IFRS)',
+    portalUrl: 'https://www.bna.ao',
+    portalName: 'Banco Nacional de Angola (BNA)',
+    defaultTemplate: 'PCIFB_14_2019',
+    color: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+    badge: 'border-blue-300 text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300',
+  },
+  PETROLEO: {
+    label: 'Sector Petrolífero, Gás & Recursos Minerais',
+    shortLabel: 'Petróleo & Minerais',
+    regulator: 'MIREMPET / ANPG',
+    legalReference: 'Lei n.º 13/04 de Tributação das Actividades Petrolíferas',
+    portalUrl: 'https://www.mirempet.gov.ao',
+    portalName: 'Ministério dos Recursos Minerais, Petróleo e Gás (MIREMPET)',
+    defaultTemplate: 'PGC_PETROLEO',
+    color: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+    badge: 'border-amber-300 text-amber-700 bg-amber-50 dark:bg-amber-950/60 dark:text-amber-300',
+  },
+};
+
 const emptyForm: CreateClientPayload = {
   company_name: '',
   nif: '',
   alvara_number: '',
   alvara_issue_date: defaultIssueDate(),
   alvara_expiry_date: defaultExpiryDate(),
+  sector_code: 'GERAL',
+  accounting_template_code: 'PGC_GENERIC',
   modules: [],
   contact_name: '',
   contact_email: '',
@@ -156,6 +219,11 @@ export const ClientesView: React.FC = () => {
   const { data: modules = [] } = useQuery({
     queryKey: ['backoffice_modules'],
     queryFn: () => backofficeApi.listModules(),
+  });
+
+  const { data: accountingTemplates = [] } = useQuery({
+    queryKey: ['backoffice_accounting_templates'],
+    queryFn: () => backofficeApi.listAccountingTemplates(),
   });
 
   const { data: summary } = useQuery({
@@ -207,7 +275,16 @@ export const ClientesView: React.FC = () => {
         alvara_expiry_date: form.alvara_expiry_date || null,
         probe_remote: true,
       }),
-    onSuccess: (res) => setFormAlvaraCheck(res),
+    onSuccess: (res) => {
+      setFormAlvaraCheck(res);
+      if (res.alvara_issue_date || res.alvara_expiry_date) {
+        setForm((prev) => ({
+          ...prev,
+          alvara_issue_date: res.alvara_issue_date || prev.alvara_issue_date,
+          alvara_expiry_date: res.alvara_expiry_date || prev.alvara_expiry_date,
+        }));
+      }
+    },
   });
 
   const verifyClientAlvaraMutation = useMutation({
@@ -305,11 +382,13 @@ export const ClientesView: React.FC = () => {
 
   const canSubmitCreate =
     form.company_name.trim().length >= 2 &&
-    form.nif.trim().length >= 3 &&
+    validateCompanyNif(form.nif).isValid &&
     form.alvara_number.trim().length >= 2 &&
-    Boolean(form.alvara_issue_date) &&
-    Boolean(form.alvara_expiry_date) &&
-    form.alvara_expiry_date > form.alvara_issue_date &&
+    Boolean(
+      form.alvara_issue_date &&
+      form.alvara_expiry_date &&
+      form.alvara_expiry_date > form.alvara_issue_date
+    ) &&
     form.modules.length > 0;
 
   return (
@@ -484,6 +563,19 @@ export const ClientesView: React.FC = () => {
                               {client.contact_phone ? (
                                 <span className="text-[11px] text-slate-400">({client.contact_phone})</span>
                               ) : null}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <span
+                                className={`px-1.5 py-0.2 rounded text-[10px] font-bold border ${
+                                  SECTOR_CONFIG[client.sector_code || 'GERAL']?.color ||
+                                  'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                }`}
+                              >
+                                {SECTOR_CONFIG[client.sector_code || 'GERAL']?.regulator || client.sector_code || 'MINFIN / AGT'}
+                              </span>
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                                {client.accounting_template_code || 'PGC_GENERIC'}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -719,14 +811,106 @@ export const ClientesView: React.FC = () => {
                   className={inputClass}
                 />
               </Field>
-              <Field label="NIF" required>
+              <Field label="NIF da Empresa (10 dígitos)" required>
                 <input
                   required
+                  placeholder="ex: 5417089123"
                   value={form.nif}
-                  onChange={(e) => setForm({ ...form, nif: e.target.value })}
-                  className={inputClass}
+                  onChange={(e) => setForm({ ...form, nif: e.target.value.trim() })}
+                  className={`${inputClass} font-mono font-bold transition-colors ${
+                    form.nif.length > 0
+                      ? validateCompanyNif(form.nif).isValid
+                        ? 'border-emerald-500 focus:ring-emerald-500'
+                        : 'border-rose-400 focus:ring-rose-500'
+                      : ''
+                  }`}
                 />
+                {form.nif.length > 0 && (
+                  validateCompanyNif(form.nif).isValid ? (
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1 font-medium font-sans">
+                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> NIF de empresa válido (10 dígitos)
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-rose-500 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium font-sans">
+                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                      {validateCompanyNif(form.nif).error}
+                    </p>
+                  )
+                )}
               </Field>
+              <Field label="Sector de Actividade Regulatório" required>
+                <select
+                  value={form.sector_code || 'GERAL'}
+                  onChange={(e) => {
+                    const sec = e.target.value;
+                    const def = SECTOR_CONFIG[sec]?.defaultTemplate || 'PGC_GENERIC';
+                    setForm({ ...form, sector_code: sec, accounting_template_code: def });
+                  }}
+                  className={inputClass}
+                >
+                  <option value="GERAL">Sector Geral (Comércio, Indústria & Serviços — MINFIN / AGT)</option>
+                  <option value="SEGUROS">Sector Segurador & Resseguros (ARSEG)</option>
+                  <option value="BANCA">Sector Bancário & Instituições Financeiras (BNA)</option>
+                  <option value="PETROLEO">Sector Petrolífero, Gás & Minerais (MIREMPET / ANPG)</option>
+                </select>
+              </Field>
+
+              <Field label="Plano Geral de Contas do Sector" required>
+                <select
+                  value={form.accounting_template_code || 'PGC_GENERIC'}
+                  onChange={(e) => setForm({ ...form, accounting_template_code: e.target.value })}
+                  className={inputClass}
+                >
+                  {(accountingTemplates.length > 0
+                    ? accountingTemplates.filter((t) => !form.sector_code || t.sector_code === form.sector_code)
+                    : [
+                        { code: 'PGC_GENERIC', name: 'PGC Geral Angolano', regulator: 'MINFIN / AGT', sector_code: 'GERAL', account_count: 153 },
+                        { code: 'PCESR_01_26', name: 'PCESR Segurador', regulator: 'ARSEG', sector_code: 'SEGUROS', account_count: 36 },
+                        { code: 'PCIFB_14_2019', name: 'PCIFB Bancário IFRS', regulator: 'BNA', sector_code: 'BANCA', account_count: 27 },
+                        { code: 'PGC_PETROLEO', name: 'PGC Actividades Petrolíferas', regulator: 'MIREMPET / ANPG', sector_code: 'PETROLEO', account_count: 31 },
+                      ].filter((t) => !form.sector_code || t.sector_code === form.sector_code)
+                  ).map((t) => (
+                    <option key={t.code} value={t.code}>
+                      {t.name} ({t.regulator || t.sector_code}) — {t.account_count ?? 0} contas
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            {(() => {
+              const secCfg = SECTOR_CONFIG[form.sector_code || 'GERAL'] || SECTOR_CONFIG.GERAL;
+              const tpl = accountingTemplates.find((t) => t.code === form.accounting_template_code);
+              return (
+                <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${secCfg.badge}`}>
+                        {secCfg.regulator}
+                      </span>
+                      <span className="font-bold text-slate-800 dark:text-slate-100">
+                        {tpl?.name || secCfg.label}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {tpl?.legal_reference || secCfg.legalReference}
+                      {tpl?.account_count ? ` • ${tpl.account_count} contas prontas a provisionar no módulo de Contabilidade.` : ''}
+                    </p>
+                  </div>
+                  <a
+                    href={tpl?.portal_url || secCfg.portalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 text-[11px] font-semibold shrink-0"
+                  >
+                    <span>{secCfg.portalName}</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
+                  </a>
+                </div>
+              );
+            })()}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Field label="N.º do Alvará Comercial" required>
                 <input
                   required
@@ -736,8 +920,16 @@ export const ClientesView: React.FC = () => {
                     setForm({ ...form, alvara_number: e.target.value });
                     setFormAlvaraCheck(null);
                   }}
+                  onBlur={() => {
+                    if (form.alvara_number.trim().length >= 3 && !verifyFormAlvaraMutation.isPending) {
+                      verifyFormAlvaraMutation.mutate();
+                    }
+                  }}
                   className={inputClass}
                 />
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                  Validação automática e auto-preenchimento das datas legais ao sair do campo.
+                </p>
               </Field>
               <Field label="Data de Emissão do Alvará" required>
                 <input
@@ -763,6 +955,9 @@ export const ClientesView: React.FC = () => {
                   className={inputClass}
                 />
               </Field>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <Field label="Nome do Contacto">
                 <input
                   value={form.contact_name || ''}
@@ -796,12 +991,23 @@ export const ClientesView: React.FC = () => {
                   <option value="ENTERPRISE">ENTERPRISE</option>
                 </select>
               </Field>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Field label="N.º de Utilizadores (seats)">
                 <input
                   type="number"
                   min={1}
                   value={form.seats}
                   onChange={(e) => setForm({ ...form, seats: Number(e.target.value) })}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Observações Internas">
+                <input
+                  value={form.notes || ''}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  placeholder="Notas comerciais, gestor de conta..."
                   className={inputClass}
                 />
               </Field>
@@ -1060,6 +1266,19 @@ export const ClientesView: React.FC = () => {
               <Info label="N.º do Alvará" value={detail?.alvara_number || detailClient.alvara_number || '—'} />
               <Info label="Emissão do Alvará" value={formatDate(detail?.alvara_issue_date || detailClient.alvara_issue_date)} />
               <Info label="Validade do Alvará" value={formatDate(detail?.alvara_expiry_date || detailClient.alvara_expiry_date)} />
+              <Info
+                label="Sector Regulatório"
+                value={
+                  SECTOR_CONFIG[detail?.sector_code || detailClient.sector_code || 'GERAL']?.label ||
+                  detail?.sector_code ||
+                  detailClient.sector_code ||
+                  'Geral'
+                }
+              />
+              <Info
+                label="Plano de Contas"
+                value={detail?.accounting_template_code || detailClient.accounting_template_code || 'PGC_GENERIC'}
+              />
               <Info label="Contacto" value={detail?.contact_name || '—'} />
               <Info label="E-mail" value={detail?.contact_email || '—'} />
               <Info label="Telefone" value={detail?.contact_phone || '—'} />
@@ -1294,6 +1513,15 @@ const AlvaraVerificationCard: React.FC<{ result: AlvaraVerificationResult }> = (
           {statusLabel}
         </span>
       </div>
+
+      {result.auto_filled && (
+        <div className="flex items-center gap-2 p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300">
+          <CalendarClock className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <span className="text-[11px] font-medium leading-tight">
+            Datas de emissão e de validade preenchidas automaticamente de acordo aos dados obtidos na validação legal (vigência de 5 anos Decreto Presidencial n.º 191/18 / SILAC).
+          </span>
+        </div>
+      )}
 
       {result.official_platforms && result.official_platforms.length > 0 && (
         <div className="pt-2 border-t border-slate-100 dark:border-slate-800">

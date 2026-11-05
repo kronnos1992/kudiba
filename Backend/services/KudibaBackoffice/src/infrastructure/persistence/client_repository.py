@@ -54,6 +54,8 @@ class SqlAlchemyClientRepository(IClientRepository):
             m.alvara_number = client.alvara_number
             m.alvara_issue_date = client.alvara_issue_date
             m.alvara_expiry_date = client.alvara_expiry_date
+            m.sector_code = client.sector_code
+            m.accounting_template_code = client.accounting_template_code
             m.contact_name = client.contact_name
             m.contact_email = client.contact_email
             m.contact_phone = client.contact_phone
@@ -69,6 +71,8 @@ class SqlAlchemyClientRepository(IClientRepository):
             alvara_number=m.alvara_number,
             alvara_issue_date=m.alvara_issue_date,
             alvara_expiry_date=m.alvara_expiry_date,
+            sector_code=m.sector_code,
+            accounting_template_code=m.accounting_template_code,
             contact_name=m.contact_name,
             contact_email=m.contact_email,
             contact_phone=m.contact_phone,
@@ -87,6 +91,8 @@ class SqlAlchemyClientRepository(IClientRepository):
             alvara_number=client.alvara_number,
             alvara_issue_date=client.alvara_issue_date,
             alvara_expiry_date=client.alvara_expiry_date,
+            sector_code=client.sector_code,
+            accounting_template_code=client.accounting_template_code,
             contact_name=client.contact_name,
             contact_email=client.contact_email,
             contact_phone=client.contact_phone,

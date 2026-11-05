@@ -18,6 +18,30 @@ class FakeEventPublisher:
         self.published.append({"routing_key": routing_key, "payload": payload})
 
 
+class FakeAuditRepository:
+    def __init__(self):
+        self.events = []
+
+    async def record_event(self, **kwargs):
+        self.events.append(kwargs)
+
+    async def list_events(self, tenant_id, module=None, action=None, limit=50, offset=0):
+        res = [e for e in self.events if e.get("tenant_id") == tenant_id]
+        if module:
+            res = [e for e in res if e.get("module") == module]
+        if action:
+            res = [e for e in res if e.get("action") == action]
+        return res[offset : offset + limit]
+
+    async def count_events(self, tenant_id, module=None, action=None):
+        res = [e for e in self.events if e.get("tenant_id") == tenant_id]
+        if module:
+            res = [e for e in res if e.get("module") == module]
+        if action:
+            res = [e for e in res if e.get("action") == action]
+        return len(res)
+
+
 class InMemoryIntegrationRepository(IntegrationRepository):
     def __init__(self):
         self.endpoints: Dict[UUID, IntegrationEndpoint] = {}

@@ -22,6 +22,7 @@ import {
   Sparkles,
   ArrowDownCircle,
   Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useAuthStore } from '../../stores/authStore';
@@ -31,6 +32,7 @@ import { StatusBadge } from '../../components/common/StatusBadge';
 import { SortableHeader } from '../../components/common/SortableHeader';
 import { useTableSort } from '../../hooks/useTableSort';
 import { toast } from '../../stores/toastStore';
+import { validateTaxId, validateAngolanIBAN } from '../../utils/validators';
 import {
   inventoryApi,
   Product,
@@ -652,6 +654,11 @@ export const InventoryView: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_batches'] });
       setShowBatchModal(false);
       setBatchForm({ product_id: '', batch_number: '', manufacture_date: '', expiry_date: '' });
+      toast.success('Lote criado com sucesso!');
+    },
+    onError: (err: any) => {
+      const detail = err?.response?.data?.detail || err?.response?.data?.title || 'Erro ao criar lote.';
+      toast.error(detail);
     },
   });
 
@@ -660,6 +667,26 @@ export const InventoryView: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_entities'] });
       setShowEntityModal(false);
+      setEntityForm({
+        entity_type: 'CUSTOMER',
+        tax_id: '',
+        tax_id_kind: 'LEGAL_ENTITY',
+        name: '',
+        trade_name: '',
+        email: '',
+        phone: '',
+        is_withholding_agent: false,
+        country_code: 'AO',
+        province: 'Luanda',
+        city: 'Luanda',
+        address_detail: '',
+        iban: '',
+      });
+      toast.success('Entidade comercial registada com sucesso!');
+    },
+    onError: (err: any) => {
+      const detail = err?.response?.data?.detail || err?.response?.data?.title || 'Erro ao registar entidade.';
+      toast.error(detail);
     },
   });
 
@@ -3249,6 +3276,14 @@ export const InventoryView: React.FC = () => {
               </button>
             </div>
 
+            {registerEntityMutation.isError && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-lg text-xs text-rose-700 dark:text-rose-300">
+                {(registerEntityMutation.error as any)?.response?.data?.detail ||
+                  (registerEntityMutation.error as any)?.response?.data?.title ||
+                  'Ocorreu um erro ao registar a entidade comercial.'}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
@@ -3298,11 +3333,41 @@ export const InventoryView: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="ex: 5417089123"
+                  placeholder={
+                    entityForm.tax_id_kind === 'LEGAL_ENTITY'
+                      ? 'ex: 5417089123 (10 dígitos)'
+                      : entityForm.tax_id_kind === 'NATURAL_PERSON_BI'
+                      ? 'ex: 000123456LA012 (BI)'
+                      : entityForm.tax_id_kind === 'FINAL_CONSUMER'
+                      ? '999999999'
+                      : 'NIF Estrangeiro'
+                  }
                   value={entityForm.tax_id}
-                  onChange={(e) => setEntityForm({ ...entityForm, tax_id: e.target.value })}
-                  className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono font-bold"
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const val = entityForm.tax_id_kind === 'NATURAL_PERSON_BI' ? raw.toUpperCase() : raw.trim();
+                    setEntityForm({ ...entityForm, tax_id: val });
+                  }}
+                  className={`w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border rounded-lg font-mono font-bold transition-colors ${
+                    entityForm.tax_id.length > 0
+                      ? validateTaxId(entityForm.tax_id, entityForm.tax_id_kind).isValid
+                        ? 'border-emerald-500 focus:ring-emerald-500'
+                        : 'border-rose-400 focus:ring-rose-500'
+                      : 'border-slate-200 dark:border-slate-700'
+                  }`}
                 />
+                {entityForm.tax_id.length > 0 && (
+                  validateTaxId(entityForm.tax_id, entityForm.tax_id_kind).isValid ? (
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 font-sans flex items-center gap-1 font-medium">
+                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> NIF/BI válido segundo as normas da AGT / DNIC
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-rose-500 dark:text-rose-400 mt-1 font-sans flex items-center gap-1 font-medium">
+                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                      {validateTaxId(entityForm.tax_id, entityForm.tax_id_kind).error}
+                    </p>
+                  )
+                )}
               </div>
 
               <div>
@@ -3367,8 +3432,26 @@ export const InventoryView: React.FC = () => {
                   placeholder="AO06 0040 0000 1234 5678 9012 3"
                   value={entityForm.iban || ''}
                   onChange={(e) => setEntityForm({ ...entityForm, iban: e.target.value })}
-                  className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono text-xs"
+                  className={`w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border rounded-lg font-mono text-xs transition-colors ${
+                    entityForm.iban && entityForm.iban.trim().length > 0
+                      ? validateAngolanIBAN(entityForm.iban).isValid
+                        ? 'border-emerald-500 focus:ring-emerald-500'
+                        : 'border-rose-400 focus:ring-rose-500'
+                      : 'border-slate-200 dark:border-slate-700'
+                  }`}
                 />
+                {entityForm.iban && entityForm.iban.trim().length > 0 && (
+                  validateAngolanIBAN(entityForm.iban).isValid ? (
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 font-sans flex items-center gap-1 font-medium">
+                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> IBAN angolano válido (AO06)
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-rose-500 dark:text-rose-400 mt-1 font-sans flex items-center gap-1 font-medium">
+                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                      {validateAngolanIBAN(entityForm.iban).error}
+                    </p>
+                  )
+                )}
               </div>
 
               <div className="md:col-span-2 pt-2">
@@ -3396,11 +3479,17 @@ export const InventoryView: React.FC = () => {
               </button>
               <button
                 type="button"
-                disabled={!entityForm.tax_id || !entityForm.name || registerEntityMutation.isPending}
+                disabled={
+                  !entityForm.tax_id ||
+                  !entityForm.name ||
+                  registerEntityMutation.isPending ||
+                  !validateTaxId(entityForm.tax_id, entityForm.tax_id_kind).isValid ||
+                  (Boolean(entityForm.iban?.trim()) && !validateAngolanIBAN(entityForm.iban || '').isValid)
+                }
                 onClick={() => registerEntityMutation.mutate(entityForm)}
                 className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50"
               >
-                Gravar Entidade
+                {registerEntityMutation.isPending ? 'A Gravar...' : 'Gravar Entidade'}
               </button>
             </div>
           </div>

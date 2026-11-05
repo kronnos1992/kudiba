@@ -3,6 +3,7 @@ use tokio::net::TcpListener;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod aggregation;
 mod config;
 mod errors;
 pub mod health;

@@ -48,7 +48,7 @@ else
 fi
 
 # 1. KudibaAuth (FastAPI :8082)
-if lsof -i :8082 >/dev/null 2>&1 || nc -z 127.0.0.1 8082 2>/dev/null; then
+if lsof -iTCP:8082 -sTCP:LISTEN >/dev/null 2>&1 || nc -z 127.0.0.1 8082 2>/dev/null; then
     echo "[-] KudibaAuth já está em execução (porta 8082 ocupada)."
 elif ! python3 -c "import uvicorn" >/dev/null 2>&1; then
     echo "[!] KudibaAuth não iniciado: uvicorn indisponível."
@@ -182,7 +182,7 @@ fi
 wait_for_health "http://127.0.0.1:8088/health" "KudibaBackoffice" 60 || true
 
 # 9. Kudiba Gateway (HTTP :8080)
-if lsof -i :8080 >/dev/null 2>&1 || nc -z 127.0.0.1 8080 2>/dev/null; then
+if lsof -iTCP:8080 -sTCP:LISTEN >/dev/null 2>&1 || nc -z 127.0.0.1 8080 2>/dev/null; then
     echo "[-] Kudiba Gateway já está em execução (porta 8080 ocupada)."
 else
     echo "[+] Iniciando Kudiba Gateway (HTTP :8080)..."

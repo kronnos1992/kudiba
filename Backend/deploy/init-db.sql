@@ -342,14 +342,64 @@ EXECUTE FUNCTION kudiba_core.prevent_invoice_mutation();
 
 CREATE OR REPLACE FUNCTION kudiba_core.audit_invoice_issue()
 RETURNS TRIGGER AS $$
+DECLARE
+    audit_actor TEXT;
+    audit_action TEXT;
 BEGIN
+    audit_actor := COALESCE(NULLIF(current_setting('app.actor_user_id', TRUE), ''), session_user);
+
     INSERT INTO kudiba_audit.fiscal_audit_trail (
         tenant_id, table_name, action, document_reference, payload, actor_user_id, created_at
     ) VALUES (
         NEW.tenant_id, 'invoices', 'INSERT', NEW.document_number,
-        row_to_json(NEW)::jsonb,
-        COALESCE(NULLIF(current_setting('app.actor_user_id', TRUE), ''), session_user), NOW()
+        row_to_json(NEW)::jsonb, audit_actor, NOW()
     );
+
+    audit_action := 'EMISSAO_' || CASE NEW.document_type
+        WHEN 'FT' THEN 'FACTURA'
+        WHEN 'FR' THEN 'FACTURA_RECIBO'
+        WHEN 'FP' THEN 'FACTURA_PRO_FORMA'
+        WHEN 'NC' THEN 'NOTA_CREDITO'
+        WHEN 'ND' THEN 'NOTA_DEBITO'
+        WHEN 'RC' THEN 'RECIBO'
+        WHEN 'GT' THEN 'GUIA_TRANSPORTE'
+        WHEN 'GR' THEN 'GUIA_REMESSA'
+        ELSE 'DOCUMENTO_FISCAL'
+    END;
+
+    BEGIN
+        INSERT INTO kudiba_audit.system_audit_trail (
+            tenant_id, module, action, entity_type, entity_id, document_reference,
+            actor_user_id, actor_name, details, created_at
+        ) VALUES (
+            NEW.tenant_id, 'FATURACAO', audit_action, 'DOCUMENTO_FISCAL',
+            NEW.id::text, NEW.document_number, audit_actor, audit_actor,
+            jsonb_build_object(
+                'document_type', NEW.document_type,
+                'document_number', NEW.document_number,
+                'sequence_number', NEW.sequence_number,
+                'customer_name', NEW.customer_name,
+                'customer_nif', NEW.customer_nif,
+                'net_total', NEW.net_total,
+                'tax_total', NEW.tax_total,
+                'gross_total', NEW.gross_total,
+                'withholding_total', NEW.withholding_total,
+                'stamp_duty_total', NEW.stamp_duty_total,
+                'currency', NEW.currency,
+                'payment_methods', NEW.payment_methods,
+                'issued_at', NEW.issued_at,
+                'system_entry_date', NEW.system_entry_date,
+                'source_document_number', NEW.source_document_number,
+                'hash_sha256', NEW.hash_sha256,
+                'validation_chars', NEW.validation_chars,
+                'is_contingency', NEW.is_contingency
+            ),
+            NEW.created_at
+        );
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'Falha ao registar emissão % na trilha de sistema: %', NEW.document_number, SQLERRM;
+    END;
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

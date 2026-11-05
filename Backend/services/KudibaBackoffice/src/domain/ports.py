@@ -78,6 +78,8 @@ class ITenantProvisioner(ABC):
         alvara_number: Optional[str] = None,
         alvara_issue_date: Optional[date] = None,
         alvara_expiry_date: Optional[date] = None,
+        sector_code: str = "GERAL",
+        accounting_template_code: str = "PGC_GENERIC",
         license_valid_until: datetime,
         modules: List[str],
         admin_email: Optional[str] = None,
@@ -110,3 +112,25 @@ class ITenantReader(ABC):
     @abstractmethod
     async def list_tenants(self) -> List[TenantRecord]:
         pass
+
+
+class IChartProvisioner(ABC):
+    @abstractmethod
+    async def list_templates(self) -> List[dict]:
+        pass
+
+    @abstractmethod
+    async def provision_chart(
+        self,
+        tenant_id: uuid.UUID,
+        template_code: str,
+        *,
+        mode: str = "SEED",
+        applied_by: Optional[str] = None,
+    ) -> int:
+        pass
+
+    @abstractmethod
+    async def delete_chart(self, tenant_id: uuid.UUID) -> None:
+        pass
+

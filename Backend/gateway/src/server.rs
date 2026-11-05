@@ -16,6 +16,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 
+use crate::aggregation::aggregate_system_audit_trail;
 use crate::config::Config;
 use crate::errors::ProblemDetail;
 use crate::middleware::{
@@ -167,6 +168,11 @@ pub fn create_router(
     // ROTAS PROTEGIDAS DO ENTRYPOINT (REVERSE PROXY)
     // =========================================================================
     let api_routes = Router::new()
+        // Trilha geral de auditoria agregada (Invoicing + Treasury + Accounting)
+        .route(
+            "/api/v1/fiscal/system-audit-trail",
+            get(aggregate_system_audit_trail),
+        )
         // Rotas Fiscais de Alta Criticidade e Facturação (KudibaInvoicing)
         .route("/api/v1/fiscal/{*path}", any(forward_to_fiscal))
         .route("/api/v1/fiscal", any(forward_to_fiscal))

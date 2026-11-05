@@ -106,7 +106,7 @@ impl Config {
             http_port: read_port("PORT", 9090),
             grpc_port: read_port("GRPC_PORT", 9091),
             database_url: env::var("DATABASE_URL").unwrap_or_else(|_| {
-                "postgres://kudiba:kudiba_secret_pass@localhost:5432/kudiba_erp".to_string()
+                "postgres://kudiba:kudiba_secret_pass@localhost:5432/kudiba_invoicing".to_string()
             }),
             database_read_url: env::var("DATABASE_READ_URL")
                 .ok()

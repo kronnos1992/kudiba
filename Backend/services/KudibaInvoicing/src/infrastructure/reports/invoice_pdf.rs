@@ -98,10 +98,10 @@ impl InvoicePdfGenerator {
         let resources_id = doc.add_object(resources);
 
         let mut operations: Vec<Operation> = vec![
-            // Faixa superior decorativa subtil (Azul Marinho #1E3A8A)
+            // Faixa superior decorativa de largura total (x=40..555, w=515)
             Operation::new("q", vec![]),
             Operation::new("rg", vec![0.12.into(), 0.23.into(), 0.54.into()]),
-            Operation::new("re", vec![40.into(), 812.into(), 515.into(), 6.into()]),
+            Operation::new("re", vec![40.into(), 812.into(), 515.into(), 5.into()]),
             Operation::new("f", vec![]),
             Operation::new("Q", vec![]),
         ];
@@ -146,18 +146,18 @@ impl InvoicePdfGenerator {
             .or_else(|| tenant.map(|t| t.company_name.as_str()))
             .unwrap_or(company_name);
 
-        // Dados do Emitente (Lado Esquerdo)
+        // Dados do Emitente (Lado Esquerdo - Tipografia compacta com respiro central)
         Self::add_text(
             &mut operations,
             "F2",
-            14.5,
+            12.5,
             header_left_x,
             issuer_top_y,
             display_title,
             (0.1, 0.15, 0.3),
         );
 
-        let mut header_y = issuer_top_y - 14.0;
+        let mut header_y = issuer_top_y - 12.5;
         if let Some(t) = tenant {
             if t.trade_name
                 .as_deref()
@@ -166,13 +166,13 @@ impl InvoicePdfGenerator {
                 Self::add_text(
                     &mut operations,
                     "F2",
-                    8.5,
+                    7.8,
                     header_left_x,
                     header_y,
                     &t.company_name,
                     (0.25, 0.25, 0.25),
                 );
-                header_y -= 11.0;
+                header_y -= 10.0;
             }
         }
 
@@ -183,12 +183,6 @@ impl InvoicePdfGenerator {
             .unwrap_or("999999999");
 
         let mut nif_line = format!("NIF: {}", issuer_nif);
-        if let Some(alvara) = tenant
-            .and_then(|t| t.alvara_number.as_deref())
-            .filter(|s| !s.trim().is_empty())
-        {
-            nif_line.push_str(&format!(" | Alvará: {}", alvara));
-        }
         if let Some(reg) = tenant
             .and_then(|t| t.commercial_registry.as_deref())
             .filter(|s| !s.trim().is_empty())
@@ -198,13 +192,13 @@ impl InvoicePdfGenerator {
         Self::add_text(
             &mut operations,
             "F2",
-            8.5,
+            7.5,
             header_left_x,
             header_y,
             &nif_line,
             (0.2, 0.2, 0.2),
         );
-        header_y -= 11.0;
+        header_y -= 9.5;
 
         if let Some(cap) = tenant
             .and_then(|t| t.share_capital.as_deref())
@@ -213,13 +207,13 @@ impl InvoicePdfGenerator {
             Self::add_text(
                 &mut operations,
                 "F1",
-                8.0,
+                7.2,
                 header_left_x,
                 header_y,
                 &format!("Capital Social: {}", cap),
                 (0.35, 0.35, 0.35),
             );
-            header_y -= 10.5;
+            header_y -= 9.5;
         }
 
         let issuer_addr = invoice
@@ -240,13 +234,13 @@ impl InvoicePdfGenerator {
         Self::add_text(
             &mut operations,
             "F1",
-            8.0,
+            7.2,
             header_left_x,
             header_y,
             &format!("{}, {} - {}", issuer_addr, issuer_city, issuer_country),
             (0.35, 0.35, 0.35),
         );
-        header_y -= 10.5;
+        header_y -= 9.5;
 
         if let Some(t) = tenant {
             let mut contacts = Vec::new();
@@ -263,7 +257,7 @@ impl InvoicePdfGenerator {
                 Self::add_text(
                     &mut operations,
                     "F1",
-                    7.5,
+                    6.8,
                     header_left_x,
                     header_y,
                     &contacts.join(" | "),
@@ -272,7 +266,7 @@ impl InvoicePdfGenerator {
             }
         }
 
-        // Tipo e Identificação do Documento (Lado Direito)
+        // Tipo e Identificação do Documento (Lado Direito - alinhado à direita para criar intervalo central)
         let doc_title = match invoice.document_type.as_str() {
             "FT" => "FACTURA",
             "FR" => "FACTURA / RECIBO",
@@ -284,41 +278,41 @@ impl InvoicePdfGenerator {
             other => other,
         };
 
-        Self::add_text(
+        Self::add_text_right(
             &mut operations,
             "F2",
-            16.0,
-            340.0,
+            13.5,
+            555.0,
             788.0,
             doc_title,
             (0.12, 0.23, 0.54),
         );
-        Self::add_text(
+        Self::add_text_right(
             &mut operations,
             "F2",
-            12.0,
-            340.0,
-            770.0,
+            10.5,
+            555.0,
+            772.0,
             &format!("N.º {}", invoice.document_number),
             (0.1, 0.1, 0.1),
         );
-        Self::add_text(
+        Self::add_text_right(
             &mut operations,
             "F2",
-            9.0,
-            340.0,
-            754.0,
+            8.0,
+            555.0,
+            758.0,
             "ORIGINAL",
             (0.3, 0.3, 0.3),
         );
 
         if invoice.is_contingency {
-            Self::add_text(
+            Self::add_text_right(
                 &mut operations,
                 "F2",
-                8.0,
-                340.0,
-                740.0,
+                7.0,
+                555.0,
+                744.0,
                 "EMITIDO EM MODO DE CONTINGÊNCIA FISCAL (DEC. 71/25)",
                 (0.75, 0.1, 0.1),
             );
@@ -363,13 +357,21 @@ impl InvoicePdfGenerator {
             "EXMO.(S) SR.(S) / ADQUIRENTE:",
             (0.3, 0.4, 0.55),
         );
+        let cust_name_display = if invoice.customer_name.chars().count() > 38 {
+            format!(
+                "{}...",
+                invoice.customer_name.chars().take(35).collect::<String>()
+            )
+        } else {
+            invoice.customer_name.clone()
+        };
         Self::add_text(
             &mut operations,
             "F2",
             9.5,
             48.0,
             698.0 - section_shift,
-            &invoice.customer_name,
+            &cust_name_display,
             (0.1, 0.1, 0.1),
         );
         Self::add_text(
@@ -392,13 +394,18 @@ impl InvoicePdfGenerator {
         } else {
             format!("{}, {}", cust_addr, cust_city)
         };
+        let cust_line_display = if cust_line.chars().count() > 42 {
+            format!("{}...", cust_line.chars().take(39).collect::<String>())
+        } else {
+            cust_line
+        };
         Self::add_text(
             &mut operations,
             "F1",
             8.5,
             48.0,
             670.0 - section_shift,
-            &cust_line,
+            &cust_line_display,
             (0.35, 0.35, 0.35),
         );
 
@@ -692,9 +699,12 @@ impl InvoicePdfGenerator {
                 (0.2, 0.2, 0.2),
             );
 
-            // Truncagem de descrição longa
-            let desc_display = if line.description.len() > 36 {
-                format!("{}...", &line.description[..33])
+            // Truncagem de descrição longa segura para UTF-8
+            let desc_display = if line.description.chars().count() > 36 {
+                format!(
+                    "{}...",
+                    line.description.chars().take(33).collect::<String>()
+                )
             } else {
                 line.description.clone()
             };
@@ -1085,6 +1095,47 @@ impl InvoicePdfGenerator {
             }
             operations.push(Operation::new("f", vec![]));
             operations.push(Operation::new("Q", vec![]));
+
+            let center_x = qr_start_x + qr_size / 2.0;
+            let center_y = qr_start_y + qr_size / 2.0;
+
+            let quiet_size = 17.0;
+            Self::draw_rounded_rect(
+                &mut operations,
+                (
+                    center_x - quiet_size / 2.0,
+                    center_y - quiet_size / 2.0,
+                    quiet_size,
+                    quiet_size,
+                ),
+                3.0,
+                (1.0, 1.0, 1.0),
+                None,
+            );
+
+            let badge_size = 14.0;
+            Self::draw_rounded_rect(
+                &mut operations,
+                (
+                    center_x - badge_size / 2.0,
+                    center_y - badge_size / 2.0,
+                    badge_size,
+                    badge_size,
+                ),
+                2.5,
+                (0.01, 0.02, 0.09),
+                Some(((0.05, 0.65, 0.45), 0.75)),
+            );
+
+            Self::add_text(
+                &mut operations,
+                "F2",
+                9.0,
+                center_x - 3.25,
+                center_y - 3.25,
+                "K",
+                (0.99, 0.82, 0.30),
+            );
         }
 
         // 5.2 Menção Legal Mandatória da AGT (Decreto Presidencial n.º 71/25)
@@ -1101,28 +1152,9 @@ impl InvoicePdfGenerator {
             "F2",
             8.5,
             120.0,
-            96.0,
+            78.0,
             &legal_mention,
             (0.1, 0.1, 0.1),
-        );
-
-        let hash_prefix = if invoice.hash_sha256.len() > 32 {
-            &invoice.hash_sha256[..32]
-        } else {
-            &invoice.hash_sha256
-        };
-        let audit_line = format!(
-            "Assinatura RSA-2048 PKCS#1 v1.5 (Chave v{}) | Hash: {}...",
-            invoice.key_version, hash_prefix
-        );
-        Self::add_text(
-            &mut operations,
-            "F1",
-            7.5,
-            120.0,
-            83.0,
-            &audit_line,
-            (0.35, 0.35, 0.35),
         );
 
         let footer_note = tenant
@@ -1133,21 +1165,11 @@ impl InvoicePdfGenerator {
         Self::add_text(
             &mut operations,
             "F3",
-            7.0,
+            7.5,
             120.0,
-            70.0,
+            62.0,
             footer_note,
             (0.4, 0.4, 0.4),
-        );
-
-        Self::add_text(
-            &mut operations,
-            "F1",
-            7.0,
-            120.0,
-            57.0,
-            "Kudiba Fiscal Core — Motor de Facturação Certificado de Angola | https://kudiba.ao",
-            (0.5, 0.5, 0.5),
         );
 
         Self::add_text(
@@ -1229,6 +1251,58 @@ impl InvoicePdfGenerator {
         operations.push(Operation::new("Q", vec![]));
     }
 
+    fn str_width_helvetica_bold(text: &str, size: f64) -> f64 {
+        let mut width_em = 0.0;
+        for c in text.chars() {
+            let w = match c {
+                ' ' => 278.0,
+                '!' => 333.0,
+                '"' => 474.0,
+                '#' | '$' | '%' => 556.0,
+                '&' => 722.0,
+                '\'' => 278.0,
+                '(' | ')' => 333.0,
+                '*' => 389.0,
+                '+' => 584.0,
+                ',' | '.' => 278.0,
+                '-' => 333.0,
+                '/' => 278.0,
+                ':' | ';' => 333.0,
+                '<' | '=' | '>' => 584.0,
+                '?' => 556.0,
+                '@' => 737.0,
+                '0'..='9' => 556.0,
+                'A' | 'B' | 'C' | 'D' | 'H' | 'K' | 'N' | 'R' | 'U' => 722.0,
+                'E' | 'P' | 'S' | 'V' | 'X' | 'Y' | 'Z' => 667.0,
+                'F' | 'L' | 'T' => 611.0,
+                'G' | 'O' | 'Q' => 778.0,
+                'I' => 278.0,
+                'J' => 556.0,
+                'M' => 833.0,
+                'W' => 944.0,
+                'a' | 'c' | 'e' | 's' | 'u' | 'v' | 'x' | 'y' => 556.0,
+                'b' | 'd' | 'g' | 'h' | 'n' | 'o' | 'p' | 'q' => 611.0,
+                'f' | 't' => 333.0,
+                'i' | 'j' | 'l' => 278.0,
+                'k' => 556.0,
+                'm' => 889.0,
+                'r' => 389.0,
+                'w' => 778.0,
+                'z' => 500.0,
+                'º' | 'ª' => 400.0,
+                'Á' | 'À' | 'Ã' | 'Â' | 'É' | 'Ê' | 'Í' | 'Ó' | 'Õ' | 'Ô' | 'Ú' | 'Ç' => {
+                    722.0
+                }
+                'á' | 'à' | 'ã' | 'â' | 'é' | 'ê' | 'í' | 'ó' | 'õ' | 'ô' | 'ú' | 'ç' => {
+                    556.0
+                }
+                _ => 556.0,
+            };
+            width_em += w;
+        }
+        (width_em / 1000.0) * size
+    }
+
     fn add_text_right(
         operations: &mut Vec<Operation>,
         font: &str,
@@ -1238,8 +1312,8 @@ impl InvoicePdfGenerator {
         text: &str,
         color: (f64, f64, f64),
     ) {
-        let approx_width = text.chars().count() as f64 * size * 0.52;
-        let x = (right_x - approx_width).max(335.0);
+        let width = Self::str_width_helvetica_bold(text, size);
+        let x = (right_x - width).max(305.0);
         Self::add_text(operations, font, size, x, y, text, color);
     }
 
@@ -1612,6 +1686,89 @@ impl InvoicePdfGenerator {
         operations.push(Operation::new("S", vec![]));
         operations.push(Operation::new("Q", vec![]));
     }
+
+    fn draw_rounded_rect(
+        operations: &mut Vec<Operation>,
+        rect: (f64, f64, f64, f64),
+        r: f64,
+        fill_color: (f64, f64, f64),
+        border: Option<((f64, f64, f64), f64)>,
+    ) {
+        let (x, y, w, h) = rect;
+        let k = 0.55228475 * r;
+        operations.push(Operation::new("q", vec![]));
+        operations.push(Operation::new(
+            "rg",
+            vec![
+                fill_color.0.into(),
+                fill_color.1.into(),
+                fill_color.2.into(),
+            ],
+        ));
+        if let Some(((br, bg, bb), bw)) = border {
+            operations.push(Operation::new("w", vec![bw.into()]));
+            operations.push(Operation::new("RG", vec![br.into(), bg.into(), bb.into()]));
+        }
+        operations.push(Operation::new("m", vec![(x + r).into(), y.into()]));
+        operations.push(Operation::new("l", vec![(x + w - r).into(), y.into()]));
+        operations.push(Operation::new(
+            "c",
+            vec![
+                (x + w - r + k).into(),
+                y.into(),
+                (x + w).into(),
+                (y + r - k).into(),
+                (x + w).into(),
+                (y + r).into(),
+            ],
+        ));
+        operations.push(Operation::new(
+            "l",
+            vec![(x + w).into(), (y + h - r).into()],
+        ));
+        operations.push(Operation::new(
+            "c",
+            vec![
+                (x + w).into(),
+                (y + h - r + k).into(),
+                (x + w - r + k).into(),
+                (y + h).into(),
+                (x + w - r).into(),
+                (y + h).into(),
+            ],
+        ));
+        operations.push(Operation::new("l", vec![(x + r).into(), (y + h).into()]));
+        operations.push(Operation::new(
+            "c",
+            vec![
+                (x + r - k).into(),
+                (y + h).into(),
+                x.into(),
+                (y + h - r + k).into(),
+                x.into(),
+                (y + h - r).into(),
+            ],
+        ));
+        operations.push(Operation::new("l", vec![x.into(), (y + r).into()]));
+        operations.push(Operation::new(
+            "c",
+            vec![
+                x.into(),
+                (y + r - k).into(),
+                (x + r - k).into(),
+                y.into(),
+                (x + r).into(),
+                y.into(),
+            ],
+        ));
+        operations.push(Operation::new("h", vec![]));
+        if border.is_some() {
+            operations.push(Operation::new("B", vec![]));
+        } else {
+            operations.push(Operation::new("f", vec![]));
+        }
+        operations.push(Operation::new("Q", vec![]));
+    }
 }
 
 #[cfg(test)]
@@ -1861,5 +2018,110 @@ mod tests {
         assert_eq!(logo.data.len(), 3);
         assert!(logo.filter.is_none());
         assert!(!logo.inverted_cmyk);
+    }
+
+    #[test]
+    fn gera_pdf_fr_2026a_000001_corrigida() {
+        let invoice_id = Uuid::new_v4();
+        let tenant_id = Uuid::new_v4();
+        let series_id = Uuid::new_v4();
+
+        // Linha com IVA 14% do Regime Geral (ou se isento, M02 com menção legal)
+        let lines = vec![InvoiceLine::new(
+            Uuid::new_v4(),
+            invoice_id,
+            1,
+            "PRD-001".to_string(),
+            "Resma de Papel A4 80g (500 folhas)".to_string(),
+            Decimal::new(300, 2),
+            Decimal::new(2400000, 2),
+            Decimal::ZERO,
+            Decimal::new(1400, 2),
+            None,
+            Decimal::new(8208000, 2),
+        )];
+
+        let invoice = Invoice {
+            id: invoice_id,
+            tenant_id,
+            issuer_nif: Some("5417089123".to_string()),
+            issuer_address: Some(
+                "Avenida 4 de Fevereiro, Edifício Baía de Luanda, 7.º Andar".to_string(),
+            ),
+            issuer_city: Some("Luanda".to_string()),
+            issuer_country: Some("Angola".to_string()),
+            series_id,
+            document_number: "FR 2026A/000001".to_string(),
+            sequence_number: 1,
+            document_type: "FR".to_string(),
+            customer_name: "Gráfica Monalisa, Lda".to_string(),
+            customer_nif: "5000012000".to_string(),
+            customer_address: Some("Pólo Industrial de Viana, Rua Principal, Lote 12".to_string()),
+            customer_city: Some("Luanda".to_string()),
+            customer_country: Some("AO".to_string()),
+            source_document_number: None,
+            payment_methods: vec!["TRANSFERENCIA".to_string()],
+            currency: "AOA".to_string(),
+            net_total: Decimal::new(7200000, 2),
+            tax_total: Decimal::new(1008000, 2),
+            gross_total: Decimal::new(8208000, 2),
+            withholding_total: Decimal::ZERO,
+            stamp_duty_total: Decimal::ZERO,
+            amount_due: Decimal::new(8208000, 2),
+            hash_sha256: "0372d6937bedfba24c747fc99f798811e5f8a02a4b89c31fa64821a73e6a".to_string(),
+            signature_rsa_base64: "XoM5kL89...".to_string(),
+            validation_chars: "XoM5".to_string(),
+            key_version: "1".to_string(),
+            is_contingency: false,
+            tax_regime_code: "REGIME_GERAL".to_string(),
+            issued_at: Utc.with_ymd_and_hms(2026, 10, 29, 7, 52, 0).unwrap(),
+            system_entry_date: Utc.with_ymd_and_hms(2026, 10, 29, 7, 52, 0).unwrap(),
+            created_at: Utc.with_ymd_and_hms(2026, 10, 29, 7, 52, 0).unwrap(),
+            lines,
+            transport: None,
+            cash_session_id: None,
+        };
+
+        let tenant = Tenant {
+            id: tenant_id,
+            slug: "kudiba".to_string(),
+            company_name: "Kudiba Tecnologia, S.A.".to_string(),
+            trade_name: Some("Kudiba ERP".to_string()),
+            nif: "5417089123".to_string(),
+            alvara_number: Some("ALV-2026/00412".to_string()),
+            commercial_registry: Some("CRC Luanda n.º 2026-00412".to_string()),
+            share_capital: Some("2.000.000,00 Kz".to_string()),
+            address_detail: Some(
+                "Avenida 4 de Fevereiro, Edifício Baía de Luanda, 7.º Andar".to_string(),
+            ),
+            city: Some("Luanda".to_string()),
+            province: Some("Luanda".to_string()),
+            postal_code: None,
+            country: Some("Angola".to_string()),
+            phone: Some("+244 923 000 000".to_string()),
+            email: Some("geral@kudiba.ao".to_string()),
+            website: Some("https://kudiba.ao".to_string()),
+            logo_data_url: None,
+            currency: Some("AOA".to_string()),
+            tax_office_code: Some("01".to_string()),
+            agt_cert_number: Some("FE/528/AGT/2026".to_string()),
+            invoice_footer_notes: None,
+            bank_accounts: vec![],
+            status: "ACTIVE".to_string(),
+            tax_regime_code: "GERAL".to_string(),
+            contingency_started_at: None,
+        };
+
+        let pdf = InvoicePdfGenerator::generate_pdf_with_tenant(
+            &invoice,
+            Some(&tenant),
+            &tenant.company_name,
+            "FE/528/AGT/2026",
+        )
+        .expect("PDF corrigido deve ser gerado");
+
+        let out_path = "/home/jaime.coxi@hssa.local/Transferências/FR 2026A_000001_CORRIGIDA.pdf";
+        std::fs::write(out_path, &pdf).expect("Deve gravar PDF corrigido");
+        assert!(std::path::Path::new(out_path).exists());
     }
 }

@@ -78,11 +78,12 @@ impl AppState {
             year_repo.clone(),
         ));
 
-        let queries = Arc::new(AccountingQueries::new(
+        let queries = Arc::new(AccountingQueries::with_seeder(
             account_repo.clone(),
             entry_repo.clone(),
             journal_repo.clone(),
             year_repo.clone(),
+            seed_standard_pgc.clone(),
         ));
 
         let invoice_cmd = Arc::new(ProcessInvoiceIssuedCommand::new(

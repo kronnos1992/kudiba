@@ -47,6 +47,7 @@ from src.infrastructure.persistence import (
     PostgresOrganizationRepository,
     PostgresHrRepository,
     PostgresConflictRepository,
+    PostgresSystemAuditRepository,
 )
 from src.infrastructure.events.rabbitmq_publisher import RabbitMqEventPublisher
 from src.infrastructure.events.rabbitmq_consumer import RabbitMqEventConsumer
@@ -96,6 +97,7 @@ class AppState:
     generate_payslip_pdf: GeneratePayslipPdfUseCase
     export_ps2: ExportPs2UseCase
     conflict_repo: PostgresConflictRepository
+    audit_repo: PostgresSystemAuditRepository
 
 
 def create_app_state(
@@ -109,6 +111,7 @@ def create_app_state(
     org_repo = PostgresOrganizationRepository(session_factory)
     hr_repo = PostgresHrRepository(session_factory)
     conflict_repo = PostgresConflictRepository(session_factory)
+    audit_repo = PostgresSystemAuditRepository(session_factory)
     pub = publisher or RabbitMqEventPublisher(config.rabbitmq_url)
 
     register_employee = RegisterEmployeeUseCase(employee_repo)
@@ -209,4 +212,5 @@ def create_app_state(
         generate_payslip_pdf=generate_payslip_pdf,
         export_ps2=export_ps2,
         conflict_repo=conflict_repo,
+        audit_repo=audit_repo,
     )

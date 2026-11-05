@@ -473,7 +473,11 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
   );
   const totalCashInRegisters = Object.values(registerSessionsMap).reduce((acc, s) => {
     if (s && s.status === 'OPEN') {
-      return acc + (Number(s.opening_balance) || 0);
+      const live =
+        s.current_balance !== undefined && s.current_balance !== null
+          ? Number(s.current_balance)
+          : Number(s.opening_balance);
+      return acc + (live || 0);
     }
     return acc;
   }, 0);
@@ -772,14 +776,14 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                         <div className="mt-3 p-2.5 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/60 space-y-1 text-xs">
                           <div className="flex items-center justify-between">
                             <span className="text-emerald-800 dark:text-emerald-300 font-medium">
-                              Fundo Inicial:
+                              Saldo Atual em Caixa:
                             </span>
                             <span className="font-bold text-emerald-900 dark:text-emerald-200">
-                              <KzAmount value={Number(currentSession.opening_balance)} />
+                              <KzAmount value={Number(currentSession.current_balance ?? currentSession.opening_balance)} />
                             </span>
                           </div>
                           <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-1 border-t border-emerald-200/50 dark:border-emerald-800/40">
-                            <span>Operador: <strong className="text-slate-700 dark:text-slate-300">{currentSession.operator_user_id || 'Operador'}</strong></span>
+                            <span>Fundo Inicial: {Number(currentSession.opening_balance).toLocaleString('pt-AO')} Kz</span>
                             <span>Desde: {new Date(currentSession.opened_at).toLocaleTimeString('pt-AO', { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
                         </div>
@@ -2303,7 +2307,7 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
               </div>
 
               <div className="text-[10px] text-slate-400 border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between items-center">
-                <span>Processado por programa validado n.º 000/AGT/2026 · Kudiba ERP</span>
+                <span>Processado por programa validado n.º {activeTenant?.agt_cert_number || 'FE/528/AGT/2026'} · Kudiba ERP</span>
                 <span>Decreto Presidencial n.º 71/25</span>
               </div>
             </div>

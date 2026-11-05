@@ -14,6 +14,7 @@ pub struct AccountingQueries {
     entry_repo: Arc<dyn JournalEntryRepository>,
     journal_repo: Arc<dyn JournalRepository>,
     year_repo: Arc<dyn FiscalYearRepository>,
+    seed_standard_pgc: Option<Arc<crate::application::commands::SeedStandardPgcHandler>>,
 }
 
 impl AccountingQueries {
@@ -28,11 +29,39 @@ impl AccountingQueries {
             entry_repo,
             journal_repo,
             year_repo,
+            seed_standard_pgc: None,
+        }
+    }
+
+    pub fn with_seeder(
+        account_repo: Arc<dyn AccountRepository>,
+        entry_repo: Arc<dyn JournalEntryRepository>,
+        journal_repo: Arc<dyn JournalRepository>,
+        year_repo: Arc<dyn FiscalYearRepository>,
+        seed_standard_pgc: Arc<crate::application::commands::SeedStandardPgcHandler>,
+    ) -> Self {
+        Self {
+            account_repo,
+            entry_repo,
+            journal_repo,
+            year_repo,
+            seed_standard_pgc: Some(seed_standard_pgc),
         }
     }
 
     pub async fn get_chart(&self, tenant_id: Uuid) -> Result<Vec<Account>, DomainError> {
-        self.account_repo.list_all(tenant_id).await
+        let mut accounts = self.account_repo.list_all(tenant_id).await?;
+        if accounts.is_empty() {
+            if let Some(seeder) = &self.seed_standard_pgc {
+                let _ = seeder.execute(tenant_id).await;
+                accounts = self
+                    .account_repo
+                    .list_all(tenant_id)
+                    .await
+                    .unwrap_or_default();
+            }
+        }
+        Ok(accounts)
     }
 
     pub async fn list_entries(
@@ -63,7 +92,17 @@ impl AccountingQueries {
         from_date: Option<NaiveDate>,
         to_date: Option<NaiveDate>,
     ) -> Result<TrialBalanceReport, DomainError> {
-        let accounts = self.account_repo.list_all(tenant_id).await?;
+        let mut accounts = self.account_repo.list_all(tenant_id).await?;
+        if accounts.is_empty() {
+            if let Some(seeder) = &self.seed_standard_pgc {
+                let _ = seeder.execute(tenant_id).await;
+                accounts = self
+                    .account_repo
+                    .list_all(tenant_id)
+                    .await
+                    .unwrap_or_default();
+            }
+        }
         let (opening_entries, period_entries) = if let Some(fd) = from_date {
             let prior_to_date = fd.pred_opt();
             let opening = self

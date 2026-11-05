@@ -41,6 +41,9 @@ async def test_unauthorized_endpoints():
         response_audit = await ac.get("/auth/audit-logs")
         assert response_audit.status_code == 401
 
+        response_sys_audit = await ac.get("/api/v1/auth/system-audit-trail")
+        assert response_sys_audit.status_code == 401
+
 
 def test_only_admin_can_grant_admin_role():
     claims = {

@@ -50,7 +50,28 @@ auth_session_factory = async_sessionmaker(
     autoflush=False,
 )
 
-app_state = create_app_state(settings, session_factory, auth_session_factory)
+accounting_engine = create_async_engine(
+    settings.async_accounting_database_url,
+    echo=False,
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,
+)
+
+accounting_session_factory = async_sessionmaker(
+    bind=accounting_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
+
+app_state = create_app_state(
+    settings,
+    session_factory,
+    auth_session_factory,
+    accounting_session_factory=accounting_session_factory,
+)
 
 
 @asynccontextmanager

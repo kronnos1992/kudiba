@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS kudiba_core.tenants (
     invoice_footer_notes TEXT,
     bank_accounts JSONB NOT NULL DEFAULT '[]'::jsonb,
     onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
+    sector_code VARCHAR(32) NOT NULL DEFAULT 'GERAL',
+    accounting_template_code VARCHAR(64) NOT NULL DEFAULT 'PGC_GENERIC',
     status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
     contingency_started_at TIMESTAMPTZ,
     license_valid_until TIMESTAMPTZ,
@@ -93,6 +95,8 @@ ALTER TABLE kudiba_core.tenants
     ADD COLUMN IF NOT EXISTS invoice_footer_notes TEXT,
     ADD COLUMN IF NOT EXISTS bank_accounts JSONB NOT NULL DEFAULT '[]'::jsonb,
     ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS sector_code VARCHAR(32) NOT NULL DEFAULT 'GERAL',
+    ADD COLUMN IF NOT EXISTS accounting_template_code VARCHAR(64) NOT NULL DEFAULT 'PGC_GENERIC',
     ADD COLUMN IF NOT EXISTS contingency_started_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS license_valid_until TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS subscribed_modules TEXT[];

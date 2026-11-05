@@ -68,6 +68,8 @@ pub struct CashSummary {
     pub open_sessions: i64,
     pub total_registers: i64,
     pub active_registers: i64,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub total_cash_in_hand: Decimal,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -238,8 +240,14 @@ async fn fetch_receipts(pool: &PgPool, tenant_id: Uuid) -> Result<ReceiptsSummar
 
 async fn fetch_cash(pool: &PgPool, tenant_id: Uuid) -> Result<CashSummary, DomainError> {
     let sessions = sqlx::query(
-        "SELECT COUNT(*) FILTER (WHERE status = 'OPEN') AS open_sessions \
-         FROM kudiba_treasury.cash_sessions WHERE tenant_id = $1",
+        "SELECT \
+            COUNT(DISTINCT cs.id) FILTER (WHERE cs.status = 'OPEN') AS open_sessions, \
+            COALESCE(SUM(DISTINCT cs.opening_balance) FILTER (WHERE cs.status = 'OPEN'), 0) + \
+            COALESCE(SUM(CASE WHEN cs.status = 'OPEN' AND cm.movement_type IN ('SALE_RECEIPT', 'SUPPLY') THEN cm.amount ELSE 0 END), 0) - \
+            COALESCE(SUM(CASE WHEN cs.status = 'OPEN' AND cm.movement_type IN ('BLEED', 'EXPENSE') THEN cm.amount ELSE 0 END), 0) AS total_cash \
+         FROM kudiba_treasury.cash_sessions cs \
+         LEFT JOIN kudiba_treasury.cash_movements cm ON cm.session_id = cs.id \
+         WHERE cs.tenant_id = $1",
     )
     .bind(tenant_id)
     .fetch_one(pool)
@@ -259,6 +267,7 @@ async fn fetch_cash(pool: &PgPool, tenant_id: Uuid) -> Result<CashSummary, Domai
         open_sessions: sessions.try_get("open_sessions").map_err(db_error)?,
         total_registers: registers.try_get("total_registers").map_err(db_error)?,
         active_registers: registers.try_get("active_registers").map_err(db_error)?,
+        total_cash_in_hand: sessions.try_get("total_cash").unwrap_or(Decimal::ZERO),
     })
 }
 

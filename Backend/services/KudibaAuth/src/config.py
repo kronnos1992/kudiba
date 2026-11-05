@@ -8,7 +8,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _DEVELOPMENT_JWT_SECRET = "kudiba_jwt_secret_development_key_change_in_production_2026"
 _DEVELOPMENT_CORS_ORIGINS = {"http://localhost:3000", "http://localhost:5173"}
 _DEVELOPMENT_DATABASE_URL = "postgresql+asyncpg://kudiba:kudiba_secret_pass@localhost:5432/kudiba_auth"
+_DEVELOPMENT_DATABASE_URLS = {
+    _DEVELOPMENT_DATABASE_URL,
+    "postgresql+asyncpg://kudiba:kudiba_secret_pass@127.0.0.1:5432/kudiba_auth",
+}
 _DEVELOPMENT_REDIS_URL = "redis://localhost:6379/0"
+_DEVELOPMENT_REDIS_URLS = {
+    _DEVELOPMENT_REDIS_URL,
+    "redis://127.0.0.1:6379/0",
+}
 
 class Settings(BaseSettings):
     port: int = 8082
@@ -60,7 +68,7 @@ class Settings(BaseSettings):
         if self.environment.lower() in {"prod", "production"}:
             if self.jwt_secret == _DEVELOPMENT_JWT_SECRET or len(self.jwt_secret.encode("utf-8")) < 32:
                 raise ValueError("Production requires a JWT_SECRET with at least 32 bytes.")
-            if self.database_url == _DEVELOPMENT_DATABASE_URL or self.redis_url == _DEVELOPMENT_REDIS_URL:
+            if self.database_url in _DEVELOPMENT_DATABASE_URLS or self.redis_url in _DEVELOPMENT_REDIS_URLS:
                 raise ValueError("Production requires explicit DATABASE_URL and REDIS_URL values.")
             if (
                 not self.cors_allowed_origins

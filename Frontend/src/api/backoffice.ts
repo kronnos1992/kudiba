@@ -1,5 +1,6 @@
 import { apiClient } from './client';
 import {
+  AccountingTemplate,
   AlvaraVerificationResult,
   BackofficeClient,
   BackofficeModule,
@@ -10,6 +11,11 @@ import {
 } from '../types/backoffice';
 
 export const backofficeApi = {
+  listAccountingTemplates: async (): Promise<AccountingTemplate[]> => {
+    const res = await apiClient.get<AccountingTemplate[]>('/api/v1/backoffice/accounting-templates');
+    return res.data;
+  },
+
   listModules: async (): Promise<BackofficeModule[]> => {
     const res = await apiClient.get<BackofficeModule[]>('/api/v1/backoffice/modules');
     return res.data;

@@ -32,6 +32,7 @@ import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { SortableHeader } from '../../components/common/SortableHeader';
 import { useTableSort } from '../../hooks/useTableSort';
+import { validateInvoiceCustomerNif } from '../../utils/validators';
 import {
   invoicingApi,
   Invoice,
@@ -256,6 +257,41 @@ export const InvoicingView: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['inventory_products'] });
       setSelectedInvoice(data);
       setActiveTab('invoices');
+
+      // Trigger Automático: Regista novo cliente no catálogo se não for Consumidor Final
+      const trimmedNif = customerNif.trim();
+      const trimmedName = customerName.trim();
+      if (trimmedNif && trimmedNif !== '999999999' && trimmedName) {
+        inventoryApi
+          .listEntities({ limit: 100 })
+          .then((entities) => {
+            const exists = entities.some((e) => e.tax_id === trimmedNif);
+            if (!exists) {
+              inventoryApi
+                .registerEntity({
+                  entity_type: 'CUSTOMER',
+                  tax_id_kind:
+                    trimmedNif.length === 10
+                      ? 'LEGAL_ENTITY'
+                      : /^\d{9}[A-Z]{2}\d{3}$/i.test(trimmedNif)
+                      ? 'NATURAL_PERSON_BI'
+                      : 'FOREIGN',
+                  tax_id: trimmedNif,
+                  name: trimmedName,
+                  address_detail: customerAddress || undefined,
+                  city: 'Luanda',
+                  province: 'Luanda',
+                  country_code: 'AO',
+                })
+                .then(() => {
+                  queryClient.invalidateQueries({ queryKey: ['inventory_entities'] });
+                  queryClient.invalidateQueries({ queryKey: ['pos_customer_entities'] });
+                })
+                .catch(() => {});
+            }
+          })
+          .catch(() => {});
+      }
     },
   });
 
@@ -1337,16 +1373,34 @@ export const InvoicingView: React.FC = () => {
 
                   <div>
                     <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
-                      NIF (Angola)
+                      NIF / BI (Angola) *
                     </label>
                     <input
                       type="text"
                       required
                       value={customerNif}
-                      onChange={(e) => setCustomerNif(e.target.value)}
-                      placeholder="5000123456"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      onChange={(e) => setCustomerNif(e.target.value.trim())}
+                      placeholder="5000123456 ou 001234567LA012"
+                      className={`w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border text-sm font-mono focus:outline-none focus:ring-2 transition-colors ${
+                        customerNif.length > 0
+                          ? validateInvoiceCustomerNif(customerNif).isValid
+                            ? 'border-emerald-500 focus:ring-emerald-500'
+                            : 'border-rose-400 focus:ring-rose-500'
+                          : 'border-slate-200 dark:border-slate-700 focus:ring-emerald-500'
+                      }`}
                     />
+                    {customerNif.length > 0 && (
+                      validateInvoiceCustomerNif(customerNif).isValid ? (
+                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1 font-medium font-sans">
+                          <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> NIF/BI válido (AGT)
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-rose-500 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium font-sans">
+                          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                          {validateInvoiceCustomerNif(customerNif).error}
+                        </p>
+                      )
+                    )}
                   </div>
                 </div>
 

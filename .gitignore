@@ -52,3 +52,8 @@ redpanda_data/
 certs/
 *.pem
 *.key
+
+# Docker image tarballs
+docker-images/
+*.tar
+*.tar.bak

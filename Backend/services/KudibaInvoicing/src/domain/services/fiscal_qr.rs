@@ -5,7 +5,7 @@
 //! devem conter uma representação bidimensional (QR Code) contendo os dados
 //! essenciais do documento para validação tributária por agentes e consumidores.
 
-use qrcode::{Color, QrCode};
+use qrcode::{Color, EcLevel, QrCode};
 
 use crate::domain::entities::invoice::{Invoice, CONSUMIDOR_FINAL};
 use crate::domain::error::DomainError;
@@ -62,7 +62,8 @@ impl AgtQrCodeService {
 
     /// Gera a matriz bidimensional de módulos (true = preto, false = branco)
     pub fn generate_matrix(payload: &str) -> Result<Vec<Vec<bool>>, DomainError> {
-        let code = QrCode::new(payload.as_bytes())
+        let code = QrCode::with_error_correction_level(payload.as_bytes(), EcLevel::H)
+            .or_else(|_| QrCode::new(payload.as_bytes()))
             .map_err(|err| DomainError::invalid(format!("Falha ao compilar QR Code: {err}")))?;
 
         let width = code.width();
@@ -105,6 +106,26 @@ impl AgtQrCodeService {
                 }
             }
         }
+
+        let center = total_size as f64 / 2.0;
+        let quiet_size = total_size as f64 * 0.24;
+        let badge_size = total_size as f64 * 0.20;
+        let quiet_radius = quiet_size * 0.22;
+        let badge_radius = badge_size * 0.20;
+        let font_size = badge_size * 0.65;
+        let quiet_origin = center - quiet_size / 2.0;
+        let badge_origin = center - badge_size / 2.0;
+
+        svg.push_str(&format!(
+            r##"<rect x="{quiet_origin:.2}" y="{quiet_origin:.2}" width="{quiet_size:.2}" height="{quiet_size:.2}" rx="{quiet_radius:.2}" fill="#FFFFFF"/>"##
+        ));
+        svg.push_str(&format!(
+            r##"<rect x="{badge_origin:.2}" y="{badge_origin:.2}" width="{badge_size:.2}" height="{badge_size:.2}" rx="{badge_radius:.2}" fill="#020617" stroke="#10B981" stroke-width="{:.2}"/>"##,
+            (badge_size * 0.05).max(1.0)
+        ));
+        svg.push_str(&format!(
+            r##"<text x="{center:.2}" y="{center:.2}" font-family="'Plus Jakarta Sans', system-ui, -apple-system, sans-serif" font-weight="900" font-size="{font_size:.2}" text-anchor="middle" dominant-baseline="central" fill="#FCD34D">K</text>"##
+        ));
 
         svg.push_str("</svg>");
         Ok(svg)

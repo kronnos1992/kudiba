@@ -15,3 +15,8 @@ async def session_scope(
         except Exception:
             await session.rollback()
             raise
+
+
+from src.infrastructure.persistence.audit_repository import SqlAlchemyAuditRepository
+
+__all__ = ["session_scope", "SqlAlchemyAuditRepository"]

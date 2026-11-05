@@ -6,6 +6,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::application::dto::{
@@ -232,6 +233,129 @@ fn extract_user_id(headers: &HeaderMap) -> Uuid {
         .unwrap_or_else(Uuid::nil)
 }
 
+fn extract_actor_info(headers: &HeaderMap) -> (String, String, Option<String>) {
+    let user_id = headers
+        .get("X-Resolved-User-ID")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "sistema".to_string());
+
+    let user_name = headers
+        .get("X-Resolved-User-Name")
+        .or_else(|| headers.get("X-Resolved-Email"))
+        .or_else(|| headers.get("X-Resolved-User-Email"))
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "Gestor de Stock / Operador".to_string());
+
+    let ip = headers
+        .get("X-Forwarded-For")
+        .or_else(|| headers.get("X-Real-IP"))
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string());
+
+    (user_id, user_name, ip)
+}
+
+fn ensure_audit_access(headers: &HeaderMap) -> Result<(), (StatusCode, Json<ProblemDetail>)> {
+    let allowed = headers
+        .get("X-Resolved-Roles")
+        .and_then(|h| h.to_str().ok())
+        .map(|raw| {
+            raw.split(',')
+                .map(|role| role.trim().to_uppercase())
+                .any(|role| {
+                    matches!(
+                        role.as_str(),
+                        "ADMIN"
+                            | "ADMINISTRADOR"
+                            | "SYSADMIN"
+                            | "SUPER_ADMIN"
+                            | "AUDITOR"
+                            | "GESTOR"
+                            | "GESTOR_STOCK"
+                            | "CONTABILISTA"
+                    )
+                })
+        })
+        .unwrap_or(false);
+
+    if allowed {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::FORBIDDEN,
+            Json(ProblemDetail::new(
+                StatusCode::FORBIDDEN,
+                "Acesso Negado",
+                "Apenas perfis de administração, auditoria ou gestão podem consultar a trilha de auditoria.",
+                "AUDIT_ACCESS_DENIED",
+            )),
+        ))
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn record_inventory_audit(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    action: &str,
+    entity_type: &str,
+    entity_id: Option<&str>,
+    document_reference: Option<&str>,
+    actor_user_id: Option<&str>,
+    actor_name: Option<&str>,
+    _ip_address: Option<&str>,
+    details: serde_json::Value,
+) {
+    let res = sqlx::query(
+        r#"
+        INSERT INTO kudiba_audit.system_audit_trail
+            (tenant_id, module, action, entity_type, entity_id, document_reference, actor_user_id, actor_name, details, created_at)
+        VALUES ($1, 'INVENTARIO', $2, $3, $4, $5, $6, $7, $8, NOW())
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(action)
+    .bind(entity_type)
+    .bind(entity_id)
+    .bind(document_reference)
+    .bind(actor_user_id.unwrap_or("sistema"))
+    .bind(actor_name.unwrap_or("Sistema / Gestor de Stock"))
+    .bind(details)
+    .execute(pool)
+    .await;
+
+    if let Err(err) = res {
+        tracing::warn!(target: "audit::inventory", action, error = %err, "Falha ao registar auditoria de inventário");
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemAuditTrailQueryParams {
+    pub module: Option<String>,
+    pub action: Option<String>,
+    pub search: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemAuditTrailEntry {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub module: String,
+    pub action: String,
+    pub entity_type: String,
+    pub entity_id: Option<String>,
+    pub document_reference: Option<String>,
+    pub actor_user_id: Option<String>,
+    pub actor_name: Option<String>,
+    pub ip_address: Option<String>,
+    pub details: serde_json::Value,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct PaginationQuery {
     pub limit: Option<i64>,
@@ -275,6 +399,28 @@ async fn create_product_handler(
         .execute(tenant_id, payload)
         .await
         .map_err(map_domain_error)?;
+
+    let (actor_id, actor_name, ip) = extract_actor_info(&headers);
+    record_inventory_audit(
+        &state.db_pool,
+        tenant_id,
+        "CRIAR_ARTIGO",
+        "ARTIGO",
+        Some(&product.id.to_string()),
+        Some(&product.code),
+        Some(&actor_id),
+        Some(&actor_name),
+        ip.as_deref(),
+        serde_json::json!({
+            "code": product.code,
+            "name": product.name,
+            "product_type": product.product_type,
+            "sale_price": product.sale_price,
+            "tax_percentage": product.tax_percentage,
+            "unit_of_measure": product.unit_of_measure,
+        }),
+    )
+    .await;
 
     Ok((StatusCode::CREATED, Json(product)))
 }
@@ -342,6 +488,25 @@ async fn update_product_price_handler(
         .await
         .map_err(map_domain_error)?;
 
+    let (actor_id, actor_name, ip) = extract_actor_info(&headers);
+    record_inventory_audit(
+        &state.db_pool,
+        tenant_id,
+        "ALTERAR_PRECO_VENDA",
+        "ARTIGO",
+        Some(&product.id.to_string()),
+        Some(&product.code),
+        Some(&actor_id),
+        Some(&actor_name),
+        ip.as_deref(),
+        serde_json::json!({
+            "code": product.code,
+            "name": product.name,
+            "sale_price": product.sale_price,
+        }),
+    )
+    .await;
+
     Ok(Json(product))
 }
 
@@ -357,6 +522,28 @@ async fn update_product_handler(
         .execute(tenant_id, id, payload)
         .await
         .map_err(map_domain_error)?;
+
+    let (actor_id, actor_name, ip) = extract_actor_info(&headers);
+    record_inventory_audit(
+        &state.db_pool,
+        tenant_id,
+        "ATUALIZAR_ARTIGO",
+        "ARTIGO",
+        Some(&product.id.to_string()),
+        Some(&product.code),
+        Some(&actor_id),
+        Some(&actor_name),
+        ip.as_deref(),
+        serde_json::json!({
+            "code": product.code,
+            "name": product.name,
+            "description": product.description,
+            "sale_price": product.sale_price,
+            "tax_percentage": product.tax_percentage,
+            "is_active": product.is_active,
+        }),
+    )
+    .await;
 
     Ok(Json(product))
 }
@@ -376,6 +563,26 @@ async fn register_entity_handler(
         .execute(tenant_id, payload)
         .await
         .map_err(map_domain_error)?;
+
+    let (actor_id, actor_name, ip) = extract_actor_info(&headers);
+    record_inventory_audit(
+        &state.db_pool,
+        tenant_id,
+        "CRIAR_ENTIDADE_COMERCIAL",
+        "ENTIDADE",
+        Some(&entity.id.to_string()),
+        Some(&entity.tax_id),
+        Some(&actor_id),
+        Some(&actor_name),
+        ip.as_deref(),
+        serde_json::json!({
+            "tax_id": entity.tax_id,
+            "name": entity.name,
+            "entity_type": entity.entity_type,
+            "email": entity.email,
+        }),
+    )
+    .await;
 
     Ok((StatusCode::CREATED, Json(entity)))
 }
@@ -443,6 +650,28 @@ async fn update_entity_handler(
         .await
         .map_err(map_domain_error)?;
 
+    let (actor_id, actor_name, ip) = extract_actor_info(&headers);
+    record_inventory_audit(
+        &state.db_pool,
+        tenant_id,
+        "ATUALIZAR_ENTIDADE_COMERCIAL",
+        "ENTIDADE",
+        Some(&entity.id.to_string()),
+        Some(&entity.tax_id),
+        Some(&actor_id),
+        Some(&actor_name),
+        ip.as_deref(),
+        serde_json::json!({
+            "tax_id": entity.tax_id,
+            "name": entity.name,
+            "entity_type": entity.entity_type,
+            "email": entity.email,
+            "phone": entity.phone,
+            "is_active": entity.is_active,
+        }),
+    )
+    .await;
+
     Ok(Json(entity))
 }
 
@@ -461,6 +690,25 @@ async fn create_warehouse_handler(
         .execute(tenant_id, payload)
         .await
         .map_err(map_domain_error)?;
+
+    let (actor_id, actor_name, ip) = extract_actor_info(&headers);
+    record_inventory_audit(
+        &state.db_pool,
+        tenant_id,
+        "CRIAR_ARMAZEM",
+        "ARMAZEM",
+        Some(&warehouse.id.to_string()),
+        Some(&warehouse.code),
+        Some(&actor_id),
+        Some(&actor_name),
+        ip.as_deref(),
+        serde_json::json!({
+            "code": warehouse.code,
+            "name": warehouse.name,
+            "address": warehouse.address_detail,
+        }),
+    )
+    .await;
 
     Ok((StatusCode::CREATED, Json(warehouse)))
 }
@@ -508,6 +756,26 @@ async fn update_warehouse_handler(
         .await
         .map_err(map_domain_error)?;
 
+    let (actor_id, actor_name, ip) = extract_actor_info(&headers);
+    record_inventory_audit(
+        &state.db_pool,
+        tenant_id,
+        "ATUALIZAR_ARMAZEM",
+        "ARMAZEM",
+        Some(&warehouse.id.to_string()),
+        Some(&warehouse.code),
+        Some(&actor_id),
+        Some(&actor_name),
+        ip.as_deref(),
+        serde_json::json!({
+            "code": warehouse.code,
+            "name": warehouse.name,
+            "address": warehouse.address_detail,
+            "is_active": warehouse.is_active,
+        }),
+    )
+    .await;
+
     Ok(Json(warehouse))
 }
 
@@ -526,6 +794,26 @@ async fn create_batch_handler(
         .execute(tenant_id, payload)
         .await
         .map_err(map_domain_error)?;
+
+    let (actor_id, actor_name, ip) = extract_actor_info(&headers);
+    record_inventory_audit(
+        &state.db_pool,
+        tenant_id,
+        "CRIAR_LOTE",
+        "LOTE",
+        Some(&batch.id.to_string()),
+        Some(&batch.batch_number),
+        Some(&actor_id),
+        Some(&actor_name),
+        ip.as_deref(),
+        serde_json::json!({
+            "product_id": batch.product_id,
+            "batch_number": batch.batch_number,
+            "expiry_date": batch.expiry_date,
+            "is_expired": batch.is_expired,
+        }),
+    )
+    .await;
 
     Ok((StatusCode::CREATED, Json(batch)))
 }
@@ -579,6 +867,28 @@ async fn receive_purchase_handler(
         .await
         .map_err(map_domain_error)?;
 
+    let (actor_id, actor_name, ip) = extract_actor_info(&headers);
+    record_inventory_audit(
+        &state.db_pool,
+        tenant_id,
+        "ENTRADA_STOCK_COMPRA",
+        "MOVIMENTO_STOCK",
+        Some(&movement.id.to_string()),
+        movement.document_ref.as_deref(),
+        Some(&actor_id),
+        Some(&actor_name),
+        ip.as_deref(),
+        serde_json::json!({
+            "product_id": movement.product_id,
+            "warehouse_id": movement.warehouse_id,
+            "quantity": movement.quantity,
+            "unit_cost": movement.unit_cost,
+            "total_cost": movement.total_cost,
+            "movement_type": movement.movement_type,
+        }),
+    )
+    .await;
+
     Ok((StatusCode::CREATED, Json(movement)))
 }
 
@@ -595,6 +905,26 @@ async fn transfer_stock_handler(
         .execute(tenant_id, user_id, payload)
         .await
         .map_err(map_domain_error)?;
+
+    let (actor_id, actor_name, ip) = extract_actor_info(&headers);
+    record_inventory_audit(
+        &state.db_pool,
+        tenant_id,
+        "TRANSFERENCIA_ARMAZENS",
+        "MOVIMENTO_STOCK",
+        Some(&movement.id.to_string()),
+        movement.document_ref.as_deref(),
+        Some(&actor_id),
+        Some(&actor_name),
+        ip.as_deref(),
+        serde_json::json!({
+            "product_id": movement.product_id,
+            "quantity": movement.quantity,
+            "movement_type": movement.movement_type,
+            "document_ref": movement.document_ref,
+        }),
+    )
+    .await;
 
     Ok((StatusCode::CREATED, Json(movement)))
 }
@@ -613,6 +943,26 @@ async fn dispatch_sale_handler(
         .await
         .map_err(map_domain_error)?;
 
+    let (actor_id, actor_name, ip) = extract_actor_info(&headers);
+    record_inventory_audit(
+        &state.db_pool,
+        tenant_id,
+        "SAIDA_STOCK_VENDA",
+        "MOVIMENTO_STOCK",
+        Some(&movement.id.to_string()),
+        movement.document_ref.as_deref(),
+        Some(&actor_id),
+        Some(&actor_name),
+        ip.as_deref(),
+        serde_json::json!({
+            "product_id": movement.product_id,
+            "warehouse_id": movement.warehouse_id,
+            "quantity": movement.quantity,
+            "movement_type": movement.movement_type,
+        }),
+    )
+    .await;
+
     Ok((StatusCode::CREATED, Json(movement)))
 }
 
@@ -629,6 +979,27 @@ async fn adjust_stock_handler(
         .execute(tenant_id, user_id, payload)
         .await
         .map_err(map_domain_error)?;
+
+    let (actor_id, actor_name, ip) = extract_actor_info(&headers);
+    record_inventory_audit(
+        &state.db_pool,
+        tenant_id,
+        "AJUSTE_INVENTARIO",
+        "MOVIMENTO_STOCK",
+        Some(&movement.id.to_string()),
+        movement.document_ref.as_deref(),
+        Some(&actor_id),
+        Some(&actor_name),
+        ip.as_deref(),
+        serde_json::json!({
+            "product_id": movement.product_id,
+            "warehouse_id": movement.warehouse_id,
+            "quantity": movement.quantity,
+            "movement_type": movement.movement_type,
+            "notes": movement.notes,
+        }),
+    )
+    .await;
 
     Ok((StatusCode::CREATED, Json(movement)))
 }
@@ -706,13 +1077,144 @@ async fn process_invoice_issued_handler(
         .unwrap_or(payload.tenant_id);
     let user_id = extract_user_id(&headers);
 
+    let (actor_id, actor_name, ip) = extract_actor_info(&headers);
+    let document_number = payload.document_number.clone();
+    let document_type = payload.document_type.clone();
+    let lines_count = payload.lines.len();
+
     let result = state
         .process_invoice_issued_cmd
         .execute(tenant_id, user_id, payload)
         .await
         .map_err(map_domain_error)?;
 
+    record_inventory_audit(
+        &state.db_pool,
+        tenant_id,
+        "BAIXA_STOCK_FACTURACAO",
+        "MOVIMENTO_STOCK",
+        None,
+        Some(&document_number),
+        Some(&actor_id),
+        Some(&actor_name),
+        ip.as_deref(),
+        serde_json::json!({
+            "document_number": document_number,
+            "document_type": document_type,
+            "lines_count": lines_count,
+            "processed": result.processed,
+            "movements_count": result.movements_recorded,
+            "items_skipped_intangible": result.items_skipped_intangible,
+        }),
+    )
+    .await;
+
     Ok((StatusCode::OK, Json(result)))
+}
+
+pub async fn system_audit_trail_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<SystemAuditTrailQueryParams>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ProblemDetail>)> {
+    ensure_audit_access(&headers)?;
+    let tenant_id = extract_tenant_id(&headers)?;
+
+    let limit = params.limit.unwrap_or(150).clamp(1, 500);
+    let offset = params.offset.unwrap_or(0).max(0);
+
+    let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+        "SELECT id, tenant_id, module, action, entity_type, entity_id, document_reference, \
+         actor_user_id, actor_name, ip_address::text AS ip_address, details::text AS details, \
+         created_at FROM kudiba_audit.system_audit_trail WHERE tenant_id = ",
+    );
+    builder.push_bind(tenant_id);
+
+    if let Some(ref m) = params.module {
+        if !m.trim().is_empty() && m.trim().to_uppercase() != "ALL" {
+            builder.push(" AND UPPER(module) = ");
+            builder.push_bind(m.trim().to_uppercase());
+        }
+    }
+
+    if let Some(ref a) = params.action {
+        if !a.trim().is_empty() && a.trim().to_uppercase() != "ALL" {
+            builder.push(" AND UPPER(action) = ");
+            builder.push_bind(a.trim().to_uppercase());
+        }
+    }
+
+    if let Some(ref q) = params.search {
+        let clean_q = q.trim();
+        if !clean_q.is_empty() {
+            builder.push(" AND (document_reference ILIKE ");
+            builder.push_bind(format!("%{}%", clean_q));
+            builder.push(" OR action ILIKE ");
+            builder.push_bind(format!("%{}%", clean_q));
+            builder.push(" OR actor_name ILIKE ");
+            builder.push_bind(format!("%{}%", clean_q));
+            builder.push(" OR entity_type ILIKE ");
+            builder.push_bind(format!("%{}%", clean_q));
+            builder.push(")");
+        }
+    }
+
+    builder.push(" ORDER BY created_at DESC LIMIT ");
+    builder.push_bind(limit);
+    builder.push(" OFFSET ");
+    builder.push_bind(offset);
+
+    let rows = builder
+        .build()
+        .fetch_all(&state.db_pool)
+        .await
+        .map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ProblemDetail::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Erro de Base de Dados",
+                    &err.to_string(),
+                    "DATABASE_ERROR",
+                )),
+            )
+        })?;
+
+    let items: Vec<SystemAuditTrailEntry> = rows
+        .iter()
+        .map(|r| {
+            let details_str: String = r.get("details");
+            let details = serde_json::from_str(&details_str).unwrap_or(serde_json::Value::Null);
+
+            SystemAuditTrailEntry {
+                id: r.get("id"),
+                tenant_id: r.get("tenant_id"),
+                module: r.get("module"),
+                action: r.get("action"),
+                entity_type: r.get("entity_type"),
+                entity_id: r.get("entity_id"),
+                document_reference: r.get("document_reference"),
+                actor_user_id: r.get("actor_user_id"),
+                actor_name: r.get("actor_name"),
+                ip_address: r.get("ip_address"),
+                details,
+                created_at: r.get("created_at"),
+            }
+        })
+        .collect();
+
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM kudiba_audit.system_audit_trail WHERE tenant_id = $1",
+    )
+    .bind(tenant_id)
+    .fetch_one(&state.db_pool)
+    .await
+    .unwrap_or(0);
+
+    Ok(Json(serde_json::json!({
+        "items": items,
+        "total": total
+    })))
 }
 
 async fn dashboard_summary_handler(
@@ -838,6 +1340,10 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/v1/inventory/events/fiscal-document-issued",
             post(process_invoice_issued_handler),
+        )
+        .route(
+            "/api/v1/inventory/system-audit-trail",
+            get(system_audit_trail_handler),
         )
         .layer(axum::middleware::from_fn(tenant_scope_middleware))
         .with_state(state)

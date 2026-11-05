@@ -24,7 +24,10 @@ from src.application.queries import (
 from src.config import Settings
 from src.infrastructure.connectors.rest_pull import RestPullConnector
 from src.infrastructure.events.rabbitmq_publisher import RabbitMqEventPublisher
-from src.infrastructure.persistence import PostgresIntegrationRepository
+from src.infrastructure.persistence import (
+    PostgresIntegrationRepository,
+    PostgresSystemAuditRepository,
+)
 from src.infrastructure.scheduling import IntegrationsScheduler
 from src.infrastructure.security import SecretCipher
 
@@ -50,6 +53,7 @@ class AppState:
     get_endpoint: GetEndpointUseCase
     list_mappings: ListMappingsUseCase
     list_runs: ListRunsUseCase
+    audit_repo: PostgresSystemAuditRepository
 
 
 def create_app_state(
@@ -58,6 +62,7 @@ def create_app_state(
     publisher: Optional[RabbitMqEventPublisher] = None,
 ) -> AppState:
     repository = PostgresIntegrationRepository(session_factory)
+    audit_repo = PostgresSystemAuditRepository(session_factory)
     cipher = SecretCipher(config.integration_encryption_key, config.jwt_secret)
     pub = publisher or RabbitMqEventPublisher(config.rabbitmq_url, config.event_exchange)
     rest_connector = RestPullConnector(config.http_timeout_seconds)
@@ -103,4 +108,5 @@ def create_app_state(
         get_endpoint=get_endpoint,
         list_mappings=list_mappings,
         list_runs=list_runs,
+        audit_repo=audit_repo,
     )

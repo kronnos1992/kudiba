@@ -9,6 +9,7 @@ _DEVELOPMENT_JWT_SECRET = "kudiba_jwt_secret_development_key_change_in_productio
 _DEVELOPMENT_CORS_ORIGINS = {"http://localhost:3000", "http://localhost:5173"}
 _DEVELOPMENT_DATABASE_URL = "postgresql+asyncpg://kudiba:kudiba_secret_pass@localhost:5432/kudiba_backoffice"
 _DEVELOPMENT_AUTH_DATABASE_URL = "postgresql+asyncpg://kudiba:kudiba_secret_pass@localhost:5432/kudiba_auth"
+_DEVELOPMENT_ACCOUNTING_DATABASE_URL = "postgresql+asyncpg://kudiba:kudiba_secret_pass@localhost:5432/kudiba_accounting"
 
 
 class Settings(BaseSettings):
@@ -16,6 +17,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     database_url: str = _DEVELOPMENT_DATABASE_URL
     auth_database_url: str = _DEVELOPMENT_AUTH_DATABASE_URL
+    accounting_database_url: str = _DEVELOPMENT_ACCOUNTING_DATABASE_URL
 
     jwt_secret: str = _DEVELOPMENT_JWT_SECRET
     jwt_algorithm: str = "HS256"
@@ -50,8 +52,11 @@ class Settings(BaseSettings):
             if (
                 self.database_url == _DEVELOPMENT_DATABASE_URL
                 or self.auth_database_url == _DEVELOPMENT_AUTH_DATABASE_URL
+                or self.accounting_database_url == _DEVELOPMENT_ACCOUNTING_DATABASE_URL
             ):
-                raise ValueError("Production requires explicit DATABASE_URL and AUTH_DATABASE_URL values.")
+                raise ValueError(
+                    "Production requires explicit DATABASE_URL, AUTH_DATABASE_URL and ACCOUNTING_DATABASE_URL values."
+                )
             if (
                 not self.cors_allowed_origins
                 or "*" in self.cors_allowed_origins
@@ -74,6 +79,10 @@ class Settings(BaseSettings):
     @property
     def async_auth_database_url(self) -> str:
         return self._to_asyncpg(self.auth_database_url)
+
+    @property
+    def async_accounting_database_url(self) -> str:
+        return self._to_asyncpg(self.accounting_database_url)
 
 
 @lru_cache

@@ -25,6 +25,7 @@ import {
   Banknote,
   WifiOff,
   CloudUpload,
+  Sparkles,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { toast } from '../../stores/toastStore';
@@ -40,6 +41,7 @@ import { invoicingApi, Invoice, PosDailyReportResult, PosZReportSummary } from '
 import { treasuryApi, MovementType, PosPanelResponse } from '../../api/treasury';
 import { authApi, TenantMember } from '../../api/auth';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
+import { validateInvoiceCustomerNif } from '../../utils/validators';
 import {
   cachePosProducts,
   getCachedPosProducts,
@@ -87,6 +89,7 @@ export const PosView: React.FC = () => {
   } | null>(null);
   const [customerName, setCustomerName] = useState<string>('Consumidor Final');
   const [customerNif, setCustomerNif] = useState<string>('999999999');
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   const [seriesCode, setSeriesCode] = useState<string>('2026A');
   const [selectedRegisterId, setSelectedRegisterId] = useState<string>('');
 
@@ -268,6 +271,24 @@ export const PosView: React.FC = () => {
     enabled: Boolean(activeTenant?.id) && Boolean(isManager),
     retry: false,
   });
+
+  const { data: customerEntities = [] } = useQuery({
+    queryKey: ['pos_customer_entities', activeTenant?.id],
+    queryFn: () => inventoryApi.listEntities({ limit: 150 }),
+    enabled: Boolean(activeTenant?.id),
+    staleTime: 60_000,
+  });
+
+  const matchingCustomers = React.useMemo(() => {
+    if (!customerName || customerName.trim().length === 0 || customerName === 'Consumidor Final') {
+      return [];
+    }
+    const term = customerName.toLowerCase().trim();
+    return customerEntities.filter((c) => {
+      const isClient = c.entity_type === 'CUSTOMER' || c.entity_type === 'BOTH';
+      return isClient && (c.name.toLowerCase().includes(term) || c.tax_id.includes(term));
+    });
+  }, [customerEntities, customerName]);
 
   const getOperatorDisplayName = (operatorId?: string | null) => {
     if (!operatorId) return '—';
@@ -550,6 +571,36 @@ export const PosView: React.FC = () => {
         typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
           : `pos-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+      // Trigger Automático: Regista o cliente no catálogo de entidades se não existir
+      if (customerNifVal !== '999999999' && customerNameVal !== 'Consumidor Final') {
+        const alreadyExists = customerEntities.some((e) => e.tax_id === customerNifVal);
+        if (!alreadyExists) {
+          inventoryApi
+            .registerEntity({
+              entity_type: 'CUSTOMER',
+              tax_id_kind:
+                customerNifVal.length === 10
+                  ? 'LEGAL_ENTITY'
+                  : /^\d{9}[A-Z]{2}\d{3}$/i.test(customerNifVal)
+                  ? 'NATURAL_PERSON_BI'
+                  : 'FOREIGN',
+              tax_id: customerNifVal,
+              name: customerNameVal,
+              city: activeTenant?.city || 'Luanda',
+              province: activeTenant?.province || 'Luanda',
+              country_code: 'AO',
+            })
+            .then(() => {
+              queryClient.invalidateQueries({ queryKey: ['pos_customer_entities'] });
+              queryClient.invalidateQueries({ queryKey: ['inventory_entities'] });
+              toast.success(`Cliente "${customerNameVal}" (NIF: ${customerNifVal}) adicionado automaticamente ao catálogo!`);
+            })
+            .catch((err) => {
+              console.warn('Auto-save cliente no POS:', err);
+            });
+        }
+      }
 
       const persistOfflineSale = async (saleId?: string): Promise<OfflinePosSale> => {
         return saveOfflineSale({
@@ -1229,25 +1280,78 @@ export const PosView: React.FC = () => {
                       )}
                     </select>
                   </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-500 uppercase">Cliente</label>
+                  <div className="relative">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase">Cliente</label>
+                      {customerNif !== '999999999' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomerName('Consumidor Final');
+                            setCustomerNif('999999999');
+                            setShowCustomerSuggestions(false);
+                          }}
+                          className="text-[10px] text-emerald-600 hover:underline font-semibold"
+                        >
+                          Consumidor Final
+                        </button>
+                      )}
+                    </div>
                     <input
                       type="text"
                       value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
+                      onChange={(e) => {
+                        setCustomerName(e.target.value);
+                        setShowCustomerSuggestions(true);
+                      }}
+                      onFocus={() => setShowCustomerSuggestions(true)}
+                      placeholder="Pesquisar ou digitar cliente..."
                       className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium"
                     />
+                    {/* Autocomplete Dropdown para clientes pré-registados */}
+                    {showCustomerSuggestions && matchingCustomers.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xl max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                        {matchingCustomers.slice(0, 5).map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              setCustomerName(c.name);
+                              setCustomerNif(c.tax_id);
+                              setShowCustomerSuggestions(false);
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs transition-colors flex items-center justify-between"
+                          >
+                            <span className="font-semibold text-slate-900 dark:text-white truncate">{c.name}</span>
+                            <span className="font-mono text-[10px] text-slate-500 shrink-0 ml-2">{c.tax_id}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="text-[11px] font-bold text-slate-500 uppercase">NIF</label>
                     <input
                       type="text"
                       value={customerNif}
-                      onChange={(e) => setCustomerNif(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium font-mono"
+                      onChange={(e) => setCustomerNif(e.target.value.trim())}
+                      placeholder="999999999"
+                      className={`w-full px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border text-xs font-medium font-mono ${
+                        customerNif.length > 0 && !validateInvoiceCustomerNif(customerNif).isValid
+                          ? 'border-rose-400 focus:ring-rose-500'
+                          : 'border-slate-200 dark:border-slate-700'
+                      }`}
                     />
                   </div>
                 </div>
+
+                {/* Trigger Automático: Notificação visual */}
+                {customerNif !== '999999999' && customerName !== 'Consumidor Final' && !customerEntities.some((e) => e.tax_id === customerNif) && (
+                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1.5 pt-0.5">
+                    <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
+                    Novo cliente: será guardado automaticamente no catálogo após a venda.
+                  </p>
+                )}
 
                 <div>
                   <label className="text-[11px] font-bold text-slate-500 uppercase mb-1 block">

@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronRight,
   ShieldAlert,
+  CheckCircle2,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
@@ -28,6 +29,7 @@ import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { SortableHeader } from '../../components/common/SortableHeader';
 import { useTableSort } from '../../hooks/useTableSort';
+import { validateAngolanBI, validateAngolanIBAN } from '../../utils/validators';
 import {
   payrollApi,
   PayrollPeriod,
@@ -2463,17 +2465,36 @@ export const PayrollView: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="001234567LA032"
+                  placeholder="ex: 001234567LA032"
                   value={employeeForm.identity_card_number}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const bi = e.target.value.toUpperCase().trim();
                     setEmployeeForm({
                       ...employeeForm,
-                      identity_card_number: e.target.value,
-                      nif: employeeForm.nif || e.target.value,
-                    })
-                  }
-                  className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono"
+                      identity_card_number: bi,
+                      nif: employeeForm.nif || bi,
+                    });
+                  }}
+                  className={`w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border rounded-lg font-mono transition-colors ${
+                    employeeForm.identity_card_number.length > 0
+                      ? validateAngolanBI(employeeForm.identity_card_number).isValid
+                        ? 'border-emerald-500 focus:ring-emerald-500'
+                        : 'border-rose-400 focus:ring-rose-500'
+                      : 'border-slate-200 dark:border-slate-700'
+                  }`}
                 />
+                {employeeForm.identity_card_number.length > 0 && (
+                  validateAngolanBI(employeeForm.identity_card_number).isValid ? (
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1 font-medium font-sans">
+                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> BI angolano válido (DNIC)
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-rose-500 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium font-sans">
+                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                      {validateAngolanBI(employeeForm.identity_card_number).error}
+                    </p>
+                  )
+                )}
               </div>
 
               <div>
@@ -2483,9 +2504,9 @@ export const PayrollView: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="001234567LA032"
+                  placeholder="ex: 001234567LA032"
                   value={employeeForm.nif}
-                  onChange={(e) => setEmployeeForm({ ...employeeForm, nif: e.target.value })}
+                  onChange={(e) => setEmployeeForm({ ...employeeForm, nif: e.target.value.toUpperCase().trim() })}
                   className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono"
                 />
               </div>
@@ -2513,8 +2534,26 @@ export const PayrollView: React.FC = () => {
                   placeholder="AO06 0040 0000 1234 5678 9012 3"
                   value={employeeForm.iban}
                   onChange={(e) => setEmployeeForm({ ...employeeForm, iban: e.target.value })}
-                  className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono font-bold text-xs"
+                  className={`w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border rounded-lg font-mono font-bold text-xs transition-colors ${
+                    employeeForm.iban.length > 0
+                      ? validateAngolanIBAN(employeeForm.iban).isValid
+                        ? 'border-emerald-500 focus:ring-emerald-500'
+                        : 'border-rose-400 focus:ring-rose-500'
+                      : 'border-slate-200 dark:border-slate-700'
+                  }`}
                 />
+                {employeeForm.iban.length > 0 && (
+                  validateAngolanIBAN(employeeForm.iban).isValid ? (
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1 font-medium font-sans">
+                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> IBAN angolano válido (AO06)
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-rose-500 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium font-sans">
+                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                      {validateAngolanIBAN(employeeForm.iban).error}
+                    </p>
+                  )
+                )}
               </div>
 
               <div>
@@ -2559,12 +2598,14 @@ export const PayrollView: React.FC = () => {
                   !employeeForm.full_name ||
                   !employeeForm.identity_card_number ||
                   !employeeForm.iban ||
+                  !validateAngolanBI(employeeForm.identity_card_number).isValid ||
+                  !validateAngolanIBAN(employeeForm.iban).isValid ||
                   createEmployeeMutation.isPending
                 }
                 onClick={() => createEmployeeMutation.mutate(employeeForm)}
                 className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50"
               >
-                Gravar Colaborador
+                {createEmployeeMutation.isPending ? 'A Gravar...' : 'Gravar Colaborador'}
               </button>
             </div>
           </div>

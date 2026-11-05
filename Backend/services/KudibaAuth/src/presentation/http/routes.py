@@ -278,6 +278,17 @@ def create_auth_router() -> APIRouter:
             ip_address=extract_client_ip(request),
             user_agent=request.headers.get("User-Agent"),
         )
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="ALTERACAO_PALAVRA_PASSE",
+            entity_type="USER",
+            entity_id=str(ctx.user_id),
+            document_reference=f"USR-{ctx.user_id}",
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"type": "self_service"},
+        )
         return {"success": True, "message": "Palavra-passe alterada. Inicie sessão novamente."}
 
     @router.get(
@@ -334,7 +345,19 @@ def create_auth_router() -> APIRouter:
             ip_address=extract_client_ip(request),
             user_agent=request.headers.get("User-Agent"),
         )
-        return await app_state.update_tenant_settings.execute(cmd)
+        res = await app_state.update_tenant_settings.execute(cmd)
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="CONFIGURACAO_EMPRESA_ATUALIZADA",
+            entity_type="TENANT",
+            entity_id=str(ctx.tenant_id),
+            document_reference=f"TEN-{ctx.tenant_id}",
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"company_name": req.company_name, "nif": req.nif},
+        )
+        return res
 
     CLUSTER_DATABASES = [
         {
@@ -609,6 +632,18 @@ def create_auth_router() -> APIRouter:
             },
         )
 
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="CONEXAO_BD_ATUALIZADA",
+            entity_type="TENANT",
+            entity_id=str(ctx.tenant_id),
+            document_reference=f"TEN-{ctx.tenant_id}",
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"database": req.database, "is_custom_configured": req.is_custom_configured},
+        )
+
         return {
             "success": True,
             "message": "Parâmetros de base de dados atualizados com sucesso.",
@@ -655,7 +690,51 @@ def create_auth_router() -> APIRouter:
             ip_address=extract_client_ip(request),
             user_agent=request.headers.get("User-Agent"),
         )
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="RESET_PALAVRA_PASSE_ADMIN",
+            entity_type="USER",
+            entity_id=str(target_user_id),
+            document_reference=f"USR-{target_user_id}",
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"target_user_id": str(target_user_id)},
+        )
         return {"success": True, "message": "Palavra-passe redefinida; todas as sessões foram encerradas."}
+
+    @router.get(
+        "/system-audit-trail",
+        summary="Consultar Trilha de Auditoria Universal",
+        description="Devolve o histórico de eventos universais de auditoria do Kudiba ERP.",
+    )
+    async def get_system_audit_trail(
+        request: Request,
+        module: Optional[str] = None,
+        action: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+        ctx: SecurityContext = Depends(require_permission("users:read")),
+    ):
+        if not (ctx.has_role("ADMIN") or ctx.has_role("SUPER_ADMIN") or ctx.has_role("AUDITOR")):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Apenas administradores têm permissão para consultar os registos de auditoria.",
+            )
+        app_state = get_app_state(request)
+        items = await app_state.audit_repo.list_system_events(
+            tenant_id=ctx.tenant_id,
+            module=module,
+            action=action,
+            limit=limit,
+            offset=offset,
+        )
+        total = await app_state.audit_repo.count_system_events(
+            tenant_id=ctx.tenant_id,
+            module=module,
+            action=action,
+        )
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
 
     @router.get(
         "/audit-logs",
@@ -702,7 +781,19 @@ def create_auth_router() -> APIRouter:
             ip_address=extract_client_ip(request),
             user_agent=request.headers.get("User-Agent"),
         )
-        return await app_state.invite_user.execute(cmd)
+        res = await app_state.invite_user.execute(cmd)
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="CONVITE_UTILIZADOR",
+            entity_type="USER",
+            entity_id=str(getattr(res, "user_id", getattr(res, "id", req.email))),
+            document_reference=f"INV-{req.email}",
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"email": req.email, "roles": req.roles},
+        )
+        return res
 
     @router.put(
         "/users/{target_user_id}/roles",
@@ -727,6 +818,17 @@ def create_auth_router() -> APIRouter:
             user_agent=request.headers.get("User-Agent"),
         )
         await app_state.update_user_roles.execute(cmd)
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="ATRIBUICAO_PERFIS_UTILIZADOR",
+            entity_type="USER",
+            entity_id=str(target_user_id),
+            document_reference=f"USR-{target_user_id}",
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"roles": req.roles},
+        )
 
     @router.patch(
         "/users/{target_user_id}/status",
@@ -750,6 +852,17 @@ def create_auth_router() -> APIRouter:
             user_agent=request.headers.get("User-Agent"),
         )
         await app_state.update_member_status.execute(cmd)
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="ALTERACAO_ESTADO_UTILIZADOR",
+            entity_type="USER",
+            entity_id=str(target_user_id),
+            document_reference=f"USR-{target_user_id}",
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"status": req.status},
+        )
 
     @router.delete(
         "/users/{target_user_id}",
@@ -771,6 +884,17 @@ def create_auth_router() -> APIRouter:
             user_agent=request.headers.get("User-Agent"),
         )
         await app_state.remove_member.execute(cmd)
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="REMOCAO_MEMBRO_EMPRESA",
+            entity_type="USER",
+            entity_id=str(target_user_id),
+            document_reference=f"USR-{target_user_id}",
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"target_user_id": str(target_user_id)},
+        )
 
     @router.get(
         "/branches",
@@ -804,7 +928,19 @@ def create_auth_router() -> APIRouter:
             city=req.city,
             address_detail=req.address_detail,
         )
-        return await app_state.create_branch.execute(cmd)
+        res = await app_state.create_branch.execute(cmd)
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="CRIACAO_FILIAL",
+            entity_type="BRANCH",
+            entity_id=str(getattr(res, "id", req.code)),
+            document_reference=req.code,
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"name": req.name, "code": req.code},
+        )
+        return res
 
     @router.get(
         "/roles",
@@ -846,7 +982,19 @@ def create_auth_router() -> APIRouter:
             description=req.description,
             permissions=req.permissions,
         )
-        return await app_state.create_role.execute(cmd)
+        res = await app_state.create_role.execute(cmd)
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="CRIACAO_PERFIL",
+            entity_type="ROLE",
+            entity_id=req.id,
+            document_reference=req.id,
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"name": req.name, "permissions": req.permissions},
+        )
+        return res
 
     @router.put(
         "/roles/{role_id}",
@@ -861,7 +1009,19 @@ def create_auth_router() -> APIRouter:
     ):
         app_state = get_app_state(request)
         cmd = UpdateRoleCommand(tenant_id=ctx.tenant_id, role_id=role_id, name=req.name, description=req.description)
-        return await app_state.update_role.execute(cmd)
+        res = await app_state.update_role.execute(cmd)
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="ATUALIZACAO_PERFIL",
+            entity_type="ROLE",
+            entity_id=role_id,
+            document_reference=role_id,
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"name": req.name},
+        )
+        return res
 
     @router.put(
         "/roles/{role_id}/permissions",
@@ -881,7 +1041,19 @@ def create_auth_router() -> APIRouter:
             permissions=req.permissions,
             actor_roles=ctx.roles,
         )
-        return await app_state.update_role_permissions.execute(cmd)
+        res = await app_state.update_role_permissions.execute(cmd)
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="ATUALIZACAO_PERMISSOES_PERFIL",
+            entity_type="ROLE",
+            entity_id=role_id,
+            document_reference=role_id,
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"permissions": req.permissions},
+        )
+        return res
 
     @router.delete(
         "/roles/{role_id}/permissions/override",
@@ -895,7 +1067,19 @@ def create_auth_router() -> APIRouter:
         ctx: SecurityContext = Depends(require_permission("users:manage_roles")),
     ):
         app_state = get_app_state(request)
-        return await app_state.reset_role_permissions.execute(role_id, ctx.tenant_id, ctx.roles)
+        res = await app_state.reset_role_permissions.execute(role_id, ctx.tenant_id, ctx.roles)
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="REPOSICAO_PERMISSOES_PERFIL",
+            entity_type="ROLE",
+            entity_id=role_id,
+            document_reference=role_id,
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"role_id": role_id},
+        )
+        return res
 
     @router.delete(
         "/roles/{role_id}",
@@ -910,5 +1094,16 @@ def create_auth_router() -> APIRouter:
     ):
         app_state = get_app_state(request)
         await app_state.delete_role.execute(role_id, ctx.tenant_id)
+        await app_state.audit_repo.record_system_event(
+            tenant_id=ctx.tenant_id,
+            module="AUTH",
+            action="REMOCAO_PERFIL",
+            entity_type="ROLE",
+            entity_id=role_id,
+            document_reference=role_id,
+            actor_user_id=str(ctx.user_id),
+            ip_address=extract_client_ip(request),
+            details={"role_id": role_id},
+        )
 
     return router

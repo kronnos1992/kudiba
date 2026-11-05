@@ -48,6 +48,7 @@ DECLARE
         'kudiba_inventory.product_batches',
         'kudiba_inventory.entities',
         'kudiba_accounting.chart_of_accounts',
+        'kudiba_accounting.tenant_chart_settings',
         'kudiba_accounting.journal_entries',
         'kudiba_accounting.journal_lines',
         'kudiba_accounting.journals',

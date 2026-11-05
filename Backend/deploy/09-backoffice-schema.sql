@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS kudiba_backoffice.clients (
     alvara_number VARCHAR(64),
     alvara_issue_date DATE,
     alvara_expiry_date DATE,
+    sector_code VARCHAR(32) NOT NULL DEFAULT 'GERAL',
+    accounting_template_code VARCHAR(64) NOT NULL DEFAULT 'PGC_GENERIC',
     contact_name VARCHAR(255),
     contact_email VARCHAR(255),
     contact_phone VARCHAR(32),
@@ -32,7 +34,9 @@ CREATE TABLE IF NOT EXISTS kudiba_backoffice.clients (
 ALTER TABLE kudiba_backoffice.clients
     ADD COLUMN IF NOT EXISTS alvara_number VARCHAR(64),
     ADD COLUMN IF NOT EXISTS alvara_issue_date DATE,
-    ADD COLUMN IF NOT EXISTS alvara_expiry_date DATE;
+    ADD COLUMN IF NOT EXISTS alvara_expiry_date DATE,
+    ADD COLUMN IF NOT EXISTS sector_code VARCHAR(32) NOT NULL DEFAULT 'GERAL',
+    ADD COLUMN IF NOT EXISTS accounting_template_code VARCHAR(64) NOT NULL DEFAULT 'PGC_GENERIC';
 
 -- -----------------------------------------------------------------------------
 -- 2. LICENÇAS ANUAIS (períodos de subscrição com módulos escolhidos)

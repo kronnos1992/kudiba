@@ -1,6 +1,6 @@
 import uuid
 from datetime import date
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from pydantic import BaseModel, EmailStr, Field
@@ -19,8 +19,10 @@ class CreateClientHttpRequest(BaseModel):
     company_name: str = Field(..., min_length=2, max_length=255)
     nif: str = Field(..., min_length=3, max_length=20)
     alvara_number: str = Field(..., min_length=2, max_length=64, description="Número do Alvará Comercial")
-    alvara_issue_date: date = Field(..., description="Data de Emissão do Alvará Comercial")
-    alvara_expiry_date: date = Field(..., description="Data de Validade do Alvará Comercial")
+    alvara_issue_date: Optional[date] = Field(None, description="Data de Emissão do Alvará Comercial (auto-preenchida se omitida)")
+    alvara_expiry_date: Optional[date] = Field(None, description="Data de Validade do Alvará Comercial (auto-preenchida se omitida)")
+    sector_code: str = Field(default="GERAL", max_length=32, description="Sector de Actividade: GERAL, SEGUROS, BANCA, PETROLEO")
+    accounting_template_code: str = Field(default="PGC_GENERIC", max_length=64, description="Código do Plano de Contas Regulatório")
     modules: List[str] = Field(..., min_length=1)
     contact_name: Optional[str] = Field(None, max_length=255)
     contact_email: Optional[EmailStr] = None
@@ -57,6 +59,50 @@ class RenewLicenseHttpRequest(BaseModel):
     plan: Optional[str] = Field(None, max_length=32)
     seats: Optional[int] = Field(None, ge=1, le=100000)
     notes: Optional[str] = None
+
+
+def extract_actor(request: Request, sec: Optional[SecurityContext]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    actor_id = str(sec.user_id) if sec and hasattr(sec, "user_id") and sec.user_id else request.headers.get("X-User-ID")
+    actor_name = None
+    if sec and hasattr(sec, "claims") and sec.claims:
+        actor_name = sec.claims.get("email") or sec.claims.get("sub")
+    if not actor_name:
+        actor_name = request.headers.get("X-User-Name")
+    ip_addr = request.headers.get("X-Forwarded-For")
+    if ip_addr:
+        ip_addr = ip_addr.split(",")[0].strip()
+    elif request.client:
+        ip_addr = request.client.host
+    return actor_id, actor_name, ip_addr
+
+
+async def record_audit(
+    app_state,
+    tenant_id: uuid.UUID,
+    module: str,
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    document_reference: Optional[str] = None,
+    request: Optional[Request] = None,
+    sec: Optional[SecurityContext] = None,
+    details: Optional[dict] = None,
+):
+    if not hasattr(app_state, "audit_repo") or not app_state.audit_repo:
+        return
+    actor_id, actor_name, ip_addr = extract_actor(request, sec) if request else (None, None, None)
+    await app_state.audit_repo.record_event(
+        tenant_id=tenant_id,
+        module=module,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        document_reference=document_reference,
+        actor_user_id=actor_id,
+        actor_name=actor_name,
+        ip_address=ip_addr,
+        details=details or {},
+    )
 
 
 def create_backoffice_router() -> APIRouter:
@@ -114,6 +160,20 @@ def create_backoffice_router() -> APIRouter:
         app_state = get_app_state(request)
         return await app_state.list_clients.execute(search=search, status=status_filter)
 
+    @router.get(
+        "/accounting-templates",
+        summary="Listar Planos de Contas Oficiais por Setor",
+        description="Retorna os planos de contas regulatórios angolanos (PGC Geral MINFIN, Segurador ARSEG, Bancário BNA, Petrolífero MIREMPET/ANPG).",
+    )
+    async def list_accounting_templates(
+        request: Request,
+        _: SecurityContext = Depends(require_platform_admin),
+    ):
+        app_state = get_app_state(request)
+        if hasattr(app_state, "chart_provisioner") and app_state.chart_provisioner:
+            return await app_state.chart_provisioner.list_templates()
+        return []
+
     @router.post(
         "/clients",
         status_code=status.HTTP_201_CREATED,
@@ -123,7 +183,7 @@ def create_backoffice_router() -> APIRouter:
     async def create_client(
         req: CreateClientHttpRequest,
         request: Request,
-        _: SecurityContext = Depends(require_platform_admin),
+        sec: SecurityContext = Depends(require_platform_admin),
     ):
         app_state = get_app_state(request)
         cmd = CreateClientCommand(
@@ -132,6 +192,8 @@ def create_backoffice_router() -> APIRouter:
             alvara_number=req.alvara_number,
             alvara_issue_date=req.alvara_issue_date,
             alvara_expiry_date=req.alvara_expiry_date,
+            sector_code=req.sector_code,
+            accounting_template_code=req.accounting_template_code,
             modules=req.modules,
             contact_name=req.contact_name,
             contact_email=req.contact_email,
@@ -143,7 +205,27 @@ def create_backoffice_router() -> APIRouter:
             admin_full_name=req.admin_full_name,
             admin_password=req.admin_password,
         )
-        return await app_state.create_client.execute(cmd)
+        res = await app_state.create_client.execute(cmd)
+        await record_audit(
+            app_state,
+            tenant_id=res.tenant_id,
+            module="BACKOFFICE",
+            action="CRIACAO_CLIENTE_PLATAFORMA",
+            entity_type="CLIENT",
+            entity_id=str(res.id),
+            document_reference=f"CLI-{res.nif}",
+            request=request,
+            sec=sec,
+            details={
+                "company_name": res.company_name,
+                "nif": res.nif,
+                "plan": req.plan,
+                "seats": req.seats,
+                "sector_code": req.sector_code,
+                "accounting_template_code": req.accounting_template_code,
+            },
+        )
+        return res
 
     @router.post(
         "/alvara/verify",
@@ -207,7 +289,7 @@ def create_backoffice_router() -> APIRouter:
         client_id: uuid.UUID,
         req: UpdateClientHttpRequest,
         request: Request,
-        _: SecurityContext = Depends(require_platform_admin),
+        sec: SecurityContext = Depends(require_platform_admin),
     ):
         app_state = get_app_state(request)
         cmd = UpdateClientCommand(
@@ -221,7 +303,20 @@ def create_backoffice_router() -> APIRouter:
             contact_phone=req.contact_phone,
             notes=req.notes,
         )
-        return await app_state.update_client.execute(cmd)
+        res = await app_state.update_client.execute(cmd)
+        await record_audit(
+            app_state,
+            tenant_id=res.tenant_id,
+            module="BACKOFFICE",
+            action="ATUALIZACAO_CLIENTE_PLATAFORMA",
+            entity_type="CLIENT",
+            entity_id=str(client_id),
+            document_reference=f"CLI-{res.nif}",
+            request=request,
+            sec=sec,
+            details={"company_name": res.company_name},
+        )
+        return res
 
     @router.post(
         "/clients/{client_id}/licenses",
@@ -233,7 +328,7 @@ def create_backoffice_router() -> APIRouter:
         client_id: uuid.UUID,
         req: RenewLicenseHttpRequest,
         request: Request,
-        _: SecurityContext = Depends(require_platform_admin),
+        sec: SecurityContext = Depends(require_platform_admin),
     ):
         app_state = get_app_state(request)
         cmd = RenewLicenseCommand(
@@ -243,7 +338,22 @@ def create_backoffice_router() -> APIRouter:
             seats=req.seats,
             notes=req.notes,
         )
-        return await app_state.renew_license.execute(cmd)
+        res = await app_state.renew_license.execute(cmd)
+        client = await app_state.client_repo.get(client_id)
+        tid = client.tenant_id if client else client_id
+        await record_audit(
+            app_state,
+            tenant_id=tid,
+            module="BACKOFFICE",
+            action="RENOVACAO_LICENCA_PLATAFORMA",
+            entity_type="LICENSE",
+            entity_id=str(res.id),
+            document_reference=res.license_key,
+            request=request,
+            sec=sec,
+            details={"plan": res.plan, "seats": res.seats},
+        )
+        return res
 
     @router.post(
         "/clients/{client_id}/suspend",
@@ -253,12 +363,25 @@ def create_backoffice_router() -> APIRouter:
     async def suspend_client(
         client_id: uuid.UUID,
         request: Request,
-        _: SecurityContext = Depends(require_platform_admin),
+        sec: SecurityContext = Depends(require_platform_admin),
     ):
         app_state = get_app_state(request)
-        return await app_state.set_license_status.execute(
+        res = await app_state.set_license_status.execute(
             SetLicenseStatusCommand(client_id=client_id, action="suspend")
         )
+        await record_audit(
+            app_state,
+            tenant_id=res.tenant_id,
+            module="BACKOFFICE",
+            action="SUSPENSAO_CLIENTE_PLATAFORMA",
+            entity_type="CLIENT",
+            entity_id=str(client_id),
+            document_reference=f"CLI-{res.nif}",
+            request=request,
+            sec=sec,
+            details={"status": "SUSPENDED"},
+        )
+        return res
 
     @router.post(
         "/clients/{client_id}/activate",
@@ -268,11 +391,58 @@ def create_backoffice_router() -> APIRouter:
     async def activate_client(
         client_id: uuid.UUID,
         request: Request,
+        sec: SecurityContext = Depends(require_platform_admin),
+    ):
+        app_state = get_app_state(request)
+        res = await app_state.set_license_status.execute(
+            SetLicenseStatusCommand(client_id=client_id, action="activate")
+        )
+        await record_audit(
+            app_state,
+            tenant_id=res.tenant_id,
+            module="BACKOFFICE",
+            action="ATIVACAO_CLIENTE_PLATAFORMA",
+            entity_type="CLIENT",
+            entity_id=str(client_id),
+            document_reference=f"CLI-{res.nif}",
+            request=request,
+            sec=sec,
+            details={"status": "ACTIVE"},
+        )
+        return res
+
+    @router.get(
+        "/system-audit-trail",
+        summary="Consultar Trilha de Auditoria Universal",
+        description="Devolve o histórico de auditoria do Backoffice e subscrições.",
+    )
+    async def get_system_audit_trail(
+        request: Request,
+        tenant_id: Optional[uuid.UUID] = Query(None),
+        module: Optional[str] = None,
+        action: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
         _: SecurityContext = Depends(require_platform_admin),
     ):
         app_state = get_app_state(request)
-        return await app_state.set_license_status.execute(
-            SetLicenseStatusCommand(client_id=client_id, action="activate")
+        raw_header = request.headers.get("X-Tenant-ID") or request.headers.get("X-Resolved-Tenant-ID")
+        try:
+            tid = tenant_id or (uuid.UUID(raw_header) if raw_header else uuid.UUID("00000000-0000-0000-0000-000000000000"))
+        except ValueError:
+            tid = uuid.UUID("00000000-0000-0000-0000-000000000000")
+        items = await app_state.audit_repo.list_events(
+            tenant_id=tid,
+            module=module,
+            action=action,
+            limit=limit,
+            offset=offset,
         )
+        total = await app_state.audit_repo.count_events(
+            tenant_id=tid,
+            module=module,
+            action=action,
+        )
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
 
     return router
