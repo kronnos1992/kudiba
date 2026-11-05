@@ -2120,8 +2120,10 @@ mod tests {
         )
         .expect("PDF corrigido deve ser gerado");
 
-        let out_path = "/home/jaime.coxi@hssa.local/Transferências/FR 2026A_000001_CORRIGIDA.pdf";
-        std::fs::write(out_path, &pdf).expect("Deve gravar PDF corrigido");
-        assert!(std::path::Path::new(out_path).exists());
+        let out_dir = std::path::Path::new("/home/jaime.coxi@hssa.local/Transferências");
+        if out_dir.exists() {
+            let _ = std::fs::write(out_dir.join("FR 2026A_000001_CORRIGIDA.pdf"), &pdf);
+        }
+        assert!(!pdf.is_empty());
     }
 }
