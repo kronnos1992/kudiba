@@ -33,6 +33,7 @@ export interface OfflinePosSale {
   fiscalYear: number;
   createdAt: string;
   tenantId: string;
+  cashSessionId?: string;
   cashierName: string;
   posTerminalCode: string;
   customerName: string;
@@ -50,6 +51,8 @@ export interface OfflinePosSale {
     quantity: number;
     unitPrice: number;
     taxRate: number;
+    taxExemptionCode?: string;
+    isService?: boolean;
     lineTotal: number;
   }>;
   status: 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';

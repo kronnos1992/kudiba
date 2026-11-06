@@ -26,6 +26,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useUiStore } from '../../stores/uiStore';
 import { authApi } from '../../api/auth';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { TermsAndPoliciesModal } from '../../components/legal/TermsAndPoliciesModal';
 
 const formatCountdown = (totalSeconds: number): string => {
   const m = Math.floor(totalSeconds / 60);
@@ -37,12 +38,14 @@ export const LoginView: React.FC = () => {
   const { setSession } = useAuthStore();
   const { themeMode, toggleTheme } = useUiStore();
 
-  const [email, setEmail] = useState('admin@kudiba.ao');
-  const [password, setPassword] = useState('Admin@Kudiba2026!');
+  const [email, setEmail] = useState('sysadmin@kudiba.ao');
+  const [password, setPassword] = useState('SysAdmin@Kudiba2026!');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lockSeconds, setLockSeconds] = useState<number | null>(null);
+  const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy' | 'data_processing' | 'subscription' | 'fiscal'>('terms');
 
   useEffect(() => {
     if (lockSeconds === null) return;
@@ -443,17 +446,17 @@ export const LoginView: React.FC = () => {
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => handleSelectPreset('admin@kudiba.ao', 'Admin@Kudiba2026!')}
+                onClick={() => handleSelectPreset('sysadmin@kudiba.ao', 'SysAdmin@Kudiba2026!')}
                 className="px-2.5 py-1.5 rounded-lg bg-slate-200/70 hover:bg-slate-300/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition-colors text-center cursor-pointer"
               >
-                Admin Geral
+                SysAdmin (Geral)
               </button>
               <button
                 type="button"
-                onClick={() => handleSelectPreset('operador@kudiba.ao', 'Operador@Kudiba2026!')}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-200/70 hover:bg-slate-300/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition-colors text-center cursor-pointer"
+                onClick={() => handleSelectPreset('vendedor@kudiba.ao', 'Vendedor@Kudiba2026!')}
+                className="px-2.5 py-1.5 rounded-lg bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 transition-colors text-center cursor-pointer border border-emerald-300/40"
               >
-                Operador POS
+                Vendedor POS
               </button>
               <button
                 type="button"
@@ -469,13 +472,76 @@ export const LoginView: React.FC = () => {
         </div>
 
         {/* Rodapé do Formulário */}
-        <div className="pt-6 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-medium">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
-            <span>Gateway Perimétrico :8080</span>
+        <div className="pt-5 border-t border-slate-200 dark:border-slate-800 space-y-3">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-medium">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
+              <span>Gateway Perimétrico :8080</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setLegalModalTab('fiscal');
+                setIsLegalModalOpen(true);
+              }}
+              className="cursor-pointer hover:opacity-80 transition-opacity"
+            >
+              <StatusBadge status="ok" label="FE/528/AGT/2026" size="small" />
+            </button>
           </div>
-          <StatusBadge status="ok" label="Certificado Fiscal Ativo" size="small" />
+
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-slate-400 dark:text-slate-500">
+            <button
+              type="button"
+              onClick={() => {
+                setLegalModalTab('terms');
+                setIsLegalModalOpen(true);
+              }}
+              className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer underline underline-offset-2"
+            >
+              Termos de Uso
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => {
+                setLegalModalTab('privacy');
+                setIsLegalModalOpen(true);
+              }}
+              className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer underline underline-offset-2"
+            >
+              Privacidade (Lei 22/11)
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => {
+                setLegalModalTab('data_processing');
+                setIsLegalModalOpen(true);
+              }}
+              className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer underline underline-offset-2"
+            >
+              Tratamento de Dados
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => {
+                setLegalModalTab('subscription');
+                setIsLegalModalOpen(true);
+              }}
+              className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer underline underline-offset-2"
+            >
+              Contrato de Subscrição
+            </button>
+          </div>
         </div>
+
+        <TermsAndPoliciesModal
+          isOpen={isLegalModalOpen}
+          onClose={() => setIsLegalModalOpen(false)}
+          defaultTab={legalModalTab}
+        />
       </div>
     </div>
   );

@@ -28,6 +28,7 @@ import {
   ChevronDown,
   ChevronRight,
   Database,
+  Scale,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge } from '../../components/common/StatusBadge';
@@ -41,6 +42,7 @@ import { toast } from '../../stores/toastStore';
 import { RolesManager } from './RolesManager';
 import { DatabaseSettingsManager } from './DatabaseSettingsManager';
 import { AuditAndActivitiesTab } from './AuditAndActivitiesTab';
+import { TermsAndPoliciesModal } from '../../components/legal/TermsAndPoliciesModal';
 
 type SettingsTab = 'organization' | 'users' | 'certification' | 'series' | 'saft' | 'databases';
 
@@ -175,6 +177,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
   const [memberToResetPassword, setMemberToResetPassword] = useState<TenantMember | null>(null);
   const [resetPassword, setResetPassword] = useState('');
   const [confirmResetPassword, setConfirmResetPassword] = useState('');
+  const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy' | 'data_processing' | 'subscription' | 'fiscal'>('terms');
 
   // Invite Form
   const [inviteForm, setInviteForm] = useState<InviteMemberPayload>({
@@ -586,6 +590,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
               Assistente Guiado (4 Passos)
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => {
+              setLegalModalTab('terms');
+              setIsLegalModalOpen(true);
+            }}
+            className="btn-secondary text-xs py-2 px-3.5"
+            title="Termos de Uso, Privacidade e Certificação Legal"
+          >
+            <Scale className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+            Termos &amp; Políticas
+          </button>
           <div className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2 border border-slate-200 dark:border-slate-700">
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
             Certificado:{' '}
@@ -2642,6 +2658,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
           </div>
         </div>
       )}
+
+      <TermsAndPoliciesModal
+        isOpen={isLegalModalOpen}
+        onClose={() => setIsLegalModalOpen(false)}
+        defaultTab={legalModalTab}
+      />
     </div>
   );
 };

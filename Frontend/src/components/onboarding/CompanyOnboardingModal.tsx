@@ -16,12 +16,14 @@ import {
   Mail,
   Globe,
   X,
+  Scale,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { authApi } from '../../api/auth';
 import { invoicingApi } from '../../api/invoicing';
 import { TenantBankAccount } from '../../types/auth';
 import { toast } from '../../stores/toastStore';
+import { TermsAndPoliciesModal } from '../legal/TermsAndPoliciesModal';
 
 const ANGOLA_PROVINCES = [
   'Luanda',
@@ -116,6 +118,9 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
       is_primary: true,
     },
   ]);
+
+  const [termsAccepted, setTermsAccepted] = useState(true);
+  const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !activeTenant) return;
@@ -228,6 +233,10 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
 
   const handleFinish = async () => {
     if (!validateCurrentStep()) return;
+    if (!termsAccepted) {
+      toast.warning('É necessário aceitar os Termos de Uso e Políticas de Privacidade para concluir a parametrização.');
+      return;
+    }
     setSaving(true);
     try {
       const cleanedBanks = bankAccounts.filter(
@@ -994,9 +1003,49 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Termos de Aceitação & Condições de Uso */}
+              <div className="p-4 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-2">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="onboarding-terms-checkbox"
+                    checked={termsAccepted}
+                    onChange={(e) => setTermsAccepted(e.target.checked)}
+                    className="mt-1 w-4 h-4 text-emerald-600 rounded-sm border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                  />
+                  <div className="text-xs text-slate-700 dark:text-slate-300">
+                    <label htmlFor="onboarding-terms-checkbox" className="font-semibold cursor-pointer">
+                      Declaro que li e aceito as Condições de Uso, Política de Privacidade e Normas Fiscais
+                    </label>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Reconheço que os dados fiscais da empresa e a emissão documental observam o Decreto Presidencial 71/25, o Código do IVA e a Lei de Proteção de Dados (Lei 22/11 de Angola).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pl-7 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsTermsModalOpen(true)}
+                    className="text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Scale className="w-3.5 h-3.5" />
+                    <span>Consultar Termos de Uso e Política de Privacidade na Íntegra</span>
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
+
+        <TermsAndPoliciesModal
+          isOpen={isTermsModalOpen}
+          onClose={() => setIsTermsModalOpen(false)}
+          defaultTab="terms"
+          showAcceptButton
+          onAccept={() => setTermsAccepted(true)}
+        />
 
         {/* Footer Actions */}
         <div className="px-4 sm:px-6 py-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">

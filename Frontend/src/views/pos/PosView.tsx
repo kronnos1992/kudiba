@@ -611,6 +611,7 @@ export const PosView: React.FC = () => {
           fiscalYear: currentYear,
           createdAt: new Date().toISOString(),
           tenantId: activeTenant!.id,
+          cashSessionId: currentSession?.id,
           cashierName:
             user?.fullName || user?.full_name || user?.email || 'Operador de Caixa',
           posTerminalCode: activeRegister?.code || 'POS-01',
@@ -632,6 +633,8 @@ export const PosView: React.FC = () => {
             quantity: item.qty,
             unitPrice: item.unitPrice,
             taxRate: item.taxRate,
+            taxExemptionCode: item.taxRate === 0 ? item.exemptionCode || 'M02' : undefined,
+            isService: item.isService,
             lineTotal: Number(
               (item.unitPrice * item.qty * (1 + item.taxRate / 100)).toFixed(2)
             ),

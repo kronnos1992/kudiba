@@ -53,7 +53,8 @@ export function useNetworkStatus(): UseNetworkStatusReturn {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3500);
-      const baseUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
+      const rawBase = import.meta.env.VITE_API_BASE_URL;
+      const baseUrl = (rawBase !== undefined ? rawBase : '').replace(/\/$/, '');
       try {
         const res = await fetch(`${baseUrl}/health`, {
           method: 'GET',
@@ -119,6 +120,7 @@ export function useNetworkStatus(): UseNetworkStatusReturn {
             documentType: 'FR',
             seriesCode: sale.seriesCode,
             fiscalYear: sale.fiscalYear,
+            cashSessionId: sale.cashSessionId,
             customerName: sale.customerName,
             customerNif: sale.customerNif,
             paymentMethods: [sale.paymentMethod],
@@ -128,6 +130,8 @@ export function useNetworkStatus(): UseNetworkStatusReturn {
               quantity: l.quantity,
               unitPrice: l.unitPrice,
               taxRate: l.taxRate,
+              taxExemptionCode: l.taxRate === 0 ? l.taxExemptionCode || 'M02' : undefined,
+              isService: l.isService,
             })),
             idempotencyKey: sale.id,
           });
