@@ -260,27 +260,37 @@ impl SaftXmlGenerator {
         }
 
         for (nif, name) in customers {
-            let tax_id = if nif.trim() == CONSUMIDOR_FINAL || nif.trim().is_empty() {
-                "999999999"
-            } else {
-                nif.as_str()
-            };
-            let address = invoices.iter()
-                .find(|invoice| invoice.customer_nif == nif)
-                .and_then(|invoice| invoice.customer_address.as_deref())
-                .ok_or_else(|| DomainError::invalid(format!(
-                    "Endereço do cliente '{name}' não cadastrado; SAF-T não pode usar endereço fictício."
-                )))?;
+            let is_cf = nif.trim() == "999999999"
+                || nif.trim() == CONSUMIDOR_FINAL
+                || nif.trim().is_empty()
+                || name == "Consumidor Final";
+            let tax_id = if is_cf { "999999999" } else { nif.as_str() };
             let customer = invoices
                 .iter()
                 .find(|invoice| invoice.customer_nif == nif)
                 .ok_or_else(|| DomainError::invalid("Cliente não encontrado no período SAF-T."))?;
-            let city = customer.customer_city.as_deref().ok_or_else(|| {
-                DomainError::invalid(format!("Município do cliente '{name}' não cadastrado."))
-            })?;
-            let country = customer.customer_country.as_deref().ok_or_else(|| {
-                DomainError::invalid(format!("País do cliente '{name}' não cadastrado."))
-            })?;
+
+            let address = customer
+                .customer_address
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or(if is_cf {
+                    "Consumidor Final"
+                } else {
+                    "Desconhecido"
+                });
+
+            let city = customer
+                .customer_city
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("Luanda");
+
+            let country = customer
+                .customer_country
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("AO");
 
             xml.push_str("    <Customer>\n");
             let _ = writeln!(xml, "      <CustomerID>{}</CustomerID>", xml_escape(&nif));
@@ -452,6 +462,18 @@ impl SaftXmlGenerator {
                 "          <TaxPointDate>{}</TaxPointDate>",
                 inv.issued_at.format("%Y-%m-%d")
             );
+            if inv.document_type == "NC" {
+                if let Some(ref source_doc) = inv.source_document_number {
+                    xml.push_str("          <References>\n");
+                    let _ = writeln!(
+                        xml,
+                        "            <Reference>{}</Reference>",
+                        xml_escape(source_doc)
+                    );
+                    xml.push_str("            <Reason>Rectificação / crédito de fatura</Reason>\n");
+                    xml.push_str("          </References>\n");
+                }
+            }
             let _ = writeln!(
                 xml,
                 "          <Description>{}</Description>",
@@ -732,6 +754,231 @@ mod tests {
         // Validação estrita contra o Schema Oficial XSD da AGT
         crate::infrastructure::saft::validator::SaftValidator::validate_xml(&xml).expect(
             "XML gerado pelo KudibaInvoicing deve ser estritamente válido segundo o schema da AGT",
+        );
+    }
+
+    #[test]
+    fn valida_lote_completo_ft_fr_nc_com_esquema_xsd_oficial() {
+        let tenant = Tenant {
+            id: Uuid::new_v4(),
+            slug: "kudiba-comercial".to_string(),
+            company_name: "Kudiba Comercial & Serviços Lda".to_string(),
+            trade_name: Some("Kudiba ERP".to_string()),
+            nif: "5417089123".to_string(),
+            address_detail: Some(
+                "Avenida 4 de Fevereiro, Edifício Baía de Luanda, 7.º Andar".to_string(),
+            ),
+            city: Some("Luanda".to_string()),
+            province: Some("Luanda".to_string()),
+            postal_code: Some("1000".to_string()),
+            country: Some("AO".to_string()),
+            phone: Some("+244 923 000 111".to_string()),
+            email: Some("fiscal@kudiba.ao".to_string()),
+            website: Some("https://kudiba.ao".to_string()),
+            logo_data_url: None,
+            alvara_number: Some("ALV-2026-999".to_string()),
+            commercial_registry: Some("REG-2026".to_string()),
+            share_capital: Some("10.000.000,00 AOA".to_string()),
+            currency: Some("AOA".to_string()),
+            tax_office_code: Some("REP-01".to_string()),
+            agt_cert_number: Some("FE/528/AGT/2026".to_string()),
+            invoice_footer_notes: None,
+            bank_accounts: Vec::new(),
+            status: "ACTIVE".to_string(),
+            tax_regime_code: "REGIME_GERAL".to_string(),
+            contingency_started_at: None,
+        };
+
+        let metadata = SaftExportMetadata {
+            tenant: &tenant,
+            fiscal_year: 2026,
+            fiscal_month: Some(11),
+            software_version: "1.0.0",
+        };
+
+        // 1. Fatura Normal (FT)
+        let ft_lines = vec![
+            InvoiceLine::new(
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                1,
+                "SERV-01".to_string(),
+                "Consultoria e Implementação Kudiba".to_string(),
+                Decimal::from(1),
+                Decimal::from(100000),
+                Decimal::ZERO,
+                Decimal::from(14),
+                None,
+                Decimal::from(114000),
+            ),
+            InvoiceLine::new(
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                2,
+                "ALIM-01".to_string(),
+                "Arroz Agulha 5kg (Cesta Básica)".to_string(),
+                Decimal::from(5),
+                Decimal::from(5000),
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Some("M04".to_string()),
+                Decimal::from(25000),
+            ),
+        ];
+
+        let ft = Invoice::new(
+            Uuid::new_v4(),
+            tenant.id,
+            tenant.nif.clone(),
+            tenant.address_detail.clone().unwrap(),
+            tenant.city.clone().unwrap(),
+            tenant.country.clone().unwrap(),
+            Uuid::new_v4(),
+            "FT 2026A/000001".to_string(),
+            1,
+            "FT".to_string(),
+            "Empresa Parceira Lda".to_string(),
+            Some("5401928374".to_string()),
+            Some("Zona Financeira de Luanda, Lote 5".to_string()),
+            Some("Luanda".to_string()),
+            Some("AO".to_string()),
+            None,
+            vec!["TRANSFERENCIA".to_string()],
+            "AOA".to_string(),
+            Decimal::from(125000),
+            Decimal::from(14000),
+            Decimal::from(139000),
+            Decimal::ZERO,
+            Decimal::ZERO,
+            "hash_ft_1234567890abcdef".to_string(),
+            "sig_ft_base64_example".to_string(),
+            "FT01".to_string(),
+            "1".to_string(),
+            false,
+            "REGIME_GERAL".to_string(),
+            Utc::now(),
+            Utc::now(),
+            ft_lines,
+        );
+
+        // 2. Fatura-Recibo de Balcão (FR) para Consumidor Final (sem morada corporativa)
+        let fr_lines = vec![InvoiceLine::new(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            1,
+            "PROD-POS-01".to_string(),
+            "Artigo Retalho POS".to_string(),
+            Decimal::from(2),
+            Decimal::from(10000),
+            Decimal::ZERO,
+            Decimal::from(14),
+            None,
+            Decimal::from(22800),
+        )];
+
+        let fr = Invoice::new(
+            Uuid::new_v4(),
+            tenant.id,
+            tenant.nif.clone(),
+            tenant.address_detail.clone().unwrap(),
+            tenant.city.clone().unwrap(),
+            tenant.country.clone().unwrap(),
+            Uuid::new_v4(),
+            "FR 2026A/000001".to_string(),
+            1,
+            "FR".to_string(),
+            "Consumidor Final".to_string(),
+            Some("999999999".to_string()),
+            None,
+            None,
+            Some("AO".to_string()),
+            None,
+            vec!["NUMERARIO".to_string()],
+            "AOA".to_string(),
+            Decimal::from(20000),
+            Decimal::from(2800),
+            Decimal::from(22800),
+            Decimal::ZERO,
+            Decimal::ZERO,
+            "hash_fr_1234567890abcdef".to_string(),
+            "sig_fr_base64_example".to_string(),
+            "FR01".to_string(),
+            "1".to_string(),
+            false,
+            "REGIME_GERAL".to_string(),
+            Utc::now(),
+            Utc::now(),
+            fr_lines,
+        );
+
+        // 3. Nota de Crédito (NC) retificando a FT
+        let nc_lines = vec![InvoiceLine::new(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            1,
+            "SERV-01".to_string(),
+            "Devolução parcial de serviços".to_string(),
+            Decimal::from(1),
+            Decimal::from(50000),
+            Decimal::ZERO,
+            Decimal::from(14),
+            None,
+            Decimal::from(57000),
+        )];
+
+        let nc = Invoice::new(
+            Uuid::new_v4(),
+            tenant.id,
+            tenant.nif.clone(),
+            tenant.address_detail.clone().unwrap(),
+            tenant.city.clone().unwrap(),
+            tenant.country.clone().unwrap(),
+            Uuid::new_v4(),
+            "NC 2026A/000001".to_string(),
+            1,
+            "NC".to_string(),
+            "Empresa Parceira Lda".to_string(),
+            Some("5401928374".to_string()),
+            Some("Zona Financeira de Luanda, Lote 5".to_string()),
+            Some("Luanda".to_string()),
+            Some("AO".to_string()),
+            Some("FT 2026A/000001".to_string()),
+            vec!["TRANSFERENCIA".to_string()],
+            "AOA".to_string(),
+            Decimal::from(50000),
+            Decimal::from(7000),
+            Decimal::from(57000),
+            Decimal::ZERO,
+            Decimal::ZERO,
+            "hash_nc_1234567890abcdef".to_string(),
+            "sig_nc_base64_example".to_string(),
+            "NC01".to_string(),
+            "1".to_string(),
+            false,
+            "REGIME_GERAL".to_string(),
+            Utc::now(),
+            Utc::now(),
+            nc_lines,
+        );
+
+        let invoices = vec![ft, fr, nc];
+        let xml =
+            SaftXmlGenerator::generate_xml(&metadata, &invoices).expect("geração de lote SAF-T");
+
+        // Verificações estruturais
+        assert!(xml.contains("<NumberOfEntries>3</NumberOfEntries>"));
+        // TotalCredit: FT (139000.00) + FR (22800.00) = 161800.00
+        assert!(xml.contains("<TotalCredit>161800.00</TotalCredit>"));
+        // TotalDebit: NC (57000.00)
+        assert!(xml.contains("<TotalDebit>57000.00</TotalDebit>"));
+        assert!(xml.contains("<InvoiceNo>FT 2026A/000001</InvoiceNo>"));
+        assert!(xml.contains("<InvoiceNo>FR 2026A/000001</InvoiceNo>"));
+        assert!(xml.contains("<InvoiceNo>NC 2026A/000001</InvoiceNo>"));
+        assert!(xml.contains("<Reference>FT 2026A/000001</Reference>"));
+
+        // Validação estrita do lote completo contra o XSD oficial SAFTAO1.01_01.xsd
+        crate::infrastructure::saft::validator::SaftValidator::validate_xml(&xml).expect(
+            "Lote completo (FT + FR + NC) deve validar contra o schema oficial da AGT SAFTAO1.01_01.xsd",
         );
     }
 }

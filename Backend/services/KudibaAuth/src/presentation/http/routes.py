@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 import asyncpg
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 
 from src.application.dto import (
@@ -39,7 +39,7 @@ class LoginHttpRequest(BaseModel):
 
 
 class RefreshHttpRequest(BaseModel):
-    refresh_token: str = Field(..., description="Refresh token emitido anteriormente")
+    refresh_token: Optional[str] = Field(None, description="Refresh token emitido anteriormente (opcional se fornecido via Cookie HttpOnly)")
 
 
 class SwitchTenantHttpRequest(BaseModel):
@@ -171,7 +171,7 @@ def create_auth_router() -> APIRouter:
         summary="Autenticar Utilizador",
         description="Executa o caso de uso AuthenticateUserUseCase via Argon2id e emite Access Token + Refresh Token.",
     )
-    async def login(req: LoginHttpRequest, request: Request):
+    async def login(req: LoginHttpRequest, request: Request, response: Response):
         app_state = get_app_state(request)
         cmd = AuthenticateUserCommand(
             email=req.email,
@@ -179,21 +179,51 @@ def create_auth_router() -> APIRouter:
             ip_address=extract_client_ip(request),
             user_agent=request.headers.get("User-Agent"),
         )
-        return await app_state.authenticate_user.execute(cmd)
+        res = await app_state.authenticate_user.execute(cmd)
+        if getattr(res, "refresh_token", None):
+            is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+            response.set_cookie(
+                key="refresh_token",
+                value=res.refresh_token,
+                max_age=30 * 24 * 3600,
+                httponly=True,
+                secure=is_secure,
+                samesite="lax",
+                path="/api/v1/auth",
+            )
+        return res
 
     @router.post(
         "/refresh",
         summary="Renovar Sessão",
         description="Executa o caso de uso RotateRefreshTokenUseCase com rotação automática e detecção de roubo de sessão.",
     )
-    async def refresh(req: RefreshHttpRequest, request: Request):
+    async def refresh(request: Request, response: Response, req: Optional[RefreshHttpRequest] = None):
+        token = (req.refresh_token if req and req.refresh_token else None) or request.cookies.get("refresh_token")
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Refresh token não fornecido.",
+            )
         app_state = get_app_state(request)
         cmd = RotateRefreshTokenCommand(
-            refresh_token=req.refresh_token,
+            refresh_token=token,
             ip_address=extract_client_ip(request),
             user_agent=request.headers.get("User-Agent"),
         )
-        return await app_state.rotate_refresh_token.execute(cmd)
+        res = await app_state.rotate_refresh_token.execute(cmd)
+        if getattr(res, "refresh_token", None):
+            is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+            response.set_cookie(
+                key="refresh_token",
+                value=res.refresh_token,
+                max_age=30 * 24 * 3600,
+                httponly=True,
+                secure=is_secure,
+                samesite="lax",
+                path="/api/v1/auth",
+            )
+        return res
 
     @router.post(
         "/logout",
@@ -203,6 +233,7 @@ def create_auth_router() -> APIRouter:
     )
     async def logout(
         request: Request,
+        response: Response,
         req: Optional[RefreshHttpRequest] = None,
         authorization: Optional[str] = Header(None),
     ):
@@ -219,14 +250,16 @@ def create_auth_router() -> APIRouter:
             except Exception:
                 pass
 
+        token = (req.refresh_token if req and req.refresh_token else None) or request.cookies.get("refresh_token")
         cmd = LogoutUserCommand(
             user_id=user_id,
-            refresh_token=req.refresh_token if req else None,
+            refresh_token=token,
             access_token_jti=access_jti,
             access_token_exp=access_exp,
             ip_address=extract_client_ip(request),
         )
         await app_state.logout_user.execute(cmd)
+        response.delete_cookie(key="refresh_token", path="/api/v1/auth")
 
     @router.post(
         "/switch-tenant",

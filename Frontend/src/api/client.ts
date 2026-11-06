@@ -18,6 +18,7 @@ function getTokenTenantId(token: string | null): string | null {
 export const apiClient = axios.create({
   baseURL: BASE_URL,
   timeout: 30000,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -118,9 +119,13 @@ apiClient.interceptors.response.use(
     isRefreshing = true;
 
     try {
-      const response = await axios.post(`${BASE_URL}/api/v1/auth/refresh`, {
-        refresh_token: refreshToken,
-      });
+      const response = await axios.post(
+        `${BASE_URL}/api/v1/auth/refresh`,
+        {
+          refresh_token: refreshToken || undefined,
+        },
+        { withCredentials: true }
+      );
 
       const { access_token, refresh_token: newRefreshToken, expires_in } = response.data;
       authStore.updateTokens(access_token, newRefreshToken || refreshToken, expires_in);

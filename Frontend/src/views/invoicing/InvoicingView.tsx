@@ -140,8 +140,8 @@ export const InvoicingView: React.FC = () => {
   const [docType, setDocType] = useState<'FT' | 'FR' | 'NC' | 'ND' | 'GT' | 'GR'>('FT');
   const [seriesCode, setSeriesCode] = useState<string>('2026A');
   const [customerName, setCustomerName] = useState<string>('');
-  const [customerNif, setCustomerNif] = useState<string>('5000123456');
-  const [customerAddress, setCustomerAddress] = useState<string>('Rua Principal, Luanda');
+  const [customerNif, setCustomerNif] = useState<string>('');
+  const [customerAddress, setCustomerAddress] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<string>('NUMERARIO');
   const [applyWithholding, setApplyWithholding] = useState<boolean>(false);
   const [sourceDocNumber, setSourceDocNumber] = useState<string>('');
@@ -665,15 +665,19 @@ export const InvoicingView: React.FC = () => {
       return;
     }
 
+    const trimmedNif = customerNif.trim();
+    const trimmedName = customerName.trim();
+    const isGenericCustomer = trimmedNif === '999999999' || trimmedName === 'Consumidor Final';
+
     const payload: IssueInvoicePayload = {
       tenantId: activeTenant.id,
       documentType: docType,
       seriesCode,
       fiscalYear: 2026,
-      customerName,
-      customerNif: customerNif || undefined,
-      customerAddress: customerAddress || undefined,
-      customerCity: 'Luanda',
+      customerName: trimmedName || 'Consumidor Final',
+      customerNif: trimmedNif || undefined,
+      customerAddress: isGenericCustomer ? undefined : (customerAddress.trim() || undefined),
+      customerCity: isGenericCustomer ? undefined : 'Luanda',
       customerCountry: 'AO',
       sourceDocumentNumber: sourceDocNumber || undefined,
       paymentMethods: [paymentMethod],

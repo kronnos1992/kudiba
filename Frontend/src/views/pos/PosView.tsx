@@ -543,6 +543,8 @@ export const PosView: React.FC = () => {
       }
       const customerNameVal = customerName.trim() || 'Consumidor Final';
       const customerNifVal = customerNif.trim() || '999999999';
+      const isGenericCustomer = customerNifVal === '999999999' || customerNameVal === 'Consumidor Final';
+      const matchedEntity = !isGenericCustomer ? customerEntities.find((e) => e.tax_id === customerNifVal) : undefined;
 
       const payload = {
         tenantId: activeTenant!.id,
@@ -552,9 +554,9 @@ export const PosView: React.FC = () => {
         cashSessionId: currentSession?.id,
         customerName: customerNameVal,
         customerNif: customerNifVal,
-        customerAddress: activeTenant?.address_detail || 'Venda ao Balcão (POS)',
-        customerCity: activeTenant?.city || 'Luanda',
-        customerCountry: activeTenant?.country || 'AO',
+        customerAddress: isGenericCustomer ? undefined : (matchedEntity?.address_detail || undefined),
+        customerCity: isGenericCustomer ? undefined : (matchedEntity?.city || undefined),
+        customerCountry: isGenericCustomer ? 'AO' : (matchedEntity?.country_code || 'AO'),
         paymentMethods: [selectedPaymentMethod],
         lines: cartSnapshot.map((item) => ({
           productCode: item.code,

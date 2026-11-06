@@ -82,3 +82,12 @@ async def test_database_connections_unauthorized():
         response_test = await ac.post("/auth/tenant/database-connections/test", json={"host": "localhost"})
         assert response_test.status_code == 401
 
+
+@pytest.mark.asyncio
+async def test_refresh_endpoint_requires_token():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.post("/auth/refresh", json={})
+        assert response.status_code == 400
+
+
