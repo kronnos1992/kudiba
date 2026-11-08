@@ -564,7 +564,7 @@ async fn create_proforma_handler(
     let document_number = format!(
         "FP-{}-{}",
         Utc::now().year(),
-        &id.simple().to_string()[..8].to_ascii_uppercase()
+        id.simple().to_string()[..8].to_ascii_uppercase()
     );
     let customer_name = if command.customer_name.trim().is_empty() {
         "Consumidor Final".to_string()
