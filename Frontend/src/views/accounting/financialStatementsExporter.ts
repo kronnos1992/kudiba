@@ -1,13 +1,59 @@
+import { useAuthStore } from '../../stores/authStore';
 import { CashFlowData } from './CashFlowStatement';
 import { FinancialNotesData } from './FinancialNotesStatement';
 
 export interface CorporateEntityMeta {
   companyName: string;
+  tradeName?: string;
+  companyDescription?: string;
+  logoDataUrl?: string | null;
+  contacts?: string;
+  agtCertNumber?: string;
   nif: string;
   address?: string;
   fiscalYear: number;
   currency?: string;
 }
+
+const enrichCorporateMeta = (meta: CorporateEntityMeta): CorporateEntityMeta => {
+  const tenant = useAuthStore.getState().activeTenant;
+  const companyName = meta.companyName || tenant?.company_name || tenant?.name || 'Kudiba Enterprise Lda';
+  const tradeName =
+    meta.tradeName ||
+    (tenant?.trade_name && tenant.trade_name !== companyName ? tenant.trade_name : undefined);
+  const address =
+    meta.address ||
+    [tenant?.address_detail, tenant?.city || 'Luanda', 'Angola'].filter(Boolean).join(', ');
+  const contacts =
+    meta.contacts ||
+    [tenant?.phone, tenant?.email, tenant?.website].filter(Boolean).join(' • ') ||
+    undefined;
+  const descParts = [
+    tenant?.commercial_registry ? `Registo Comercial: ${tenant.commercial_registry}` : null,
+    tenant?.alvara_number ? `Alvará Comercial: ${tenant.alvara_number}` : null,
+    tenant?.share_capital ? `Capital Social: ${tenant.share_capital}` : null,
+    tenant?.tax_regime_code
+      ? `Regime Fiscal: ${tenant.tax_regime_code.replace(/_/g, ' ')}`
+      : 'Regime Geral de Tributação (AGT)',
+  ].filter(Boolean);
+  const companyDescription =
+    meta.companyDescription ||
+    tenant?.invoice_footer_notes ||
+    (descParts.length > 0
+      ? descParts.join(' · ')
+      : 'Sociedade Comercial de Direito Angolano · Contabilidade e Gestão Certificada');
+
+  return {
+    ...meta,
+    companyName,
+    tradeName,
+    companyDescription,
+    logoDataUrl: meta.logoDataUrl !== undefined ? meta.logoDataUrl : tenant?.logo_data_url || null,
+    address,
+    contacts,
+    agtCertNumber: meta.agtCertNumber || tenant?.agt_cert_number || 'FE/528/AGT/2026',
+  };
+};
 
 export interface BalanceSheetExportData {
   imobCorporeas: number;
@@ -636,17 +682,20 @@ export const buildFinancialNotesRows = (n: FinancialNotesData): StatementRow[] =
  */
 export const exportFinancialStatementCsv = (
   target: StatementExportTarget,
-  meta: CorporateEntityMeta,
+  rawMeta: CorporateEntityMeta,
   balanco: BalanceSheetExportData,
   dre: IncomeStatementExportData,
   cashFlow?: CashFlowData,
   notesData?: FinancialNotesData
 ) => {
+  const meta = enrichCorporateMeta(rawMeta);
   const nowStr = new Date().toLocaleString('pt-AO');
   const lines: string[] = [
     `RELATÓRIO E CONTAS CORPORATIVO — DEMONSTRAÇÕES FINANCEIRAS OFICIAIS`,
     `Normativo Contabilístico: Decreto n.º 82/01 de 16 de Novembro — Plano Geral de Contabilidade de Angola (PGC)`,
-    `Entidade:;${meta.companyName};NIF:;${meta.nif}`,
+    `Entidade:;${meta.companyName}${meta.tradeName && meta.tradeName !== meta.companyName ? ` (${meta.tradeName})` : ''};NIF:;${meta.nif}`,
+    `Descrição / Enquadramento Societário:;${meta.companyDescription}`,
+    `Sede / Endereço:;${meta.address || 'Luanda — Angola'};Contactos:;${meta.contacts || 'N/D'}`,
     `Exercício Económico:;${meta.fiscalYear};Período de Relato:;01/01/${meta.fiscalYear} a 31/12/${meta.fiscalYear}`,
     `Moeda de Apresentação:;Kwanzas (AOA);Data de Emissão:;${nowStr}`,
     '',
@@ -747,12 +796,13 @@ export const exportFinancialStatementCsv = (
  */
 export const exportFinancialStatementExcel = (
   target: StatementExportTarget,
-  meta: CorporateEntityMeta,
+  rawMeta: CorporateEntityMeta,
   balanco: BalanceSheetExportData,
   dre: IncomeStatementExportData,
   cashFlow?: CashFlowData,
   notesData?: FinancialNotesData
 ) => {
+  const meta = enrichCorporateMeta(rawMeta);
   const nowStr = new Date().toLocaleString('pt-AO');
   const vn = dre.vendas + dre.servicos || 1;
   const ebitda = dre.resultadoOperacional + dre.amortizacoes;
@@ -827,13 +877,23 @@ export const exportFinancialStatementExcel = (
     <body>
       <table>
         <tr>
-          <td colspan="5" style="font-size:14pt; font-weight:bold; color:#0f172a; text-align:center; padding:10px;">
+          <td colspan="5" style="font-size:15pt; font-weight:bold; color:#0f172a; text-align:center; padding:8px 10px 2px 10px;">
             ${meta.companyName.toUpperCase()}
           </td>
         </tr>
+        ${
+          meta.tradeName && meta.tradeName.toUpperCase() !== meta.companyName.toUpperCase()
+            ? `<tr><td colspan="5" style="font-size:9.5pt; font-weight:bold; color:#047857; text-align:center; padding:2px 10px;">Designação Comercial: ${meta.tradeName}</td></tr>`
+            : ''
+        }
         <tr>
-          <td colspan="5" style="font-size:10pt; color:#475569; text-align:center;">
-            NIF: <b>${meta.nif}</b> &nbsp;|&nbsp; Exercício Fiscal de <b>${meta.fiscalYear}</b> &nbsp;|&nbsp; PGC Angola (Decreto n.º 82/01)
+          <td colspan="5" style="font-size:9pt; font-style:italic; color:#475569; text-align:center; padding:2px 10px;">
+            ${meta.companyDescription}
+          </td>
+        </tr>
+        <tr>
+          <td colspan="5" style="font-size:9.5pt; color:#334155; text-align:center; padding:4px 10px;">
+            NIF: <b>${meta.nif}</b> &nbsp;|&nbsp; Sede: <b>${meta.address || 'Luanda — Angola'}</b>${meta.contacts ? ` &nbsp;|&nbsp; Contactos: <b>${meta.contacts}</b>` : ''} &nbsp;|&nbsp; Exercício Fiscal de <b>${meta.fiscalYear}</b> &nbsp;|&nbsp; PGC Angola (Decreto n.º 82/01)
           </td>
         </tr>
         <tr><td colspan="5" style="height:12px;"></td></tr>
@@ -1008,12 +1068,13 @@ export const exportFinancialStatementExcel = (
  */
 export const exportFinancialStatementPdf = (
   target: StatementExportTarget,
-  meta: CorporateEntityMeta,
+  rawMeta: CorporateEntityMeta,
   balanco: BalanceSheetExportData,
   dre: IncomeStatementExportData,
   cashFlow?: CashFlowData,
   notesData?: FinancialNotesData
 ) => {
+  const meta = enrichCorporateMeta(rawMeta);
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
     window.print();
@@ -1023,6 +1084,16 @@ export const exportFinancialStatementPdf = (
   const nowStr = new Date().toLocaleString('pt-AO');
   const vn = dre.vendas + dre.servicos || 1;
   const ebitda = dre.resultadoOperacional + dre.amortizacoes;
+  const initials = meta.companyName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() || '')
+    .join('');
+
+  const logoHtml = meta.logoDataUrl
+    ? `<img src="${meta.logoDataUrl}" alt="Logotipo ${meta.companyName}" style="max-height:60px; max-width:140px; object-fit:contain; border-radius:6px; border:1px solid #e2e8f0; padding:4px; background:#ffffff;" />`
+    : `<div style="width:54px; height:54px; border-radius:10px; background:linear-gradient(135deg,#0f172a 0%,#047857 100%); color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:17pt; font-weight:900; letter-spacing:1px;">${initials || 'KD'}</div>`;
 
   const renderTableRows = (rows: StatementRow[]) =>
     rows
@@ -1104,23 +1175,53 @@ export const exportFinancialStatementPdf = (
           padding: 16px;
         }
         .header-box {
-          border-bottom: 2px solid #0f172a;
-          padding-bottom: 10px;
+          border-bottom: 2.5px solid #0f172a;
+          padding-bottom: 12px;
           margin-bottom: 14px;
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 14px;
+        }
+        .brand-row {
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+          flex: 1;
         }
         .company-name {
-          font-size: 15pt;
+          font-size: 14pt;
           font-weight: 800;
           color: #0f172a;
           text-transform: uppercase;
           letter-spacing: -0.3px;
         }
-        .header-meta {
-          display: flex;
-          justify-content: space-between;
+        .trade-name {
           font-size: 8.5pt;
+          font-weight: 700;
+          color: #047857;
+          margin-top: 1px;
+        }
+        .company-desc {
+          font-size: 7.8pt;
           color: #475569;
+          font-style: italic;
+          margin-top: 2px;
+        }
+        .header-meta {
+          font-size: 7.8pt;
+          color: #334155;
           margin-top: 4px;
+        }
+        .doc-meta-box {
+          text-align: right;
+          background: #f8fafc;
+          border: 1px solid #cbd5e1;
+          border-radius: 6px;
+          padding: 7px 11px;
+          min-width: 220px;
+          font-size: 7.8pt;
+          color: #334155;
         }
         .section-header {
           background: #0f172a;
@@ -1267,10 +1368,27 @@ export const exportFinancialStatementPdf = (
     </head>
     <body>
       <div class="header-box">
-        <div class="company-name">${meta.companyName}</div>
-        <div class="header-meta">
-          <div>NIF: <strong>${meta.nif}</strong> &nbsp;·&nbsp; PGC Angola (Decreto n.º 82/01)</div>
-          <div>Exercício Económico de <strong>${meta.fiscalYear}</strong> &nbsp;·&nbsp; Moeda: <strong>Kwanzas (AOA)</strong></div>
+        <div class="brand-row">
+          ${logoHtml}
+          <div>
+            <div class="company-name">${meta.companyName}</div>
+            ${
+              meta.tradeName && meta.tradeName.toUpperCase() !== meta.companyName.toUpperCase()
+                ? `<div class="trade-name">${meta.tradeName}</div>`
+                : ''
+            }
+            <div class="company-desc">${meta.companyDescription}</div>
+            <div class="header-meta">
+              NIF: <strong>${meta.nif}</strong> &nbsp;·&nbsp; Sede: <strong>${meta.address || 'Luanda — Angola'}</strong>${meta.contacts ? ` &nbsp;·&nbsp; Contactos: <strong>${meta.contacts}</strong>` : ''}
+            </div>
+          </div>
+        </div>
+        <div class="doc-meta-box">
+          <div style="font-weight:800; color:#0f172a; font-size:8.5pt; margin-bottom:2px;">DEMONSTRAÇÕES FINANCEIRAS PGC</div>
+          <div>Exercício Económico: <strong>${meta.fiscalYear}</strong></div>
+          <div>Normativo: <strong>Decreto n.º 82/01</strong></div>
+          <div>Moeda: <strong>Kwanzas (AOA)</strong></div>
+          <div style="font-size:7pt; color:#64748b; margin-top:2px;">Cert. AGT: ${meta.agtCertNumber || 'AGT-CERT-AO'}</div>
         </div>
       </div>
 
@@ -1280,6 +1398,29 @@ export const exportFinancialStatementPdf = (
       <div class="section-header blue">
         <span>I. BALANÇO PATRIMONIAL EM 31 DE DEZEMBRO DE ${meta.fiscalYear}</span>
         <span style="font-size:8pt; font-weight:normal;">Decreto Presidencial n.º 82/01</span>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-title">Total do Activo</div>
+          <div class="kpi-value">${fmtKz(balanco.totalAtivo)}</div>
+          <div class="kpi-sub">Corrente: ${fmtPct(balanco.totalAtivoCorrente, balanco.totalAtivo || 1)}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Capital Próprio (Sit. Líquida)</div>
+          <div class="kpi-value">${fmtKz(balanco.totalCapitalProprio)}</div>
+          <div class="kpi-sub">Autonomia Fin.: ${fmtPct(balanco.totalCapitalProprio, balanco.totalPassivoCapitalProprio || 1)}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Fundo de Maneio Líquido</div>
+          <div class="kpi-value">${fmtKz(balanco.totalAtivoCorrente - balanco.totalPassivo)}</div>
+          <div class="kpi-sub">Activo Corrente - Passivo</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Equação Fundamental</div>
+          <div class="kpi-value" style="color:${balanco.isBalanced ? '#047857' : '#b45309'};">${balanco.isBalanced ? 'EQUILIBRADO' : fmtKz(balanco.balancoDiff)}</div>
+          <div class="kpi-sub">Activo = Cap. Próprio + Passivo</div>
+        </div>
       </div>
 
       <table>

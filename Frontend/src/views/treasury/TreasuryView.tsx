@@ -21,6 +21,7 @@ import {
   ArrowUpCircle,
   Eye,
   Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
@@ -28,6 +29,14 @@ import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { SortableHeader } from '../../components/common/SortableHeader';
 import { useTableSort } from '../../hooks/useTableSort';
+import {
+  buildCompanyReportMeta,
+  CorporateReportDocument,
+  exportCorporateReportCsv,
+  exportCorporateReportExcel,
+  exportCorporateReportPdf,
+  fmtReportKz,
+} from '../../utils/corporateReportExporter';
 import {
   treasuryApi,
   CashRegister,
@@ -399,14 +408,22 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
       )
       .join('');
 
+    const companyMeta = buildCompanyReportMeta(
+      activeTenant,
+      activeBranch,
+      new Date().toLocaleDateString('pt-AO'),
+      'Controlo de Sessão de Caixa (Fecho X / Z)'
+    );
+
     printWindow.document.write(`
       <html>
         <head>
           <title>Relatório de Sessão - ${sessionReport.register_code}</title>
           <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif; font-size: 11px; margin: 0; padding: 16px; color: #000; width: 300px; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif; font-size: 11px; margin: 0; padding: 16px; color: #000; width: 320px; }
             .header { text-align: center; border-bottom: 1px dashed #444; padding-bottom: 8px; margin-bottom: 10px; }
-            .title { font-size: 13px; font-weight: 800; margin: 0 0 4px 0; }
+            .title { font-size: 13px; font-weight: 800; margin: 0 0 2px 0; text-transform: uppercase; }
+            .desc { font-size: 9px; font-style: italic; color: #444; margin: 2px 0 4px 0; }
             .meta { font-size: 10px; color: #444; margin: 2px 0; }
             .section { margin: 10px 0; }
             .row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 11px; }
@@ -420,10 +437,16 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
         </head>
         <body>
           <div class="header">
-            <p class="title">KUDIBA ERP — TESOURARIA</p>
-            <p class="meta">RELATÓRIO DE SESSÃO / FECHO X</p>
+            ${
+              companyMeta.logoDataUrl
+                ? `<div style="margin-bottom:6px;"><img src="${companyMeta.logoDataUrl}" alt="Logo" style="max-height:44px; max-width:120px; object-fit:contain;" /></div>`
+                : ''
+            }
+            <p class="title">${companyMeta.companyName}</p>
+            <p class="desc">${companyMeta.companyDescription}</p>
+            <p class="meta">NIF: <strong>${companyMeta.nif}</strong> · Filial: ${activeBranch?.name || 'Sede Principal'}</p>
+            <p class="meta" style="margin-top:4px; font-weight:bold;">RELATÓRIO DE SESSÃO DE CAIXA / FECHO X</p>
             <p class="meta">Posto: <strong>${sessionReport.register_code} — ${sessionReport.register_name}</strong></p>
-            <p class="meta">Filial: ${activeBranch?.name || 'Sede Principal'}</p>
             <p class="meta">Data/Hora: ${new Date().toLocaleString('pt-AO')}</p>
           </div>
 
@@ -903,9 +926,142 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                 className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
-            <span className="text-xs text-slate-400">
-              Total: {receipts.length} Recibos emitidos
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-400 mr-2">
+                Total: {receipts.length} Recibos emitidos
+              </span>
+              {(() => {
+                const buildReceiptsDoc = (): CorporateReportDocument => {
+                  const totalQuitado = sortedReceipts.reduce((s, r) => s + Number(r.total_amount || 0), 0);
+                  const byMethod = sortedReceipts.reduce<Record<string, { count: number; total: number }>>((acc, r) => {
+                    const m = r.payment_method || 'OUTROS';
+                    if (!acc[m]) acc[m] = { count: 0, total: 0 };
+                    acc[m].count += 1;
+                    acc[m].total += Number(r.total_amount || 0);
+                    return acc;
+                  }, {});
+                  return {
+                    title: 'Mapa Geral de Recibos de Quitação Emitidos (Série RC)',
+                    subtitle: 'Controlo de Cobranças a Clientes, Quitação de Faturas FT e Entradas por Meio de Pagamento',
+                    filenameBase: `Mapa_Recibos_Quitacao_RC_${new Date().toISOString().split('T')[0]}`,
+                    meta: buildCompanyReportMeta(
+                      activeTenant,
+                      activeBranch,
+                      `Posição em ${new Date().toLocaleDateString('pt-AO')}`,
+                      'Regime Jurídico das Faturas e Documentos Equivalentes (DP n.º 71/25 & PGC Angola)'
+                    ),
+                    kpis: [
+                      {
+                        label: 'Volume Total Quitado (RC)',
+                        value: fmtReportKz(totalQuitado),
+                        sublabel: `${sortedReceipts.length} recibos oficiais emitidos`,
+                        tone: 'emerald',
+                      },
+                      {
+                        label: 'Ticket Médio por Recibo',
+                        value: fmtReportKz(sortedReceipts.length > 0 ? totalQuitado / sortedReceipts.length : 0),
+                        sublabel: 'Média de cobrança por operação',
+                        tone: 'blue',
+                      },
+                      {
+                        label: 'Meios de Pagamento Utilizados',
+                        value: `${Object.keys(byMethod).length} Instrumentos`,
+                        sublabel: Object.keys(byMethod).join(' · ') || 'N/D',
+                        tone: 'slate',
+                      },
+                    ],
+                    summaryNotes: [
+                      'Enquadramento Fiscal: Os Recibos de Quitação (RC) comprovam a liquidação financeira das Faturas (FT) emitidas a prazo, movimentando a crédito a conta 31.1 (Clientes Correntes) em contrapartida de Disponibilidades (Classe 4 PGC).',
+                    ],
+                    sections: [
+                      {
+                        title: 'I. Resumo de Cobranças por Meio de Pagamento',
+                        subtitle: 'Agregação por Instrumento Financeiro (Transferência, Multicaixa, Numerário, Referência)',
+                        theme: 'emerald',
+                        columns: [
+                          { header: 'Meio de Pagamento', width: '40%', align: 'left' },
+                          { header: 'N.º de Recibos', width: '20%', align: 'center', mono: true },
+                          { header: 'Peso (%)', width: '15%', align: 'right', mono: true },
+                          { header: 'Montante Total Quitado (Kz)', width: '25%', align: 'right', isCurrency: true, mono: true },
+                        ],
+                        rows: Object.entries(byMethod).map(([m, stat]) => ({
+                          cells: [
+                            m,
+                            stat.count,
+                            `${totalQuitado > 0 ? ((stat.total / totalQuitado) * 100).toFixed(1) : '0.0'}%`,
+                            stat.total,
+                          ],
+                        })),
+                      },
+                      {
+                        title: 'II. Relação Cronológica de Recibos de Quitação Emitidos (RC)',
+                        subtitle: `${sortedReceipts.length} documentos listados`,
+                        theme: 'slate',
+                        columns: [
+                          { header: 'N.º Recibo', width: '15%', align: 'left', mono: true },
+                          { header: 'Data / Hora', width: '16%', align: 'center', mono: true },
+                          { header: 'Cliente / Adquirente', width: '26%', align: 'left' },
+                          { header: 'NIF', width: '12%', align: 'center', mono: true },
+                          { header: 'Meio Pagamento', width: '15%', align: 'center' },
+                          { header: 'Valor Quitado (Kz)', width: '16%', align: 'right', isCurrency: true, mono: true },
+                        ],
+                        rows: [
+                          ...sortedReceipts.map((r) => ({
+                            cells: [
+                              r.receipt_number,
+                              new Date(r.issued_at).toLocaleString('pt-AO'),
+                              r.customer_name || 'Consumidor Final',
+                              r.customer_nif || '999999999',
+                              r.payment_method,
+                              Number(r.total_amount || 0),
+                            ],
+                          })),
+                          {
+                            cells: [
+                              'TOTAL',
+                              `${sortedReceipts.length} recibos`,
+                              'TOTAL CONSOLIDADO DE QUITAÇÕES',
+                              '',
+                              '',
+                              totalQuitado,
+                            ],
+                            isTotal: true,
+                          },
+                        ],
+                      },
+                    ],
+                  };
+                };
+                return (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => exportCorporateReportPdf(buildReceiptsDoc())}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 shadow-sm transition-all cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      PDF Oficial
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => exportCorporateReportExcel(buildReceiptsDoc())}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-all cursor-pointer"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      Excel (.xls)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => exportCorporateReportCsv(buildReceiptsDoc())}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      CSV
+                    </button>
+                  </>
+                );
+              })()}
+            </div>
           </div>
 
           <GlassCard className="overflow-hidden">
@@ -1132,18 +1288,144 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
       {activeTab === 'receivables' && (
         <div className="space-y-4">
           <GlassCard className="overflow-hidden">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Contas Correntes de Faturas a Prazo (Crédito)
+                  Contas Correntes de Faturas a Prazo (Crédito — Conta 31 PGC)
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Faturas FT registadas aguardando liquidação ou quitação via Recibo RC
+                  Faturas FT registadas aguardando liquidação ou quitação via Recibo RC ({receivables.filter((r) => !isReceivableSettled(r)).length} pendentes)
                 </p>
               </div>
-              <span className="text-xs text-slate-400">
-                {receivables.filter((r) => !isReceivableSettled(r)).length} Pendentes
-              </span>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {(() => {
+                  const buildReceivablesDoc = (): CorporateReportDocument => {
+                    const totalFacturado = sortedReceivables.reduce((s, r) => s + Number(r.gross_total || 0), 0);
+                    const totalQuitado = sortedReceivables.reduce((s, r) => s + getReceivablePaid(r), 0);
+                    const totalDivida = sortedReceivables.reduce((s, r) => s + getReceivableRemaining(r), 0);
+                    return {
+                      title: 'Mapa de Contas a Receber de Clientes (Crédito Comercial)',
+                      subtitle:
+                        'Posição de Faturas a Prazo Emitidas (FT), Quitações por Recibo (RC) e Saldos Devedores (Conta 31 PGC)',
+                      filenameBase: `Mapa_Contas_a_Receber_Clientes_${new Date().toISOString().split('T')[0]}`,
+                      meta: buildCompanyReportMeta(
+                        activeTenant,
+                        activeBranch,
+                        `Posição em ${new Date().toLocaleDateString('pt-AO')}`,
+                        'Conta 31 PGC Angola & Regime Jurídico das Faturas (DP n.º 71/25)'
+                      ),
+                      kpis: [
+                        {
+                          label: 'Total Facturado a Prazo',
+                          value: fmtReportKz(totalFacturado),
+                          sublabel: `${sortedReceivables.length} documentos comerciais`,
+                          tone: 'blue',
+                        },
+                        {
+                          label: 'Montante Já Quitado (RC)',
+                          value: fmtReportKz(totalQuitado),
+                          sublabel: `${sortedReceivables.filter((r) => isReceivableSettled(r)).length} documentos liquidados`,
+                          tone: 'emerald',
+                        },
+                        {
+                          label: 'Saldo Devedor em Aberto',
+                          value: fmtReportKz(totalDivida),
+                          sublabel: `${sortedReceivables.filter((r) => !isReceivableSettled(r)).length} documentos pendentes`,
+                          tone: totalDivida > 0 ? 'rose' : 'emerald',
+                        },
+                        {
+                          label: 'Taxa de Cobrança Efetiva',
+                          value: `${totalFacturado > 0 ? ((totalQuitado / totalFacturado) * 100).toFixed(1) : '100.0'}%`,
+                          sublabel: 'Índice de recuperação de crédito comercial',
+                          tone: 'amber',
+                        },
+                      ],
+                      summaryNotes: [
+                        `Controlo de Crédito Comercial: Representa os saldos devedores da rubrica 31.1 (Clientes — Contas Correntes) do Plano Geral de Contabilidade de Angola.`,
+                        `Taxa de Realização Financeira: ${totalFacturado > 0 ? ((totalQuitado / totalFacturado) * 100).toFixed(1) : '100.0'}% do volume faturado a prazo encontra-se devidamente titulado por Recibo Oficial (RC).`,
+                      ],
+                      sections: [
+                        {
+                          title: 'I. Extrato de Faturas a Prazo e Saldos Pendentes de Cobrança',
+                          subtitle: 'Conta 31.1 — Clientes Correntes (PGC Angola)',
+                          theme: 'blue',
+                          columns: [
+                            { header: 'Documento FT', width: '16%', align: 'left', mono: true },
+                            { header: 'Tipo', width: '8%', align: 'center', mono: true },
+                            { header: 'Data Emissão', width: '12%', align: 'center', mono: true },
+                            { header: 'Mecanismo', width: '14%', align: 'center' },
+                            { header: 'Valor Fatura (Kz)', width: '14%', align: 'right', isCurrency: true, mono: true },
+                            { header: 'Já Quitado (Kz)', width: '14%', align: 'right', isCurrency: true, mono: true },
+                            { header: 'Saldo Devedor (Kz)', width: '14%', align: 'right', isCurrency: true, mono: true },
+                            { header: 'Estado', width: '8%', align: 'center' },
+                          ],
+                          rows: [
+                            ...sortedReceivables.map((r) => {
+                              const settled = getReceivablePaid(r);
+                              const debt = getReceivableRemaining(r);
+                              return {
+                                cells: [
+                                  r.document_number,
+                                  r.document_type || 'FT',
+                                  new Date(r.created_at).toLocaleDateString('pt-AO'),
+                                  r.payment_mechanism || 'CREDITO',
+                                  Number(r.gross_total || 0),
+                                  settled,
+                                  debt,
+                                  isReceivableSettled(r) ? 'PAGA' : settled > 0 ? 'PARCIAL' : 'ABERTA',
+                                ],
+                                isNegative: debt > 0,
+                              };
+                            }),
+                            {
+                              cells: [
+                                'TOTAL',
+                                '',
+                                `${sortedReceivables.length} docs`,
+                                '',
+                                totalFacturado,
+                                totalQuitado,
+                                totalDivida,
+                                '',
+                              ],
+                              isTotal: true,
+                            },
+                          ],
+                        },
+                      ],
+                    };
+                  };
+
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => exportCorporateReportPdf(buildReceivablesDoc())}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 shadow-sm transition-all cursor-pointer"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        PDF Oficial
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => exportCorporateReportExcel(buildReceivablesDoc())}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-all cursor-pointer"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                        Excel (.xls)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => exportCorporateReportCsv(buildReceivablesDoc())}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        CSV
+                      </button>
+                    </>
+                  );
+                })()}
+              </div>
             </div>
 
             <div className="overflow-x-auto max-h-[600px] overflow-y-auto">

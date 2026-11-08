@@ -1,4 +1,6 @@
 import { TreasuryReceipt } from '../../api/treasury';
+import { useAuthStore } from '../../stores/authStore';
+import { buildCompanyReportMeta } from '../../utils/corporateReportExporter';
 
 export interface ReceiptCompanyMeta {
   name: string;
@@ -7,6 +9,8 @@ export interface ReceiptCompanyMeta {
   city?: string;
   phone?: string;
   email?: string;
+  logoDataUrl?: string;
+  description?: string;
 }
 
 const fmtKz = (val: number | string): string => {
@@ -23,6 +27,19 @@ export const generateReceiptHtml = (
   receipt: TreasuryReceipt,
   company: ReceiptCompanyMeta
 ): string => {
+  const { activeTenant, activeBranch } = useAuthStore.getState();
+  const enriched = buildCompanyReportMeta(activeTenant, activeBranch);
+  const logoDataUrl = company.logoDataUrl || enriched.logoDataUrl;
+  const companyDesc = company.description || enriched.companyDescription;
+  const initials = (company.name || enriched.companyName)
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() || '')
+    .join('');
+  const logoHtml = logoDataUrl
+    ? `<img src="${logoDataUrl}" alt="Logotipo" style="max-height:58px; max-width:130px; object-fit:contain; border-radius:6px; border:1px solid #e2e8f0; padding:4px; background:#fff;" />`
+    : `<div style="width:52px; height:52px; border-radius:10px; background:linear-gradient(135deg,#0f172a 0%,#047857 100%); color:#fff; display:flex; align-items:center; justify-content:center; font-size:16pt; font-weight:900;">${initials || 'KD'}</div>`;
   const totalNum = typeof receipt.total_amount === 'string' ? parseFloat(receipt.total_amount) : receipt.total_amount;
   const issuedDate = new Date(receipt.issued_at || receipt.created_at);
   const formattedDate = issuedDate.toLocaleDateString('pt-AO', {
@@ -270,13 +287,21 @@ export const generateReceiptHtml = (
 </head>
 <body>
   <div class="header-box">
-    <div class="company-col">
-      <div class="company-name">${company.name}</div>
-      <div class="company-meta">
-        <div>NIF: <span class="company-nif">${company.nif}</span></div>
-        ${company.address ? `<div>${company.address}</div>` : ''}
-        ${company.city ? `<div>${company.city} · Angola</div>` : '<div>Angola</div>'}
-        ${company.phone ? `<div>Tel: ${company.phone}</div>` : ''}
+    <div class="company-col" style="display:flex; align-items:flex-start; gap:12px;">
+      ${logoHtml}
+      <div>
+        <div class="company-name">${company.name || enriched.companyName}</div>
+        ${
+          enriched.tradeName && enriched.tradeName.toUpperCase() !== (company.name || enriched.companyName).toUpperCase()
+            ? `<div style="font-size:9pt; font-weight:700; color:#047857; margin-top:1px;">${enriched.tradeName}</div>`
+            : ''
+        }
+        <div style="font-size:8.5pt; color:#475569; font-style:italic; margin-top:2px;">${companyDesc}</div>
+        <div class="company-meta">
+          <div>NIF: <span class="company-nif">${company.nif || enriched.nif}</span></div>
+          <div>${company.address || enriched.address}${company.city ? ` · ${company.city}` : ''}</div>
+          ${company.phone || enriched.contacts ? `<div>Contactos: ${company.phone || enriched.contacts}</div>` : ''}
+        </div>
       </div>
     </div>
     <div class="doc-col">

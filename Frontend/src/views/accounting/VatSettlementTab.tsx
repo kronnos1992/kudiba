@@ -1,7 +1,16 @@
 import React from 'react';
-import { Receipt, PlusCircle } from 'lucide-react';
+import { Receipt, PlusCircle, Printer, FileSpreadsheet, Download } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
+import { useAuthStore } from '../../stores/authStore';
+import {
+  buildCompanyReportMeta,
+  CorporateReportDocument,
+  exportCorporateReportCsv,
+  exportCorporateReportExcel,
+  exportCorporateReportPdf,
+  fmtReportKz,
+} from '../../utils/corporateReportExporter';
 
 export interface VatSettlementData {
   totalIvaLiquidado: number;
@@ -24,10 +33,95 @@ export const VatSettlementTab: React.FC<VatSettlementTabProps> = ({
   vatSettlement,
   onOpenVatSettlementEntry,
 }) => {
+  const { activeTenant, activeBranch } = useAuthStore();
+
+  const buildVatReportDocument = (): CorporateReportDocument => ({
+    title: 'Quadro Sinóptico de Apuramento Periódico do IVA (Modelo 7 AGT)',
+    subtitle: 'Apuramento Mensal do Imposto sobre o Valor Acrescentado — Conta 34.5 PGC Angola',
+    filenameBase: `Apuramento_Periodico_IVA_Modelo7_${new Date().toISOString().split('T')[0]}`,
+    meta: buildCompanyReportMeta(
+      activeTenant,
+      activeBranch,
+      new Date().toLocaleDateString('pt-AO', { month: 'long', year: 'numeric' }),
+      'Código do IVA de Angola (Lei n.º 7/19) & Declaração Modelo 7 AGT'
+    ),
+    kpis: [
+      {
+        label: 'Total IVA Liquidado (Vendas)',
+        value: fmtReportKz(vatSettlement.totalIvaLiquidado),
+        sublabel: 'Subconta 34.5.3 PGC',
+        tone: 'blue',
+      },
+      {
+        label: 'Total IVA Dedutível (Compras)',
+        value: fmtReportKz(vatSettlement.totalIvaDedutivel),
+        sublabel: 'Subconta 34.5.2 PGC',
+        tone: 'emerald',
+      },
+      {
+        label: 'Regularizações do Período',
+        value: fmtReportKz(vatSettlement.ivaRegularizarNet),
+        sublabel: 'Subconta 34.5.5 PGC',
+        tone: 'slate',
+      },
+      {
+        label: vatSettlement.isPayable ? 'IVA a Pagar à AGT' : 'Crédito de IVA a Recuperar',
+        value: fmtReportKz(vatSettlement.saldoIva),
+        sublabel: vatSettlement.isPayable ? 'Subconta 34.5.7 PGC' : 'Subconta 34.5.8 PGC',
+        tone: vatSettlement.isPayable ? 'amber' : 'emerald',
+      },
+    ],
+    summaryNotes: [
+      'Enquadramento Fiscal: Apuramento mensal efetuado nos termos do Código do Imposto sobre o Valor Acrescentado (Lei n.º 7/19, alterada pela Lei n.º 14/23) para preenchimento da Declaração Periódica Modelo 7 da AGT.',
+      `Prazo Legal de Submissão e Pagamento: Até ao último dia útil do mês seguinte ao das operações tributáveis, através de Documento de Liquidação de Impostos (DLI) / Referência RUPE.`,
+      `Posição Apurada: ${vatSettlement.isPayable ? `Imposto a entregar ao Estado no montante de ${fmtReportKz(vatSettlement.saldoIva)} (Conta 34.5.7 PGC).` : `Crédito de imposto a reportar para o período seguinte no montante de ${fmtReportKz(vatSettlement.saldoIva)} (Conta 34.5.8 PGC).`}`,
+    ],
+    sections: [
+      {
+        title: 'I. Demonstrativo de Apuramento do Imposto sobre o Valor Acrescentado (Conta 34.5)',
+        subtitle: 'Decomposição por Taxas Legais (14% Geral e 5% Cesta Básica / Regime Simplificado)',
+        theme: 'blue',
+        columns: [
+          { header: 'Subconta PGC', width: '16%', align: 'center', mono: true },
+          { header: 'Rubrica do Quadro de Apuramento / Campo Modelo 7', width: '52%', align: 'left' },
+          { header: 'Natureza Fiscal', width: '14%', align: 'center' },
+          { header: 'Valor Apurado (Kz)', width: '18%', align: 'right', isCurrency: true, mono: true },
+        ],
+        rows: [
+          { cells: ['34.5.3.1', 'IVA Liquidado nas Operações Tributáveis à Taxa Geral (14%)', 'Liquidado (+)', vatSettlement.ivaLiquidado14] },
+          { cells: ['34.5.3.2', 'IVA Liquidado nas Operações à Taxa Reduzida / Cesta Básica (5%)', 'Liquidado (+)', vatSettlement.ivaLiquidado5] },
+          {
+            cells: ['34.5.3', 'TOTAL DO IVA LIQUIDADO NO PERÍODO (A)', 'Subtotal', vatSettlement.totalIvaLiquidado],
+            isSubtotal: true,
+          },
+          { cells: ['34.5.1', 'IVA Suportado em Aquisições de Existências, Imobilizado e FSE', 'Suportado', vatSettlement.ivaSuportado] },
+          { cells: ['34.5.2', 'IVA Dedutível Fiscalmente Aceite nos Termos do CIVA', 'Dedutível (-)', -Math.abs(vatSettlement.ivaDedutivel)], isNegative: true },
+          {
+            cells: ['34.5.2', 'TOTAL DO IVA DEDUTÍVEL NO PERÍODO (B)', 'Subtotal', -Math.abs(vatSettlement.totalIvaDedutivel)],
+            isSubtotal: true,
+            isNegative: true,
+          },
+          { cells: ['34.5.5', 'Regularizações Mensais ou Anuais de IVA (C)', 'Regularização', vatSettlement.ivaRegularizarNet] },
+          {
+            cells: [
+              vatSettlement.isPayable ? '34.5.7' : '34.5.8',
+              vatSettlement.isPayable
+                ? 'POSIÇÃO LÍQUIDA FINAL: IVA A PAGAR AO ESTADO (A - B + C)'
+                : 'POSIÇÃO LÍQUIDA FINAL: CRÉDITO DE IVA A RECUPERAR / REPORTAR',
+              vatSettlement.isPayable ? 'A Pagar' : 'A Recuperar',
+              vatSettlement.saldoIva,
+            ],
+            isTotal: true,
+          },
+        ],
+      },
+    ],
+  });
+
   return (
     <div className="space-y-6">
       <GlassCard className="p-6 w-full space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
           <div>
             <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
               <Receipt className="w-5 h-5 text-blue-600" />
@@ -38,14 +132,40 @@ export const VatSettlementTab: React.FC<VatSettlementTabProps> = ({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={onOpenVatSettlementEntry}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition"
-          >
-            <PlusCircle className="w-4 h-4" />
-            Gerar Lançamento de Apuramento (Conta 34.5.6)
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => exportCorporateReportPdf(buildVatReportDocument())}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 shadow-sm transition cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              PDF Oficial
+            </button>
+            <button
+              type="button"
+              onClick={() => exportCorporateReportExcel(buildVatReportDocument())}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel (.xls)
+            </button>
+            <button
+              type="button"
+              onClick={() => exportCorporateReportCsv(buildVatReportDocument())}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              CSV
+            </button>
+            <button
+              type="button"
+              onClick={onOpenVatSettlementEntry}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition cursor-pointer"
+            >
+              <PlusCircle className="w-4 h-4" />
+              Gerar Lançamento de Apuramento (Conta 34.5.6)
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

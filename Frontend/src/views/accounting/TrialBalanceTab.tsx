@@ -1,8 +1,18 @@
 import React, { useMemo, useState } from 'react';
-import { Search, FileSpreadsheet, BookOpen, Percent } from 'lucide-react';
+import { Search, FileSpreadsheet, BookOpen, Percent, Printer, Download } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { SortableHeader } from '../../components/common/SortableHeader';
+import { useAuthStore } from '../../stores/authStore';
+import {
+  buildCompanyReportMeta,
+  CorporateReportDocument,
+  exportCorporateReportCsv,
+  exportCorporateReportExcel,
+  exportCorporateReportPdf,
+  fmtPctReport,
+  fmtReportKz,
+} from '../../utils/corporateReportExporter';
 
 export interface TrialBalanceRowView {
   account_code: string;
@@ -64,7 +74,7 @@ export const TrialBalanceTab: React.FC<TrialBalanceTabProps> = ({
   onOnlyMovedAccountsChange,
   trialBalanceColumns,
   onTrialBalanceColumnsChange,
-  onExportCsv,
+  onExportCsv: _onExportCsv,
   isLoading,
   sortedRows,
   trialBalanceSortConfig,
@@ -76,6 +86,7 @@ export const TrialBalanceTab: React.FC<TrialBalanceTabProps> = ({
   verticalAnalysisBase,
   onVerticalAnalysisBaseChange,
 }) => {
+  const { activeTenant, activeBranch } = useAuthStore();
   const [internalShowAV, setInternalShowAV] = useState(false);
   const [internalBaseAV, setInternalBaseAV] = useState<'class' | 'global'>('class');
 
@@ -101,6 +112,205 @@ export const TrialBalanceTab: React.FC<TrialBalanceTabProps> = ({
     }
     return { classTotals: totals, globalTotal: gTotal };
   }, [sortedRows]);
+
+  const buildTrialBalanceReportDocument = (): CorporateReportDocument => {
+    const totOpenDeb = parseFloat(String(trialBalance?.total_opening_debit || 0));
+    const totOpenCred = parseFloat(String(trialBalance?.total_opening_credit || 0));
+    const totPerDeb = parseFloat(String(trialBalance?.total_period_debit || 0));
+    const totPerCred = parseFloat(String(trialBalance?.total_period_credit || 0));
+    const totCloseDeb = parseFloat(String(trialBalance?.total_closing_debit || 0));
+    const totCloseCred = parseFloat(String(trialBalance?.total_closing_credit || 0));
+    const isBalanced = Math.abs(totCloseDeb - totCloseCred) < 0.01;
+
+    const classBreakdown = pgcClasses
+      .filter((c) => c.prefix)
+      .map((c) => {
+        const classRows = sortedRows.filter(
+          (r) => r.account_code.startsWith(c.prefix) && (r.is_analytical ?? true)
+        );
+        const rowsForSum =
+          classRows.length > 0
+            ? classRows
+            : sortedRows.filter((r) => r.account_code.startsWith(c.prefix));
+        const pDeb = rowsForSum.reduce((s, r) => s + parseFloat(String(r.period_debit || 0)), 0);
+        const pCred = rowsForSum.reduce((s, r) => s + parseFloat(String(r.period_credit || 0)), 0);
+        const cDeb = rowsForSum.reduce((s, r) => s + parseFloat(String(r.closing_debit || 0)), 0);
+        const cCred = rowsForSum.reduce((s, r) => s + parseFloat(String(r.closing_credit || 0)), 0);
+        return {
+          code: `Classe ${c.prefix}`,
+          name: c.name,
+          count: rowsForSum.length,
+          pDeb,
+          pCred,
+          cDeb,
+          cCred,
+          weight: fmtPctReport(Math.max(cDeb, cCred), globalTotal || 1),
+        };
+      })
+      .filter((cb) => cb.count > 0 || cb.pDeb > 0 || cb.pCred > 0 || cb.cDeb > 0 || cb.cCred > 0);
+
+    return {
+      title: `Balancete Geral de Verificação do Razão (${trialBalanceColumns} Colunas — PGC Angola)`,
+      subtitle:
+        'Controlo das Partidas Dobradas, Movimentos Acumulados, Saldos Devedores/Credores e Análise Vertical por Conta PGC',
+      filenameBase: `Balancete_Verificacao_PGC_${trialBalanceColumns}Col_${new Date().toISOString().split('T')[0]}`,
+      orientation: trialBalanceColumns === 6 ? 'landscape' : 'portrait',
+      meta: buildCompanyReportMeta(
+        activeTenant,
+        activeBranch,
+        `Posição em ${new Date().toLocaleDateString('pt-AO')}`,
+        'Plano Geral de Contabilidade de Angola (Decreto n.º 82/01)'
+      ),
+      kpis: [
+        {
+          label: 'Total Movimentos a Débito',
+          value: fmtReportKz(totPerDeb),
+          sublabel: `${sortedRows.length} contas apresentadas no mapa`,
+          tone: 'blue',
+        },
+        {
+          label: 'Total Movimentos a Crédito',
+          value: fmtReportKz(totPerCred),
+          sublabel: 'Acumulado de lançamentos do período',
+          tone: 'blue',
+        },
+        {
+          label: 'Saldos Finais Devedores / Credores',
+          value: fmtReportKz(totCloseDeb),
+          sublabel: `Crédito Final: ${fmtReportKz(totCloseCred)}`,
+          tone: 'emerald',
+        },
+        {
+          label: 'Equilíbrio de Partidas Dobradas',
+          value: isBalanced ? 'EQUILIBRADO (Δ 0,00 Kz)' : fmtReportKz(Math.abs(totCloseDeb - totCloseCred)),
+          sublabel: isBalanced
+            ? 'Conformidade integral Débito = Crédito'
+            : 'Diferença transitória em apuramento',
+          tone: isBalanced ? 'emerald' : 'amber',
+        },
+      ],
+      summaryNotes: [
+        `Enquadramento Técnico: Balancete emitido no modelo de ${trialBalanceColumns} colunas nos termos do Decreto n.º 82/01 (Plano Geral de Contabilidade de Angola).`,
+        `Integridade Contabilística: Soma dos movimentos do período a Débito (${fmtReportKz(totPerDeb)}) e a Crédito (${fmtReportKz(totPerCred)}), com saldos finais ${isBalanced ? 'rigorosamente equilibrados' : 'em revisão'}.`,
+        `Análise Vertical (AV %): Calculada com base ${baseAV === 'class' ? 'no peso de cada rubrica dentro da respetiva Classe PGC' : 'no volume global de saldos do Balancete'}.`,
+      ],
+      sections: [
+        ...(classBreakdown.length > 0
+          ? [
+              {
+                title: 'I. SínteseAgregada por Classes do Plano Geral de Contabilidade (Classes 1 a 8)',
+                subtitle: 'Visão Executiva das Massas Patrimoniais e de Exploração',
+                theme: 'blue' as const,
+                columns: [
+                  { header: 'Classe', width: '12%', align: 'center' as const, mono: true },
+                  { header: 'Designação da Classe PGC', width: '30%', align: 'left' as const },
+                  { header: 'N.º Contas', width: '10%', align: 'center' as const, mono: true },
+                  { header: 'Mov. Débito (Kz)', width: '13%', align: 'right' as const, isCurrency: true, mono: true },
+                  { header: 'Mov. Crédito (Kz)', width: '13%', align: 'right' as const, isCurrency: true, mono: true },
+                  { header: 'Saldo Devedor (Kz)', width: '11%', align: 'right' as const, isCurrency: true, mono: true },
+                  { header: 'Saldo Credor (Kz)', width: '11%', align: 'right' as const, isCurrency: true, mono: true },
+                ],
+                rows: classBreakdown.map((cb) => ({
+                  cells: [cb.code, cb.name, cb.count, cb.pDeb, cb.pCred, cb.cDeb, cb.cCred],
+                })),
+              },
+            ]
+          : []),
+        {
+          title: `${classBreakdown.length > 0 ? 'II' : 'I'}. Balancete Analítico e Sintético do Razão Geral (${trialBalanceColumns} Colunas)`,
+          subtitle: `Filtro de Classe: ${trialBalanceFilterClass === 'all' ? 'Todas as Classes PGC' : trialBalanceFilterClass} | Contas Listadas: ${sortedRows.length}`,
+          theme: 'slate',
+          columns:
+            trialBalanceColumns === 6
+              ? [
+                  { header: 'Conta PGC', width: '9%', align: 'left', mono: true },
+                  { header: 'Designação da Conta', width: '23%', align: 'left' },
+                  { header: 'Natureza', width: '8%', align: 'center' },
+                  { header: 'Abert. Débito', width: '10%', align: 'right', isCurrency: true, mono: true },
+                  { header: 'Abert. Crédito', width: '10%', align: 'right', isCurrency: true, mono: true },
+                  { header: 'Mov. Débito', width: '10%', align: 'right', isCurrency: true, mono: true },
+                  { header: 'Mov. Crédito', width: '10%', align: 'right', isCurrency: true, mono: true },
+                  { header: 'Saldo Devedor', width: '10%', align: 'right', isCurrency: true, mono: true },
+                  { header: 'Saldo Credor', width: '10%', align: 'right', isCurrency: true, mono: true },
+                ]
+              : [
+                  { header: 'Conta PGC', width: '11%', align: 'left', mono: true },
+                  { header: 'Designação da Conta', width: '31%', align: 'left' },
+                  { header: 'Grau', width: '8%', align: 'center' },
+                  { header: 'Movimento Débito', width: '11%', align: 'right', isCurrency: true, mono: true },
+                  { header: 'Movimento Crédito', width: '11%', align: 'right', isCurrency: true, mono: true },
+                  { header: 'Saldo Devedor', width: '11%', align: 'right', isCurrency: true, mono: true },
+                  { header: 'Saldo Credor', width: '11%', align: 'right', isCurrency: true, mono: true },
+                  { header: 'AV (%)', width: '6%', align: 'right', mono: true },
+                ],
+          rows: [
+            ...sortedRows.map((r) => {
+              const prefix = r.account_code.charAt(0);
+              const deb = parseFloat(String(r.closing_debit || 0));
+              const cred = parseFloat(String(r.closing_credit || 0));
+              const bal = Math.max(deb, cred);
+              const base = baseAV === 'class' ? classTotals[prefix] || 1 : globalTotal || 1;
+              const avStr = fmtPctReport(bal, base);
+              const tipoStr = r.is_analytical ? 'Analítica' : 'Sintética';
+
+              return {
+                cells:
+                  trialBalanceColumns === 6
+                    ? [
+                        r.account_code,
+                        r.account_name,
+                        tipoStr,
+                        parseFloat(String(r.opening_debit || 0)),
+                        parseFloat(String(r.opening_credit || 0)),
+                        parseFloat(String(r.period_debit || 0)),
+                        parseFloat(String(r.period_credit || 0)),
+                        deb,
+                        cred,
+                      ]
+                    : [
+                        r.account_code,
+                        r.account_name,
+                        tipoStr,
+                        parseFloat(String(r.period_debit || 0)),
+                        parseFloat(String(r.period_credit || 0)),
+                        deb,
+                        cred,
+                        avStr,
+                      ],
+                isSubtotal: !r.is_analytical,
+              };
+            }),
+            {
+              cells:
+                trialBalanceColumns === 6
+                  ? [
+                      'TOTAL',
+                      'TOTAIS GERAIS DE CONTROLO DO BALANCETE',
+                      '',
+                      totOpenDeb,
+                      totOpenCred,
+                      totPerDeb,
+                      totPerCred,
+                      totCloseDeb,
+                      totCloseCred,
+                    ]
+                  : [
+                      'TOTAL',
+                      'TOTAIS GERAIS DE CONTROLO DO BALANCETE',
+                      '',
+                      totPerDeb,
+                      totPerCred,
+                      totCloseDeb,
+                      totCloseCred,
+                      '100,00%',
+                    ],
+              isTotal: true,
+            },
+          ],
+        },
+      ],
+    };
+  };
 
   const totalColumnsCount = (trialBalanceColumns === 6 ? 9 : 7) + (showAV ? 1 : 0);
   return (
@@ -200,14 +410,35 @@ export const TrialBalanceTab: React.FC<TrialBalanceTabProps> = ({
                 </div>
               </div>
 
-              <button
-                onClick={onExportCsv}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition"
-                title="Exportar balancete em CSV compatível com Excel"
-              >
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                Exportar CSV
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => exportCorporateReportPdf(buildTrialBalanceReportDocument())}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 text-xs font-bold shadow-xs transition cursor-pointer"
+                  title="Imprimir / Guardar PDF Oficial A4 do Balancete"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  PDF Oficial
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportCorporateReportExcel(buildTrialBalanceReportDocument())}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+                  title="Exportar Balancete em Excel (.xls) formatado"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  Excel (.xls)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportCorporateReportCsv(buildTrialBalanceReportDocument())}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition cursor-pointer"
+                  title="Exportar balancete em CSV corporativo compatível com Excel"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  CSV
+                </button>
+              </div>
             </div>
           </GlassCard>
 

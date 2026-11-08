@@ -1,7 +1,16 @@
 import React from 'react';
-import { Search, FileSpreadsheet, FileText } from 'lucide-react';
+import { Search, FileSpreadsheet, FileText, Printer, Download } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
+import { useAuthStore } from '../../stores/authStore';
+import {
+  buildCompanyReportMeta,
+  CorporateReportDocument,
+  exportCorporateReportCsv,
+  exportCorporateReportExcel,
+  exportCorporateReportPdf,
+  fmtReportKz,
+} from '../../utils/corporateReportExporter';
 import type { AccountResponse, JournalEntryResponse } from '../../api/accounting';
 
 export interface LedgerEntryItem {
@@ -47,9 +56,107 @@ export const GeneralLedgerTab: React.FC<GeneralLedgerTabProps> = ({
   onLedgerSearchChange,
   selectedLedgerAccount,
   ledgerEntries,
-  onExportLedgerCsv,
+  onExportLedgerCsv: _onExportLedgerCsv,
   onSelectEntry,
 }) => {
+  const { activeTenant, activeBranch } = useAuthStore();
+
+  const buildLedgerReportDocument = (): CorporateReportDocument => {
+    const finalBalance =
+      selectedLedgerAccount.closing_debit > 0
+        ? selectedLedgerAccount.closing_debit
+        : selectedLedgerAccount.closing_credit;
+    const balanceSense =
+      selectedLedgerAccount.closing_debit > 0
+        ? 'Devedor'
+        : selectedLedgerAccount.closing_credit > 0
+        ? 'Credor'
+        : 'Nulo';
+
+    return {
+      title: `Extrato Oficial do Livro Razão — Conta ${selectedLedgerAccount.code}`,
+      subtitle: `${selectedLedgerAccount.name} (${selectedLedgerAccount.is_analytical ? 'Conta Analítica de Movimento' : 'Conta Sintética Agregadora'})`,
+      filenameBase: `Extrato_Livro_Razao_Conta_${selectedLedgerAccount.code}_${new Date().toISOString().split('T')[0]}`,
+      meta: buildCompanyReportMeta(
+        activeTenant,
+        activeBranch,
+        `Exercício em Curso · Posição em ${new Date().toLocaleDateString('pt-AO')}`,
+        'Livro Razão Geral — Art. 3.º Decreto n.º 82/01 (PGC Angola)'
+      ),
+      kpis: [
+        {
+          label: 'Conta Selecionada (PGC)',
+          value: `${selectedLedgerAccount.code}`,
+          sublabel: `${selectedLedgerAccount.name} (${selectedLedgerAccount.nature === 'DEBIT' ? 'Natureza Devedora' : 'Natureza Credora'})`,
+          tone: 'slate',
+        },
+        {
+          label: 'Total Débito do Período',
+          value: fmtReportKz(selectedLedgerAccount.period_debit),
+          sublabel: `${ledgerEntries.filter((e) => e.debit > 0).length} movimentos a débito`,
+          tone: 'blue',
+        },
+        {
+          label: 'Total Crédito do Período',
+          value: fmtReportKz(selectedLedgerAccount.period_credit),
+          sublabel: `${ledgerEntries.filter((e) => e.credit > 0).length} movimentos a crédito`,
+          tone: 'purple',
+        },
+        {
+          label: `Saldo Final (${balanceSense})`,
+          value: fmtReportKz(finalBalance),
+          sublabel: `${ledgerEntries.length} lançamentos no extrato`,
+          tone: selectedLedgerAccount.closing_debit > 0 ? 'emerald' : 'amber',
+        },
+      ],
+      summaryNotes: [
+        `Identificação Contabilística: Extrato analítico da conta [${selectedLedgerAccount.code}] ${selectedLedgerAccount.name}, de natureza ${selectedLedgerAccount.nature === 'DEBIT' ? 'Devedora' : 'Credora'}.`,
+        `Rastreabilidade Documental: Todos os lançamentos apresentados estão ligados ao Livro Diário Geral com referência cruzada ao documento de suporte originário.`,
+      ],
+      sections: [
+        {
+          title: `I. Movimentação Cronológica e Saldo Acumulado Corrente — Conta ${selectedLedgerAccount.code}`,
+          subtitle: `${selectedLedgerAccount.name} | ${ledgerEntries.length} registos`,
+          theme: 'blue',
+          columns: [
+            { header: 'Data', width: '11%', align: 'center', mono: true },
+            { header: 'Lanç. N.º', width: '9%', align: 'center', mono: true },
+            { header: 'Diário / Origem', width: '13%', align: 'center' },
+            { header: 'Histórico / Descrição do Movimento', width: '31%', align: 'left' },
+            { header: 'Débito (Kz)', width: '11%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Crédito (Kz)', width: '11%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Saldo Corrente (Kz)', width: '14%', align: 'right', isCurrency: true, mono: true },
+          ],
+          rows: [
+            ...ledgerEntries.map((r) => ({
+              cells: [
+                r.date,
+                `#${r.entry_number}`,
+                r.journal,
+                r.description,
+                r.debit,
+                r.credit,
+                Math.abs(r.runningBalance),
+              ],
+            })),
+            {
+              cells: [
+                'TOTAL',
+                `${ledgerEntries.length} mov.`,
+                '',
+                `TOTAIS ACUMULADOS E SALDO FINAL (${balanceSense.toUpperCase()})`,
+                selectedLedgerAccount.period_debit,
+                selectedLedgerAccount.period_credit,
+                finalBalance,
+              ],
+              isTotal: true,
+            },
+          ],
+        },
+      ],
+    };
+  };
+
   return (
     <div className="space-y-4">
       <GlassCard className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -83,14 +190,33 @@ export const GeneralLedgerTab: React.FC<GeneralLedgerTabProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
-            onClick={onExportLedgerCsv}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition"
-            title="Exportar extrato da conta em CSV"
+            type="button"
+            onClick={() => exportCorporateReportPdf(buildLedgerReportDocument())}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 text-xs font-bold shadow-xs transition cursor-pointer"
+            title="Imprimir / Guardar PDF Oficial A4 do Extrato de Conta"
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            Exportar Extrato (CSV)
+            <Printer className="w-3.5 h-3.5" />
+            PDF Oficial
+          </button>
+          <button
+            type="button"
+            onClick={() => exportCorporateReportExcel(buildLedgerReportDocument())}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+            title="Exportar Extrato de Conta em Excel (.xls) formatado"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            Excel (.xls)
+          </button>
+          <button
+            type="button"
+            onClick={() => exportCorporateReportCsv(buildLedgerReportDocument())}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition cursor-pointer"
+            title="Exportar Extrato de Conta em CSV corporativo"
+          >
+            <Download className="w-3.5 h-3.5" />
+            CSV
           </button>
         </div>
       </GlassCard>

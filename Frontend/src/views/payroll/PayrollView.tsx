@@ -22,6 +22,7 @@ import {
   ChevronRight,
   ShieldAlert,
   CheckCircle2,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { GlassCard } from '../../components/common/GlassCard';
@@ -30,6 +31,14 @@ import { StatusBadge } from '../../components/common/StatusBadge';
 import { SortableHeader } from '../../components/common/SortableHeader';
 import { useTableSort } from '../../hooks/useTableSort';
 import { validateAngolanBI, validateAngolanIBAN } from '../../utils/validators';
+import {
+  buildCompanyReportMeta,
+  CorporateReportDocument,
+  exportCorporateReportCsv,
+  exportCorporateReportExcel,
+  exportCorporateReportPdf,
+  fmtReportKz,
+} from '../../utils/corporateReportExporter';
 import {
   payrollApi,
   PayrollPeriod,
@@ -51,7 +60,7 @@ import { ConflictManagementTab } from './ConflictManagementTab';
 type PayrollTab = 'periods' | 'employees' | 'contracts' | 'organization' | 'vacations' | 'absences' | 'conflicts';
 
 export const PayrollView: React.FC = () => {
-  const { activeTenant } = useAuthStore();
+  const { activeTenant, activeBranch } = useAuthStore();
   const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState<PayrollTab>('periods');
@@ -478,223 +487,173 @@ export const PayrollView: React.FC = () => {
     }
   };
 
-  const handleExportPayrollCsv = (period: PayrollPeriod, payslips: Payslip[]) => {
-    const headers = [
-      'N.º',
-      'Código',
-      'Colaborador',
-      'NIF',
-      'N.º INSS',
-      'IBAN',
-      'Vencimento Base (Kz)',
-      'Subsídios (Kz)',
-      'Total Bruto (Kz)',
-      'INSS Trabalhador 3% (Kz)',
-      'IRT Retido (Kz)',
-      'Total Descontos (Kz)',
-      'Salário Líquido (Kz)',
-      'INSS Patronal 8% (Kz)',
-      'Custo Total Empresa (Kz)',
-    ];
-
-    const rows = payslips.map((ps, idx) => {
-      const emp = employees.find((e) => e.id === ps.employee_id);
-      const baseSalary = Number(ps.base_salary) || 0;
-      const allowances = Number(ps.total_allowances) || 0;
-      const gross = Number(ps.total_gross) || 0;
-      const inssEmp = Number(ps.inss_employee) || 0;
-      const irt = Number(ps.irt) || 0;
-      const deductions = inssEmp + irt;
-      const net = Number(ps.net_salary) || 0;
-      const inssPatronal = Number(ps.inss_employer) || 0;
-      const totalCost = gross + inssPatronal;
-
-      return [
-        idx + 1,
-        `"${emp?.code || ''}"`,
-        `"${emp?.full_name || 'Colaborador'}"`,
-        `"${emp?.nif || ''}"`,
-        `"${emp?.inss_number || ''}"`,
-        `"${emp?.iban || ''}"`,
-        baseSalary.toFixed(2),
-        allowances.toFixed(2),
-        gross.toFixed(2),
-        inssEmp.toFixed(2),
-        irt.toFixed(2),
-        deductions.toFixed(2),
-        net.toFixed(2),
-        inssPatronal.toFixed(2),
-        totalCost.toFixed(2),
-      ].join(';');
-    });
-
-    const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\r\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Mapa_Salarios_${period.year}_${period.month.toString().padStart(2, '0')}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
-
-  const handlePrintPayrollSheet = (period: PayrollPeriod, payslips: Payslip[]) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('Permita janelas de pop-up no navegador para imprimir o Mapa de Salários.');
-      return;
-    }
-    const tenantName = activeTenant?.company_name || activeTenant?.name || 'Kudiba Tecnologia Lda';
-    const tenantNif = activeTenant?.taxId || activeTenant?.nif || '5401122334';
-    const tenantAddress = activeTenant?.address_detail
-      ? `${activeTenant.address_detail}, ${activeTenant.city || 'Luanda'}`
-      : 'Luanda, Angola';
-
-    const totalGross = Number(period.total_gross) || 0;
+  const buildPayrollReportDocument = (
+    period: PayrollPeriod,
+    payslips: Payslip[]
+  ): CorporateReportDocument => {
+    const totalBase = payslips.reduce((acc, p) => acc + (Number(p.base_salary) || 0), 0);
+    const totalAllowances = payslips.reduce((acc, p) => acc + (Number(p.total_allowances) || 0), 0);
+    const totalGross = Number(period.total_gross) || totalBase + totalAllowances;
     const totalInssEmp = Number(period.total_inss_employee) || 0;
     const totalInssPat = Number(period.total_inss_employer) || 0;
     const totalIrt = Number(period.total_irt) || 0;
+    const totalDeductions = totalInssEmp + totalIrt;
     const totalNet = Number(period.total_net) || 0;
+    const totalCompanyCost = totalGross + totalInssPat;
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Mapa Geral de Salários - ${period.title}</title>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 20px; font-size: 11px; color: #1e293b; }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f766e; padding-bottom: 12px; margin-bottom: 15px; }
-          .company-info h1 { margin: 0 0 4px 0; font-size: 16px; color: #0f766e; }
-          .company-info p { margin: 2px 0; color: #64748b; font-size: 11px; }
-          .doc-title { text-align: right; }
-          .doc-title h2 { margin: 0 0 4px 0; font-size: 14px; text-transform: uppercase; color: #0f172a; }
-          .doc-title p { margin: 2px 0; font-size: 11px; color: #64748b; }
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          th { background-color: #f1f5f9; color: #475569; font-weight: 700; text-transform: uppercase; font-size: 9px; padding: 6px 4px; border: 1px solid #cbd5e1; text-align: right; }
-          th.left, td.left { text-align: left; }
-          td { padding: 5px 4px; border: 1px solid #e2e8f0; font-size: 10px; text-align: right; }
-          tr:nth-child(even) { background-color: #f8fafc; }
-          .totals-row td { background-color: #e2e8f0; font-weight: 800; border-top: 2px solid #0f766e; }
-          .kpis { display: flex; gap: 15px; margin: 15px 0; }
-          .kpi-box { flex: 1; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; background: #fafafa; }
-          .kpi-title { font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: bold; }
-          .kpi-val { font-size: 13px; font-weight: bold; color: #0f172a; margin-top: 3px; }
-          .signatures { display: flex; justify-content: space-between; margin-top: 40px; page-break-inside: avoid; }
-          .sign-col { width: 30%; text-align: center; }
-          .sign-line { border-top: 1px solid #000; margin-top: 45px; padding-top: 4px; font-size: 10px; font-weight: bold; }
-          @media print {
-            body { margin: 10mm; }
-            .no-print { display: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="company-info">
-            <h1>${tenantName}</h1>
-            <p><strong>NIF:</strong> ${tenantNif} • <strong>Sede:</strong> ${tenantAddress}</p>
-            <p>Conforme Lei Geral do Trabalho (LGT 12/23) • IRT (Lei 28/20) • INSS (DP 227/18)</p>
-          </div>
-          <div class="doc-title">
-            <h2>Mapa Geral de Salários</h2>
-            <p><strong>Período:</strong> ${period.title}</p>
-            <p><strong>Referência:</strong> ${period.month.toString().padStart(2, '0')}/${period.year}</p>
-            <p><strong>Emitido em:</strong> ${new Date().toLocaleDateString('pt-AO')}</p>
-          </div>
-        </div>
-
-        <div class="kpis">
-          <div class="kpi-box">
-            <div class="kpi-title">Massa Salarial Bruta</div>
-            <div class="kpi-val">${totalGross.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-title">INSS Trabalhador (3%)</div>
-            <div class="kpi-val">${totalInssEmp.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-title">Retenção IRT (Lei 28/20)</div>
-            <div class="kpi-val">${totalIrt.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-title">Total Líquido a Transferir</div>
-            <div class="kpi-val" style="color: #0f766e;">${totalNet.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-title">INSS Patronal (8%)</div>
-            <div class="kpi-val">${totalInssPat.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} Kz</div>
-          </div>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th class="left" style="width: 25px;">#</th>
-              <th class="left">Colaborador</th>
-              <th class="left">NIF</th>
-              <th class="left">IBAN</th>
-              <th>Venc. Base</th>
-              <th>Subsídios</th>
-              <th>Total Bruto</th>
-              <th>INSS (3%)</th>
-              <th>IRT Retido</th>
-              <th style="color: #0f766e;">Salário Líquido</th>
-              <th>INSS Pat. (8%)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${payslips.map((ps, i) => {
+    return {
+      title: `Mapa Geral de Salários, IRT e Segurança Social — ${period.title}`,
+      subtitle: `Folha de Remunerações Mensal (${period.month.toString().padStart(2, '0')}/${period.year}) · Conta 72 PGC Angola`,
+      filenameBase: `Mapa_Salarios_${period.year}_${period.month.toString().padStart(2, '0')}`,
+      orientation: 'landscape',
+      meta: buildCompanyReportMeta(
+        activeTenant,
+        activeBranch,
+        `${period.title} (${period.start_date} a ${period.end_date})`,
+        'Lei Geral do Trabalho (Lei n.º 12/23) · Código do IRT (Lei n.º 28/20) · INSS (DP n.º 227/18)'
+      ),
+      kpis: [
+        {
+          label: 'Massa Salarial Bruta',
+          value: fmtReportKz(totalGross),
+          sublabel: `${payslips.length} colaboradores processados`,
+          tone: 'blue',
+        },
+        {
+          label: 'Total Líquido a Transferir',
+          value: fmtReportKz(totalNet),
+          sublabel: 'Salário líquido para remessa bancária / PS2',
+          tone: 'emerald',
+        },
+        {
+          label: 'Retenção de IRT (AGT)',
+          value: fmtReportKz(totalIrt),
+          sublabel: 'Escalões progressivos Lei n.º 28/20 (Conta 34.2)',
+          tone: 'purple',
+        },
+        {
+          label: 'Segurança Social Total (11%)',
+          value: fmtReportKz(totalInssEmp + totalInssPat),
+          sublabel: `Trabalhador 3%: ${fmtReportKz(totalInssEmp)} · Patronal 8%: ${fmtReportKz(totalInssPat)}`,
+          tone: 'amber',
+        },
+      ],
+      summaryNotes: [
+        `Apuramento de Segurança Social (INSS — DP n.º 227/18): Retenção de 3% sobre a remuneração ilíquida a cargo do trabalhador (${fmtReportKz(totalInssEmp)}) e contribuição de 8% a cargo da entidade empregadora (${fmtReportKz(totalInssPat)}), perfazendo uma guia mensal INSS de ${fmtReportKz(totalInssEmp + totalInssPat)}.`,
+        `Apuramento de IRT (Lei n.º 28/20): Imposto sobre os Rendimentos do Trabalho calculado sobre a matéria coletável após dedução do INSS (3%) e aplicação dos limites legais de isenção nos subsídios de alimentação e transporte (30.000,00 Kz cada).`,
+        `Custo Total de Pessoal para a Empresa (Conta 72 PGC): ${fmtReportKz(totalCompanyCost)} (Remunerações Brutas + Encargos Sociais Patronais).`,
+      ],
+      signatures: [
+        'Direcção de Recursos Humanos (Processamento e Assiduidade)',
+        'Direcção de Contabilidade & Fiscalidade (Apuramento IRT / INSS)',
+        `Administração / Gerência Executiva (${activeTenant?.company_name || activeTenant?.name || 'Autorização de Pagamento'})`,
+      ],
+      sections: [
+        {
+          title: 'I. Síntese de Obrigações Fiscais, Parafiscais e Encargos Patronais do Período',
+          subtitle: 'Resumo para Emissão de Guias de Pagamento (AGT / INSS) e Contabilização (Contas 34, 36 e 72 PGC)',
+          theme: 'emerald',
+          columns: [
+            { header: 'Conta PGC', width: '14%', align: 'center', mono: true },
+            { header: 'Rubrica Salarial / Obrigação Legal', width: '48%', align: 'left' },
+            { header: 'Entidade Destinatária', width: '18%', align: 'center' },
+            { header: 'Montante Apurado (Kz)', width: '20%', align: 'right', isCurrency: true, mono: true },
+          ],
+          rows: [
+            { cells: ['72.1', 'Vencimentos Base Ilíquidos do Pessoal', 'Trabalhadores', totalBase] },
+            { cells: ['72.2', 'Subsídios Regulares (Alimentação, Transporte, Família e Outros)', 'Trabalhadores', totalAllowances] },
+            {
+              cells: ['72.1/2', 'MASSA SALARIAL BRUTA TOTAL (A)', 'Subtotal Bruto', totalGross],
+              isSubtotal: true,
+            },
+            { cells: ['34.9.1', '(-) Desconto para Segurança Social — Quota Trabalhador (3%)', 'INSS Angola', -totalInssEmp], isNegative: true },
+            { cells: ['34.2.1', '(-) Retenção na Fonte de IRT — Escalões Lei n.º 28/20', 'AGT (Estado)', -totalIrt], isNegative: true },
+            {
+              cells: ['36.1', 'TOTAL DE SALÁRIOS LÍQUIDOS A PAGAR AOS TRABALHADORES (B)', 'Transferência PS2', totalNet],
+              isSubtotal: true,
+            },
+            { cells: ['72.5 / 34.9.2', '(+) Contribuição para Segurança Social — Quota Entidade Empregadora (8%)', 'INSS Angola', totalInssPat] },
+            {
+              cells: ['72', 'ENCARGO TOTAL DA EMPRESA COM O PESSOAL NO PERÍODO (A + 8% INSS)', 'Custo Total', totalCompanyCost],
+              isTotal: true,
+            },
+          ],
+        },
+        {
+          title: 'II. Mapa Nominal Analítico de Remunerações, Retenções e Salário Líquido por Colaborador',
+          subtitle: `${payslips.length} recibos de vencimento processados`,
+          theme: 'slate',
+          columns: [
+            { header: '#', width: '4%', align: 'center', mono: true },
+            { header: 'Cód.', width: '7%', align: 'left', mono: true },
+            { header: 'Nome Completo do Colaborador', width: '18%', align: 'left' },
+            { header: 'NIF / N.º INSS', width: '12%', align: 'left', mono: true },
+            { header: 'IBAN Bancário', width: '13%', align: 'left', mono: true },
+            { header: 'Venc. Base', width: '8%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Subsídios', width: '7%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Total Bruto', width: '8%', align: 'right', isCurrency: true, mono: true },
+            { header: 'INSS (3%)', width: '7%', align: 'right', isCurrency: true, mono: true },
+            { header: 'IRT Retido', width: '7%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Salário Líquido', width: '9%', align: 'right', isCurrency: true, mono: true },
+          ],
+          rows: [
+            ...payslips.map((ps, idx) => {
               const emp = employees.find((e) => e.id === ps.employee_id);
-              return `
-                <tr>
-                  <td class="left">${i + 1}</td>
-                  <td class="left"><strong>${emp?.full_name || 'Colaborador'}</strong></td>
-                  <td class="left">${emp?.nif || '—'}</td>
-                  <td class="left" style="font-family: monospace; font-size: 9px;">${emp?.iban || '—'}</td>
-                  <td>${Number(ps.base_salary).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
-                  <td>${Number(ps.total_allowances).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
-                  <td><strong>${Number(ps.total_gross).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</strong></td>
-                  <td style="color: #b91c1c;">-${Number(ps.inss_employee).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
-                  <td style="color: #7e22ce;">-${Number(ps.irt).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
-                  <td style="font-weight: bold; color: #0f766e;">${Number(ps.net_salary).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
-                  <td style="color: #64748b;">${Number(ps.inss_employer).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
-                </tr>
-              `;
-            }).join('')}
-            <tr class="totals-row">
-              <td colspan="4" class="left">TOTAIS GERAIS (${payslips.length} Colaboradores)</td>
-              <td>${payslips.reduce((acc, p) => acc + Number(p.base_salary), 0).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
-              <td>${payslips.reduce((acc, p) => acc + Number(p.total_allowances), 0).toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
-              <td>${totalGross.toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
-              <td style="color: #b91c1c;">-${totalInssEmp.toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
-              <td style="color: #7e22ce;">-${totalIrt.toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
-              <td style="color: #0f766e;">${totalNet.toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
-              <td>${totalInssPat.toLocaleString('pt-AO', { minimumFractionDigits: 2 })}</td>
-            </tr>
-          </tbody>
-        </table>
+              const baseSalary = Number(ps.base_salary) || 0;
+              const allowances = Number(ps.total_allowances) || 0;
+              const gross = Number(ps.total_gross) || 0;
+              const inssEmp = Number(ps.inss_employee) || 0;
+              const irt = Number(ps.irt) || 0;
+              const net = Number(ps.net_salary) || 0;
 
-        <div class="signatures">
-          <div class="sign-col">
-            <div class="sign-line">Recursos Humanos<br><span style="font-size: 8px; font-weight: normal; color: #64748b;">Processamento e Assiduidade</span></div>
-          </div>
-          <div class="sign-col">
-            <div class="sign-line">Contabilidade & Fiscalidade<br><span style="font-size: 8px; font-weight: normal; color: #64748b;">Apuramento IRT / INSS</span></div>
-          </div>
-          <div class="sign-col">
-            <div class="sign-line">Direção Financeira / Gerência<br><span style="font-size: 8px; font-weight: normal; color: #64748b;">Autorização de Pagamento</span></div>
-          </div>
-        </div>
+              return {
+                cells: [
+                  idx + 1,
+                  emp?.code || '—',
+                  emp?.full_name || 'Colaborador',
+                  `${emp?.nif || '—'}${emp?.inss_number ? ` / ${emp.inss_number}` : ''}`,
+                  emp?.iban || '—',
+                  baseSalary,
+                  allowances,
+                  gross,
+                  -inssEmp,
+                  -irt,
+                  net,
+                ],
+              };
+            }),
+            {
+              cells: [
+                'TOT',
+                '',
+                `TOTAIS GERAIS (${payslips.length} Colaboradores)`,
+                '',
+                `Descontos: ${fmtReportKz(totalDeductions)}`,
+                totalBase,
+                totalAllowances,
+                totalGross,
+                -totalInssEmp,
+                -totalIrt,
+                totalNet,
+              ],
+              isTotal: true,
+            },
+          ],
+        },
+      ],
+    };
+  };
 
-        <script>
-          window.onload = function() { window.print(); }
-        </script>
-      </body>
-      </html>
-    `;
+  const handleExportPayrollCsv = (period: PayrollPeriod, payslips: Payslip[]) => {
+    exportCorporateReportCsv(buildPayrollReportDocument(period, payslips));
+  };
 
-    printWindow.document.write(html);
-    printWindow.document.close();
+  const handleExportPayrollExcel = (period: PayrollPeriod, payslips: Payslip[]) => {
+    exportCorporateReportExcel(buildPayrollReportDocument(period, payslips));
+  };
+
+  const handlePrintPayrollSheet = (period: PayrollPeriod, payslips: Payslip[]) => {
+    exportCorporateReportPdf(buildPayrollReportDocument(period, payslips));
   };
 
   // Totais agregados do último período
@@ -1953,21 +1912,7 @@ export const PayrollView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 self-end sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleExportPayrollCsv(
-                      selectedPeriodPayslips.period,
-                      selectedPeriodPayslips.payslips
-                    )
-                  }
-                  title="Exportar Mapa de Salários em CSV/Excel"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>CSV</span>
-                </button>
+              <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
                 <button
                   type="button"
                   onClick={() =>
@@ -1976,11 +1921,39 @@ export const PayrollView: React.FC = () => {
                       selectedPeriodPayslips.payslips
                     )
                   }
-                  title="Imprimir Mapa Geral de Salários"
+                  title="Imprimir / Guardar PDF Oficial do Mapa Geral de Salários"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-white bg-slate-900 dark:bg-white dark:text-slate-900 hover:opacity-90 rounded-lg transition-colors cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>PDF Oficial</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleExportPayrollExcel(
+                      selectedPeriodPayslips.period,
+                      selectedPeriodPayslips.payslips
+                    )
+                  }
+                  title="Exportar Mapa Geral de Salários em Excel (.xls) formatado"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Excel (.xls)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleExportPayrollCsv(
+                      selectedPeriodPayslips.period,
+                      selectedPeriodPayslips.payslips
+                    )
+                  }
+                  title="Exportar Mapa de Salários em CSV corporativo"
                   className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
                 >
-                  <Printer className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Imprimir</span>
+                  <Download className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>CSV</span>
                 </button>
                 <button
                   type="button"

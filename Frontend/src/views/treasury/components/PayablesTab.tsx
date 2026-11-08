@@ -8,6 +8,9 @@ import {
   X,
   FileText,
   Receipt,
+  Printer,
+  FileSpreadsheet,
+  Download,
 } from 'lucide-react';
 import { GlassCard } from '../../../components/common/GlassCard';
 import { KzAmount } from '../../../components/common/KzAmount';
@@ -20,6 +23,15 @@ import {
   PaymentMethodType,
 } from '../../../api/treasury';
 import { toast } from '../../../stores/toastStore';
+import { useAuthStore } from '../../../stores/authStore';
+import {
+  buildCompanyReportMeta,
+  CorporateReportDocument,
+  exportCorporateReportCsv,
+  exportCorporateReportExcel,
+  exportCorporateReportPdf,
+  fmtReportKz,
+} from '../../../utils/corporateReportExporter';
 
 interface PayablesTabProps {
   tenantId?: string;
@@ -27,6 +39,7 @@ interface PayablesTabProps {
 }
 
 export const PayablesTab: React.FC<PayablesTabProps> = ({ tenantId, bankAccounts }) => {
+  const { activeTenant, activeBranch } = useAuthStore();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -175,6 +188,96 @@ export const PayablesTab: React.FC<PayablesTabProps> = ({ tenantId, bankAccounts
     return sum + (Number(p.withholding_amount) || 0);
   }, 0);
 
+  const buildPayablesReportDocument = (): CorporateReportDocument => {
+    const totalGross = filtered.reduce((s, p) => s + Number(p.gross_total || 0), 0);
+    const totalPaid = filtered.reduce((s, p) => s + Number(p.amount_paid || 0), 0);
+    const totalNet = filtered.reduce((s, p) => s + Number(p.net_payable || 0), 0);
+    const totalWithholding = filtered.reduce((s, p) => s + Number(p.withholding_amount || 0), 0);
+
+    return {
+      title: 'Mapa de Contas a Pagar a Fornecedores e Retenções na Fonte (II)',
+      subtitle: 'Controlo de Obrigações a Fornecedores (Conta 32 PGC) e Retenção de Imposto Industrial (Lei n.º 19/14)',
+      filenameBase: `Mapa_Contas_a_Pagar_Fornecedores_${new Date().toISOString().split('T')[0]}`,
+      meta: buildCompanyReportMeta(
+        activeTenant,
+        activeBranch,
+        `Posição em ${new Date().toLocaleDateString('pt-AO')}`,
+        'Conta 32 PGC Angola & Retenção na Fonte AGT (6,5%)'
+      ),
+      kpis: [
+        {
+          label: 'Total Pendente a Fornecedores',
+          value: fmtReportKz(totalOutstanding),
+          sublabel: `${filtered.filter((p) => p.status !== 'SETTLED').length} faturas por liquidar`,
+          tone: 'rose',
+        },
+        {
+          label: 'Retenção na Fonte AGT (6,5%)',
+          value: fmtReportKz(totalWithholdingToDeliver),
+          sublabel: 'Imposto Industrial a entregar ao Estado',
+          tone: 'amber',
+        },
+        {
+          label: 'Total Liquidado no Filtro',
+          value: fmtReportKz(totalPaid),
+          sublabel: `${filtered.filter((p) => p.status === 'SETTLED').length} faturas liquidadas`,
+          tone: 'emerald',
+        },
+        {
+          label: 'Volume Bruto Contratado',
+          value: fmtReportKz(totalGross),
+          sublabel: `${filtered.length} documentos de fornecedores`,
+          tone: 'blue',
+        },
+      ],
+      sections: [
+        {
+          title: 'I. Relação Detalhada de Faturas de Fornecedores e Estado de Liquidação',
+          subtitle: `Filtro Aplicado: Estado = ${statusFilter} | Actividade = ${activityFilter}`,
+          theme: 'slate',
+          columns: [
+            { header: 'N.º Fatura', width: '13%', align: 'left', mono: true },
+            { header: 'Fornecedor / NIF', width: '25%', align: 'left' },
+            { header: 'Vencimento', width: '10%', align: 'center', mono: true },
+            { header: 'Valor Bruto (Kz)', width: '13%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Retenção II (Kz)', width: '12%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Líquido Pago (Kz)', width: '13%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Dívida Pendente (Kz)', width: '14%', align: 'right', isCurrency: true, mono: true },
+          ],
+          rows: [
+            ...filtered.map((p) => {
+              const debt = Math.max(0, Number(p.net_payable) - Number(p.amount_paid));
+              return {
+                cells: [
+                  p.invoice_number,
+                  `${p.supplier_name}${p.supplier_nif ? ` (NIF: ${p.supplier_nif})` : ''}`,
+                  p.due_date,
+                  Number(p.gross_total),
+                  Number(p.withholding_amount || 0),
+                  Number(p.amount_paid),
+                  debt,
+                ],
+                isNegative: debt > 0,
+              };
+            }),
+            {
+              cells: [
+                'TOTAL',
+                `TOTAIS CONSOLIDADOS (${filtered.length} faturas)`,
+                '',
+                totalGross,
+                totalWithholding,
+                totalPaid,
+                Math.max(0, totalNet - totalPaid),
+              ],
+              isTotal: true,
+            },
+          ],
+        },
+      ],
+    };
+  };
+
   return (
     <div className="space-y-5">
       {/* Barra de Ações & Filtros */}
@@ -214,13 +317,39 @@ export const PayablesTab: React.FC<PayablesTabProps> = ({ tenantId, bankAccounts
           </select>
         </div>
 
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors shrink-0"
-        >
-          <PlusCircle className="w-4 h-4" />
-          <span>Nova Fatura de Fornecedor</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => exportCorporateReportPdf(buildPayablesReportDocument())}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 shadow-sm transition-all cursor-pointer"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            PDF Oficial
+          </button>
+          <button
+            type="button"
+            onClick={() => exportCorporateReportExcel(buildPayablesReportDocument())}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-emerald-700 text-white hover:bg-emerald-800 shadow-sm transition-all cursor-pointer"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            Excel
+          </button>
+          <button
+            type="button"
+            onClick={() => exportCorporateReportCsv(buildPayablesReportDocument())}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            CSV
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors shrink-0 cursor-pointer"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>Nova Fatura de Fornecedor</span>
+          </button>
+        </div>
       </div>
 
       {/* Resumo de Contas a Pagar */}

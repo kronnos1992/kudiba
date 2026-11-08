@@ -58,6 +58,14 @@ import {
   exportFinancialStatementPdf,
   StatementExportTarget,
 } from './financialStatementsExporter';
+import {
+  buildCompanyReportMeta,
+  CorporateReportDocument,
+  exportCorporateReportCsv,
+  exportCorporateReportExcel,
+  exportCorporateReportPdf,
+  fmtReportKz,
+} from '../../utils/corporateReportExporter';
 
 type AccountingTab =
   | 'trial_balance'
@@ -84,7 +92,7 @@ const PGC_CLASSES: { id: string; name: string; prefix: string; desc: string }[] 
 ];
 
 export const AccountingView: React.FC = () => {
-  const { activeTenant } = useAuthStore();
+  const { activeTenant, activeBranch } = useAuthStore();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<AccountingTab>('trial_balance');
   const [reportStartDate, setReportStartDate] = useState(getLocalDateString);
@@ -597,15 +605,130 @@ export const AccountingView: React.FC = () => {
     downloadCsv(`balancete_verificacao_${activeYear?.year_code || new Date().getFullYear()}.csv`, csv);
   };
 
+  // Documento corporativo estruturado do Livro Diário
+  const buildJournalEntriesReportDocument = (): CorporateReportDocument => {
+    const totalDebit = filteredEntries.reduce((s, e) => s + parseFloat(String(e.total_debit || 0)), 0);
+    const totalCredit = filteredEntries.reduce((s, e) => s + parseFloat(String(e.total_credit || 0)), 0);
+    const bySource = filteredEntries.reduce<Record<string, { count: number; debit: number }>>((acc, e) => {
+      const src = e.source_service || 'MANUAL';
+      if (!acc[src]) acc[src] = { count: 0, debit: 0 };
+      acc[src].count += 1;
+      acc[src].debit += parseFloat(String(e.total_debit || 0));
+      return acc;
+    }, {});
+
+    return {
+      title: `Livro Diário Geral de Lançamentos Contabilísticos — Exercício ${activeYear?.year_code || new Date().getFullYear()}`,
+      subtitle: 'Registo Cronológico Integral de Operações pelo Método das Partidas Dobradas (PGC Angola)',
+      filenameBase: `Livro_Diario_PGC_${activeYear?.year_code || new Date().getFullYear()}_${new Date().toISOString().split('T')[0]}`,
+      meta: buildCompanyReportMeta(
+        activeTenant,
+        activeBranch,
+        `${reportDateRange.startDate} a ${reportDateRange.endDate}`,
+        'Código Comercial de Angola & Decreto n.º 82/01 (PGC)'
+      ),
+      kpis: [
+        {
+          label: 'Total de Lançamentos',
+          value: `${filteredEntries.length} Registos`,
+          sublabel: `${filteredEntries.filter((e) => e.status === 'POSTED').length} lançamentos efetivos`,
+          tone: 'slate',
+        },
+        {
+          label: 'Volume Total a Débito',
+          value: fmtReportKz(totalDebit),
+          sublabel: 'Soma das partidas devedoras',
+          tone: 'blue',
+        },
+        {
+          label: 'Volume Total a Crédito',
+          value: fmtReportKz(totalCredit),
+          sublabel: 'Soma das partidas credoras',
+          tone: 'purple',
+        },
+        {
+          label: 'Validação do Diário',
+          value: Math.abs(totalDebit - totalCredit) < 0.01 ? 'EQUILIBRADO' : fmtReportKz(Math.abs(totalDebit - totalCredit)),
+          sublabel: 'Débito = Crédito em todos os documentos',
+          tone: Math.abs(totalDebit - totalCredit) < 0.01 ? 'emerald' : 'amber',
+        },
+      ],
+      summaryNotes: [
+        'Rastreabilidade e Imutabilidade: Cada assento do Livro Diário é numerado sequencialmente e referencia o módulo e documento fiscal ou financeiro que lhe deu origem.',
+        'Conformidade Legal: Emitido nos termos das disposições aplicáveis à escrituração mercantil e ao Plano Geral de Contabilidade de Angola.',
+      ],
+      sections: [
+        {
+          title: 'I. Resumo de Movimentação por Origem / Subsistema Integrado',
+          subtitle: 'Distribuição dos Lançamentos por Módulo Operacional',
+          theme: 'blue',
+          columns: [
+            { header: 'Origem / Subsistema', width: '40%', align: 'left' },
+            { header: 'N.º de Lançamentos', width: '20%', align: 'center', mono: true },
+            { header: 'Peso no Volume (%)', width: '15%', align: 'right', mono: true },
+            { header: 'Volume Movimentado (Kz)', width: '25%', align: 'right', isCurrency: true, mono: true },
+          ],
+          rows: Object.entries(bySource).map(([src, stat]) => ({
+            cells: [
+              src,
+              stat.count,
+              `${totalDebit > 0 ? ((stat.debit / totalDebit) * 100).toFixed(1) : '0.0'}%`,
+              stat.debit,
+            ],
+          })),
+        },
+        {
+          title: 'II. Registo Cronológico de Lançamentos do Livro Diário',
+          subtitle: `${filteredEntries.length} lançamentos listados`,
+          theme: 'slate',
+          columns: [
+            { header: 'N.º Lanç.', width: '8%', align: 'center', mono: true },
+            { header: 'Data', width: '10%', align: 'center', mono: true },
+            { header: 'Período', width: '8%', align: 'center' },
+            { header: 'Origem', width: '11%', align: 'center' },
+            { header: 'Doc. Suporte', width: '13%', align: 'left', mono: true },
+            { header: 'Histórico / Descrição da Operação', width: '24%', align: 'left' },
+            { header: 'Total Débito (Kz)', width: '11%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Total Crédito (Kz)', width: '11%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Estado', width: '4%', align: 'center' },
+          ],
+          rows: [
+            ...filteredEntries.map((e) => ({
+              cells: [
+                `#${e.entry_number}`,
+                e.transaction_date,
+                `Mês ${e.period}`,
+                e.source_service || 'MANUAL',
+                e.source_document_ref || '—',
+                e.description,
+                parseFloat(String(e.total_debit || 0)),
+                parseFloat(String(e.total_credit || 0)),
+                e.status,
+              ],
+            })),
+            {
+              cells: [
+                'TOTAL',
+                `${filteredEntries.length} lanç.`,
+                '',
+                '',
+                '',
+                'TOTAIS ACUMULADOS DO LIVRO DIÁRIO',
+                totalDebit,
+                totalCredit,
+                '',
+              ],
+              isTotal: true,
+            },
+          ],
+        },
+      ],
+    };
+  };
+
   // Exportação CSV do Diário
   const handleExportEntriesCsv = () => {
-    const header = 'Nº Lançamento;Data;Período;Origem;Documento Ref;Histórico;Total Débito (Kz);Total Crédito (Kz);Estado';
-    const lines = filteredEntries.map((e) => {
-      const cleanDesc = `"${e.description.replace(/"/g, '""')}"`;
-      return `${e.entry_number};${e.transaction_date};${e.period};${e.source_service || 'MANUAL'};${e.source_document_ref || '-'};${cleanDesc};${e.total_debit};${e.total_credit};${e.status}`;
-    });
-    const csv = [header, ...lines].join('\r\n');
-    downloadCsv(`livro_diario_${activeYear?.year_code || new Date().getFullYear()}.csv`, csv);
+    exportCorporateReportCsv(buildJournalEntriesReportDocument());
   };
 
   // Conta selecionada no Razão
@@ -1457,17 +1580,36 @@ export const AccountingView: React.FC = () => {
               </select>
             </div>
 
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-500 dark:text-slate-400 mr-1">
                 Mostrando <span className="font-bold">{filteredEntries.length}</span> lançamentos
               </span>
               <button
-                onClick={handleExportEntriesCsv}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition"
-                title="Exportar livro diário em CSV"
+                type="button"
+                onClick={() => exportCorporateReportPdf(buildJournalEntriesReportDocument())}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 text-xs font-bold shadow-xs transition cursor-pointer"
+                title="Imprimir / Guardar PDF Oficial A4 do Livro Diário"
               >
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                Exportar CSV
+                <Printer className="w-3.5 h-3.5" />
+                PDF Oficial
+              </button>
+              <button
+                type="button"
+                onClick={() => exportCorporateReportExcel(buildJournalEntriesReportDocument())}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+                title="Exportar Livro Diário em Excel (.xls) formatado"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                Excel (.xls)
+              </button>
+              <button
+                type="button"
+                onClick={handleExportEntriesCsv}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition cursor-pointer"
+                title="Exportar livro diário em CSV corporativo"
+              >
+                <Download className="w-3.5 h-3.5" />
+                CSV
               </button>
             </div>
           </GlassCard>

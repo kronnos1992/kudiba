@@ -29,10 +29,21 @@ import {
   Laptop,
   Package,
   Search,
+  Printer,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { useAuthStore } from '../../stores/authStore';
+import {
+  buildCompanyReportMeta,
+  CorporateReportDocument,
+  exportCorporateReportCsv,
+  exportCorporateReportExcel,
+  exportCorporateReportPdf,
+  fmtReportKz,
+} from '../../utils/corporateReportExporter';
 import {
   accountingApi,
   CostCenterItem,
@@ -55,6 +66,7 @@ const num = (v: number | string | undefined | null): number =>
   typeof v === 'number' ? v : parseFloat(String(v || 0)) || 0;
 
 export const CostCentersTab: React.FC = () => {
+  const { activeTenant, activeBranch } = useAuthStore();
   const queryClient = useQueryClient();
   const [subTab, setSubTab] = useState<CostCenterSubTab>('overview');
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
@@ -460,36 +472,154 @@ export const CostCentersTab: React.FC = () => {
     });
   }, [dashboard, branchFilter, selectedCenterFilter, traceSearch]);
 
+  const buildCostCentersReportDocument = (): CorporateReportDocument | null => {
+    if (!dashboard) return null;
+    const totalBudget = num(dashboard.total_budget_monthly);
+    const totalOpex = num(dashboard.total_realized_opex);
+    const totalCommitted = num(dashboard.total_committed);
+    const totalAvail = num(dashboard.total_available_budget);
+    const totalCapex = num(dashboard.total_realized_capex);
+
+    return {
+      title: 'Relatório de Contabilidade Analítica, Centros de Custos e Controlo Orçamental',
+      subtitle: 'Execução de OPEX, Compromissos Assumidos, Investimento CAPEX e Rateios por Filial e Departamento',
+      filenameBase: `Mapa_Centros_Custos_Orcamento_${new Date().toISOString().split('T')[0]}`,
+      orientation: 'landscape',
+      meta: buildCompanyReportMeta(
+        activeTenant,
+        activeBranch,
+        `Posição em ${new Date().toLocaleDateString('pt-AO')} (Filtro: ${branchFilter === 'ALL' ? 'Todas as Filiais' : branchFilter})`,
+        'Contabilidade Analítica de Gestão (Classe 9 PGC Angola)'
+      ),
+      kpis: [
+        {
+          label: 'Custo Operacional Realizado (OPEX)',
+          value: fmtReportKz(totalOpex),
+          sublabel: `Execução global: ${num(dashboard.overall_utilization_pct).toFixed(1)}% do orçamento`,
+          tone: 'blue',
+        },
+        {
+          label: 'Orçamento Mensal Aprovado',
+          value: fmtReportKz(totalBudget),
+          sublabel: `${dashboard.active_centers_count} centros de responsabilidade ativos`,
+          tone: 'slate',
+        },
+        {
+          label: 'Compromissos & Encomendas',
+          value: fmtReportKz(totalCommitted),
+          sublabel: 'Verbas cabimentadas em curso',
+          tone: 'amber',
+        },
+        {
+          label: 'Saldo Orçamental Disponível',
+          value: fmtReportKz(totalAvail),
+          sublabel: `CAPEX Acumulado: ${fmtReportKz(totalCapex)}`,
+          tone: totalAvail >= 0 ? 'emerald' : 'rose',
+        },
+      ],
+      summaryNotes: [
+        'Metodologia de Imputação Analítica: Os custos diretos são imputados diretamente ao centro de responsabilidade; as despesas partilhadas (energia, segurança, comunicações) são distribuídas segundo critérios técnicos auditáveis (soma = 100%).',
+        `Governação Orçamental: ${dashboard.centers.filter((c) => num(c.utilization_pct) >= 80).length} centro(s) com alerta de execução acima de 80% e ${dashboard.unassigned_expenses_count} despesa(s) pendente(s) de classificação.`,
+      ],
+      sections: [
+        {
+          title: 'I. Mapa Geral de Execução Orçamental por Centro de Custos e Responsabilidade',
+          subtitle: `${dashboard.centers.length} centros registados`,
+          theme: 'slate',
+          columns: [
+            { header: 'Código', width: '9%', align: 'left', mono: true },
+            { header: 'Centro de Custos / Unidade', width: '21%', align: 'left' },
+            { header: 'Filial / Dept.', width: '15%', align: 'left' },
+            { header: 'Responsável', width: '13%', align: 'left' },
+            { header: 'Orçamento (Kz)', width: '10%', align: 'right', isCurrency: true, mono: true },
+            { header: 'OPEX Real. (Kz)', width: '10%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Compromissos (Kz)', width: '9%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Saldo Disp. (Kz)', width: '8%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Exec. (%)', width: '5%', align: 'right', mono: true },
+          ],
+          rows: [
+            ...dashboard.centers.map((c) => ({
+              cells: [
+                c.code,
+                c.name,
+                `${c.branch_name}${c.department_name ? ` · ${c.department_name}` : ''}`,
+                c.responsible_name || 'Não atribuído',
+                num(c.monthly_budget),
+                num(c.realized_opex),
+                num(c.committed_amount),
+                num(c.available_budget),
+                `${num(c.utilization_pct).toFixed(1)}%`,
+              ],
+              isSubtotal: !c.parent_cost_center_id,
+              isNegative: num(c.available_budget) < 0,
+            })),
+            {
+              cells: [
+                'TOTAL',
+                'CONSOLIDADO GLOBAL DE CENTROS OPERACIONAIS',
+                '',
+                '',
+                totalBudget,
+                totalOpex,
+                totalCommitted,
+                totalAvail,
+                `${num(dashboard.overall_utilization_pct).toFixed(1)}%`,
+              ],
+              isTotal: true,
+            },
+          ],
+        },
+        {
+          title: 'II. Consolidação de Custos e Orçamento por Departamento',
+          subtitle: 'Análise Comparativa Orçado vs Realizado por Direcção Funcional',
+          theme: 'blue',
+          columns: [
+            { header: 'Departamento / Direcção', width: '34%', align: 'left' },
+            { header: 'Orçamento Aprovado (Kz)', width: '22%', align: 'right', isCurrency: true, mono: true },
+            { header: 'OPEX Realizado (Kz)', width: '22%', align: 'right', isCurrency: true, mono: true },
+            { header: 'CAPEX Investido (Kz)', width: '22%', align: 'right', isCurrency: true, mono: true },
+          ],
+          rows: dashboard.by_department.map((d) => ({
+            cells: [
+              d.department_name,
+              num(d.budget_amount),
+              num(d.realized_opex),
+              num(d.realized_capex),
+            ],
+          })),
+        },
+        ...(dashboard.by_project_and_asset.length > 0
+          ? [
+              {
+                title: 'III. Custos Imputados por Projeto, Viatura ou Equipamento',
+                subtitle: 'Dimensões Analíticas Complementares',
+                theme: 'emerald' as const,
+                columns: [
+                  { header: 'Tipo de Dimensão', width: '22%', align: 'left' as const },
+                  { header: 'Código / Identificação', width: '32%', align: 'left' as const, mono: true },
+                  { header: 'Documentos', width: '12%', align: 'center' as const, mono: true },
+                  { header: 'OPEX (Kz)', width: '17%', align: 'right' as const, isCurrency: true, mono: true },
+                  { header: 'CAPEX (Kz)', width: '17%', align: 'right' as const, isCurrency: true, mono: true },
+                ],
+                rows: dashboard.by_project_and_asset.map((item) => ({
+                  cells: [
+                    item.dimension_type,
+                    item.code,
+                    `${item.documents_count} doc(s)`,
+                    num(item.total_opex),
+                    num(item.total_capex),
+                  ],
+                })),
+              },
+            ]
+          : []),
+      ],
+    };
+  };
+
   const handleExportCostCentersCsv = () => {
-    if (!dashboard) return;
-    const header =
-      'Código;Centro de Custos;Tipo;Filial / Estabelecimento;Departamento;Responsável;Estado;Orçamento Mensal (Kz);Custo Realizado OPEX (Kz);Compromissos (Kz);Saldo Orçamental (Kz);Execução (%);Investimento CAPEX (Kz)';
-    const rows = dashboard.centers.map((c) =>
-      [
-        c.code,
-        `"${c.name}"`,
-        c.center_type,
-        `"${c.branch_name}"`,
-        `"${c.department_name || '-'}"`,
-        `"${c.responsible_name || 'Sem Responsável'}"`,
-        c.is_active ? 'Ativo' : 'Inativo',
-        num(c.monthly_budget).toFixed(2),
-        num(c.realized_opex).toFixed(2),
-        num(c.committed_amount).toFixed(2),
-        num(c.available_budget).toFixed(2),
-        num(c.utilization_pct).toFixed(2) + '%',
-        num(c.realized_capex).toFixed(2),
-      ].join(';')
-    );
-    const blob = new Blob(['\uFEFF' + [header, ...rows].join('\r\n')], {
-      type: 'text/csv;charset=utf-8;',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Mapa_Centros_Custos_Orcamento_2026.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const doc = buildCostCentersReportDocument();
+    if (doc) exportCorporateReportCsv(doc);
   };
 
   if (isLoading || !dashboard) {
@@ -603,11 +733,38 @@ export const CostCentersTab: React.FC = () => {
 
           <button
             type="button"
+            onClick={() => {
+              const doc = buildCostCentersReportDocument();
+              if (doc) exportCorporateReportPdf(doc);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Imprimir / Guardar Relatório Oficial de Centros de Custos em PDF"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            PDF Oficial
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const doc = buildCostCentersReportDocument();
+              if (doc) exportCorporateReportExcel(doc);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Exportar Relatório de Centros de Custos em Excel (.xls)"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            Excel (.xls)
+          </button>
+
+          <button
+            type="button"
             onClick={handleExportCostCentersCsv}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition cursor-pointer"
+            title="Exportar Relatório de Centros de Custos em CSV"
           >
             <Download className="w-3.5 h-3.5" />
-            Exportar Mapa CSV
+            CSV
           </button>
         </div>
       </GlassCard>

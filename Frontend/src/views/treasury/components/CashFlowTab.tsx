@@ -16,6 +16,9 @@ import {
   Banknote,
   DollarSign,
   Euro,
+  Printer,
+  FileSpreadsheet,
+  Download,
 } from 'lucide-react';
 import { GlassCard } from '../../../components/common/GlassCard';
 import {
@@ -25,6 +28,15 @@ import {
 } from '../../../components/common/ReportDateFilter';
 import { KzAmount } from '../../../components/common/KzAmount';
 import { treasuryApi, CashFlowReport } from '../../../api/treasury';
+import { useAuthStore } from '../../../stores/authStore';
+import {
+  buildCompanyReportMeta,
+  CorporateReportDocument,
+  exportCorporateReportCsv,
+  exportCorporateReportExcel,
+  exportCorporateReportPdf,
+  fmtReportKz,
+} from '../../../utils/corporateReportExporter';
 
 interface CashFlowTabProps {
   tenantId?: string;
@@ -32,6 +44,7 @@ interface CashFlowTabProps {
 }
 
 export const CashFlowTab: React.FC<CashFlowTabProps> = ({ tenantId, onNavigateTab }) => {
+  const { activeTenant, activeBranch } = useAuthStore();
   const [viewMode, setViewMode] = useState<'overview' | 'activities' | 'projections'>('overview');
   const [reportStartDate, setReportStartDate] = useState(getLocalDateString);
   const [reportEndDate, setReportEndDate] = useState(getLocalDateString);
@@ -74,14 +87,220 @@ export const CashFlowTab: React.FC<CashFlowTabProps> = ({ tenantId, onNavigateTa
 
   const { current_liquidity, realized, forecast, projections, alerts } = report;
 
+  const buildCashFlowReportDocument = (): CorporateReportDocument => {
+    const projectedEndBalance =
+      projections.length > 0
+        ? projections[projections.length - 1].ending_balance
+        : current_liquidity.total_available_aoa;
+
+    return {
+      title: 'Relatório de Tesouraria e Fluxo de Caixa',
+      subtitle: 'Posição de Liquidez, Divisas BNA, Actividades PGC e Previsão de Tesouraria a 30 Dias',
+      filenameBase: `Fluxo_Caixa_Tesouraria_${reportDateRange.startDate}_a_${reportDateRange.endDate}`,
+      meta: buildCompanyReportMeta(
+        activeTenant,
+        activeBranch,
+        `${report.period_start} a ${report.period_end}`,
+        'PGC Angola (Decreto n.º 82/01) & Normativo Cambial BNA'
+      ),
+      kpis: [
+        {
+          label: 'Disponibilidade Real Consolidada',
+          value: fmtReportKz(current_liquidity.total_available_aoa),
+          sublabel: `Conciliado: ${fmtReportKz(current_liquidity.reconciled_balance_aoa)}`,
+          tone: 'emerald',
+        },
+        {
+          label: 'Entradas Realizadas no Período',
+          value: fmtReportKz(realized.total_inflows),
+          sublabel: `${realized.inflows_by_method.reduce((s, m) => s + m.count, 0)} recebimentos registados`,
+          tone: 'blue',
+        },
+        {
+          label: 'Saídas Realizadas no Período',
+          value: fmtReportKz(realized.total_outflows),
+          sublabel: `Fluxo Líquido: ${fmtReportKz(realized.net_cash_flow)}`,
+          tone: realized.net_cash_flow >= 0 ? 'emerald' : 'rose',
+        },
+        {
+          label: 'Saldo Projetado a 30 Dias',
+          value: fmtReportKz(projectedEndBalance),
+          sublabel: 'Sustentabilidade de Tesouraria',
+          tone: 'amber',
+        },
+      ],
+      sections: [
+        {
+          title: 'I. Posição de Liquidez e Disponibilidades por Origem',
+          subtitle: 'Contas 43 (Depósitos à Ordem) e 45 (Caixa) — PGC Angola',
+          theme: 'emerald',
+          columns: [
+            { header: 'Código PGC', width: '14%', align: 'center', mono: true },
+            { header: 'Origem / Instituição ou Cofre', width: '44%', align: 'left' },
+            { header: 'Moeda / Câmbio', width: '20%', align: 'center' },
+            { header: 'Saldo Equivalente (Kz)', width: '22%', align: 'right', isCurrency: true, mono: true },
+          ],
+          rows: [
+            { cells: ['45.1', 'Caixas Físicos e Fundo de Maneio Imediato', 'AOA (1,00)', current_liquidity.cash_in_hand_aoa] },
+            { cells: ['43.1', 'Contas Bancárias Nacionais à Ordem', 'AOA (1,00)', current_liquidity.bank_balances_aoa] },
+            ...(current_liquidity.foreign_reserves || []).map((fr) => ({
+              cells: [
+                '43.2',
+                `Reserva Cambial — ${fr.bank_name} (${fr.balance_original.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} ${fr.currency})`,
+                `${fr.currency} (1 = ${fr.exchange_rate_to_aoa} Kz)`,
+                fr.converted_aoa,
+              ],
+            })),
+            {
+              cells: ['TOTAL', 'DISPONIBILIDADE TOTAL CONSOLIDADA', 'AOA', current_liquidity.total_available_aoa],
+              isTotal: true,
+            },
+          ],
+        },
+        {
+          title: 'II. Fluxos de Caixa pelas Três Actividades (PGC Angola — Decreto n.º 82/01)',
+          subtitle: 'Operacional, Investimento e Financiamento',
+          theme: 'blue',
+          columns: [
+            { header: 'Actividade PGC', width: '36%', align: 'left' },
+            { header: 'Entradas / Recebimentos (Kz)', width: '21%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Saídas / Pagamentos (Kz)', width: '21%', align: 'right', isCurrency: true, mono: true },
+            { header: 'Fluxo Líquido (Kz)', width: '22%', align: 'right', isCurrency: true, mono: true },
+          ],
+          rows: [
+            {
+              cells: [
+                '1. Actividades Operacionais (Clientes, Fornecedores, Impostos)',
+                realized.operational.inflows,
+                realized.operational.outflows,
+                realized.operational.net,
+              ],
+            },
+            {
+              cells: [
+                '2. Actividades de Investimento (Imobilizado e Equipamentos)',
+                realized.investment.inflows,
+                realized.investment.outflows,
+                realized.investment.net,
+              ],
+            },
+            {
+              cells: [
+                '3. Actividades de Financiamento (Capital e Suprimentos)',
+                realized.financing.inflows,
+                realized.financing.outflows,
+                realized.financing.net,
+              ],
+            },
+            {
+              cells: [
+                'FLUXO DE CAIXA LÍQUIDO DO PERÍODO',
+                realized.total_inflows,
+                realized.total_outflows,
+                realized.net_cash_flow,
+              ],
+              isTotal: true,
+            },
+          ],
+        },
+        {
+          title: 'III. Entradas por Instrumento de Pagamento e Saídas por Categoria',
+          subtitle: 'Meios de Pagamento EMIS / STC e Estrutura de Desembolsos',
+          theme: 'slate',
+          columns: [
+            { header: 'Tipo de Movimento', width: '22%', align: 'left' },
+            { header: 'Instrumento / Categoria de Despesa', width: '46%', align: 'left' },
+            { header: 'Operações / Peso', width: '14%', align: 'center' },
+            { header: 'Montante (Kz)', width: '18%', align: 'right', isCurrency: true, mono: true },
+          ],
+          rows: [
+            { cells: ['ENTRADAS POR MEIO DE PAGAMENTO', '', '', ''], isSection: true },
+            ...realized.inflows_by_method.map((m) => ({
+              cells: [
+                'Entrada Efetiva',
+                m.method,
+                `${m.count} mov.`,
+                m.amount,
+              ],
+            })),
+            { cells: ['SAÍDAS POR CATEGORIA DE DESPESA', '', '', ''], isSection: true },
+            ...realized.outflows_by_category.map((c) => {
+              const pct =
+                realized.total_outflows > 0
+                  ? `${Math.round((Number(c.amount) / Number(realized.total_outflows)) * 100)}%`
+                  : '0%';
+              return {
+                cells: ['Saída Efetiva', c.category, pct, -Math.abs(Number(c.amount))],
+                isNegative: true,
+              };
+            }),
+          ],
+        },
+        ...(forecast.tax_obligations.length > 0
+          ? [
+              {
+                title: 'IV. Calendário de Obrigações Fiscais e Parafiscais Previstas (AGT / INSS)',
+                subtitle: 'Compromissos Tributários do Período',
+                theme: 'amber' as const,
+                columns: [
+                  { header: 'Imposto / Contribuição', width: '26%', align: 'left' as const },
+                  { header: 'Descrição Legal', width: '40%', align: 'left' as const },
+                  { header: 'Data Limite', width: '14%', align: 'center' as const, mono: true },
+                  { header: 'Valor Estimado (Kz)', width: '20%', align: 'right' as const, isCurrency: true, mono: true },
+                ],
+                rows: forecast.tax_obligations.map((tax) => ({
+                  cells: [
+                    tax.tax_type.replace(/_/g, ' '),
+                    tax.description,
+                    tax.due_date,
+                    tax.estimated_amount,
+                  ],
+                })),
+              },
+            ]
+          : []),
+      ],
+    };
+  };
+
   return (
     <div className="space-y-6">
-      <ReportDateFilter
-        startDate={reportStartDate}
-        endDate={reportEndDate}
-        onStartDateChange={setReportStartDate}
-        onEndDateChange={setReportEndDate}
-      />
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="flex-1">
+          <ReportDateFilter
+            startDate={reportStartDate}
+            endDate={reportEndDate}
+            onStartDateChange={setReportStartDate}
+            onEndDateChange={setReportEndDate}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => exportCorporateReportPdf(buildCashFlowReportDocument())}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 shadow-sm transition-all cursor-pointer"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            PDF Oficial
+          </button>
+          <button
+            type="button"
+            onClick={() => exportCorporateReportExcel(buildCashFlowReportDocument())}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-all cursor-pointer"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            Excel (.xls)
+          </button>
+          <button
+            type="button"
+            onClick={() => exportCorporateReportCsv(buildCashFlowReportDocument())}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            CSV
+          </button>
+        </div>
+      </div>
 
       {/* Alertas Fiscais e de Tesouraria Angolana */}
       {alerts && alerts.length > 0 && (
