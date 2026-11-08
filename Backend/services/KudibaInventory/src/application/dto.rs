@@ -26,7 +26,8 @@ pub struct CreateProductRequest {
     pub purchase_unit_of_measure: Option<String>,
     #[serde(default, deserialize_with = "deserialize_decimal_flexible_opt")]
     pub purchase_conversion_factor: Option<Decimal>,
-    pub sale_price: Decimal,
+    #[serde(default, deserialize_with = "deserialize_decimal_flexible_opt")]
+    pub sale_price: Option<Decimal>,
     pub cost_price: Option<Decimal>,
     pub tax_percentage: Option<Decimal>,
     pub exemption_reason_code: Option<String>,
@@ -318,6 +319,7 @@ impl From<ProductBatch> for BatchResponse {
 pub struct ReceivePurchaseRequest {
     pub warehouse_id: Uuid,
     pub product_id: Uuid,
+    pub supplier_id: Uuid,
     #[serde(default)]
     pub batch_id: Option<Uuid>,
     pub quantity: Decimal,
@@ -397,6 +399,7 @@ pub struct StockMovementResponse {
     pub id: Uuid,
     pub warehouse_id: Uuid,
     pub product_id: Uuid,
+    pub supplier_id: Option<Uuid>,
     pub batch_id: Option<Uuid>,
     pub movement_type: String,
     pub quantity: Decimal,
@@ -414,6 +417,7 @@ impl From<StockMovement> for StockMovementResponse {
             id: m.id,
             warehouse_id: m.warehouse_id,
             product_id: m.product_id,
+            supplier_id: m.supplier_id,
             batch_id: m.batch_id,
             movement_type: format!("{:?}", m.movement_type),
             quantity: m.quantity,
@@ -475,6 +479,20 @@ where
         _ => Err(serde::de::Error::custom(
             "Esperado número ou string decimal",
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CreateProductRequest;
+
+    #[test]
+    fn create_product_accepts_an_unset_sale_price() {
+        let request: CreateProductRequest =
+            serde_json::from_str(r#"{"name":"Produto sem preço de venda"}"#)
+                .expect("preço de venda omitido deve ser aceite");
+
+        assert_eq!(request.sale_price, None);
     }
 }
 

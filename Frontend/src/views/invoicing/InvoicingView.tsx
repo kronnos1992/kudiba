@@ -37,10 +37,12 @@ import {
   invoicingApi,
   Invoice,
   IssueInvoicePayload,
+  Proforma,
+  RecordedInvoicePayment,
 } from '../../api/invoicing';
 import { inventoryApi, StockBalance } from '../../api/inventory';
 
-type ActiveTab = 'invoices' | 'new_invoice' | 'series' | 'saft';
+type ActiveTab = 'invoices' | 'proformas' | 'new_invoice' | 'series' | 'saft';
 
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -55,6 +57,16 @@ export const InvoicingView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>('');
 
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [selectedProforma, setSelectedProforma] = useState<Proforma | null>(null);
+  const [proformaToConvert, setProformaToConvert] = useState<Proforma | null>(null);
+  const [proformaSeries, setProformaSeries] = useState<string>('');
+  const [proformaDocumentType, setProformaDocumentType] = useState<'FT' | 'FR'>('FT');
+  const [proformaApplyStampDuty, setProformaApplyStampDuty] = useState(false);
+  const [proformaStampDutyRate, setProformaStampDutyRate] = useState('');
+  const [existingPaymentAmount, setExistingPaymentAmount] = useState('');
+  const [existingPaymentMethod, setExistingPaymentMethod] = useState('NUMERARIO');
+  const [existingPaymentProof, setExistingPaymentProof] = useState<File | null>(null);
+  const [cashReceiptPayment, setCashReceiptPayment] = useState<RecordedInvoicePayment | null>(null);
   const [cancelModalInvoice, setCancelModalInvoice] = useState<Invoice | null>(null);
   const [cancelReason, setCancelReason] = useState<string>('');
   const [thermalTicketText, setThermalTicketText] = useState<string | null>(null);
@@ -101,6 +113,18 @@ export const InvoicingView: React.FC = () => {
     enabled: Boolean(activeTenant?.id),
   });
 
+  const { data: proformas = [], refetch: refetchProformas } = useQuery({
+    queryKey: ['proformas', activeTenant?.id],
+    queryFn: () => invoicingApi.listProformas(),
+    enabled: Boolean(activeTenant?.id),
+  });
+
+  const { data: invoicePayments = [] } = useQuery({
+    queryKey: ['invoice-payments', activeTenant?.id, selectedInvoice?.id],
+    queryFn: () => invoicingApi.listInvoicePayments(selectedInvoice!.id),
+    enabled: Boolean(activeTenant?.id && selectedInvoice?.id),
+  });
+
   const { data: taxRegimesData } = useQuery({
     queryKey: ['taxRegimes', activeTenant?.id],
     queryFn: () => invoicingApi.listTaxRegimes(),
@@ -137,13 +161,18 @@ export const InvoicingView: React.FC = () => {
   };
 
   // Formulário de Novo Documento
-  const [docType, setDocType] = useState<'FT' | 'FR' | 'NC' | 'ND' | 'GT' | 'GR'>('FT');
+  const [docType, setDocType] = useState<'FT' | 'FR' | 'FP' | 'RC' | 'NC' | 'ND' | 'GT' | 'GR'>('FT');
   const [seriesCode, setSeriesCode] = useState<string>('2026A');
   const [customerName, setCustomerName] = useState<string>('');
   const [customerNif, setCustomerNif] = useState<string>('');
   const [customerAddress, setCustomerAddress] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<string>('NUMERARIO');
+  const [paymentAmount, setPaymentAmount] = useState<string>('');
+  const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
   const [applyWithholding, setApplyWithholding] = useState<boolean>(false);
+  const [applyStampDuty, setApplyStampDuty] = useState<boolean>(false);
+  const [stampDutyRate, setStampDutyRate] = useState<string>('');
+  const [receiptAmount, setReceiptAmount] = useState<string>('');
   const [sourceDocNumber, setSourceDocNumber] = useState<string>('');
 
   // Dados de Transporte (GT / GR)
@@ -179,8 +208,20 @@ export const InvoicingView: React.FC = () => {
   ]);
 
   // Cálculos do formulário
-  const netSubtotal = lines.reduce((acc, l) => acc + l.quantity * l.unitPrice, 0);
-  const taxSubtotal = lines.reduce(
+  const enteredStampDutyRate = Number(stampDutyRate) || 0;
+  const enteredReceiptAmount = Number(receiptAmount) || 0;
+  let receiptNetAmount = enteredReceiptAmount;
+  if (applyStampDuty && docType === 'RC') {
+    for (let i = 0; i < 4; i += 1) {
+      const stamp = Math.round(receiptNetAmount * (enteredStampDutyRate / 100) * 100) / 100;
+      receiptNetAmount = Math.max(0, Math.round((enteredReceiptAmount - stamp) * 100) / 100);
+    }
+  }
+  const netSubtotal =
+    docType === 'RC'
+      ? receiptNetAmount
+      : lines.reduce((acc, l) => acc + l.quantity * l.unitPrice, 0);
+  const taxSubtotal = docType === 'RC' ? 0 : lines.reduce(
     (acc, l) => acc + l.quantity * l.unitPrice * (l.taxRate / 100),
     0
   );
@@ -188,13 +229,16 @@ export const InvoicingView: React.FC = () => {
     .filter((l) => l.isService)
     .reduce((acc, l) => acc + l.quantity * l.unitPrice, 0);
   const defaultWithholdingRate = activeTenant?.default_withholding_rate ?? 6.5;
-  const withholdingSubtotal = applyWithholding
+  const withholdingSubtotal = applyWithholding && docType !== 'RC'
     ? servicesSubtotal * (defaultWithholdingRate / 100)
     : 0;
-  const totalAmount = netSubtotal + taxSubtotal - withholdingSubtotal;
+  const stampDutySubtotal = applyStampDuty
+    ? Math.round(netSubtotal * (enteredStampDutyRate / 100) * 100) / 100
+    : 0;
+  const totalAmount = netSubtotal + taxSubtotal + stampDutySubtotal - withholdingSubtotal;
 
   const stockErrors = React.useMemo(() => {
-    if (docType === 'NC' || docType === 'ND') return [];
+    if (['NC', 'ND', 'FP', 'RC'].includes(docType)) return [];
     const errors: string[] = [];
     const requestedByCode: Record<string, number> = {};
     for (const l of lines) {
@@ -232,31 +276,122 @@ export const InvoicingView: React.FC = () => {
     return errors;
   }, [lines, docType, products]);
 
+  const invoicePriceErrors =
+    docType === 'RC'
+      ? []
+      : lines
+          .filter((line) => line.unitPrice <= 0)
+          .map((line) => `Indique um preço unitário maior que zero para "${line.description}".`);
+
   const canSubmitInvoice =
-    stockErrors.length === 0 && serviceTransportErrors.length === 0 && lines.length > 0;
+    stockErrors.length === 0 &&
+    serviceTransportErrors.length === 0 &&
+    invoicePriceErrors.length === 0 &&
+    (!applyStampDuty || (enteredStampDutyRate > 0 && enteredStampDutyRate <= 100)) &&
+    (docType === 'FP' ||
+      paymentMethod === 'CREDITO' ||
+      (docType === 'RC'
+        ? enteredReceiptAmount <= totalAmount + 0.01
+        : (Number(paymentAmount) || 0) <= totalAmount + 0.01)) &&
+    (!paymentProofFile ||
+      (paymentProofFile.size <= 2 * 1024 * 1024 &&
+        ['application/pdf', 'image/jpeg', 'image/png'].includes(paymentProofFile.type))) &&
+    (!paymentProofFile ||
+      docType === 'RC' ||
+      paymentMethod === 'CREDITO' ||
+      (Number(paymentAmount) || 0) > 0) &&
+    (docType === 'RC' ? enteredReceiptAmount > 0 : lines.length > 0);
 
   // Mutations
   const issueMutation = useMutation({
     mutationFn: async (payload: IssueInvoicePayload) => {
+      if (payload.documentType === 'FP') {
+        return {
+          kind: 'proforma' as const,
+          proforma: await invoicingApi.createProforma(payload),
+        };
+      }
+
+      const receivedAmount =
+        docType === 'RC' ? enteredReceiptAmount : Number(paymentAmount) || 0;
+      let proofBase64: string | undefined;
+      if (paymentProofFile) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error('Não foi possível ler o comprovativo selecionado.'));
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.readAsDataURL(paymentProofFile);
+        });
+        proofBase64 = dataUrl.split(',')[1];
+      }
+
       const issued = await invoicingApi.issueInvoice(payload);
       const id = issued.invoiceId || issued.id;
-      if (id) {
+      let payment: RecordedInvoicePayment | undefined;
+      let paymentError: string | undefined;
+      if (id && receivedAmount > 0 && paymentMethod !== 'CREDITO') {
         try {
-          return await invoicingApi.getInvoice(id);
-        } catch {
-          return issued as unknown as Invoice;
+          payment = await invoicingApi.recordInvoicePayment(id, {
+            amount: receivedAmount,
+            paymentMethod,
+            payerName: customerName.trim() || 'Consumidor Final',
+            proofFileName: paymentProofFile?.name,
+            proofContentType: paymentProofFile?.type,
+            proofBase64,
+          });
+        } catch (error: any) {
+          paymentError =
+            error?.response?.data?.error ||
+            error?.response?.data?.detail ||
+            'A factura foi emitida, mas o registo do pagamento falhou. Não volte a emitir a factura.';
         }
       }
-      return issued as unknown as Invoice;
+      if (id) {
+        try {
+          return {
+            kind: 'invoice' as const,
+            invoice: await invoicingApi.getInvoice(id),
+            payment,
+            paymentError,
+          };
+        } catch {
+          return {
+            kind: 'invoice' as const,
+            invoice: issued as unknown as Invoice,
+            payment,
+            paymentError,
+          };
+        }
+      }
+      return {
+        kind: 'invoice' as const,
+        invoice: issued as unknown as Invoice,
+        payment,
+        paymentError,
+      };
     },
     onSuccess: (data) => {
+      if (data.kind === 'proforma') {
+        queryClient.invalidateQueries({ queryKey: ['proformas'] });
+        setSelectedProforma(data.proforma);
+        setActiveTab('proformas');
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: ['series'] });
       queryClient.invalidateQueries({ queryKey: ['fiscal_audit_trail'] });
       queryClient.invalidateQueries({ queryKey: ['inventory_all_stock_balances'] });
       queryClient.invalidateQueries({ queryKey: ['inventory_products'] });
-      setSelectedInvoice(data);
+      setSelectedInvoice(data.invoice);
       setActiveTab('invoices');
+      setPaymentAmount('');
+      setPaymentProofFile(null);
+      if (data.payment?.paymentMethod === 'NUMERARIO') {
+        setCashReceiptPayment(data.payment);
+      }
+      if (data.paymentError) {
+        alert(data.paymentError);
+      }
 
       // Trigger Automático: Regista novo cliente no catálogo se não for Consumidor Final
       const trimmedNif = customerNif.trim();
@@ -291,6 +426,71 @@ export const InvoicingView: React.FC = () => {
             }
           })
           .catch(() => {});
+      }
+    },
+  });
+
+  const recordExistingPaymentMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedInvoice) {
+        throw new Error('Factura não seleccionada.');
+      }
+      let proofBase64: string | undefined;
+      if (existingPaymentProof) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error('Não foi possível ler o comprovativo selecionado.'));
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.readAsDataURL(existingPaymentProof);
+        });
+        proofBase64 = dataUrl.split(',')[1];
+      }
+      return invoicingApi.recordInvoicePayment(selectedInvoice.id, {
+        amount: Number(existingPaymentAmount),
+        paymentMethod: existingPaymentMethod,
+        payerName: selectedInvoice.customerName || 'Consumidor Final',
+        proofFileName: existingPaymentProof?.name,
+        proofContentType: existingPaymentProof?.type,
+        proofBase64,
+      });
+    },
+    onSuccess: (payment) => {
+      queryClient.invalidateQueries({
+        queryKey: ['invoice-payments', activeTenant?.id, selectedInvoice?.id],
+      });
+      setExistingPaymentAmount('');
+      setExistingPaymentProof(null);
+      if (payment.paymentMethod === 'NUMERARIO') {
+        setCashReceiptPayment(payment);
+      }
+    },
+  });
+
+  const convertProformaMutation = useMutation({
+    mutationFn: async () => {
+      if (!proformaToConvert || !activeTenant?.id) {
+        throw new Error('Proforma ou empresa activa não identificada.');
+      }
+      return invoicingApi.convertProforma(proformaToConvert.id, {
+        tenantId: activeTenant.id,
+        seriesCode: proformaSeries,
+        fiscalYear: currentYear,
+        documentType: proformaDocumentType,
+        applyStampDuty: proformaApplyStampDuty,
+        stampDutyRate: proformaApplyStampDuty ? Number(proformaStampDutyRate) : undefined,
+      });
+    },
+    onSuccess: async (result) => {
+      queryClient.invalidateQueries({ queryKey: ['proformas'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['series'] });
+      setProformaToConvert(null);
+      setSelectedProforma(null);
+      setActiveTab('invoices');
+      try {
+        setSelectedInvoice(await invoicingApi.getInvoice(result.invoiceId));
+      } catch {
+        setSelectedInvoice(result as unknown as Invoice);
       }
     },
   });
@@ -681,8 +881,10 @@ export const InvoicingView: React.FC = () => {
       customerCountry: 'AO',
       sourceDocumentNumber: sourceDocNumber || undefined,
       paymentMethods: [paymentMethod],
-      applyWithholding,
-      withholdingRate: applyWithholding ? 6.5 : undefined,
+      applyWithholding: docType !== 'RC' && applyWithholding,
+      withholdingRate: docType !== 'RC' && applyWithholding ? 6.5 : undefined,
+      applyStampDuty,
+      stampDutyRate: applyStampDuty ? enteredStampDutyRate : undefined,
       vehiclePlateNumber: (docType === 'GT' || docType === 'GR') ? vehiclePlateNumber : undefined,
       loadingAddress: (docType === 'GT' || docType === 'GR') ? loadingAddress : undefined,
       loadingCity: (docType === 'GT' || docType === 'GR') ? loadingCity : undefined,
@@ -690,7 +892,16 @@ export const InvoicingView: React.FC = () => {
       unloadingAddress: (docType === 'GT' || docType === 'GR') ? unloadingAddress : undefined,
       unloadingCity: (docType === 'GT' || docType === 'GR') ? unloadingCity : undefined,
       unloadingDateTime: (docType === 'GT' || docType === 'GR') ? unloadingDateTime : undefined,
-      lines: lines.map((l) => ({
+      lines: docType === 'RC'
+        ? [{
+            productCode: 'RECIBO',
+            description: 'Valor recebido do cliente',
+            quantity: 1,
+            unitPrice: receiptNetAmount,
+            taxRate: 0,
+            taxExemptionCode: 'M02',
+          }]
+        : lines.map((l) => ({
         productCode: l.productCode,
         description: l.description,
         quantity: l.quantity,
@@ -745,6 +956,13 @@ export const InvoicingView: React.FC = () => {
       creditNotesCount: 0,
     }
   );
+  const selectedInvoiceBalance = selectedInvoice
+    ? Math.max(
+        0,
+        selectedInvoice.amountDue -
+          invoicePayments.reduce((total, payment) => total + payment.amount, 0)
+      )
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -782,6 +1000,18 @@ export const InvoicingView: React.FC = () => {
           >
             <PlusCircle className="w-4 h-4" />
             <span>Emitir Documento</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('proformas')}
+            className={`shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+              activeTab === 'proformas'
+                ? 'bg-emerald-700 text-white shadow-xs'
+                : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>Proformas ({proformas.length})</span>
           </button>
 
           <button
@@ -904,6 +1134,8 @@ export const InvoicingView: React.FC = () => {
                   <option value="ALL">Todos os Tipos</option>
                   <option value="FT">FT — Faturas</option>
                   <option value="FR">FR — Faturas-Recibo</option>
+                  <option value="FP">FP — Factura Proforma</option>
+                  <option value="RC">RC — Recibo</option>
                   <option value="NC">NC — Notas de Crédito</option>
                   <option value="ND">ND — Notas de Débito</option>
                 </select>
@@ -1159,6 +1391,76 @@ export const InvoicingView: React.FC = () => {
         </div>
       )}
 
+      {activeTab === 'proformas' && (
+        <GlassCard className="space-y-4 p-4 no-print">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Facturas Proforma</h3>
+              <p className="text-xs text-slate-500">Documentos comerciais não fiscais; não consomem série nem entram no SAF-T.</p>
+            </div>
+            <button
+              onClick={() => refetchProformas()}
+              className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300"
+              title="Atualizar proformas"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
+          </div>
+          {proformas.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-500">Ainda não existem proformas. Crie uma escolhendo FP em “Emitir Documento”.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900">
+                  <tr>
+                    <th className="px-3 py-2">Número</th>
+                    <th className="px-3 py-2">Cliente</th>
+                    <th className="px-3 py-2 text-right">Total estimado</th>
+                    <th className="px-3 py-2">Estado</th>
+                    <th className="px-3 py-2 text-right">Acções</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {proformas.map((proforma) => (
+                    <tr key={proforma.id}>
+                      <td className="px-3 py-3 font-mono font-bold">{proforma.documentNumber}</td>
+                      <td className="px-3 py-3">{proforma.customerName}</td>
+                      <td className="px-3 py-3 text-right"><KzAmount value={proforma.grossTotal} /></td>
+                      <td className="px-3 py-3">{proforma.status === 'CONVERTED' ? 'Convertida' : proforma.status === 'CONVERTING' ? 'A converter' : 'Aberta'}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => setSelectedProforma(proforma)}
+                            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold hover:bg-slate-50 dark:border-slate-700"
+                          >
+                            Ver / Imprimir
+                          </button>
+                          {proforma.status === 'OPEN' && (
+                            <button
+                              onClick={() => {
+                                const activeSeries = seriesList.find((series) => series.documentType === 'FT' && series.isActive);
+                                setProformaSeries(activeSeries?.seriesCode || '2026A');
+                                setProformaDocumentType('FT');
+                                setProformaApplyStampDuty(false);
+                                setProformaStampDutyRate('');
+                                setProformaToConvert(proforma);
+                              }}
+                              className="rounded-lg bg-emerald-700 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-emerald-800"
+                            >
+                              Converter em factura
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </GlassCard>
+      )}
+
       {/* ABA 2: EMISSÃO DE NOVO DOCUMENTO FISCAL */}
       {activeTab === 'new_invoice' && (
         <form onSubmit={handleIssueSubmit} className="space-y-6 no-print">
@@ -1179,11 +1481,19 @@ export const InvoicingView: React.FC = () => {
                   </label>
                   <select
                     value={docType}
-                    onChange={(e) => setDocType(e.target.value as any)}
+                    onChange={(e) => {
+                      setDocType(e.target.value as typeof docType);
+                      setApplyStampDuty(false);
+                      setStampDutyRate('');
+                      setApplyWithholding(false);
+                      setReceiptAmount('');
+                    }}
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="FT">FT — Fatura Comercial</option>
                     <option value="FR">FR — Fatura-Recibo</option>
+                    <option value="FP">FP — Factura Proforma</option>
+                    <option value="RC">RC — Recibo</option>
                     <option value="NC">NC — Nota de Crédito</option>
                     <option value="ND">ND — Nota de Débito</option>
                     <option value="GT">GT — Guia de Transporte</option>
@@ -1191,7 +1501,7 @@ export const InvoicingView: React.FC = () => {
                   </select>
                 </div>
 
-                <div>
+                {docType !== 'FP' && <div>
                   <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
                     Série Fiscal
                   </label>
@@ -1211,24 +1521,60 @@ export const InvoicingView: React.FC = () => {
                       <option value="2026A">2026A (Padrão)</option>
                     )}
                   </select>
-                </div>
+                </div>}
 
-                <div>
+                {docType !== 'FP' && <div>
                   <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
                     Meio de Pagamento
                   </label>
                   <select
                     value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    onChange={(e) => {
+                      setPaymentMethod(e.target.value);
+                      if (e.target.value === 'CREDITO') {
+                        setPaymentAmount('');
+                        setPaymentProofFile(null);
+                      }
+                    }}
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="NUMERARIO">Numerário (Dinheiro)</option>
                     <option value="MULTICAIXA">Multicaixa (TPA)</option>
                     <option value="TRANSFERENCIA">Transferência Bancária</option>
-                    <option value="CREDITO">A Prazo (Crédito)</option>
+                    {docType !== 'RC' && <option value="CREDITO">A Prazo (Crédito)</option>}
                   </select>
-                </div>
+                </div>}
               </div>
+
+              {docType !== 'FP' && paymentMethod !== 'CREDITO' && docType !== 'RC' && (
+                <div className="grid grid-cols-1 gap-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900 dark:bg-emerald-950/20 md:grid-cols-2">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Valor recebido agora (Kz)
+                    <input
+                      type="number"
+                      min="0"
+                      max={totalAmount}
+                      step="0.01"
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(e.target.value)}
+                      placeholder="Vazio se ainda não recebeu"
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-mono dark:border-slate-700 dark:bg-slate-900"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Comprovativo (opcional, PDF/JPG/PNG até 2 MB)
+                    <input
+                      type="file"
+                      accept="application/pdf,image/jpeg,image/png"
+                      onChange={(e) => setPaymentProofFile(e.target.files?.[0] || null)}
+                      className="mt-1 block w-full text-xs"
+                    />
+                  </label>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 md:col-span-2">
+                    O comprovativo é opcional. Se registar uma entrada em numerário, será criado um recibo interno para impressão e assinatura do caixa.
+                  </p>
+                </div>
+              )}
 
               {(docType === 'GT' || docType === 'GR') && (
                 <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 space-y-3">
@@ -1422,7 +1768,35 @@ export const InvoicingView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Linhas de Artigos */}
+              {docType === 'RC' ? (
+                <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900 dark:bg-blue-950/20">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+                    Valor recebido do cliente (Kz) *
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      value={receiptAmount}
+                      onChange={(e) => setReceiptAmount(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-mono dark:border-slate-700 dark:bg-slate-900"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Comprovativo (opcional, PDF/JPG/PNG até 2 MB)
+                    <input
+                      type="file"
+                      accept="application/pdf,image/jpeg,image/png"
+                      onChange={(e) => setPaymentProofFile(e.target.files?.[0] || null)}
+                      className="mt-1 block w-full text-xs"
+                    />
+                  </label>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    O recibo será emitido pelo valor indicado e associado ao pagamento registado, sem saída de stock.
+                  </p>
+                </div>
+              ) : (
+              /* Linhas de Artigos */
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -1488,7 +1862,7 @@ export const InvoicingView: React.FC = () => {
 
                         <div className="sm:col-span-2 xl:col-span-2">
                           <label className="block text-[11px] text-slate-500 mb-1">
-                            Preço Unit. (Kz)
+                            Preço Unitário (Kz / unidade)
                           </label>
                           <input
                             type="number"
@@ -1510,7 +1884,9 @@ export const InvoicingView: React.FC = () => {
                         </div>
 
                         <div className="sm:col-span-2 xl:col-span-1">
-                          <label className="block text-[11px] text-slate-500 mb-1">Qtd</label>
+                          <label className="block text-[11px] text-slate-500 mb-1">
+                            Qtd. ({getProductByCode(line.productCode)?.unit_of_measure || 'UN'})
+                          </label>
                           <input
                             type="number"
                             min="1"
@@ -1616,6 +1992,7 @@ export const InvoicingView: React.FC = () => {
                   ))}
                 </div>
               </div>
+              )}
             </GlassCard>
 
             {/* Painel Lateral de Resumo e Emissão */}
@@ -1635,19 +2012,61 @@ export const InvoicingView: React.FC = () => {
                     <KzAmount value={taxSubtotal} />
                   </div>
 
+                  {['FT', 'FR', 'RC'].includes(docType) && (
+                    <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+                      <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={applyStampDuty}
+                          onChange={(e) => setApplyStampDuty(e.target.checked)}
+                          className="rounded text-emerald-600"
+                        />
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">
+                          Aplicar imposto de selo
+                        </span>
+                      </label>
+                      {applyStampDuty && (
+                        <div className="mt-2 space-y-2">
+                          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                            Taxa aplicável (%)
+                            <input
+                              type="number"
+                              min="0.01"
+                              max="100"
+                              step="0.01"
+                              value={stampDutyRate}
+                              onChange={(e) => setStampDutyRate(e.target.value)}
+                              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                              required
+                            />
+                          </label>
+                          <p className="text-[11px] text-slate-500">
+                            Confirme a incidência e a taxa aplicável para este documento.
+                          </p>
+                          <div className="flex justify-between font-semibold text-amber-700 dark:text-amber-400">
+                            <span>Imposto de selo:</span>
+                            <KzAmount value={stampDutySubtotal} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
-                    <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={applyWithholding}
-                        onChange={(e) => setApplyWithholding(e.target.checked)}
-                        className="rounded text-emerald-600"
-                      />
-                      <span className="font-semibold text-slate-700 dark:text-slate-300">
-                        Aplicar Retenção na Fonte ({defaultWithholdingRate.toString().replace('.', ',')}%)
-                      </span>
-                    </label>
-                    {applyWithholding && (
+                    {docType !== 'RC' && (
+                      <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={applyWithholding}
+                          onChange={(e) => setApplyWithholding(e.target.checked)}
+                          className="rounded text-emerald-600"
+                        />
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">
+                          Aplicar Retenção na Fonte ({defaultWithholdingRate.toString().replace('.', ',')}%)
+                        </span>
+                      </label>
+                    )}
+                    {applyWithholding && docType !== 'RC' && (
                       <div className="flex justify-between text-rose-600 font-semibold mt-1.5">
                         <span>
                           Retenção ({defaultWithholdingRate.toString().replace('.', ',')}% s/ Serviços):
@@ -1694,6 +2113,15 @@ export const InvoicingView: React.FC = () => {
                   </div>
                 )}
 
+                {invoicePriceErrors.length > 0 && (
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200">
+                    {invoicePriceErrors.map((error) => (
+                      <p key={error}>{error}</p>
+                    ))}
+                    <p className="mt-1">Defina o preço unitário no momento da venda antes de emitir.</p>
+                  </div>
+                )}
+
                 {issueMutation.isError && (
                   <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300">
                     Erro ao emitir: {(issueMutation.error as any)?.response?.data?.error || (issueMutation.error as any)?.response?.data?.detail || 'Falha na validação'}
@@ -1713,6 +2141,8 @@ export const InvoicingView: React.FC = () => {
                       ? 'Stock Insuficiente (Bloqueado)'
                       : !canSubmitInvoice && serviceTransportErrors.length > 0
                       ? 'Serviços Inválidos em GT (Bloqueado)'
+                      : !canSubmitInvoice && invoicePriceErrors.length > 0
+                      ? 'Preço Unitário em Falta (Bloqueado)'
                       : 'Emitir & Assinar Fiscalmente'}
                   </span>
                 </button>
@@ -1755,7 +2185,7 @@ export const InvoicingView: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                    {seriesList.map((s) => (
+                    {seriesList.filter((s) => s.documentType !== 'FP').map((s) => (
                       <tr key={s.id} className="hover:bg-slate-50/60">
                         <td className="py-3 px-3 font-bold text-emerald-700">{s.documentType}</td>
                         <td className="py-3 px-3 font-mono font-bold text-slate-900 dark:text-white">
@@ -1807,6 +2237,7 @@ export const InvoicingView: React.FC = () => {
                   >
                     <option value="FT">FT — Fatura</option>
                     <option value="FR">FR — Fatura-Recibo</option>
+                    <option value="RC">RC — Recibo</option>
                     <option value="NC">NC — Nota de Crédito</option>
                     <option value="ND">ND — Nota de Débito</option>
                   </select>
@@ -2161,6 +2592,114 @@ export const InvoicingView: React.FC = () => {
                 </div>
               </div>
 
+              {invoicePayments.length > 0 && (
+                <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-900 dark:bg-emerald-950/20">
+                  <h4 className="mb-2 text-xs font-bold uppercase text-emerald-800 dark:text-emerald-300">Pagamentos registados</h4>
+                  <div className="space-y-2">
+                    {invoicePayments.map((payment) => (
+                      <div key={payment.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span>
+                          {new Date(payment.receivedAt).toLocaleString('pt-AO')} · {payment.paymentMethod} · {payment.payerName} · <strong><KzAmount value={payment.amount} /></strong>
+                          {payment.proofSha256 && <span className="block font-mono text-[10px] text-slate-500">SHA-256: {payment.proofSha256}</span>}
+                        </span>
+                        {payment.proofFileName && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const blob = await invoicingApi.downloadPaymentProof(selectedInvoice.id, payment.id);
+                              const url = window.URL.createObjectURL(blob);
+                              const anchor = document.createElement('a');
+                              anchor.href = url;
+                              anchor.download = payment.proofFileName || 'comprovativo';
+                              anchor.click();
+                              window.URL.revokeObjectURL(url);
+                            }}
+                            className="font-bold text-emerald-700 hover:underline"
+                          >
+                            Descarregar comprovativo
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedInvoiceBalance > 0 && (
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    recordExistingPaymentMutation.mutate();
+                  }}
+                  className="mb-6 space-y-3 rounded-xl border border-blue-200 bg-blue-50/50 p-3 dark:border-blue-900 dark:bg-blue-950/20"
+                >
+                  <h4 className="text-xs font-bold uppercase text-blue-800 dark:text-blue-300">
+                    Registar recebimento posterior — saldo <KzAmount value={selectedInvoiceBalance} />
+                  </h4>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs font-semibold">
+                      Valor recebido (Kz)
+                      <input
+                        type="number"
+                        min="0.01"
+                        max={selectedInvoiceBalance}
+                        step="0.01"
+                        required
+                        value={existingPaymentAmount}
+                        onChange={(event) => setExistingPaymentAmount(event.target.value)}
+                        className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold">
+                      Meio de pagamento
+                      <select
+                        value={existingPaymentMethod}
+                        onChange={(event) => setExistingPaymentMethod(event.target.value)}
+                        className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
+                      >
+                        <option value="NUMERARIO">Numerário</option>
+                        <option value="MULTICAIXA">Multicaixa</option>
+                        <option value="TRANSFERENCIA">Transferência</option>
+                        <option value="MULTICAIXA_EXPRESS">Multicaixa Express</option>
+                        <option value="CHEQUE">Cheque</option>
+                        <option value="GPO_REFERENCE">Referência GPO</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label className="block text-xs font-semibold">
+                    Comprovativo (opcional; PDF, JPG ou PNG até 2 MB)
+                    <input
+                      type="file"
+                      accept="application/pdf,image/jpeg,image/png"
+                      onChange={(event) => setExistingPaymentProof(event.target.files?.[0] || null)}
+                      className="mt-1 block w-full text-xs"
+                    />
+                  </label>
+                  {recordExistingPaymentMutation.isError && (
+                    <p className="text-xs text-rose-700">
+                      {(recordExistingPaymentMutation.error as any)?.response?.data?.error ||
+                        (recordExistingPaymentMutation.error as Error).message ||
+                        'Falha ao registar o recebimento.'}
+                    </p>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={
+                      recordExistingPaymentMutation.isPending ||
+                      !Number.isFinite(Number(existingPaymentAmount)) ||
+                      Number(existingPaymentAmount) <= 0 ||
+                      Number(existingPaymentAmount) > selectedInvoiceBalance + 0.001 ||
+                      (existingPaymentProof !== null &&
+                        (existingPaymentProof.size > 2 * 1024 * 1024 ||
+                          !['application/pdf', 'image/jpeg', 'image/png'].includes(existingPaymentProof.type)))
+                    }
+                    className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+                  >
+                    {recordExistingPaymentMutation.isPending ? 'A registar...' : 'Registar recebimento'}
+                  </button>
+                </form>
+              )}
+
               {activeTenant?.bank_accounts && activeTenant.bank_accounts.length > 0 && (
                 <div className="border-t border-slate-200 pt-3 mb-3 text-[11px] text-slate-600">
                   <p className="font-bold uppercase tracking-wider text-[10px] text-slate-400 mb-1">
@@ -2497,6 +3036,174 @@ export const InvoicingView: React.FC = () => {
                                     <span className="px-1.5 py-0.2 rounded text-[9px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-sans">
                                       Serviço
                                     </span>
+                                  )}
+
+                                  {selectedProforma && (
+                                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+                                      <style>{`@media print { body * { visibility: hidden !important; } #proforma-print, #proforma-print * { visibility: visible !important; } #proforma-print { position: absolute; inset: 0; width: 100%; padding: 24px; } .no-print { display: none !important; } }`}</style>
+                                      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 text-slate-900 shadow-2xl">
+                                        <div className="no-print mb-4 flex justify-end gap-2">
+                                          <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">
+                                            <Printer className="h-4 w-4" /> Imprimir / Guardar PDF
+                                          </button>
+                                          <button onClick={() => setSelectedProforma(null)} className="rounded-lg border px-3 py-2 text-xs font-semibold">Fechar</button>
+                                        </div>
+                                        <div id="proforma-print" className="space-y-5">
+                                          <header className="border-b-2 border-slate-800 pb-4 text-center">
+                                            <p className="text-sm font-bold uppercase tracking-widest">Factura Proforma — Documento não fiscal</p>
+                                            <h2 className="mt-2 text-2xl font-extrabold">{selectedProforma.documentNumber}</h2>
+                                            <p className="mt-1 text-xs text-slate-600">Não substitui factura e não representa quitação de pagamento.</p>
+                                          </header>
+                                          <div className="grid grid-cols-2 gap-3 text-sm">
+                                            <p><strong>Cliente:</strong> {selectedProforma.customerName}</p>
+                                            <p><strong>NIF:</strong> {selectedProforma.customerNif || 'Consumidor Final'}</p>
+                                            <p className="col-span-2"><strong>Morada:</strong> {selectedProforma.customerAddress || '—'}</p>
+                                            <p><strong>Data:</strong> {new Date(selectedProforma.createdAt).toLocaleDateString('pt-AO')}</p>
+                                            <p><strong>Validade:</strong> confirmar com o emitente</p>
+                                          </div>
+                                          <table className="w-full border-collapse text-sm">
+                                            <thead><tr className="border-y border-slate-400 text-left">
+                                              <th className="py-2">Artigo / Descrição</th><th className="py-2 text-right">Qtd.</th>
+                                              <th className="py-2 text-right">Preço Unit.</th><th className="py-2 text-right">Total</th>
+                                            </tr></thead>
+                                            <tbody>
+                                              {selectedProforma.lines.map((line, index) => (
+                                                <tr key={`${line.productCode}-${index}`} className="border-b border-slate-200">
+                                                  <td className="py-2">{line.description}</td>
+                                                  <td className="py-2 text-right">{line.quantity}</td>
+                                                  <td className="py-2 text-right"><KzAmount value={line.unitPrice} /></td>
+                                                  <td className="py-2 text-right">
+                                                    <KzAmount value={
+                                                      (line.quantity * line.unitPrice - (line.discountAmount || 0)) *
+                                                      (1 + line.taxRate / 100)
+                                                    } />
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                          <div className="ml-auto w-64 space-y-1 text-right text-sm">
+                                            <p>Incidência: <KzAmount value={selectedProforma.netTotal} /></p>
+                                            <p>IVA estimado: <KzAmount value={selectedProforma.taxTotal} /></p>
+                                            <p className="border-t border-slate-500 pt-2 text-lg font-extrabold">Total estimado: <KzAmount value={selectedProforma.grossTotal} /></p>
+                                          </div>
+                                          <p className="border-t border-slate-300 pt-3 text-xs text-slate-600">
+                                            Valores indicativos. Os dados fiscais, taxas e disponibilidade de stock serão novamente validados na emissão do documento definitivo.
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {proformaToConvert && (
+                                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+                                      <div className="w-full max-w-md space-y-4 rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
+                                        <div>
+                                          <h3 className="text-base font-bold text-slate-900 dark:text-white">Converter proforma</h3>
+                                          <p className="mt-1 text-xs text-slate-500">{proformaToConvert.documentNumber} será associada ao novo documento fiscal.</p>
+                                        </div>
+                                        <label className="block text-xs font-semibold">
+                                          Tipo de documento
+                                          <select
+                                            value={proformaDocumentType}
+                                            onChange={(e) => {
+                                              const type = e.target.value as 'FT' | 'FR';
+                                              setProformaDocumentType(type);
+                                              setProformaSeries(seriesList.find((series) => series.documentType === type && series.isActive)?.seriesCode || '2026A');
+                                            }}
+                                            className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
+                                          >
+                                            <option value="FT">FT — Factura</option>
+                                            <option value="FR">FR — Factura-Recibo</option>
+                                          </select>
+                                        </label>
+                                        <label className="block text-xs font-semibold">
+                                          Série fiscal
+                                          <select value={proformaSeries} onChange={(e) => setProformaSeries(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+                                            {seriesList.filter((series) => series.documentType === proformaDocumentType && series.isActive).map((series) => (
+                                              <option key={series.id} value={series.seriesCode}>{series.seriesCode} (sequência {series.currentSequence})</option>
+                                            ))}
+                                            {!seriesList.some((series) => series.documentType === proformaDocumentType && series.isActive) && (
+                                              <option value="2026A">2026A (padrão)</option>
+                                            )}
+                                          </select>
+                                        </label>
+                                        <label className="flex items-center gap-2 text-xs font-semibold">
+                                          <input
+                                            type="checkbox"
+                                            checked={proformaApplyStampDuty}
+                                            onChange={(e) => setProformaApplyStampDuty(e.target.checked)}
+                                            className="rounded border-slate-300"
+                                          />
+                                          Aplicar imposto de selo (quando aplicável)
+                                        </label>
+                                        {proformaApplyStampDuty && (
+                                          <label className="block text-xs font-semibold">
+                                            Taxa de imposto de selo (%)
+                                            <input
+                                              type="number"
+                                              min="0.01"
+                                              max="100"
+                                              step="0.01"
+                                              required
+                                              value={proformaStampDutyRate}
+                                              onChange={(e) => setProformaStampDutyRate(e.target.value)}
+                                              className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
+                                            />
+                                          </label>
+                                        )}
+                                        {convertProformaMutation.isError && <p className="text-xs text-rose-600">{(convertProformaMutation.error as any)?.response?.data?.error || (convertProformaMutation.error as Error).message}</p>}
+                                        <div className="flex justify-end gap-2">
+                                          <button onClick={() => setProformaToConvert(null)} className="rounded-lg border px-3 py-2 text-xs font-semibold">Cancelar</button>
+                                          <button
+                                            disabled={
+                                              convertProformaMutation.isPending ||
+                                              (proformaApplyStampDuty &&
+                                                (!Number.isFinite(Number(proformaStampDutyRate)) ||
+                                                  Number(proformaStampDutyRate) <= 0 ||
+                                                  Number(proformaStampDutyRate) > 100))
+                                            }
+                                            onClick={() => convertProformaMutation.mutate()}
+                                            className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+                                          >
+                                            {convertProformaMutation.isPending ? 'A emitir...' : 'Emitir documento fiscal'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {cashReceiptPayment && (
+                                    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+                                      <style>{`@media print { body * { visibility: hidden !important; } #cash-receipt-print, #cash-receipt-print * { visibility: visible !important; } #cash-receipt-print { position: absolute; inset: 0; width: 100%; padding: 24px; } .no-print { display: none !important; } }`}</style>
+                                      <div className="w-full max-w-xl rounded-2xl bg-white p-5 text-slate-900 shadow-2xl">
+                                        <div className="no-print mb-4 flex justify-end gap-2">
+                                          <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">
+                                            <Printer className="h-4 w-4" /> Imprimir recibo
+                                          </button>
+                                          <button onClick={() => setCashReceiptPayment(null)} className="rounded-lg border px-3 py-2 text-xs font-semibold">Fechar</button>
+                                        </div>
+                                        <div id="cash-receipt-print" className="space-y-5">
+                                          <header className="border-b-2 border-slate-800 pb-3 text-center">
+                                            <h2 className="text-lg font-extrabold uppercase">Comprovativo Interno de Recebimento</h2>
+                                            <p className="text-xs">Documento interno — não substitui recibo fiscal</p>
+                                          </header>
+                                          <div className="space-y-3 text-sm">
+                                            <p><strong>N.º interno:</strong> CX-{cashReceiptPayment.id.slice(0, 8).toUpperCase()}</p>
+                                            <p><strong>Cliente:</strong> {cashReceiptPayment.customerName}</p>
+                                            <p><strong>Factura associada:</strong> {cashReceiptPayment.documentNumber}</p>
+                                            <p><strong>Valor recebido:</strong> <KzAmount value={cashReceiptPayment.amount} /></p>
+                                            <p><strong>Meio:</strong> Numerário</p>
+                                            <p><strong>Data/hora:</strong> {new Date(cashReceiptPayment.receivedAt).toLocaleString('pt-AO')}</p>
+                                            <p><strong>Responsável de caixa:</strong> {cashReceiptPayment.cashierUserId}</p>
+                                          </div>
+                                          <div className="grid grid-cols-2 gap-8 pt-10 text-center text-xs">
+                                            <div className="border-t border-slate-700 pt-2">Assinatura do responsável de caixa</div>
+                                            <div className="border-t border-slate-700 pt-2">Assinatura do cliente</div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
                               </td>

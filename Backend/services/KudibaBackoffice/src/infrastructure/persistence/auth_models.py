@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import List, Optional
 
-from sqlalchemy import ARRAY, Boolean, Date, DateTime, String
+from sqlalchemy import ARRAY, BigInteger, Boolean, Date, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -96,3 +96,22 @@ class UserRoleModel(AuthBase):
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     role_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class TenantBackupModel(AuthBase):
+    __tablename__ = "tenant_backups"
+    __table_args__ = {"schema": "kudiba_core"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    requested_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False, default="MANUAL")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
+    file_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    file_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    encryption: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

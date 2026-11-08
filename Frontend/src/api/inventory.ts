@@ -182,6 +182,7 @@ export interface StockMovement {
   id: string;
   warehouse_id: string;
   product_id: string;
+  supplier_id: string | null;
   batch_id: string | null;
   movement_type: string;
   quantity: string | number;
@@ -196,6 +197,7 @@ export interface StockMovement {
 export interface ReceivePurchasePayload {
   warehouse_id: string;
   product_id: string;
+  supplier_id: string;
   batch_id?: string;
   quantity: string;
   unit_cost: string;

@@ -69,7 +69,7 @@ impl IssueInvoiceUseCase {
         if let Some(reference) = command.source_document_number.as_mut() {
             *reference = reference.trim().to_string();
         }
-        if command.document_type == "FR" {
+        if matches!(command.document_type.as_str(), "FR" | "RC") {
             if command
                 .customer_address
                 .as_deref()
@@ -270,17 +270,13 @@ impl IssueInvoiceUseCase {
             None => Decimal::ZERO,
         };
 
-        // Resolução de Imposto de Selo (explícito ou cálculo automático legal)
-        let stamp_duty_total = match command.stamp_duty_total {
-            Some(explicit) => explicit,
-            None if command.apply_stamp_duty.unwrap_or(false) => {
-                let rate = command.stamp_duty_rate.unwrap_or_else(|| {
-                    TaxAndDutyCalculator::default_stamp_duty_rate(&command.document_type)
-                });
-                TaxAndDutyCalculator::calculate_stamp_duty(net_total, rate)
-            }
-            None => Decimal::ZERO,
-        };
+        let stamp_duty_total = resolve_stamp_duty(
+            &command.document_type,
+            command.apply_stamp_duty.unwrap_or(false),
+            command.stamp_duty_rate,
+            command.stamp_duty_total,
+            net_total,
+        )?;
 
         if withholding_total < Decimal::ZERO
             || withholding_total > gross_total
@@ -399,6 +395,32 @@ impl IssueInvoiceUseCase {
     }
 }
 
+fn resolve_stamp_duty(
+    document_type: &str,
+    apply: bool,
+    rate: Option<Decimal>,
+    explicit_total: Option<Decimal>,
+    base: Decimal,
+) -> Result<Decimal, DomainError> {
+    if !apply {
+        return Ok(explicit_total.unwrap_or(Decimal::ZERO));
+    }
+    if !matches!(document_type, "FT" | "FR" | "RC") {
+        return Err(DomainError::invalid(
+            "O imposto de selo só pode ser aplicado manualmente a FT, FR ou RC.",
+        ));
+    }
+    let rate = rate.ok_or_else(|| {
+        DomainError::invalid("Informe a taxa do imposto de selo ao optar pela sua aplicação.")
+    })?;
+    if rate <= Decimal::ZERO || rate > Decimal::from(100) {
+        return Err(DomainError::invalid(
+            "A taxa do imposto de selo deve ser superior a 0 e não pode exceder 100%.",
+        ));
+    }
+    Ok(TaxAndDutyCalculator::calculate_stamp_duty(base, rate))
+}
+
 pub(crate) fn validate_issue_command(command: &IssueInvoiceCommand) -> Result<(), DomainError> {
     if command.lines.is_empty() {
         return Err(DomainError::invalid(
@@ -424,7 +446,7 @@ pub(crate) fn validate_issue_command(command: &IssueInvoiceCommand) -> Result<()
         ));
     }
     let doc_kind = command.document_type.trim().to_ascii_uppercase();
-    if doc_kind != "FR"
+    if !matches!(doc_kind.as_str(), "FR" | "RC")
         && (command
             .customer_address
             .as_deref()
@@ -683,19 +705,21 @@ mod tests {
     }
 
     #[test]
-    fn calcula_imposto_de_selo_automatico_para_factura_e_recibo() {
+    fn calcula_imposto_de_selo_com_taxa_escolhida_explicitamente() {
         let base = Decimal::from(100000);
-        let selo_ft = TaxAndDutyCalculator::calculate_stamp_duty(
-            base,
-            TaxAndDutyCalculator::default_stamp_duty_rate("FT"),
-        );
-        assert_eq!(selo_ft, Decimal::from(1000)); // 1% geral
+        let stamp = resolve_stamp_duty("FT", true, Some(Decimal::new(125, 2)), None, base).unwrap();
+        assert_eq!(stamp, Decimal::from(1250));
+    }
 
-        let selo_fr = TaxAndDutyCalculator::calculate_stamp_duty(
-            base,
-            TaxAndDutyCalculator::default_stamp_duty_rate("FR"),
+    #[test]
+    fn imposto_de_selo_nao_assume_taxa_e_rejeita_documento_inadequado() {
+        let base = Decimal::from(100000);
+        assert!(resolve_stamp_duty("FT", true, None, None, base).is_err());
+        assert!(resolve_stamp_duty("FP", true, Some(Decimal::ONE), None, base).is_err());
+        assert_eq!(
+            resolve_stamp_duty("FP", false, None, None, base).unwrap(),
+            Decimal::ZERO
         );
-        assert_eq!(selo_fr, Decimal::from(700)); // 0.7% recibo
     }
 
     #[test]

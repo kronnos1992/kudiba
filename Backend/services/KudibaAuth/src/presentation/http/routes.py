@@ -1,12 +1,22 @@
 import asyncio
+import base64
+import shutil
 import time
 import uuid
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 import asyncpg
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr, Field
+
+from src.infrastructure.backup import (
+    BackupNotFoundError,
+    BackupNotReadyError,
+    BackupRestoreValidationError,
+    BackupTooLargeError,
+)
 
 from src.application.dto import (
     AuthenticateUserCommand,
@@ -80,6 +90,48 @@ class BankAccountHttpItem(BaseModel):
     is_primary: Optional[bool] = Field(False, description="Conta principal para documentos")
 
 
+class BackupSettingsHttpItem(BaseModel):
+    storage_location: str = Field(
+        ...,
+        min_length=1,
+        max_length=512,
+        description="Local / diretório onde guardar as cópias de segurança dos dados",
+    )
+    auto_save_local: Optional[bool] = Field(
+        True,
+        description="Guardar automaticamente cópia na pasta local ao gerar backup",
+    )
+    preferred_format: Optional[str] = Field(
+        "ZIP_DECIFRADO",
+        description="Formato predefinido ao guardar (ZIP_DECIFRADO ou AES_256_GCM)",
+    )
+    schedule_enabled: Optional[bool] = Field(
+        True,
+        description="Ativar cópia de segurança periódica automática",
+    )
+    schedule_frequency: Optional[str] = Field(
+        "DAILY",
+        description="Periodicidade automática (HOURLY_1, HOURLY_6, HOURLY_12, DAILY, WEEKLY, MONTHLY)",
+    )
+    schedule_interval_hours: Optional[int] = Field(
+        24,
+        ge=1,
+        le=8760,
+        description="Intervalo em horas entre cópias automáticas",
+    )
+    schedule_time: Optional[str] = Field(
+        "02:00",
+        max_length=8,
+        description="Hora preferencial de execução diária/semanal (HH:MM)",
+    )
+    retention_days: Optional[int] = Field(
+        30,
+        ge=1,
+        le=3650,
+        description="Dias de retenção das cópias de segurança",
+    )
+
+
 class UpdateTenantSettingsHttpRequest(BaseModel):
     company_name: Optional[str] = Field(None, min_length=2, max_length=255, description="Denominação Social")
     trade_name: Optional[str] = Field(None, max_length=255, description="Nome Comercial / Marca")
@@ -105,6 +157,7 @@ class UpdateTenantSettingsHttpRequest(BaseModel):
     default_withholding_rate: Optional[float] = Field(None, ge=0, le=100, description="Taxa de retenção na fonte padrão (%)")
     invoice_footer_notes: Optional[str] = Field(None, description="Menções ou observações no rodapé dos documentos")
     bank_accounts: Optional[List[BankAccountHttpItem]] = Field(None, description="Coordenadas bancárias constantes nos documentos oficiais")
+    backup_settings: Optional[BackupSettingsHttpItem] = Field(None, description="Local e política de armazenamento das cópias de segurança")
     onboarding_completed: Optional[bool] = Field(None, description="Indica se a parametrização inicial foi concluída")
 
 
@@ -161,6 +214,27 @@ class UpdateRoleHttpRequest(BaseModel):
 
 class UpdateRolePermissionsHttpRequest(BaseModel):
     permissions: List[str] = Field(default_factory=list, description="Permissões atribuídas ao perfil")
+
+
+class RestoreBackupHttpRequest(BaseModel):
+    dry_run: bool = Field(
+        default=False,
+        description="Quando verdadeiro, valida o arquivo, checksums SHA-256 e contagens sem gravar nas bases de dados.",
+    )
+
+
+class RestoreBackupFileHttpRequest(BaseModel):
+    file_base64: str = Field(..., min_length=8, description="Conteúdo do arquivo .zip.enc ou .zip em Base64")
+    file_name: Optional[str] = Field(None, max_length=255, description="Nome original do ficheiro")
+    dry_run: bool = Field(default=False, description="Validação sem escrita (Dry-Run)")
+
+
+def _ensure_platform_admin(ctx: SecurityContext) -> None:
+    if not (ctx.has_role("SYSADMIN") or ctx.has_role("SUPER_ADMIN")):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas administradores da plataforma (SYSADMIN) podem gerir backups multi-empresa.",
+        )
 
 
 def create_auth_router() -> APIRouter:
@@ -374,6 +448,7 @@ def create_auth_router() -> APIRouter:
             default_withholding_rate=req.default_withholding_rate,
             invoice_footer_notes=req.invoice_footer_notes,
             bank_accounts=[item.model_dump() for item in req.bank_accounts] if req.bank_accounts is not None else None,
+            backup_settings=req.backup_settings.model_dump() if req.backup_settings is not None else None,
             onboarding_completed=req.onboarding_completed,
             ip_address=extract_client_ip(request),
             user_agent=request.headers.get("User-Agent"),
@@ -1138,5 +1213,404 @@ def create_auth_router() -> APIRouter:
             ip_address=extract_client_ip(request),
             details={"role_id": role_id},
         )
+
+    @router.post(
+        "/tenant/backups",
+        status_code=status.HTTP_201_CREATED,
+        summary="Gerar Cópia de Segurança do Tenant",
+        description="Exporta os dados do tenant ativo para um arquivo ZIP JSON cifrado (AES-256-GCM).",
+    )
+    async def create_tenant_backup(
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("tenant:settings:manage")),
+    ):
+        app_state = get_app_state(request)
+        try:
+            return await app_state.backup_service.create_backup(
+                tenant_id=ctx.tenant_id,
+                requested_by=ctx.user_id,
+                trigger="MANUAL",
+            )
+        except BackupNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except BackupTooLargeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)
+            )
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Falha ao gerar a cópia de segurança.",
+            )
+
+    @router.get(
+        "/tenant/backups",
+        summary="Listar Cópias de Segurança do Tenant",
+        description="Devolve o histórico de backups do tenant ativo, do mais recente para o mais antigo.",
+    )
+    async def list_tenant_backups(
+        request: Request,
+        limit: int = 50,
+        offset: int = 0,
+        ctx: SecurityContext = Depends(require_permission("tenant:settings:manage")),
+    ):
+        app_state = get_app_state(request)
+        return await app_state.backup_service.list_backups(ctx.tenant_id, limit, offset)
+
+    @router.post(
+        "/tenant/backups/check-due",
+        summary="Verificar e Executar Backup Periódico se Devido",
+        description="Verifica a periodicidade configurada da empresa e gera automaticamente o backup se estiver na hora programada.",
+    )
+    async def check_due_tenant_backup(
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("tenant:settings:manage")),
+    ):
+        app_state = get_app_state(request)
+        await app_state.backup_service._backup_tenant_if_due(ctx.tenant_id)
+        return await app_state.backup_service.get_schedule_status(ctx.tenant_id)
+
+    @router.get(
+        "/tenant/backups/{backup_id}/manifest",
+        summary="Inspecionar Manifesto da Cópia de Segurança",
+        description="Decifra e devolve o manifest.json (módulos, tabelas, contagens de registos e checksums SHA-256) da cópia de segurança.",
+    )
+    async def get_tenant_backup_manifest(
+        backup_id: uuid.UUID,
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("tenant:settings:manage")),
+    ):
+        app_state = get_app_state(request)
+        try:
+            return await app_state.backup_service.get_backup_manifest(
+                ctx.tenant_id, backup_id
+            )
+        except BackupNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except BackupNotReadyError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    @router.get(
+        "/tenant/backups/{backup_id}/download",
+        summary="Descarregar Cópia de Segurança",
+        description="Descarrega o arquivo cifrado (.zip.enc) ou decifrado (.zip) de uma cópia de segurança concluída.",
+    )
+    async def download_tenant_backup(
+        backup_id: uuid.UUID,
+        request: Request,
+        background_tasks: BackgroundTasks,
+        decrypted: bool = False,
+        ctx: SecurityContext = Depends(require_permission("tenant:settings:manage")),
+    ):
+        app_state = get_app_state(request)
+        try:
+            if decrypted:
+                zip_path, temp_dir, _ = await app_state.backup_service.download_decrypted_zip(
+                    ctx.tenant_id, backup_id
+                )
+                background_tasks.add_task(shutil.rmtree, temp_dir, True)
+                return FileResponse(
+                    path=zip_path,
+                    media_type="application/zip",
+                    filename=f"kudiba-backup-{backup_id}.zip",
+                )
+            file_path, record = await app_state.backup_service.download_path(
+                ctx.tenant_id, backup_id
+            )
+        except BackupNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except BackupNotReadyError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        return FileResponse(
+            path=file_path,
+            media_type="application/octet-stream",
+            filename=record.get("file_name") or f"{backup_id}.zip.enc",
+        )
+
+    @router.post(
+        "/tenant/backups/{backup_id}/restore",
+        summary="Validar ou Restaurar Cópia de Segurança",
+        description="Valida checksums SHA-256 e restaura os dados do backup para as bases de dados dos módulos do tenant.",
+    )
+    async def restore_tenant_backup(
+        backup_id: uuid.UUID,
+        request: Request,
+        req: Optional[RestoreBackupHttpRequest] = None,
+        ctx: SecurityContext = Depends(require_permission("tenant:settings:manage")),
+    ):
+        app_state = get_app_state(request)
+        dry_run = bool(req.dry_run) if req else False
+        try:
+            return await app_state.backup_service.restore_backup(
+                tenant_id=ctx.tenant_id,
+                backup_id=backup_id,
+                requested_by=ctx.user_id,
+                dry_run=dry_run,
+            )
+        except BackupNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except BackupNotReadyError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+        except BackupRestoreValidationError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Falha ao restaurar cópia de segurança: {exc}",
+            )
+
+    @router.post(
+        "/tenant/backups/restore-file",
+        summary="Validar ou Restaurar Cópia de Segurança a partir de Ficheiro",
+        description="Aceita um pacote .zip.enc ou .zip em Base64, valida a integridade SHA-256 e restaura os dados do tenant ativo.",
+    )
+    async def restore_tenant_backup_from_file(
+        req: RestoreBackupFileHttpRequest,
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("tenant:settings:manage")),
+    ):
+        app_state = get_app_state(request)
+        try:
+            payload_b64 = req.file_base64.split(",", 1)[-1].strip()
+            raw_bytes = base64.b64decode(payload_b64, validate=False)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ficheiro Base64 inválido.",
+            )
+        try:
+            return await app_state.backup_service.restore_from_archive_bytes(
+                tenant_id=ctx.tenant_id,
+                raw_bytes=raw_bytes,
+                requested_by=ctx.user_id,
+                dry_run=req.dry_run,
+                allow_cross_tenant=False,
+            )
+        except BackupTooLargeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)
+            )
+        except BackupRestoreValidationError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Falha ao restaurar ficheiro de cópia de segurança: {exc}",
+            )
+
+    @router.delete(
+        "/tenant/backups/{backup_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        summary="Eliminar Cópia de Segurança",
+        description="Remove o registo e o arquivo cifrado de uma cópia de segurança do tenant.",
+    )
+    async def delete_tenant_backup(
+        backup_id: uuid.UUID,
+        request: Request,
+        ctx: SecurityContext = Depends(require_permission("tenant:settings:manage")),
+    ):
+        app_state = get_app_state(request)
+        try:
+            await app_state.backup_service.delete_backup(ctx.tenant_id, backup_id)
+        except BackupNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    # =========================================================================
+    # ADMINISTRAÇÃO DE BACKUPS MULTI-EMPRESA (SYSADMIN / BACKOFFICE)
+    # =========================================================================
+
+    @router.get(
+        "/admin/backups",
+        summary="Listar Cópias de Segurança de Todas as Empresas (Backoffice)",
+        description="Lista o histórico global de backups lógicos ou filtrado por empresa para administradores da plataforma.",
+    )
+    async def admin_list_all_backups(
+        request: Request,
+        tenant_id: Optional[uuid.UUID] = None,
+        limit: int = 50,
+        offset: int = 0,
+        ctx: SecurityContext = Depends(get_security_context),
+    ):
+        _ensure_platform_admin(ctx)
+        app_state = get_app_state(request)
+        return await app_state.backup_service.list_all_backups(tenant_id, limit, offset)
+
+    @router.post(
+        "/admin/backups/run-scheduled",
+        summary="Executar Ciclo de Backups Agendados Agora (Backoffice)",
+        description="Dispara imediatamente a verificação de retenção e geração de backups diários para todos os tenants ativos.",
+    )
+    async def admin_run_scheduled_backups(
+        request: Request,
+        ctx: SecurityContext = Depends(get_security_context),
+    ):
+        _ensure_platform_admin(ctx)
+        app_state = get_app_state(request)
+        await app_state.backup_service.run_scheduled_backups()
+        return {"success": True, "message": "Ciclo de backups agendados concluído com sucesso."}
+
+    @router.get(
+        "/admin/tenants/{target_tenant_id}/backups",
+        summary="Listar Cópias de Segurança de uma Empresa (Backoffice)",
+    )
+    async def admin_list_tenant_backups(
+        target_tenant_id: uuid.UUID,
+        request: Request,
+        limit: int = 50,
+        offset: int = 0,
+        ctx: SecurityContext = Depends(get_security_context),
+    ):
+        _ensure_platform_admin(ctx)
+        app_state = get_app_state(request)
+        return await app_state.backup_service.list_backups(target_tenant_id, limit, offset)
+
+    @router.post(
+        "/admin/tenants/{target_tenant_id}/backups",
+        status_code=status.HTTP_201_CREATED,
+        summary="Gerar Cópia de Segurança para uma Empresa (Backoffice)",
+    )
+    async def admin_create_tenant_backup(
+        target_tenant_id: uuid.UUID,
+        request: Request,
+        ctx: SecurityContext = Depends(get_security_context),
+    ):
+        _ensure_platform_admin(ctx)
+        app_state = get_app_state(request)
+        try:
+            return await app_state.backup_service.create_backup(
+                tenant_id=target_tenant_id,
+                requested_by=ctx.user_id,
+                trigger="MANUAL",
+            )
+        except BackupNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except BackupTooLargeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)
+            )
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Falha ao gerar a cópia de segurança.",
+            )
+
+    @router.get(
+        "/admin/tenants/{target_tenant_id}/backups/{backup_id}/manifest",
+        summary="Inspecionar Manifesto de Backup de uma Empresa (Backoffice)",
+    )
+    async def admin_get_tenant_backup_manifest(
+        target_tenant_id: uuid.UUID,
+        backup_id: uuid.UUID,
+        request: Request,
+        ctx: SecurityContext = Depends(get_security_context),
+    ):
+        _ensure_platform_admin(ctx)
+        app_state = get_app_state(request)
+        try:
+            return await app_state.backup_service.get_backup_manifest(
+                target_tenant_id, backup_id
+            )
+        except BackupNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except BackupNotReadyError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    @router.get(
+        "/admin/tenants/{target_tenant_id}/backups/{backup_id}/download",
+        summary="Descarregar Backup de uma Empresa (Backoffice)",
+    )
+    async def admin_download_tenant_backup(
+        target_tenant_id: uuid.UUID,
+        backup_id: uuid.UUID,
+        request: Request,
+        background_tasks: BackgroundTasks,
+        decrypted: bool = False,
+        ctx: SecurityContext = Depends(get_security_context),
+    ):
+        _ensure_platform_admin(ctx)
+        app_state = get_app_state(request)
+        try:
+            if decrypted:
+                zip_path, temp_dir, _ = await app_state.backup_service.download_decrypted_zip(
+                    target_tenant_id, backup_id
+                )
+                background_tasks.add_task(shutil.rmtree, temp_dir, True)
+                return FileResponse(
+                    path=zip_path,
+                    media_type="application/zip",
+                    filename=f"kudiba-backup-{backup_id}.zip",
+                )
+            file_path, record = await app_state.backup_service.download_path(
+                target_tenant_id, backup_id
+            )
+        except BackupNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except BackupNotReadyError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        return FileResponse(
+            path=file_path,
+            media_type="application/octet-stream",
+            filename=record.get("file_name") or f"{backup_id}.zip.enc",
+        )
+
+    @router.post(
+        "/admin/tenants/{target_tenant_id}/backups/{backup_id}/restore",
+        summary="Validar ou Restaurar Backup de uma Empresa (Backoffice)",
+    )
+    async def admin_restore_tenant_backup(
+        target_tenant_id: uuid.UUID,
+        backup_id: uuid.UUID,
+        request: Request,
+        req: Optional[RestoreBackupHttpRequest] = None,
+        ctx: SecurityContext = Depends(get_security_context),
+    ):
+        _ensure_platform_admin(ctx)
+        app_state = get_app_state(request)
+        dry_run = bool(req.dry_run) if req else False
+        try:
+            return await app_state.backup_service.restore_backup(
+                tenant_id=target_tenant_id,
+                backup_id=backup_id,
+                requested_by=ctx.user_id,
+                dry_run=dry_run,
+                allow_cross_tenant=True,
+            )
+        except BackupNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except BackupNotReadyError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+        except BackupRestoreValidationError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Falha ao restaurar cópia de segurança: {exc}",
+            )
+
+    @router.delete(
+        "/admin/tenants/{target_tenant_id}/backups/{backup_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        summary="Eliminar Backup de uma Empresa (Backoffice)",
+    )
+    async def admin_delete_tenant_backup(
+        target_tenant_id: uuid.UUID,
+        backup_id: uuid.UUID,
+        request: Request,
+        ctx: SecurityContext = Depends(get_security_context),
+    ):
+        _ensure_platform_admin(ctx)
+        app_state = get_app_state(request)
+        try:
+            await app_state.backup_service.delete_backup(target_tenant_id, backup_id)
+        except BackupNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
     return router

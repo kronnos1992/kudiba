@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rust_decimal_macros::dec;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -1228,6 +1228,7 @@ fn test_parse_incoming_invoice_direct_and_outbox_envelope() {
 #[derive(Default)]
 struct MockInvoiceReceivableRepository {
     items: Mutex<HashMap<String, InvoiceReceivable>>,
+    payment_ids: Mutex<HashSet<Uuid>>,
 }
 
 #[async_trait]
@@ -1236,6 +1237,32 @@ impl InvoiceReceivableRepository for MockInvoiceReceivableRepository {
         let mut lock = self.items.lock().unwrap();
         let key = format!("{}:{}", receivable.tenant_id, receivable.invoice_id);
         lock.insert(key, receivable.clone());
+        Ok(())
+    }
+
+    async fn apply_payment(
+        &self,
+        tenant_id: Uuid,
+        invoice_id: &str,
+        payment_id: Uuid,
+        amount: rust_decimal::Decimal,
+    ) -> Result<(), DomainError> {
+        let mut payment_ids = self.payment_ids.lock().unwrap();
+        if payment_ids.contains(&payment_id) {
+            return Ok(());
+        }
+        let key = format!("{tenant_id}:{invoice_id}");
+        let mut items = self.items.lock().unwrap();
+        let receivable = items.get_mut(&key).ok_or_else(|| {
+            DomainError::ValidationError("Conta a receber não encontrada".to_string())
+        })?;
+        if amount > receivable.remaining_amount {
+            return Err(DomainError::ValidationError(
+                "Pagamento excede o saldo em aberto".to_string(),
+            ));
+        }
+        receivable.apply_payment(amount)?;
+        payment_ids.insert(payment_id);
         Ok(())
     }
 
@@ -1296,6 +1323,43 @@ async fn test_register_invoice_receivable_from_event_is_idempotent() {
     assert_eq!(listed[0].document_type, "FT");
     assert_eq!(listed[0].status, ReceivableStatus::Outstanding);
     assert_eq!(listed[0].gross_total, dec!(28500.00));
+}
+
+#[tokio::test]
+async fn test_received_payment_updates_receivable_once_and_rejects_overpayment() {
+    let tenant_id = Uuid::new_v4();
+    let repo = Arc::new(MockInvoiceReceivableRepository::default());
+    let handler = RegisterInvoiceReceivableHandler::new(repo.clone());
+    handler
+        .execute(
+            tenant_id,
+            "inv-payment-1".to_string(),
+            "FT 2026A/000002".to_string(),
+            "FT".to_string(),
+            None,
+            dec!(100.00),
+        )
+        .await
+        .unwrap();
+
+    let payment_id = Uuid::new_v4();
+    handler
+        .apply_payment(tenant_id, "inv-payment-1", payment_id, dec!(40.00))
+        .await
+        .unwrap();
+    handler
+        .apply_payment(tenant_id, "inv-payment-1", payment_id, dec!(40.00))
+        .await
+        .unwrap();
+
+    let listed = repo.list(tenant_id, 50).await.unwrap();
+    assert_eq!(listed[0].paid_amount, dec!(40.00));
+    assert_eq!(listed[0].remaining_amount, dec!(60.00));
+    assert_eq!(listed[0].status, ReceivableStatus::Partial);
+    assert!(handler
+        .apply_payment(tenant_id, "inv-payment-1", Uuid::new_v4(), dec!(61.00))
+        .await
+        .is_err());
 }
 
 #[tokio::test]

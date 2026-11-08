@@ -1,5 +1,11 @@
 import { apiClient } from './client';
-import { LoginResponse, TenantBankAccount, TenantSettings, User } from '../types/auth';
+import {
+  LoginResponse,
+  TenantBackupSettings,
+  TenantBankAccount,
+  TenantSettings,
+  User,
+} from '../types/auth';
 
 export interface LoginPayload {
   email: string;
@@ -125,6 +131,7 @@ export interface UpdateTenantSettingsPayload {
   default_withholding_rate?: number;
   invoice_footer_notes?: string | null;
   bank_accounts?: TenantBankAccount[];
+  backup_settings?: TenantBackupSettings;
   onboarding_completed?: boolean;
 }
 
@@ -204,6 +211,105 @@ export interface UpdateDatabaseConnectionPayload {
   read_replica_host?: string;
   read_replica_port?: number | null;
   is_custom_configured?: boolean;
+}
+
+export interface TenantBackup {
+  id: string;
+  tenant_id: string;
+  requested_by: string | null;
+  trigger: 'MANUAL' | 'SCHEDULED' | string;
+  status: 'PENDING' | 'COMPLETED' | 'FAILED' | string;
+  file_name: string | null;
+  size_bytes: number | null;
+  sha256: string | null;
+  encryption: string | null;
+  error: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+  company_name?: string | null;
+  nif?: string | null;
+  tenant_slug?: string | null;
+}
+
+export interface TenantBackupScheduleStatus {
+  schedule_enabled: boolean;
+  schedule_frequency: string;
+  schedule_interval_hours: number;
+  schedule_time: string | null;
+  storage_location: string;
+  preferred_format: string;
+  auto_save_local: boolean;
+  retention_days: number;
+  last_backup_at: string | null;
+  next_backup_at: string | null;
+  scheduler_running: boolean;
+}
+
+export interface TenantBackupListResponse {
+  items: TenantBackup[];
+  total: number;
+  limit: number;
+  offset: number;
+  schedule_status?: TenantBackupScheduleStatus;
+}
+
+export interface TenantBackupModuleManifest {
+  module: string;
+  database: string;
+  file: string;
+  sha256: string;
+  size_bytes: number;
+  row_count: number;
+  tables: Record<
+    string,
+    {
+      row_count: number;
+      columns: string[];
+      redacted_columns: string[];
+    }
+  >;
+  skipped_tables?: Array<{ table: string; reason: string }>;
+}
+
+export interface TenantBackupManifest {
+  format: string;
+  format_version: number;
+  backup_id: string;
+  tenant: {
+    id: string;
+    slug?: string | null;
+    company_name?: string | null;
+    nif?: string | null;
+  };
+  created_at: string;
+  created_by?: string | null;
+  trigger: string;
+  totals: {
+    row_count: number;
+    module_count: number;
+  };
+  modules: TenantBackupModuleManifest[];
+}
+
+export interface BackupRestoreModuleReport {
+  module: string;
+  database: string;
+  tables_count: number;
+  row_count: number;
+  restored_rows: number;
+  checksum_verified: boolean;
+  status: 'VALIDATED' | 'RESTORED' | string;
+}
+
+export interface BackupRestoreReport {
+  valid: boolean;
+  dry_run: boolean;
+  backup_id: string | null;
+  source_tenant_id: string;
+  target_tenant_id: string;
+  created_at?: string | null;
+  total_rows: number;
+  modules: BackupRestoreModuleReport[];
 }
 
 export const authApi = {
@@ -363,6 +469,108 @@ export const authApi = {
       message: string;
       custom_connection: CustomDatabaseConnection;
     }>('/api/v1/auth/tenant/database-connections', payload);
+    return response.data;
+  },
+
+  listBackups: async (params?: {
+    limit?: number;
+    offset?: number;
+    tenantId?: string;
+  }): Promise<TenantBackupListResponse> => {
+    const { tenantId, ...query } = params || {};
+    const url = tenantId
+      ? `/api/v1/auth/admin/tenants/${tenantId}/backups`
+      : '/api/v1/auth/tenant/backups';
+    const response = await apiClient.get<TenantBackupListResponse>(url, { params: query });
+    return response.data;
+  },
+
+  createBackup: async (tenantId?: string): Promise<TenantBackup> => {
+    const url = tenantId
+      ? `/api/v1/auth/admin/tenants/${tenantId}/backups`
+      : '/api/v1/auth/tenant/backups';
+    const response = await apiClient.post<TenantBackup>(url, null, {
+      timeout: 15 * 60 * 1000,
+    });
+    return response.data;
+  },
+
+  getBackupManifest: async (
+    backupId: string,
+    tenantId?: string
+  ): Promise<TenantBackupManifest> => {
+    const url = tenantId
+      ? `/api/v1/auth/admin/tenants/${tenantId}/backups/${backupId}/manifest`
+      : `/api/v1/auth/tenant/backups/${backupId}/manifest`;
+    const response = await apiClient.get<TenantBackupManifest>(url);
+    return response.data;
+  },
+
+  downloadBackup: async (
+    backupId: string,
+    options?: { decrypted?: boolean; tenantId?: string }
+  ): Promise<Blob> => {
+    const url = options?.tenantId
+      ? `/api/v1/auth/admin/tenants/${options.tenantId}/backups/${backupId}/download`
+      : `/api/v1/auth/tenant/backups/${backupId}/download`;
+    const response = await apiClient.get<Blob>(url, {
+      params: options?.decrypted ? { decrypted: true } : undefined,
+      responseType: 'blob',
+      timeout: 15 * 60 * 1000,
+    });
+    return response.data;
+  },
+
+  restoreBackup: async (
+    backupId: string,
+    options?: { dryRun?: boolean; tenantId?: string }
+  ): Promise<BackupRestoreReport> => {
+    const url = options?.tenantId
+      ? `/api/v1/auth/admin/tenants/${options.tenantId}/backups/${backupId}/restore`
+      : `/api/v1/auth/tenant/backups/${backupId}/restore`;
+    const response = await apiClient.post<BackupRestoreReport>(
+      url,
+      { dry_run: Boolean(options?.dryRun) },
+      { timeout: 15 * 60 * 1000 }
+    );
+    return response.data;
+  },
+
+  restoreBackupFromFile: async (payload: {
+    file_base64: string;
+    file_name?: string;
+    dry_run?: boolean;
+  }): Promise<BackupRestoreReport> => {
+    const response = await apiClient.post<BackupRestoreReport>(
+      '/api/v1/auth/tenant/backups/restore-file',
+      payload,
+      { timeout: 15 * 60 * 1000 }
+    );
+    return response.data;
+  },
+
+  deleteBackup: async (backupId: string, tenantId?: string): Promise<void> => {
+    const url = tenantId
+      ? `/api/v1/auth/admin/tenants/${tenantId}/backups/${backupId}`
+      : `/api/v1/auth/tenant/backups/${backupId}`;
+    await apiClient.delete(url);
+  },
+
+  runScheduledBackups: async (): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.post<{ success: boolean; message: string }>(
+      '/api/v1/auth/admin/backups/run-scheduled',
+      null,
+      { timeout: 15 * 60 * 1000 }
+    );
+    return response.data;
+  },
+
+  checkDueBackup: async (): Promise<TenantBackupScheduleStatus> => {
+    const response = await apiClient.post<TenantBackupScheduleStatus>(
+      '/api/v1/auth/tenant/backups/check-due',
+      null,
+      { timeout: 15 * 60 * 1000 }
+    );
     return response.data;
   },
 };

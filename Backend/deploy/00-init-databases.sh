@@ -22,6 +22,9 @@ echo "Bancos de dados 'kudiba_auth', 'kudiba_invoicing', 'kudiba_inventory', 'ku
 # 2. Inicialização do schema fiscal no banco 'kudiba_invoicing'
 echo "Aplicando schema fiscal no banco 'kudiba_invoicing'..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_invoicing" -f /docker-entrypoint-initdb.d/01-invoicing-schema.sql
+if [ -f /docker-entrypoint-initdb.d/30-invoicing-proformas-and-payments.sql ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_invoicing" -f /docker-entrypoint-initdb.d/30-invoicing-proformas-and-payments.sql
+fi
 
 # 3. Inicialização do schema de identidade e RBAC no banco 'kudiba_auth'
 echo "Aplicando schema de autenticação no banco 'kudiba_auth'..."
@@ -33,6 +36,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_inventory" 
 if [ -f /docker-entrypoint-initdb.d/24-purchase-uom-conversion.sql ]; then
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_inventory" -f /docker-entrypoint-initdb.d/24-purchase-uom-conversion.sql
 fi
+if [ -f /docker-entrypoint-initdb.d/29-stock-movement-supplier.sql ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_inventory" -f /docker-entrypoint-initdb.d/29-stock-movement-supplier.sql
+fi
 
 # 5. Inicialização do schema de tesouraria no banco 'kudiba_treasury'
 echo "Aplicando schema de tesouraria no banco 'kudiba_treasury'..."
@@ -40,6 +46,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_treasury" -
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_treasury" -f /docker-entrypoint-initdb.d/18-treasury-cash-flow-payables.sql
 if [ -f /docker-entrypoint-initdb.d/23-partial-invoice-payments.sql ]; then
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_treasury" -f /docker-entrypoint-initdb.d/23-partial-invoice-payments.sql
+fi
+if [ -f /docker-entrypoint-initdb.d/31-treasury-receivable-payments.sql ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_treasury" -f /docker-entrypoint-initdb.d/31-treasury-receivable-payments.sql
 fi
 
 # 6. Inicialização do schema de contabilidade no banco 'kudiba_accounting'
@@ -74,6 +83,14 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_backoffice"
 echo "Aplicando schema de auditoria universal 'kudiba_audit' em todos os bancos de dados..."
 for DB_TARGET in "kudiba_invoicing" "kudiba_auth" "kudiba_inventory" "kudiba_treasury" "kudiba_accounting" "kudiba_payroll" "kudiba_integrations" "kudiba_backoffice"; do
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$DB_TARGET" -f /docker-entrypoint-initdb.d/24-universal-system-audit-trail.sql
+done
+
+# 8b3. Histórico de backups lógicos por tenant
+echo "Aplicando schema de backups por tenant..."
+for DB_TARGET in "kudiba_auth" "$POSTGRES_DB"; do
+    if [ -f /docker-entrypoint-initdb.d/28-tenant-backups.sql ]; then
+        psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$DB_TARGET" -f /docker-entrypoint-initdb.d/28-tenant-backups.sql
+    fi
 done
 
 # 8c. Colunas de licença e parametrização no tenant (idempotente; cobre volumes anteriores)
@@ -172,10 +189,16 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_treasury" -
 # 9. Compatibilidade regressiva para o banco padrão kudiba_erp
 echo "Aplicando schema no banco padrão '$POSTGRES_DB'..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/01-invoicing-schema.sql
+if [ -f /docker-entrypoint-initdb.d/30-invoicing-proformas-and-payments.sql ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/30-invoicing-proformas-and-payments.sql
+fi
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/02-auth-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/04-inventory-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/05-treasury-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/18-treasury-cash-flow-payables.sql
+if [ -f /docker-entrypoint-initdb.d/31-treasury-receivable-payments.sql ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/31-treasury-receivable-payments.sql
+fi
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/19-seed-treasury-cashflow.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/06-accounting-schema.sql
 if [ -f /docker-entrypoint-initdb.d/25-accounting-chart-templates.sql ]; then

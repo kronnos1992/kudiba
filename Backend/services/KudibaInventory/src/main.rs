@@ -199,6 +199,7 @@ async fn ensure_schema(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
             tenant_id UUID NOT NULL,
             warehouse_id UUID NOT NULL REFERENCES kudiba_inventory.warehouses(id) ON DELETE RESTRICT,
             product_id UUID NOT NULL REFERENCES kudiba_inventory.products(id) ON DELETE RESTRICT,
+            supplier_id UUID,
             batch_id UUID REFERENCES kudiba_inventory.product_batches(id) ON DELETE SET NULL,
             movement_type kudiba_inventory.stock_movement_kind NOT NULL,
             quantity NUMERIC(15, 4) NOT NULL,
@@ -211,10 +212,33 @@ async fn ensure_schema(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
+        ALTER TABLE kudiba_inventory.stock_movements
+            ADD COLUMN IF NOT EXISTS supplier_id UUID;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'fk_stock_movements_supplier'
+                  AND conrelid = 'kudiba_inventory.stock_movements'::regclass
+            ) THEN
+                ALTER TABLE kudiba_inventory.stock_movements
+                    ADD CONSTRAINT fk_stock_movements_supplier
+                    FOREIGN KEY (supplier_id)
+                    REFERENCES kudiba_inventory.entities(id)
+                    ON DELETE RESTRICT;
+            END IF;
+        END;
+        $$;
+
         CREATE INDEX IF NOT EXISTS idx_stock_movements_tenant ON kudiba_inventory.stock_movements(tenant_id);
         CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON kudiba_inventory.stock_movements(product_id);
         CREATE INDEX IF NOT EXISTS idx_stock_movements_warehouse ON kudiba_inventory.stock_movements(warehouse_id);
         CREATE INDEX IF NOT EXISTS idx_stock_movements_created ON kudiba_inventory.stock_movements(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_stock_movements_supplier
+            ON kudiba_inventory.stock_movements(supplier_id)
+            WHERE supplier_id IS NOT NULL;
         "#,
     )
     .execute(pool)

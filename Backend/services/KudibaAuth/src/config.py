@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     environment: str = "development"
     database_url: str = _DEVELOPMENT_DATABASE_URL
     redis_url: str = _DEVELOPMENT_REDIS_URL
+
+    backup_storage_dir: str = "./backups"
+    backup_encryption_key: str = ""
+    backup_schedule_enabled: bool = True
+    backup_schedule_interval_hours: int = 24
+    backup_schedule_initial_delay_minutes: int = 10
+    backup_retention_days: int = 30
+    backup_include_erp_replica: bool = False
+    backup_max_file_size_mb: int = 512
+    backup_connect_timeout_seconds: int = 5
     
     # Segredo criptográfico compartilhado com o API Gateway (Rust)
     jwt_secret: str = _DEVELOPMENT_JWT_SECRET

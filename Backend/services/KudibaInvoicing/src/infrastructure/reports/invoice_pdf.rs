@@ -252,6 +252,7 @@ impl InvoicePdfGenerator {
         let doc_title = match invoice.document_type.as_str() {
             "FT" => "FACTURA",
             "FR" => "FACTURA / RECIBO",
+            "RC" => "RECIBO",
             "NC" => "NOTA DE CRÉDITO",
             "ND" => "NOTA DE DÉBITO",
             "FP" => "FACTURA PROFORMA",

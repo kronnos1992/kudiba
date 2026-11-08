@@ -91,6 +91,8 @@ impl InvoiceThermalGenerator {
         let doc_title = match invoice.document_type.as_str() {
             "FR" => "FACTURA / RECIBO",
             "FT" => "FACTURA",
+            "FP" => "FACTURA PROFORMA",
+            "RC" => "RECIBO",
             "NC" => "NOTA DE CRÉDITO",
             "ND" => "NOTA DE DÉBITO",
             other => other,
@@ -473,6 +475,8 @@ impl InvoiceThermalGenerator {
         let doc_type = match invoice.document_type.as_str() {
             "FR" => "FACTURA / RECIBO",
             "FT" => "FACTURA",
+            "FP" => "FACTURA PROFORMA",
+            "RC" => "RECIBO",
             "NC" => "NOTA DE CRÉDITO",
             "ND" => "NOTA DE DÉBITO",
             other => other,

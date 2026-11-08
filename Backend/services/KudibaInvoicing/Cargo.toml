@@ -28,6 +28,7 @@ sqlx = { version = "0.9", default-features = false, features = [
     "chrono",
     "uuid",
     "rust_decimal",
+    "json",
 ] }
 
 # Serialização, tipos e aritmética decimal exata (128 bits)

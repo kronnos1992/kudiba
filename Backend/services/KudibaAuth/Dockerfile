@@ -21,6 +21,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app
 COPY --from=builder --chown=app:app /root/.local /home/app/.local
 COPY --chown=app:app src /app/src
+RUN mkdir -p /app/backups && chown app:app /app/backups
 USER app
 
 EXPOSE 8082

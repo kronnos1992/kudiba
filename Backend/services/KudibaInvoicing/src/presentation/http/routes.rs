@@ -1,19 +1,22 @@
-use axum::extract::{Path, Query, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::extract::{DefaultBodyLimit, Path, Query, State};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use base64::Engine;
 use chrono::{Datelike, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use sqlx::Row;
 use uuid::Uuid;
 
 use crate::application::commands::sync_agt::SyncAgtCommand;
 use crate::application::dto::{
-    CancelInvoiceCommand, CreateFiscalSeriesCommand, GetInvoiceQuery, GetTaxRegimeQuery,
-    InvoiceLineInput, IssueInvoiceCommand, ResolveTaxRegimeCommand, SignDirectCommand,
+    CancelInvoiceCommand, ConvertProformaCommand, CreateFiscalSeriesCommand, CreateProformaCommand,
+    GetInvoiceQuery, GetTaxRegimeQuery, InvoiceLineInput, IssueInvoiceCommand,
+    RecordInvoicePaymentCommand, ResolveTaxRegimeCommand, SignDirectCommand,
     ValidateSeriesSequenceQuery, VerifySignatureQuery,
 };
 use crate::application::queries::export_saft::ExportSaftQuery;
@@ -54,6 +57,22 @@ pub fn router(state: AppState) -> Router {
         // REST: consulta de documento fiscal
         .route("/api/v1/invoices/{id}", get(get_invoice_handler))
         .route("/api/v1/fiscal/invoices/{id}", get(get_invoice_handler))
+        .route(
+            "/api/v1/fiscal/invoices/{id}/payments",
+            post(record_invoice_payment_handler).get(list_invoice_payments_handler),
+        )
+        .route(
+            "/api/v1/fiscal/invoices/{id}/payments/{payment_id}/proof",
+            get(download_invoice_payment_proof_handler),
+        )
+        .route(
+            "/api/v1/fiscal/proformas",
+            post(create_proforma_handler).get(list_proformas_handler),
+        )
+        .route(
+            "/api/v1/fiscal/proformas/{id}/convert",
+            post(convert_proforma_handler),
+        )
         // REST: anulação / estorno de documento fiscal via Nota de Crédito
         .route("/api/v1/invoices/{id}/cancel", post(cancel_invoice_handler))
         .route(
@@ -178,6 +197,7 @@ pub fn router(state: AppState) -> Router {
         )
         .merge(crate::presentation::http::swagger::router::<AppState>())
         .layer(axum::middleware::from_fn(tenant_scope_middleware))
+        .layer(DefaultBodyLimit::max(3 * 1024 * 1024))
         .with_state(state)
 }
 
@@ -303,6 +323,14 @@ async fn create_series_handler(
     headers: HeaderMap,
     Json(command): Json<CreateFiscalSeriesCommand>,
 ) -> Response {
+    if command.document_type.trim().eq_ignore_ascii_case("FP") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Facturas proforma não usam séries fiscais."})),
+        )
+            .into_response();
+    }
+
     if let Err(response) = authorize_tenant(
         &headers,
         command.tenant_id,
@@ -476,6 +504,930 @@ async fn get_invoice_handler(
         Ok(invoice) => Json(invoice).into_response(),
         Err(err) => domain_error(err),
     }
+}
+
+async fn create_proforma_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(command): Json<CreateProformaCommand>,
+) -> Response {
+    let actor = match authorize_tenant(
+        &headers,
+        command.tenant_id,
+        &[
+            "ADMIN",
+            "ADMINISTRADOR",
+            "GESTOR",
+            "OPERADOR_FACTURACAO",
+            "BILLING_OPERATOR",
+        ],
+    ) {
+        Ok(actor) => actor,
+        Err(response) => return response.into_response(),
+    };
+
+    if command.lines.is_empty() || command.lines.len() > 100 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "A proforma deve conter entre 1 e 100 linhas."})),
+        )
+            .into_response();
+    }
+
+    let mut net_total = Decimal::ZERO;
+    let mut tax_total = Decimal::ZERO;
+    for line in &command.lines {
+        let gross_line = line.quantity * line.unit_price;
+        let discount = line.discount_amount.unwrap_or(Decimal::ZERO);
+        if line.description.trim().is_empty()
+            || line.quantity <= Decimal::ZERO
+            || line.unit_price < Decimal::ZERO
+            || discount < Decimal::ZERO
+            || discount > gross_line
+            || line.tax_rate < Decimal::ZERO
+            || line.tax_rate > Decimal::from(100)
+        {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "Uma ou mais linhas da proforma têm valores inválidos."})),
+            )
+                .into_response();
+        }
+        let base = (gross_line - discount).round_dp(2);
+        net_total += base;
+        tax_total += (base * line.tax_rate / Decimal::from(100)).round_dp(2);
+    }
+    net_total = net_total.round_dp(2);
+    tax_total = tax_total.round_dp(2);
+
+    let id = Uuid::new_v4();
+    let document_number = format!(
+        "FP-{}-{}",
+        Utc::now().year(),
+        &id.simple().to_string()[..8].to_ascii_uppercase()
+    );
+    let customer_name = if command.customer_name.trim().is_empty() {
+        "Consumidor Final".to_string()
+    } else {
+        command.customer_name.trim().to_string()
+    };
+    let lines = match serde_json::to_value(&command.lines) {
+        Ok(lines) => lines,
+        Err(err) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": format!("Não foi possível guardar as linhas: {err}")})),
+            )
+                .into_response()
+        }
+    };
+
+    let row = sqlx::query(
+        "INSERT INTO kudiba_core.proformas \
+         (id, tenant_id, document_number, customer_name, customer_nif, customer_address, \
+          customer_city, customer_country, currency, lines, net_total, tax_total, gross_total, created_by) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) \
+         RETURNING id, document_number, customer_name, customer_nif, customer_address, customer_city, \
+          customer_country, currency, lines, net_total, tax_total, gross_total, status, created_at",
+    )
+    .bind(id)
+    .bind(command.tenant_id)
+    .bind(&document_number)
+    .bind(&customer_name)
+    .bind(command.customer_nif.as_deref())
+    .bind(command.customer_address.as_deref())
+    .bind(command.customer_city.as_deref())
+    .bind(command.customer_country.as_deref())
+    .bind(&command.currency)
+    .bind(lines)
+    .bind(net_total)
+    .bind(tax_total)
+    .bind(net_total + tax_total)
+    .bind(actor)
+    .fetch_one(&state.pool)
+    .await;
+
+    match row {
+        Ok(row) => Json(json!({
+            "id": row.try_get::<Uuid, _>("id").unwrap_or_default(),
+            "documentNumber": row.try_get::<String, _>("document_number").unwrap_or_default(),
+            "customerName": row.try_get::<String, _>("customer_name").unwrap_or_default(),
+            "customerNif": row.try_get::<Option<String>, _>("customer_nif").unwrap_or_default(),
+            "customerAddress": row.try_get::<Option<String>, _>("customer_address").unwrap_or_default(),
+            "customerCity": row.try_get::<Option<String>, _>("customer_city").unwrap_or_default(),
+            "customerCountry": row.try_get::<Option<String>, _>("customer_country").unwrap_or_default(),
+            "currency": row.try_get::<String, _>("currency").unwrap_or_else(|_| "AOA".to_string()),
+            "lines": row.try_get::<serde_json::Value, _>("lines").unwrap_or_default(),
+            "netTotal": row.try_get::<Decimal, _>("net_total").unwrap_or_default(),
+            "taxTotal": row.try_get::<Decimal, _>("tax_total").unwrap_or_default(),
+            "grossTotal": row.try_get::<Decimal, _>("gross_total").unwrap_or_default(),
+            "status": row.try_get::<String, _>("status").unwrap_or_default(),
+            "createdAt": row.try_get::<chrono::DateTime<Utc>, _>("created_at").ok(),
+        }))
+        .into_response(),
+        Err(err) => {
+            tracing::error!(error = %err, "Falha ao guardar proforma não fiscal");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Não foi possível guardar a proforma."})),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn list_proformas_handler(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let tenant_id = match authorized_tenant_id(
+        &headers,
+        &[
+            "ADMIN",
+            "ADMINISTRADOR",
+            "GESTOR",
+            "CONTABILISTA",
+            "ACCOUNTANT",
+            "OPERADOR_FACTURACAO",
+            "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
+        ],
+    ) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response.into_response(),
+    };
+
+    match sqlx::query(
+        "SELECT id, document_number, customer_name, customer_nif, customer_address, customer_city, \
+         customer_country, currency, lines, net_total, tax_total, gross_total, status, \
+         converted_invoice_id, created_by, created_at \
+         FROM kudiba_core.proformas WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 200",
+    )
+    .bind(tenant_id)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(rows) => {
+            let items = rows
+                .iter()
+                .map(|row| {
+                    json!({
+                        "id": row.try_get::<Uuid, _>("id").unwrap_or_default(),
+                        "documentNumber": row.try_get::<String, _>("document_number").unwrap_or_default(),
+                        "customerName": row.try_get::<String, _>("customer_name").unwrap_or_default(),
+                        "customerNif": row.try_get::<Option<String>, _>("customer_nif").unwrap_or_default(),
+                        "customerAddress": row.try_get::<Option<String>, _>("customer_address").unwrap_or_default(),
+                        "customerCity": row.try_get::<Option<String>, _>("customer_city").unwrap_or_default(),
+                        "customerCountry": row.try_get::<Option<String>, _>("customer_country").unwrap_or_default(),
+                        "currency": row.try_get::<String, _>("currency").unwrap_or_else(|_| "AOA".to_string()),
+                        "lines": row.try_get::<serde_json::Value, _>("lines").unwrap_or_default(),
+                        "netTotal": row.try_get::<Decimal, _>("net_total").unwrap_or_default(),
+                        "taxTotal": row.try_get::<Decimal, _>("tax_total").unwrap_or_default(),
+                        "grossTotal": row.try_get::<Decimal, _>("gross_total").unwrap_or_default(),
+                        "status": row.try_get::<String, _>("status").unwrap_or_default(),
+                        "convertedInvoiceId": row.try_get::<Option<Uuid>, _>("converted_invoice_id").unwrap_or_default(),
+                        "createdBy": row.try_get::<String, _>("created_by").unwrap_or_default(),
+                        "createdAt": row.try_get::<chrono::DateTime<Utc>, _>("created_at").ok(),
+                    })
+                })
+                .collect::<Vec<_>>();
+            Json(items).into_response()
+        }
+        Err(err) => {
+            tracing::error!(error = %err, "Falha ao listar proformas");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Não foi possível consultar as proformas."})),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn convert_proforma_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<ConvertProformaCommand>,
+) -> Response {
+    let actor = match authorize_tenant(
+        &headers,
+        payload.tenant_id,
+        &[
+            "ADMIN",
+            "ADMINISTRADOR",
+            "GESTOR",
+            "OPERADOR_FACTURACAO",
+            "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
+        ],
+    ) {
+        Ok(actor) => actor,
+        Err(response) => return response.into_response(),
+    };
+    let doc_type = payload.document_type.trim().to_ascii_uppercase();
+    if !matches!(doc_type.as_str(), "FT" | "FR") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "A proforma só pode ser convertida em FT ou FR."})),
+        )
+            .into_response();
+    }
+
+    let proforma_number = match sqlx::query_scalar::<_, String>(
+        "SELECT document_number FROM kudiba_core.proformas WHERE id = $1 AND tenant_id = $2",
+    )
+    .bind(id)
+    .bind(payload.tenant_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(number)) => number,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "Proforma não encontrada."})),
+            )
+                .into_response()
+        }
+        Err(err) => {
+            tracing::error!(error = %err, "Falha ao consultar proforma antes da conversão");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Não foi possível consultar a proforma."})),
+            )
+                .into_response();
+        }
+    };
+
+    match sqlx::query(
+        "SELECT id, document_number FROM kudiba_core.invoices \
+         WHERE tenant_id = $1 AND source_document_number = $2 AND document_type IN ('FT', 'FR') \
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(payload.tenant_id)
+    .bind(&proforma_number)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(invoice)) => {
+            let invoice_id: Uuid = invoice.try_get("id").unwrap_or_default();
+            let document_number: String = invoice.try_get("document_number").unwrap_or_default();
+            if let Err(err) = sqlx::query(
+                "UPDATE kudiba_core.proformas SET status = 'CONVERTED', converted_invoice_id = $1, \
+                 updated_at = NOW() WHERE id = $2 AND tenant_id = $3 AND status != 'CONVERTED'",
+            )
+            .bind(invoice_id)
+            .bind(id)
+            .bind(payload.tenant_id)
+            .execute(&state.pool)
+            .await
+            {
+                tracing::error!(proforma_id = %id, invoice_id = %invoice_id, error = %err, "Falha ao recuperar ligação da proforma convertida");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "A factura existe, mas não foi possível actualizar a proforma."})),
+                )
+                    .into_response();
+            }
+            return (
+                StatusCode::OK,
+                Json(json!({
+                    "invoiceId": invoice_id,
+                    "documentNumber": document_number,
+                    "recovered": true,
+                })),
+            )
+                .into_response();
+        }
+        Ok(None) => {}
+        Err(err) => {
+            tracing::error!(error = %err, "Falha ao verificar factura previamente emitida para a proforma");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Não foi possível verificar a conversão anterior da proforma."})),
+            )
+                .into_response();
+        }
+    }
+
+    let row = match sqlx::query(
+        "UPDATE kudiba_core.proformas SET status = 'CONVERTING', updated_at = NOW() \
+         WHERE id = $1 AND tenant_id = $2 AND (status = 'OPEN' OR \
+         (status = 'CONVERTING' AND updated_at < NOW() - INTERVAL '30 minutes')) \
+         RETURNING document_number, customer_name, customer_nif, customer_address, customer_city, \
+         customer_country, currency, lines",
+    )
+    .bind(id)
+    .bind(payload.tenant_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({"error": "A proforma não existe, já foi convertida ou está a ser processada."})),
+            )
+                .into_response()
+        }
+        Err(err) => {
+            tracing::error!(error = %err, "Falha ao reservar conversão de proforma");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Não foi possível iniciar a conversão da proforma."})),
+            )
+                .into_response();
+        }
+    };
+
+    let lines_json = match row.try_get::<serde_json::Value, _>("lines") {
+        Ok(value) => value,
+        Err(err) => {
+            return reset_proforma_after_conversion_error(
+                &state,
+                id,
+                payload.tenant_id,
+                err.to_string(),
+            )
+            .await;
+        }
+    };
+    let lines: Vec<InvoiceLineInput> = match serde_json::from_value(lines_json) {
+        Ok(lines) => lines,
+        Err(err) => {
+            return reset_proforma_after_conversion_error(
+                &state,
+                id,
+                payload.tenant_id,
+                err.to_string(),
+            )
+            .await;
+        }
+    };
+    let mut command = IssueInvoiceCommand {
+        actor_user_id: Some(actor),
+        tenant_id: payload.tenant_id,
+        document_type: doc_type,
+        series_code: payload.series_code,
+        fiscal_year: payload.fiscal_year,
+        customer_name: row
+            .try_get("customer_name")
+            .unwrap_or_else(|_| "Consumidor Final".to_string()),
+        customer_address: row.try_get("customer_address").unwrap_or_default(),
+        customer_city: row.try_get("customer_city").unwrap_or_default(),
+        customer_country: row.try_get("customer_country").unwrap_or_default(),
+        customer_nif: row.try_get("customer_nif").unwrap_or_default(),
+        source_document_number: Some(proforma_number),
+        payment_methods: Vec::new(),
+        withholding_total: None,
+        apply_withholding: Some(false),
+        withholding_rate: None,
+        stamp_duty_total: None,
+        apply_stamp_duty: Some(payload.apply_stamp_duty),
+        stamp_duty_rate: payload.stamp_duty_rate,
+        currency: row
+            .try_get("currency")
+            .unwrap_or_else(|_| "AOA".to_string()),
+        lines,
+        is_contingency: false,
+        key_version: state.config.agt_key_version.clone(),
+        transport: None,
+        cash_session_id: None,
+    };
+
+    if let Err(stock_err) = validate_stock_and_service_integrity(
+        &state.pool,
+        state.config.inventory_service_url.as_deref(),
+        &mut command,
+    )
+    .await
+    {
+        return reset_proforma_after_conversion_error(
+            &state,
+            id,
+            payload.tenant_id,
+            stock_err.message,
+        )
+        .await;
+    }
+
+    match state.issue_invoice.execute(command).await {
+        Ok(result) => {
+            if let Err(err) = sqlx::query(
+                "UPDATE kudiba_core.proformas SET status = 'CONVERTED', converted_invoice_id = $1, \
+                 updated_at = NOW() WHERE id = $2 AND tenant_id = $3 AND status = 'CONVERTING'",
+            )
+            .bind(result.invoice_id)
+            .bind(id)
+            .bind(payload.tenant_id)
+            .execute(&state.pool)
+            .await
+            {
+                tracing::error!(proforma_id = %id, invoice_id = %result.invoice_id, error = %err, "Factura emitida, mas falhou a ligação à proforma");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "error": "A factura foi emitida, mas não foi possível actualizar o estado da proforma.",
+                        "invoiceId": result.invoice_id,
+                        "documentNumber": result.document_number,
+                    })),
+                )
+                    .into_response();
+            }
+            (StatusCode::CREATED, Json(result)).into_response()
+        }
+        Err(err) => {
+            let response = domain_error(err);
+            if let Err(reset_err) = sqlx::query(
+                "UPDATE kudiba_core.proformas SET status = 'OPEN', updated_at = NOW() \
+                 WHERE id = $1 AND tenant_id = $2 AND status = 'CONVERTING'",
+            )
+            .bind(id)
+            .bind(payload.tenant_id)
+            .execute(&state.pool)
+            .await
+            {
+                tracing::error!(
+                    proforma_id = %id,
+                    error = %reset_err,
+                    "Falha ao repor proforma após falha de emissão"
+                );
+            }
+            response
+        }
+    }
+}
+
+async fn reset_proforma_after_conversion_error(
+    state: &AppState,
+    id: Uuid,
+    tenant_id: Uuid,
+    message: String,
+) -> Response {
+    if let Err(reset_err) = sqlx::query(
+        "UPDATE kudiba_core.proformas SET status = 'OPEN', updated_at = NOW() \
+         WHERE id = $1 AND tenant_id = $2 AND status = 'CONVERTING'",
+    )
+    .bind(id)
+    .bind(tenant_id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::error!(
+            proforma_id = %id,
+            error = %reset_err,
+            "Falha ao repor proforma após erro de preparação da conversão"
+        );
+    }
+    tracing::error!(proforma_id = %id, error = %message, "Falha ao preparar conversão de proforma");
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({"error": "Não foi possível preparar a conversão da proforma."})),
+    )
+        .into_response()
+}
+
+async fn record_invoice_payment_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<RecordInvoicePaymentCommand>,
+) -> Response {
+    let tenant_id = match authorized_tenant_id(
+        &headers,
+        &[
+            "ADMIN",
+            "ADMINISTRADOR",
+            "GESTOR",
+            "OPERADOR_FACTURACAO",
+            "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
+        ],
+    ) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response.into_response(),
+    };
+    let actor = headers
+        .get("X-Resolved-User-ID")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let method = payload.payment_method.trim().to_ascii_uppercase();
+    let allowed_methods = [
+        "NUMERARIO",
+        "MULTICAIXA",
+        "TRANSFERENCIA",
+        "MULTICAIXA_EXPRESS",
+        "CHEQUE",
+        "GPO_REFERENCE",
+    ];
+    if !allowed_methods.contains(&method.as_str())
+        || payload.amount <= Decimal::ZERO
+        || payload.amount.scale() > 2
+        || payload.payer_name.trim().is_empty()
+        || payload.payer_name.trim().len() > 255
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Valor, pagador ou meio de pagamento inválido."})),
+        )
+            .into_response();
+    }
+
+    let (proof_hash, proof_data, proof_name, proof_type) = match (
+        payload.proof_base64,
+        payload.proof_file_name,
+        payload.proof_content_type,
+    ) {
+        (None, None, None) => (None, None, None, None),
+        (Some(encoded), Some(file_name), Some(content_type)) => {
+            let content_type = content_type.trim().to_ascii_lowercase();
+            if !matches!(
+                content_type.as_str(),
+                "application/pdf" | "image/jpeg" | "image/png"
+            ) {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": "O comprovativo deve ser PDF, JPG ou PNG."})),
+                )
+                    .into_response();
+            }
+            let decoded = match base64::engine::general_purpose::STANDARD.decode(encoded) {
+                Ok(bytes) if !bytes.is_empty() && bytes.len() <= 2 * 1024 * 1024 => bytes,
+                _ => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({"error": "O comprovativo está vazio ou excede 2 MB."})),
+                    )
+                        .into_response()
+                }
+            };
+            let content_matches_type = match content_type.as_str() {
+                "application/pdf" => decoded.starts_with(b"%PDF-"),
+                "image/jpeg" => decoded.starts_with(&[0xFF, 0xD8, 0xFF]),
+                "image/png" => {
+                    decoded.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A])
+                }
+                _ => false,
+            };
+            if !content_matches_type {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": "O conteúdo do ficheiro não corresponde ao formato declarado."})),
+                )
+                    .into_response();
+            }
+            let safe_name = file_name
+                .rsplit(['/', '\\'])
+                .next()
+                .unwrap_or_default()
+                .trim();
+            if safe_name.is_empty() || safe_name.len() > 255 {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": "Nome do ficheiro de comprovativo inválido."})),
+                )
+                    .into_response();
+            }
+            (
+                Some(format!("{:x}", Sha256::digest(&decoded))),
+                Some(decoded),
+                Some(safe_name.to_string()),
+                Some(content_type),
+            )
+        }
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "Os dados do comprovativo estão incompletos."})),
+            )
+                .into_response()
+        }
+    };
+
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(err) => {
+            tracing::error!(error = %err, "Falha ao iniciar registo de pagamento");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Não foi possível registar o pagamento."})),
+            )
+                .into_response();
+        }
+    };
+    if let Err(err) = sqlx::query("SELECT set_config('app.actor_user_id', $1, true)")
+        .bind(&actor)
+        .execute(&mut *tx)
+        .await
+    {
+        tracing::error!(error = %err, "Falha ao configurar actor para pagamento");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Não foi possível registar o pagamento."})),
+        )
+            .into_response();
+    }
+    let invoice = match sqlx::query(
+        "SELECT document_number, customer_name, document_type, gross_total + stamp_duty_total - withholding_total AS amount_due \
+         FROM kudiba_core.invoices WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+    )
+    .bind(id)
+    .bind(tenant_id)
+    .fetch_optional(&mut *tx)
+    .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "Factura não encontrada nesta empresa."})),
+            )
+                .into_response()
+        }
+        Err(err) => {
+            tracing::error!(error = %err, "Falha ao validar factura para pagamento");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Não foi possível validar a factura."})),
+            )
+                .into_response();
+        }
+    };
+    let invoice_total: Decimal = invoice.try_get("amount_due").unwrap_or_default();
+    let paid: Decimal = match sqlx::query_scalar(
+        "SELECT COALESCE(SUM(amount), 0) FROM kudiba_core.invoice_payments \
+         WHERE tenant_id = $1 AND invoice_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await
+    {
+        Ok(amount) => amount,
+        Err(err) => {
+            tracing::error!(error = %err, "Falha ao consultar pagamentos anteriores");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Não foi possível calcular o saldo da factura."})),
+            )
+                .into_response();
+        }
+    };
+    if payload.amount > invoice_total - paid {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "O valor recebido excede o saldo pendente da factura."})),
+        )
+            .into_response();
+    }
+
+    let payment_id = Uuid::new_v4();
+    let document_number: String = invoice.try_get("document_number").unwrap_or_default();
+    let customer_name: String = invoice.try_get("customer_name").unwrap_or_default();
+    let document_type: String = invoice.try_get("document_type").unwrap_or_default();
+    let row = match sqlx::query(
+        "INSERT INTO kudiba_core.invoice_payments \
+         (id, tenant_id, invoice_id, amount, payment_method, payer_name, proof_file_name, \
+          proof_content_type, proof_data, proof_sha256, cashier_user_id) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING received_at",
+    )
+    .bind(payment_id)
+    .bind(tenant_id)
+    .bind(id)
+    .bind(payload.amount)
+    .bind(&method)
+    .bind(payload.payer_name.trim())
+    .bind(proof_name.as_deref())
+    .bind(proof_type.as_deref())
+    .bind(proof_data.as_deref())
+    .bind(proof_hash.as_deref())
+    .bind(&actor)
+    .fetch_one(&mut *tx)
+    .await
+    {
+        Ok(row) => row,
+        Err(err) => {
+            tracing::error!(error = %err, invoice_id = %id, "Falha ao guardar pagamento");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Não foi possível guardar o pagamento."})),
+            )
+                .into_response();
+        }
+    };
+    if matches!(document_type.as_str(), "FT" | "RC") {
+        let event_type = format!("fiscal.payment.received.{payment_id}");
+        let event_payload = json!({
+            "paymentId": payment_id,
+            "tenantId": tenant_id,
+            "invoiceId": id,
+            "documentNumber": document_number,
+            "documentType": document_type,
+            "amount": payload.amount.to_string(),
+            "paymentMethod": method,
+        });
+        if let Err(err) = sqlx::query(
+            "INSERT INTO kudiba_core.accounting_outbox (tenant_id, invoice_id, event_type, payload) \
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(tenant_id)
+        .bind(id)
+        .bind(event_type)
+        .bind(event_payload)
+        .execute(&mut *tx)
+        .await
+        {
+            tracing::error!(error = %err, payment_id = %payment_id, "Falha ao criar evento de reconciliação do pagamento");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Não foi possível preparar a reconciliação do pagamento."})),
+            )
+                .into_response();
+        }
+    }
+    if let Err(err) = tx.commit().await {
+        tracing::error!(error = %err, invoice_id = %id, "Falha ao confirmar pagamento");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Não foi possível confirmar o pagamento."})),
+        )
+            .into_response();
+    }
+
+    let received_at: chrono::DateTime<Utc> =
+        row.try_get("received_at").unwrap_or_else(|_| Utc::now());
+    tracing::info!(
+        tenant_id = %tenant_id,
+        invoice_id = %id,
+        payment_id = %payment_id,
+        amount = %payload.amount,
+        method = %method,
+        cashier_user_id = %actor,
+        "Pagamento de cliente registado"
+    );
+    (
+        StatusCode::CREATED,
+        Json(json!({
+            "id": payment_id,
+            "invoiceId": id,
+            "documentNumber": document_number,
+            "customerName": customer_name,
+            "amount": payload.amount,
+            "paymentMethod": method,
+            "cashierUserId": actor,
+            "receivedAt": received_at,
+            "proofAttached": proof_name.is_some(),
+        })),
+    )
+        .into_response()
+}
+
+async fn list_invoice_payments_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
+    let tenant_id = match authorized_tenant_id(
+        &headers,
+        &[
+            "ADMIN",
+            "ADMINISTRADOR",
+            "GESTOR",
+            "CONTABILISTA",
+            "ACCOUNTANT",
+            "OPERADOR_FACTURACAO",
+            "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
+        ],
+    ) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response.into_response(),
+    };
+    match sqlx::query(
+        "SELECT id, amount, payment_method, payer_name, proof_file_name, proof_sha256, cashier_user_id, received_at \
+         FROM kudiba_core.invoice_payments WHERE tenant_id = $1 AND invoice_id = $2 ORDER BY received_at DESC",
+    )
+    .bind(tenant_id)
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(rows) => Json(rows.iter().map(|row| json!({
+            "id": row.try_get::<Uuid, _>("id").unwrap_or_default(),
+            "amount": row.try_get::<Decimal, _>("amount").unwrap_or_default(),
+            "paymentMethod": row.try_get::<String, _>("payment_method").unwrap_or_default(),
+            "payerName": row.try_get::<String, _>("payer_name").unwrap_or_default(),
+            "proofFileName": row.try_get::<Option<String>, _>("proof_file_name").unwrap_or_default(),
+            "proofSha256": row.try_get::<Option<String>, _>("proof_sha256").unwrap_or_default(),
+            "cashierUserId": row.try_get::<String, _>("cashier_user_id").unwrap_or_default(),
+            "receivedAt": row.try_get::<chrono::DateTime<Utc>, _>("received_at").ok(),
+        })).collect::<Vec<_>>()).into_response(),
+        Err(err) => {
+            tracing::error!(error = %err, invoice_id = %id, "Falha ao listar pagamentos");
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Não foi possível consultar pagamentos."}))).into_response()
+        }
+    }
+}
+
+async fn download_invoice_payment_proof_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((invoice_id, payment_id)): Path<(Uuid, Uuid)>,
+) -> Response {
+    let tenant_id = match authorized_tenant_id(
+        &headers,
+        &[
+            "ADMIN",
+            "ADMINISTRADOR",
+            "GESTOR",
+            "CONTABILISTA",
+            "ACCOUNTANT",
+            "OPERADOR_FACTURACAO",
+            "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
+        ],
+    ) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response.into_response(),
+    };
+    let row = match sqlx::query(
+        "SELECT proof_data, proof_content_type, proof_file_name, proof_sha256 FROM kudiba_core.invoice_payments \
+         WHERE tenant_id = $1 AND invoice_id = $2 AND id = $3",
+    )
+    .bind(tenant_id)
+    .bind(invoice_id)
+    .bind(payment_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "Comprovativo não encontrado."})),
+            )
+                .into_response()
+        }
+        Err(err) => {
+            tracing::error!(error = %err, "Falha ao obter comprovativo de pagamento");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Não foi possível obter o comprovativo."})),
+            )
+                .into_response();
+        }
+    };
+    let bytes: Option<Vec<u8>> = row.try_get("proof_data").unwrap_or_default();
+    let Some(bytes) = bytes else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Este pagamento não tem comprovativo anexado."})),
+        )
+            .into_response();
+    };
+    let content_type: String = row
+        .try_get("proof_content_type")
+        .unwrap_or_else(|_| "application/octet-stream".to_string());
+    let file_name: String = row
+        .try_get("proof_file_name")
+        .unwrap_or_else(|_| "comprovativo".to_string());
+    let expected_hash: Option<String> = row.try_get("proof_sha256").unwrap_or_default();
+    let actual_hash = format!("{:x}", Sha256::digest(&bytes));
+    if expected_hash.as_deref() != Some(actual_hash.as_str()) {
+        tracing::error!(payment_id = %payment_id, "Integridade do comprovativo de pagamento inválida");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "A integridade do comprovativo não pôde ser confirmada."})),
+        )
+            .into_response();
+    }
+    let safe_name = file_name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let mut response = Response::new(axum::body::Body::from(bytes));
+    *response.status_mut() = StatusCode::OK;
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str(&content_type)
+            .unwrap_or(HeaderValue::from_static("application/octet-stream")),
+    );
+    if let Ok(value) = HeaderValue::from_str(&format!("attachment; filename=\"{safe_name}\"")) {
+        response
+            .headers_mut()
+            .insert(header::CONTENT_DISPOSITION, value);
+    }
+    response
 }
 
 #[derive(Debug, Deserialize)]
@@ -2580,7 +3532,7 @@ async fn validate_stock_and_service_integrity(
         }
     }
 
-    if doc_type == "NC" || doc_type == "ND" {
+    if matches!(doc_type.as_str(), "NC" | "ND" | "FP" | "RC") {
         return Ok(());
     }
 

@@ -27,8 +27,9 @@ import {
   History,
   ChevronDown,
   ChevronRight,
-  Database,
   Scale,
+  Archive,
+  FolderOpen,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge } from '../../components/common/StatusBadge';
@@ -40,11 +41,11 @@ import { TenantBankAccount } from '../../types/auth';
 import { invoicingApi } from '../../api/invoicing';
 import { toast } from '../../stores/toastStore';
 import { RolesManager } from './RolesManager';
-import { DatabaseSettingsManager } from './DatabaseSettingsManager';
+import { BackupManager } from './BackupManager';
 import { AuditAndActivitiesTab } from './AuditAndActivitiesTab';
 import { TermsAndPoliciesModal } from '../../components/legal/TermsAndPoliciesModal';
 
-type SettingsTab = 'organization' | 'users' | 'certification' | 'series' | 'saft' | 'databases';
+type SettingsTab = 'organization' | 'users' | 'certification' | 'series' | 'saft' | 'backups';
 
 interface SettingsViewProps {
   onOpenOnboarding?: () => void;
@@ -156,6 +157,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
     invoice_footer_notes:
       'Os bens ou serviços foram colocados à disposição do adquirente na data e local do presente documento.',
     bank_accounts: [] as TenantBankAccount[],
+    backup_storage_location: 'C:\\Backups\\Kudiba',
+    backup_auto_save_local: true,
+    backup_preferred_format: 'ZIP_DECIFRADO' as 'ZIP_DECIFRADO' | 'AES_256_GCM',
+    backup_schedule_enabled: true,
+    backup_schedule_frequency: 'DAILY' as string,
+    backup_schedule_time: '02:00',
+    backup_retention_days: 30,
   });
   const [savingCompany, setSavingCompany] = useState(false);
 
@@ -233,6 +241,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
         src.invoice_footer_notes ||
         'Os bens ou serviços foram colocados à disposição do adquirente na data e local do presente documento.',
       bank_accounts: src.bank_accounts && src.bank_accounts.length > 0 ? src.bank_accounts : [],
+      backup_storage_location:
+        src.backup_settings?.storage_location ||
+        `C:\\Backups\\Kudiba\\${src.slug || src.nif || 'empresa'}`,
+      backup_auto_save_local: src.backup_settings?.auto_save_local ?? true,
+      backup_preferred_format:
+        (src.backup_settings?.preferred_format as 'ZIP_DECIFRADO' | 'AES_256_GCM') ||
+        'ZIP_DECIFRADO',
+      backup_schedule_enabled: src.backup_settings?.schedule_enabled ?? true,
+      backup_schedule_frequency: src.backup_settings?.schedule_frequency || 'DAILY',
+      backup_schedule_time: src.backup_settings?.schedule_time || '02:00',
+      backup_retention_days: src.backup_settings?.retention_days ?? 30,
     });
   }, [tenantSettings, activeTenant?.id]);
 
@@ -417,6 +436,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
         default_withholding_rate: Number(companyForm.default_withholding_rate) || 6.5,
         invoice_footer_notes: companyForm.invoice_footer_notes.trim() || null,
         bank_accounts: cleanedBanks,
+        backup_settings: {
+          storage_location:
+            companyForm.backup_storage_location.trim() ||
+            `C:\\Backups\\Kudiba\\${activeTenant?.slug || companyForm.nif.trim()}`,
+          auto_save_local: Boolean(companyForm.backup_auto_save_local),
+          preferred_format: companyForm.backup_preferred_format,
+          schedule_enabled: Boolean(companyForm.backup_schedule_enabled),
+          schedule_frequency: companyForm.backup_schedule_frequency || 'DAILY',
+          schedule_time: companyForm.backup_schedule_time || '02:00',
+          retention_days: Number(companyForm.backup_retention_days) || 30,
+        },
         onboarding_completed: true,
       };
 
@@ -676,15 +706,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
           </button>
 
           <button
-            onClick={() => setActiveTab('databases')}
+            onClick={() => setActiveTab('backups')}
             className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
-              activeTab === 'databases'
+              activeTab === 'backups'
                 ? 'border-blue-600 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
             }`}
           >
-            <Database className="w-4 h-4" />
-            Bases de Dados &amp; Conexões
+            <Archive className="w-4 h-4" />
+            Cópias de Segurança
           </button>
         </nav>
       </div>
@@ -1307,6 +1337,215 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                   {savingCompany
                     ? 'A Guardar e Sincronizar...'
                     : 'Guardar Parametrização Oficial da Empresa'}
+                </button>
+              </div>
+            </GlassCard>
+
+            {/* 5. Local de Armazenamento das Cópias de Segurança dos Dados */}
+            <GlassCard className="p-6 space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-4">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Archive className="w-4 h-4 text-blue-600" />
+                    5. Local de Armazenamento das Cópias de Segurança dos Dados
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Defina a pasta ou diretório onde pretende guardar as cópias de segurança dos dados da empresa
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('backups')}
+                  className="text-xs font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400 inline-flex items-center gap-1"
+                >
+                  Abrir Gestor de Backups →
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block mb-1">
+                    Pasta / Diretório de Destino das Cópias de Segurança *
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      required
+                      value={companyForm.backup_storage_location}
+                      onChange={(e) =>
+                        setCompanyForm((prev) => ({
+                          ...prev,
+                          backup_storage_location: e.target.value,
+                        }))
+                      }
+                      placeholder="Ex: C:\Backups\Kudiba\MinhaEmpresa ou /backups/minha-empresa"
+                      className="input-field font-mono flex-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const picker = (window as any).showDirectoryPicker;
+                          if (typeof picker === 'function') {
+                            const dirHandle = await picker({ mode: 'readwrite' });
+                            if (dirHandle?.name) {
+                              (window as any).__kudibaBackupDirHandle = dirHandle;
+                              setCompanyForm((prev) => ({
+                                ...prev,
+                                backup_storage_location: dirHandle.name,
+                              }));
+                              toast.success(`Pasta selecionada: ${dirHandle.name}`);
+                            }
+                          } else {
+                            toast.info(
+                              'Indique o caminho da pasta diretamente no campo de texto (ex: C:\\Backups\\Kudiba).'
+                            );
+                          }
+                        } catch {
+                          // Utilizador cancelou o seletor de pastas
+                        }
+                      }}
+                      className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 shrink-0 cursor-pointer"
+                    >
+                      <FolderOpen className="w-4 h-4 text-blue-600" />
+                      Escolher Pasta no Computador
+                    </button>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    Os dados exportados são guardados no diretório dedicado da empresa e, quando ativo abaixo, transferidos automaticamente para a pasta definida no seu computador.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block mb-1">
+                    Formato Predefinido ao Guardar Cópia
+                  </label>
+                  <select
+                    value={companyForm.backup_preferred_format}
+                    onChange={(e) =>
+                      setCompanyForm((prev) => ({
+                        ...prev,
+                        backup_preferred_format: e.target.value as 'ZIP_DECIFRADO' | 'AES_256_GCM',
+                      }))
+                    }
+                    className="input-field"
+                  >
+                    <option value="ZIP_DECIFRADO">
+                      Pacote ZIP Padrão (.zip — leitura direta dos JSONs)
+                    </option>
+                    <option value="AES_256_GCM">
+                      Arquivo Cifrado (.zip.enc — cifra AES-256-GCM)
+                    </option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block mb-1">
+                    Prazo de Retenção do Histórico (Dias)
+                  </label>
+                  <select
+                    value={companyForm.backup_retention_days}
+                    onChange={(e) =>
+                      setCompanyForm((prev) => ({
+                        ...prev,
+                        backup_retention_days: Number(e.target.value) || 30,
+                      }))
+                    }
+                    className="input-field"
+                  >
+                    <option value={7}>7 dias</option>
+                    <option value={15}>15 dias</option>
+                    <option value={30}>30 dias (Recomendado)</option>
+                    <option value={60}>60 dias</option>
+                    <option value={90}>90 dias</option>
+                    <option value={365}>365 dias (1 Ano)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block mb-1">
+                    Periodicidade Automática
+                  </label>
+                  <select
+                    value={companyForm.backup_schedule_frequency}
+                    disabled={!companyForm.backup_schedule_enabled}
+                    onChange={(e) =>
+                      setCompanyForm((prev) => ({
+                        ...prev,
+                        backup_schedule_frequency: e.target.value,
+                      }))
+                    }
+                    className="input-field disabled:opacity-50"
+                  >
+                    <option value="HOURLY_6">A cada 6 horas (4x por dia)</option>
+                    <option value="HOURLY_12">A cada 12 horas (2x por dia)</option>
+                    <option value="DAILY">Diariamente (A cada 24 horas)</option>
+                    <option value="WEEKLY">Semanalmente (A cada 7 dias)</option>
+                    <option value="MONTHLY">Mensalmente (A cada 30 dias)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block mb-1">
+                    Hora Programada da Cópia Automática
+                  </label>
+                  <input
+                    type="time"
+                    value={companyForm.backup_schedule_time}
+                    disabled={!companyForm.backup_schedule_enabled}
+                    onChange={(e) =>
+                      setCompanyForm((prev) => ({
+                        ...prev,
+                        backup_schedule_time: e.target.value || '02:00',
+                      }))
+                    }
+                    className="input-field font-mono disabled:opacity-50"
+                  />
+                </div>
+
+                <label className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={companyForm.backup_auto_save_local}
+                    onChange={(e) =>
+                      setCompanyForm((prev) => ({
+                        ...prev,
+                        backup_auto_save_local: e.target.checked,
+                      }))
+                    }
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Sincronizar e guardar automaticamente na pasta local definida
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={companyForm.backup_schedule_enabled}
+                    onChange={(e) =>
+                      setCompanyForm((prev) => ({
+                        ...prev,
+                        backup_schedule_enabled: e.target.checked,
+                      }))
+                    }
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Executar cópia de segurança periódica e automática em segundo plano
+                  </span>
+                </label>
+              </div>
+
+              <div className="pt-2 flex justify-end border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="submit"
+                  disabled={savingCompany}
+                  className="btn-primary text-xs py-2.5 px-5"
+                >
+                  <Save className="w-4 h-4" />
+                  {savingCompany ? 'A Guardar...' : 'Guardar Local de Cópia e Parametrização'}
                 </button>
               </div>
             </GlassCard>
@@ -2479,8 +2718,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
         </div>
       )}
 
-      {/* TAB 6: BASES DE DADOS & CONEXÕES */}
-      {activeTab === 'databases' && <DatabaseSettingsManager />}
+      {/* TAB 6: CÓPIAS DE SEGURANÇA */}
+      {activeTab === 'backups' && <BackupManager />}
 
       {/* MODAL: NOVA SÉRIE FISCAL */}
       {isSeriesModalOpen && (

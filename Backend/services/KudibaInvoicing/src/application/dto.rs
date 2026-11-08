@@ -118,7 +118,7 @@ pub struct TaxRegimeView {
 // =============================================================================
 
 /// Linha de artigo de entrada na emissão da fatura
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InvoiceLineInput {
     pub product_code: String,
@@ -136,6 +136,57 @@ pub struct InvoiceLineInput {
     /// Identifica se a linha é uma prestação de serviço (sujeita a retenção na fonte de 6.5%)
     #[serde(default)]
     pub is_service: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateProformaCommand {
+    pub tenant_id: Uuid,
+    pub customer_name: String,
+    #[serde(default)]
+    pub customer_nif: Option<String>,
+    #[serde(default)]
+    pub customer_address: Option<String>,
+    #[serde(default)]
+    pub customer_city: Option<String>,
+    #[serde(default)]
+    pub customer_country: Option<String>,
+    #[serde(default = "default_currency")]
+    pub currency: String,
+    pub lines: Vec<InvoiceLineInput>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConvertProformaCommand {
+    pub tenant_id: Uuid,
+    pub series_code: String,
+    pub fiscal_year: i32,
+    #[serde(default = "default_convert_document_type")]
+    pub document_type: String,
+    #[serde(default)]
+    pub apply_stamp_duty: bool,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub stamp_duty_rate: Option<Decimal>,
+}
+
+fn default_convert_document_type() -> String {
+    "FT".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordInvoicePaymentCommand {
+    #[serde(with = "rust_decimal::serde::float")]
+    pub amount: Decimal,
+    pub payment_method: String,
+    pub payer_name: String,
+    #[serde(default)]
+    pub proof_file_name: Option<String>,
+    #[serde(default)]
+    pub proof_content_type: Option<String>,
+    #[serde(default)]
+    pub proof_base64: Option<String>,
 }
 
 /// Comando de emissão de documento fiscal (POST /api/v1/invoices)
@@ -174,10 +225,10 @@ pub struct IssueInvoiceCommand {
     /// Valor explícito de imposto de selo. Se omitido, pode ser calculado automaticamente via `applyStampDuty`.
     #[serde(default, with = "rust_decimal::serde::float_option")]
     pub stamp_duty_total: Option<Decimal>,
-    /// Ativa o cálculo automático do imposto de selo (1.0% geral ou 0.7% em recibos/FR)
+    /// Activa o cálculo de imposto de selo somente quando o utilizador declara a incidência
     #[serde(default)]
     pub apply_stamp_duty: Option<bool>,
-    /// Taxa personalizada de imposto de selo (ex.: 1.0 ou 0.7). Se omitida e `applyStampDuty` for true, assume a taxa padrão.
+    /// Taxa explícita escolhida pelo utilizador, obrigatória quando `applyStampDuty` é true.
     #[serde(default, with = "rust_decimal::serde::float_option")]
     pub stamp_duty_rate: Option<Decimal>,
     #[serde(default = "default_currency")]

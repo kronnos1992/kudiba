@@ -24,7 +24,7 @@ export interface Invoice {
   seriesId: string;
   documentNumber: string;
   sequenceNumber: number;
-  documentType: 'FT' | 'FR' | 'NC' | 'ND' | 'GT' | 'GR';
+  documentType: 'FT' | 'FR' | 'FP' | 'RC' | 'NC' | 'ND' | 'GT' | 'GR';
   customerName: string;
   customerNif?: string | null;
   customerAddress?: string | null;
@@ -67,6 +67,8 @@ export interface IssueInvoicePayload {
   paymentMethods: string[];
   applyWithholding?: boolean;
   withholdingRate?: number;
+  applyStampDuty?: boolean;
+  stampDutyRate?: number;
   vehiclePlateNumber?: string;
   loadingAddress?: string;
   loadingCity?: string;
@@ -125,6 +127,37 @@ export interface IssueInvoiceResult {
   issuedAt: string;
   systemEntryDate: string;
   isContingency: boolean;
+}
+
+export interface Proforma {
+  id: string;
+  documentNumber: string;
+  customerName: string;
+  customerNif?: string | null;
+  customerAddress?: string | null;
+  customerCity?: string | null;
+  customerCountry?: string | null;
+  currency: string;
+  lines: InvoiceLine[];
+  netTotal: number;
+  taxTotal: number;
+  grossTotal: number;
+  status: 'OPEN' | 'CONVERTING' | 'CONVERTED' | string;
+  convertedInvoiceId?: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface RecordedInvoicePayment {
+  id: string;
+  invoiceId: string;
+  documentNumber: string;
+  customerName: string;
+  amount: number;
+  paymentMethod: string;
+  cashierUserId: string;
+  receivedAt: string;
+  proofAttached: boolean;
 }
 
 export interface PosTaxBreakdown {
@@ -260,6 +293,82 @@ export const invoicingApi = {
       data.id = data.invoiceId;
     }
     return data;
+  },
+
+  createProforma: async (payload: IssueInvoicePayload): Promise<Proforma> => {
+    const response = await apiClient.post<Proforma>(
+      '/api/v1/fiscal/proformas',
+      {
+        tenantId: payload.tenantId,
+        customerName: payload.customerName,
+        customerNif: payload.customerNif,
+        customerAddress: payload.customerAddress,
+        customerCity: payload.customerCity,
+        customerCountry: payload.customerCountry,
+        currency: 'AOA',
+        lines: payload.lines,
+      },
+      { headers: { 'X-Tenant-ID': payload.tenantId } }
+    );
+    return response.data;
+  },
+
+  listProformas: async (): Promise<Proforma[]> => {
+    const response = await apiClient.get<Proforma[]>('/api/v1/fiscal/proformas');
+    return response.data;
+  },
+
+  convertProforma: async (id: string, payload: {
+    tenantId: string;
+    seriesCode: string;
+    fiscalYear: number;
+    documentType: 'FT' | 'FR';
+    applyStampDuty?: boolean;
+    stampDutyRate?: number;
+  }): Promise<IssueInvoiceResult> => {
+    const response = await apiClient.post<IssueInvoiceResult>(
+      `/api/v1/fiscal/proformas/${id}/convert`,
+      payload,
+      { headers: { 'X-Tenant-ID': payload.tenantId } }
+    );
+    return response.data;
+  },
+
+  recordInvoicePayment: async (invoiceId: string, payload: {
+    amount: number;
+    paymentMethod: string;
+    payerName: string;
+    proofFileName?: string;
+    proofContentType?: string;
+    proofBase64?: string;
+  }): Promise<RecordedInvoicePayment> => {
+    const response = await apiClient.post<RecordedInvoicePayment>(
+      `/api/v1/fiscal/invoices/${invoiceId}/payments`,
+      payload
+    );
+    return response.data;
+  },
+
+  listInvoicePayments: async (invoiceId: string): Promise<Array<{
+    id: string;
+    amount: number;
+    paymentMethod: string;
+    payerName: string;
+    proofFileName?: string | null;
+    proofSha256?: string | null;
+    cashierUserId: string;
+    receivedAt: string;
+  }>> => {
+    const response = await apiClient.get(`/api/v1/fiscal/invoices/${invoiceId}/payments`);
+    return response.data;
+  },
+
+  downloadPaymentProof: async (invoiceId: string, paymentId: string): Promise<Blob> => {
+    const response = await apiClient.get(
+      `/api/v1/fiscal/invoices/${invoiceId}/payments/${paymentId}/proof`,
+      { responseType: 'blob' }
+    );
+    return response.data;
   },
 
   cancelInvoice: async (

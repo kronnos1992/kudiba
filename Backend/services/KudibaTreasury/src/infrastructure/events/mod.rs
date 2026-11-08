@@ -29,6 +29,14 @@ pub struct InvoicePaymentEvent {
     pub gross_total: rust_decimal::Decimal,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvoiceReceivedPaymentEvent {
+    pub tenant_id: Uuid,
+    pub invoice_id: Uuid,
+    pub payment_id: Uuid,
+    pub amount: rust_decimal::Decimal,
+}
+
 pub struct TreasuryEventConsumer {
     rabbitmq_url: Option<String>,
     register_receivable_cmd: Arc<RegisterInvoiceReceivableHandler>,
@@ -180,7 +188,9 @@ impl TreasuryEventConsumer {
             });
 
         let gross_total = payload
-            .get("grossTotal")
+            .get("amountDue")
+            .or_else(|| payload.get("amount_due"))
+            .or_else(|| payload.get("grossTotal"))
             .or_else(|| payload.get("gross_total"))
             .and_then(|v| {
                 if let Some(s) = v.as_str() {
@@ -200,6 +210,41 @@ impl TreasuryEventConsumer {
             document_type,
             payment_mechanism,
             gross_total,
+        })
+    }
+
+    pub fn parse_incoming_payment(data: &[u8]) -> Option<InvoiceReceivedPaymentEvent> {
+        let value: serde_json::Value = serde_json::from_slice(data).ok()?;
+        let event_type = value.get("event_type")?.as_str()?;
+        if !event_type.starts_with("fiscal.payment.received.") {
+            return None;
+        }
+        let payload = value.get("payload")?;
+        let parse_uuid = |value: Option<&serde_json::Value>| {
+            value
+                .and_then(serde_json::Value::as_str)
+                .and_then(|value| Uuid::parse_str(value).ok())
+        };
+        let parse_amount = |value: Option<&serde_json::Value>| {
+            value.and_then(|value| {
+                if let Some(text) = value.as_str() {
+                    rust_decimal::Decimal::from_str_exact(text).ok()
+                } else {
+                    value
+                        .as_f64()
+                        .and_then(|number| rust_decimal::Decimal::try_from(number).ok())
+                }
+            })
+        };
+        Some(InvoiceReceivedPaymentEvent {
+            tenant_id: parse_uuid(value.get("tenant_id"))?,
+            invoice_id: parse_uuid(value.get("invoice_id"))?,
+            payment_id: parse_uuid(
+                payload
+                    .get("paymentId")
+                    .or_else(|| payload.get("payment_id")),
+            )?,
+            amount: parse_amount(payload.get("amount"))?,
         })
     }
 
@@ -284,6 +329,40 @@ impl TreasuryEventConsumer {
                                     match delivery_opt {
                                         Some(Ok(delivery)) => {
                                             let routing = delivery.routing_key.to_string();
+                                            if let Some(event) = Self::parse_incoming_payment(&delivery.data) {
+                                                let result = crate::config::with_tenant_context(
+                                                    Some(event.tenant_id),
+                                                    command.apply_payment(
+                                                        event.tenant_id,
+                                                        &event.invoice_id.to_string(),
+                                                        event.payment_id,
+                                                        event.amount,
+                                                    ),
+                                                ).await;
+                                                match result {
+                                                    Ok(()) => {
+                                                        tracing::info!(
+                                                            invoice_id = %event.invoice_id,
+                                                            payment_id = %event.payment_id,
+                                                            amount = %event.amount,
+                                                            "Pagamento de cliente reconciliado na tesouraria"
+                                                        );
+                                                        if let Err(err) = delivery.ack(BasicAckOptions::default()).await {
+                                                            tracing::warn!(error = %err, "Falha ao confirmar (ack) mensagem de pagamento");
+                                                        }
+                                                    }
+                                                    Err(err) => {
+                                                        tracing::warn!(
+                                                            invoice_id = %event.invoice_id,
+                                                            payment_id = %event.payment_id,
+                                                            error = %err,
+                                                            "Falha ao reconciliar pagamento; encaminhando para DLQ"
+                                                        );
+                                                        Self::handle_failure(&channel, &delivery, &routing, &err.to_string()).await;
+                                                    }
+                                                }
+                                                continue;
+                                            }
                                             match Self::parse_incoming_invoice(&delivery.data) {
                                                 Some(event) => {
                                                     let result = crate::config::with_tenant_context(
@@ -472,5 +551,64 @@ impl TreasuryEventConsumer {
             .await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_payment_event_with_decimal_string_amount() {
+        let tenant_id = Uuid::new_v4();
+        let invoice_id = Uuid::new_v4();
+        let payment_id = Uuid::new_v4();
+        let event = serde_json::json!({
+            "tenant_id": tenant_id,
+            "invoice_id": invoice_id,
+            "event_type": format!("fiscal.payment.received.{payment_id}"),
+            "payload": {
+                "paymentId": payment_id,
+                "amount": "1250.50"
+            }
+        });
+
+        let parsed = TreasuryEventConsumer::parse_incoming_payment(
+            serde_json::to_string(&event).unwrap().as_bytes(),
+        )
+        .unwrap();
+
+        assert_eq!(parsed.tenant_id, tenant_id);
+        assert_eq!(parsed.invoice_id, invoice_id);
+        assert_eq!(parsed.payment_id, payment_id);
+        assert_eq!(
+            parsed.amount,
+            rust_decimal::Decimal::from_str_exact("1250.50").unwrap()
+        );
+    }
+
+    #[test]
+    fn prefers_amount_due_when_parsing_invoice_event() {
+        let event = serde_json::json!({
+            "tenant_id": Uuid::new_v4(),
+            "invoice_id": Uuid::new_v4(),
+            "event_type": "fiscal.invoice.issued",
+            "payload": {
+                "documentNumber": "FT 2025/1",
+                "documentType": "FT",
+                "grossTotal": "1000.00",
+                "amountDue": "1080.00"
+            }
+        });
+
+        let parsed = TreasuryEventConsumer::parse_incoming_invoice(
+            serde_json::to_string(&event).unwrap().as_bytes(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            parsed.gross_total,
+            rust_decimal::Decimal::from_str_exact("1080.00").unwrap()
+        );
     }
 }

@@ -45,6 +45,7 @@ class AppState:
     get_platform_commercial_summary: GetPlatformCommercialSummaryUseCase
     verify_alvara: VerifyAlvaraUseCase
     tenant_provisioner: SqlAlchemyTenantProvisioner
+    tenant_reader: SqlAlchemyTenantReader
     audit_repo: SqlAlchemyAuditRepository
     chart_provisioner: Optional[IChartProvisioner] = None
 
@@ -90,6 +91,7 @@ def create_app_state(
         ),
         verify_alvara=VerifyAlvaraUseCase(client_repo=client_repo),
         tenant_provisioner=provisioner,
+        tenant_reader=tenant_reader,
         audit_repo=audit_repo,
         chart_provisioner=chart_provisioner,
     )

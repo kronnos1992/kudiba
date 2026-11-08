@@ -29,6 +29,25 @@ export interface TenantBankAccount {
   is_primary?: boolean;
 }
 
+export type BackupScheduleFrequency =
+  | 'HOURLY_1'
+  | 'HOURLY_6'
+  | 'HOURLY_12'
+  | 'DAILY'
+  | 'WEEKLY'
+  | 'MONTHLY';
+
+export interface TenantBackupSettings {
+  storage_location: string;
+  auto_save_local?: boolean;
+  preferred_format?: 'ZIP_DECIFRADO' | 'AES_256_GCM' | string;
+  schedule_enabled?: boolean;
+  schedule_frequency?: BackupScheduleFrequency | string;
+  schedule_interval_hours?: number;
+  schedule_time?: string;
+  retention_days?: number;
+}
+
 export interface Tenant {
   id: string;
   name: string;
@@ -58,6 +77,7 @@ export interface Tenant {
   default_withholding_rate?: number | null;
   invoice_footer_notes?: string | null;
   bank_accounts?: TenantBankAccount[];
+  backup_settings?: TenantBackupSettings;
   onboarding_completed?: boolean;
   roles?: string[];
   permissions?: string[];
@@ -94,6 +114,7 @@ export interface TenantSettings {
   default_withholding_rate: number;
   invoice_footer_notes?: string | null;
   bank_accounts: TenantBankAccount[];
+  backup_settings?: TenantBackupSettings;
   onboarding_completed: boolean;
   subscribed_modules?: string[] | null;
   license_valid_until?: string | null;

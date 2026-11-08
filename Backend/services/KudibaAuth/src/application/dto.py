@@ -47,6 +47,7 @@ class TenantSummaryDto:
     default_withholding_rate: float = 6.50
     invoice_footer_notes: Optional[str] = None
     bank_accounts: List[Dict[str, Any]] = field(default_factory=list)
+    backup_settings: Dict[str, Any] = field(default_factory=dict)
     onboarding_completed: bool = False
 
 
@@ -82,6 +83,7 @@ class TenantSettingsDto:
     alvara_number: Optional[str] = None
     alvara_issue_date: Optional[date] = None
     alvara_expiry_date: Optional[date] = None
+    backup_settings: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -112,6 +114,7 @@ class UpdateTenantSettingsCommand:
     default_withholding_rate: Optional[float] = None
     invoice_footer_notes: Optional[str] = None
     bank_accounts: Optional[List[Dict[str, Any]]] = None
+    backup_settings: Optional[Dict[str, Any]] = None
     onboarding_completed: Optional[bool] = None
     ip_address: Optional[str] = None
     user_agent: Optional[str] = None

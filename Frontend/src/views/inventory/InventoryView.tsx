@@ -126,6 +126,15 @@ export const InventoryView: React.FC = () => {
     enabled: Boolean(stockDetailProduct?.id),
   });
 
+  const { data: selectedProductMovements = [] } = useQuery({
+    queryKey: ['inventory_product_movements', stockDetailProduct?.id],
+    queryFn: () =>
+      stockDetailProduct
+        ? inventoryApi.listMovements({ product_id: stockDetailProduct.id, limit: 200 })
+        : [],
+    enabled: Boolean(stockDetailProduct?.id),
+  });
+
   // Formulário de Novo Artigo
   const [productForm, setProductForm] = useState<CreateProductPayload>({
     code: '',
@@ -159,6 +168,7 @@ export const InventoryView: React.FC = () => {
   const [purchaseForm, setPurchaseForm] = useState({
     warehouse_id: '',
     product_id: '',
+    supplier_id: '',
     batch_id: '',
     quantity: '1',
     unit_cost: '0',
@@ -363,6 +373,7 @@ export const InventoryView: React.FC = () => {
       setPurchaseForm({
         warehouse_id: '',
         product_id: '',
+        supplier_id: '',
         batch_id: '',
         quantity: '1',
         unit_cost: '0',
@@ -633,6 +644,7 @@ export const InventoryView: React.FC = () => {
       {
         warehouse_id: purchaseForm.warehouse_id,
         product_id: purchaseForm.product_id,
+        supplier_id: purchaseForm.supplier_id,
         batch_id: finalBatchId,
         quantity: purchaseForm.quantity,
         unit_cost: purchaseForm.unit_cost,
@@ -874,6 +886,7 @@ export const InventoryView: React.FC = () => {
                   setPurchaseForm({
                     warehouse_id: defWarehouse ? defWarehouse.id : '',
                     product_id: '',
+                    supplier_id: '',
                     batch_id: '',
                     quantity: '1',
                     unit_cost: '0',
@@ -903,6 +916,55 @@ export const InventoryView: React.FC = () => {
               </button>
             </div>
           )}
+
+          <div>
+            <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">
+              Fornecedores e Entradas de Compra
+            </h4>
+            <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 uppercase">
+                  <tr>
+                    <th className="px-4 py-2">Data</th>
+                    <th className="px-4 py-2">Fornecedor</th>
+                    <th className="px-4 py-2 text-right">Quantidade</th>
+                    <th className="px-4 py-2">Documento</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {selectedProductMovements.filter((m) => m.movement_type === 'InPurchase').length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-4 text-center text-slate-500 text-xs">
+                        Nenhuma entrada de compra registada para este artigo.
+                      </td>
+                    </tr>
+                  ) : (
+                    selectedProductMovements
+                      .filter((m) => m.movement_type === 'InPurchase')
+                      .map((movement) => {
+                        const supplier = entities.find((e) => e.id === movement.supplier_id);
+                        return (
+                          <tr key={movement.id}>
+                            <td className="px-4 py-2 text-slate-500">
+                              {new Date(movement.created_at).toLocaleDateString('pt-PT')}
+                            </td>
+                            <td className="px-4 py-2 font-medium text-slate-900 dark:text-white">
+                              {supplier?.name || 'Fornecedor não identificado'}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              {Number(movement.quantity)} {stockDetailProduct?.unit_of_measure || 'UN'}
+                            </td>
+                            <td className="px-4 py-2 font-mono text-xs text-slate-500">
+                              {movement.document_ref || '—'}
+                            </td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
           {activeTab === 'warehouses' && (
             <button
@@ -1243,7 +1305,13 @@ export const InventoryView: React.FC = () => {
                             )}
                           </td>
                           <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
-                            <KzAmount value={salePrice} />
+                            {salePrice > 0 ? (
+                              <KzAmount value={salePrice} />
+                            ) : (
+                              <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                                Definir na venda
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">
                             {p.product_type === 'P' ? (
@@ -1380,6 +1448,7 @@ export const InventoryView: React.FC = () => {
                                     setPurchaseForm({
                                       warehouse_id: defWarehouse ? defWarehouse.id : '',
                                       product_id: p.id,
+                                      supplier_id: '',
                                       batch_id: '',
                                       quantity: hasBulkPack ? '1' : '10',
                                       unit_cost: hasBulkPack
@@ -1542,6 +1611,42 @@ export const InventoryView: React.FC = () => {
                   <option value="S">Serviço (S)</option>
                   <option value="O">Outro / Encargo (O)</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  Fornecedor *
+                </label>
+                <select
+                  required
+                  value={purchaseForm.supplier_id}
+                  onChange={(e) =>
+                    setPurchaseForm({ ...purchaseForm, supplier_id: e.target.value })
+                  }
+                  className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                >
+                  <option value="">Selecione o fornecedor...</option>
+                  {entities
+                    .filter(
+                      (entity) =>
+                        entity.is_active &&
+                        (entity.entity_type === 'SUPPLIER' || entity.entity_type === 'BOTH')
+                    )
+                    .map((supplier) => (
+                      <option key={supplier.id} value={supplier.id}>
+                        {supplier.name} — {supplier.tax_id}
+                      </option>
+                    ))}
+                </select>
+                {entities.filter(
+                  (entity) =>
+                    entity.is_active &&
+                    (entity.entity_type === 'SUPPLIER' || entity.entity_type === 'BOTH')
+                ).length === 0 && (
+                  <p className="mt-1 text-[11px] text-amber-600">
+                    Registe primeiro um fornecedor no separador Clientes e Fornecedores.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -1716,12 +1821,11 @@ export const InventoryView: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                  Preço de Venda (Kz) *
+                  Preço de Venda (Kz) — opcional
                 </label>
                 <input
                   type="number"
                   step="0.01"
-                  required
                   placeholder="0.00"
                   value={productForm.sale_price}
                   onChange={(e) => setProductForm({ ...productForm, sale_price: e.target.value })}
@@ -1832,7 +1936,6 @@ export const InventoryView: React.FC = () => {
                 type="button"
                 disabled={
                   !productForm.name ||
-                  !productForm.sale_price ||
                   createProductMutation.isPending ||
                   updateProductMutation.isPending
                 }
@@ -1869,6 +1972,7 @@ export const InventoryView: React.FC = () => {
                       ...productForm,
                       code: productForm.code ? productForm.code.trim().toUpperCase() : undefined,
                       ref_id: productForm.ref_id ? productForm.ref_id.trim() : undefined,
+                      sale_price: productForm.sale_price || '0',
                       purchase_unit_of_measure: productForm.purchase_unit_of_measure || productForm.unit_of_measure || 'UN',
                       purchase_conversion_factor: productForm.purchase_conversion_factor || '1',
                     });
@@ -2154,6 +2258,7 @@ export const InventoryView: React.FC = () => {
                   setPurchaseForm({
                     warehouse_id: defWarehouse ? defWarehouse.id : '',
                     product_id: prod.id,
+                    supplier_id: '',
                     batch_id: '',
                     quantity: hasBulkPack ? '1' : '10',
                     unit_cost: hasBulkPack
@@ -2670,6 +2775,7 @@ export const InventoryView: React.FC = () => {
                 disabled={
                   !purchaseForm.warehouse_id ||
                   !purchaseForm.product_id ||
+                  !purchaseForm.supplier_id ||
                   Number(purchaseForm.quantity) <= 0 ||
                   isSubmittingPurchase ||
                   purchaseMutation.isPending ||

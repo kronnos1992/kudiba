@@ -76,6 +76,7 @@ impl AppState {
         let receive_purchase_cmd = Arc::new(ReceivePurchaseCommand::new(
             uow_factory.clone(),
             product_repo.clone(),
+            entity_repo.clone(),
             warehouse_repo.clone(),
             stock_repo.clone(),
             batch_repo.clone(),

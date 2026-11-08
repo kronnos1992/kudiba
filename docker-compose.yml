@@ -104,6 +104,16 @@ services:
       - BOOTSTRAP_SYSADMIN_PASSWORD=${BOOTSTRAP_SYSADMIN_PASSWORD:-SysAdmin@Kudiba2026!}
       - BOOTSTRAP_SYSADMIN_NAME=Administrador do Sistema (SYSADMIN)
       - BOOTSTRAP_SYSADMIN_TENANT_SLUG=demo
+      - BACKUP_STORAGE_DIR=/app/backups
+      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY:-}
+      - BACKUP_SCHEDULE_ENABLED=${BACKUP_SCHEDULE_ENABLED:-true}
+      - BACKUP_SCHEDULE_INTERVAL_HOURS=${BACKUP_SCHEDULE_INTERVAL_HOURS:-24}
+      - BACKUP_SCHEDULE_INITIAL_DELAY_MINUTES=${BACKUP_SCHEDULE_INITIAL_DELAY_MINUTES:-10}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - BACKUP_INCLUDE_ERP_REPLICA=${BACKUP_INCLUDE_ERP_REPLICA:-false}
+      - BACKUP_MAX_FILE_SIZE_MB=${BACKUP_MAX_FILE_SIZE_MB:-512}
+    volumes:
+      - kudiba_backups:/app/backups
     depends_on:
       postgres:
         condition: service_healthy
@@ -361,6 +371,7 @@ services:
       - ./Backend/deploy/24-universal-system-audit-trail.sql:/docker-entrypoint-initdb.d/24-universal-system-audit-trail.sql:ro
       - ./Backend/deploy/25-accounting-chart-templates.sql:/docker-entrypoint-initdb.d/25-accounting-chart-templates.sql:ro
       - ./Backend/deploy/26-tenant-accounting-profile.sql:/docker-entrypoint-initdb.d/26-tenant-accounting-profile.sql:ro
+      - ./Backend/deploy/28-tenant-backups.sql:/docker-entrypoint-initdb.d/28-tenant-backups.sql:ro
       - ./Backend/deploy/16-row-level-security.sql:/opt/kudiba/16-row-level-security.sql:ro
       - ./Backend/deploy/17-application-role.sql:/opt/kudiba/17-application-role.sql:ro
     healthcheck:
@@ -432,3 +443,4 @@ volumes:
   postgres_data:
   rabbitmq_data:
   redpanda_data:
+  kudiba_backups:

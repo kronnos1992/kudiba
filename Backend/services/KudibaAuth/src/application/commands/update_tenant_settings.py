@@ -154,6 +154,54 @@ class UpdateTenantSettingsUseCase:
                     )
                 tenant.bank_accounts = cleaned_accounts
 
+            if cmd.backup_settings is not None:
+                db_conns = dict(tenant.database_connections or {})
+                current_backup = dict(db_conns.get("backup_settings") or {})
+                raw_loc = str(cmd.backup_settings.get("storage_location") or "").strip()
+                if raw_loc:
+                    current_backup["storage_location"] = raw_loc
+                if "auto_save_local" in cmd.backup_settings:
+                    current_backup["auto_save_local"] = bool(cmd.backup_settings.get("auto_save_local"))
+                if "preferred_format" in cmd.backup_settings:
+                    fmt = str(cmd.backup_settings.get("preferred_format") or "ZIP_DECIFRADO").strip().upper()
+                    current_backup["preferred_format"] = (
+                        fmt if fmt in {"ZIP_DECIFRADO", "AES_256_GCM"} else "ZIP_DECIFRADO"
+                    )
+                if "schedule_enabled" in cmd.backup_settings:
+                    current_backup["schedule_enabled"] = bool(cmd.backup_settings.get("schedule_enabled"))
+                if "schedule_frequency" in cmd.backup_settings:
+                    freq = str(cmd.backup_settings.get("schedule_frequency") or "DAILY").strip().upper()
+                    freq_hours = {
+                        "HOURLY_1": 1,
+                        "HOURLY_6": 6,
+                        "HOURLY_12": 12,
+                        "DAILY": 24,
+                        "WEEKLY": 168,
+                        "MONTHLY": 720,
+                    }
+                    if freq not in freq_hours:
+                        freq = "DAILY"
+                    current_backup["schedule_frequency"] = freq
+                    current_backup["schedule_interval_hours"] = freq_hours[freq]
+                if "schedule_interval_hours" in cmd.backup_settings and "schedule_frequency" not in cmd.backup_settings:
+                    try:
+                        current_backup["schedule_interval_hours"] = max(
+                            1, min(8760, int(cmd.backup_settings.get("schedule_interval_hours") or 24))
+                        )
+                    except (TypeError, ValueError):
+                        current_backup["schedule_interval_hours"] = 24
+                if "schedule_time" in cmd.backup_settings:
+                    raw_time = str(cmd.backup_settings.get("schedule_time") or "02:00").strip()
+                    current_backup["schedule_time"] = raw_time if ":" in raw_time else "02:00"
+                if "retention_days" in cmd.backup_settings:
+                    try:
+                        days = max(1, min(3650, int(cmd.backup_settings.get("retention_days") or 30)))
+                    except (TypeError, ValueError):
+                        days = 30
+                    current_backup["retention_days"] = days
+                db_conns["backup_settings"] = current_backup
+                tenant.database_connections = db_conns
+
             if cmd.onboarding_completed is not None:
                 tenant.onboarding_completed = bool(cmd.onboarding_completed)
             elif (

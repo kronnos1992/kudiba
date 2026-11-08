@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -31,9 +32,28 @@ impl InvoiceReceivableRepository for PostgresInvoiceReceivableRepository {
                 document_type     = EXCLUDED.document_type,
                 payment_mechanism = EXCLUDED.payment_mechanism,
                 gross_total       = EXCLUDED.gross_total,
-                paid_amount       = EXCLUDED.paid_amount,
-                remaining_amount  = EXCLUDED.remaining_amount,
-                status            = EXCLUDED.status,
+                paid_amount       = GREATEST(
+                    kudiba_treasury.invoice_receivables.paid_amount,
+                    EXCLUDED.paid_amount
+                ),
+                remaining_amount  = GREATEST(
+                    0,
+                    EXCLUDED.gross_total - GREATEST(
+                        kudiba_treasury.invoice_receivables.paid_amount,
+                        EXCLUDED.paid_amount
+                    )
+                ),
+                status            = CASE
+                    WHEN GREATEST(
+                        kudiba_treasury.invoice_receivables.paid_amount,
+                        EXCLUDED.paid_amount
+                    ) >= EXCLUDED.gross_total THEN 'SETTLED'
+                    WHEN GREATEST(
+                        kudiba_treasury.invoice_receivables.paid_amount,
+                        EXCLUDED.paid_amount
+                    ) > 0 THEN 'PARTIAL'
+                    ELSE EXCLUDED.status
+                END,
                 updated_at        = EXCLUDED.updated_at
             "#,
         )
@@ -53,6 +73,67 @@ impl InvoiceReceivableRepository for PostgresInvoiceReceivableRepository {
         .await
         .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
+        Ok(())
+    }
+
+    async fn apply_payment(
+        &self,
+        tenant_id: Uuid,
+        invoice_id: &str,
+        payment_id: Uuid,
+        amount: Decimal,
+    ) -> Result<(), DomainError> {
+        if amount <= Decimal::ZERO {
+            return Err(DomainError::ValidationError(
+                "O pagamento recebido deve ser positivo".to_string(),
+            ));
+        }
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        let inserted = sqlx::query(
+            "INSERT INTO kudiba_treasury.invoice_receivable_payments \
+             (payment_id, tenant_id, invoice_id, amount) VALUES ($1, $2, $3, $4) \
+             ON CONFLICT (payment_id) DO NOTHING RETURNING payment_id",
+        )
+        .bind(payment_id)
+        .bind(tenant_id)
+        .bind(invoice_id)
+        .bind(amount)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+        if inserted.is_some() {
+            let result = sqlx::query(
+                "UPDATE kudiba_treasury.invoice_receivables \
+                 SET paid_amount = paid_amount + $1, \
+                     remaining_amount = gross_total - paid_amount - $1, \
+                     status = CASE WHEN gross_total - paid_amount - $1 <= 0 THEN 'SETTLED' ELSE 'PARTIAL' END, \
+                     updated_at = NOW() \
+                 WHERE tenant_id = $2 AND invoice_id = $3 \
+                   AND gross_total - paid_amount >= $1",
+            )
+            .bind(amount)
+            .bind(tenant_id)
+            .bind(invoice_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+            if result.rows_affected() != 1 {
+                return Err(DomainError::ValidationError(
+                    "Pagamento duplicado, factura não encontrada ou valor superior ao saldo da conta-corrente."
+                        .to_string(),
+                ));
+            }
+        }
+
+        tx.commit()
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
         Ok(())
     }
 

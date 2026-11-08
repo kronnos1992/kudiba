@@ -23,6 +23,8 @@ DECLARE
     sch text;
     targets text[] := ARRAY[
         'kudiba_core.invoices',
+        'kudiba_core.proformas',
+        'kudiba_core.invoice_payments',
         'kudiba_core.series_fiscais',
         'kudiba_core.pos_z_reports',
         'kudiba_core.accounting_outbox',
@@ -34,6 +36,7 @@ DECLARE
         'kudiba_treasury.cash_movements',
         'kudiba_treasury.treasury_receipts',
         'kudiba_treasury.invoice_receivables',
+        'kudiba_treasury.invoice_receivable_payments',
         'kudiba_treasury.invoice_payables',
         'kudiba_treasury.payable_settlements',
         'kudiba_treasury.cash_transfers',

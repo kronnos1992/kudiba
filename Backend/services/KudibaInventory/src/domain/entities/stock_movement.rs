@@ -37,6 +37,7 @@ pub struct StockMovement {
     pub tenant_id: Uuid,
     pub warehouse_id: Uuid,
     pub product_id: Uuid,
+    pub supplier_id: Option<Uuid>,
     pub batch_id: Option<Uuid>,
     pub movement_type: StockMovementType,
     pub quantity: Decimal,
@@ -83,6 +84,7 @@ impl StockMovement {
             tenant_id,
             warehouse_id,
             product_id,
+            supplier_id: None,
             batch_id,
             movement_type,
             quantity,
@@ -94,5 +96,10 @@ impl StockMovement {
             created_by,
             created_at: Utc::now(),
         })
+    }
+
+    pub fn with_supplier_id(mut self, supplier_id: Option<Uuid>) -> Self {
+        self.supplier_id = supplier_id;
+        self
     }
 }

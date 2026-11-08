@@ -42,6 +42,10 @@ dist/
 # Docker overrides locais
 docker-compose.override.yml
 
+# Backups lógicos locais
+backups/
+**/backups/
+
 # Docker volumes and local data
 postgres_data/
 rabbitmq_data/

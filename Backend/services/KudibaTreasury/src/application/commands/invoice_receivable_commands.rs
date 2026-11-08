@@ -36,4 +36,16 @@ impl RegisterInvoiceReceivableHandler {
 
         self.receivable_repo.upsert(&receivable).await
     }
+
+    pub async fn apply_payment(
+        &self,
+        tenant_id: Uuid,
+        invoice_id: &str,
+        payment_id: Uuid,
+        amount: Decimal,
+    ) -> Result<(), DomainError> {
+        self.receivable_repo
+            .apply_payment(tenant_id, invoice_id, payment_id, amount)
+            .await
+    }
 }

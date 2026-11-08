@@ -150,6 +150,7 @@ CREATE TABLE IF NOT EXISTS kudiba_inventory.stock_movements (
     tenant_id UUID NOT NULL,
     warehouse_id UUID NOT NULL REFERENCES kudiba_inventory.warehouses(id) ON DELETE RESTRICT,
     product_id UUID NOT NULL REFERENCES kudiba_inventory.products(id) ON DELETE RESTRICT,
+    supplier_id UUID,
     batch_id UUID REFERENCES kudiba_inventory.product_batches(id) ON DELETE SET NULL,
     movement_type kudiba_inventory.stock_movement_kind NOT NULL,
     quantity NUMERIC(15, 4) NOT NULL,

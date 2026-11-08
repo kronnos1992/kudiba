@@ -135,13 +135,13 @@ impl StockRepository for PostgresStockRepository {
         sqlx::query(
             r#"
             INSERT INTO kudiba_inventory.stock_movements (
-                id, tenant_id, warehouse_id, product_id, batch_id, movement_type,
+                id, tenant_id, warehouse_id, product_id, supplier_id, batch_id, movement_type,
                 quantity, unit_cost, total_cost, resulting_cmp, document_ref, notes,
                 created_by, created_at
             ) VALUES (
-                $1, $2, $3, $4, $5, $6::kudiba_inventory.stock_movement_kind,
-                $7, $8, $9, $10, $11, $12,
-                $13, $14
+                $1, $2, $3, $4, $5, $6, $7::kudiba_inventory.stock_movement_kind,
+                $8, $9, $10, $11, $12, $13,
+                $14, $15
             )
             "#,
         )
@@ -149,6 +149,7 @@ impl StockRepository for PostgresStockRepository {
         .bind(m.tenant_id)
         .bind(m.warehouse_id)
         .bind(m.product_id)
+        .bind(m.supplier_id)
         .bind(m.batch_id)
         .bind(movement_type_str)
         .bind(m.quantity)
@@ -213,7 +214,7 @@ impl StockRepository for PostgresStockRepository {
     ) -> Result<Vec<StockMovement>, RepositoryError> {
         let rows: Vec<StockMovementRow> = sqlx::query_as(
             r#"
-            SELECT id, tenant_id, warehouse_id, product_id, batch_id, movement_type::text,
+            SELECT id, tenant_id, warehouse_id, product_id, supplier_id, batch_id, movement_type::text,
                    quantity, unit_cost, total_cost, resulting_cmp, document_ref, notes,
                    created_by, created_at
             FROM kudiba_inventory.stock_movements

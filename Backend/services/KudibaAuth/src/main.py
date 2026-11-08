@@ -55,6 +55,51 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Migração automática de alvara em kudiba_core.tenants ignorada: %s", e)
 
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE SCHEMA IF NOT EXISTS kudiba_core"))
+            await conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS kudiba_core.tenant_backups (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        tenant_id UUID NOT NULL,
+                        requested_by UUID,
+                        trigger VARCHAR(16) NOT NULL DEFAULT 'MANUAL',
+                        status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+                        file_name VARCHAR(255),
+                        file_path VARCHAR(512),
+                        size_bytes BIGINT,
+                        sha256 VARCHAR(64),
+                        encryption VARCHAR(32),
+                        error TEXT,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        completed_at TIMESTAMPTZ
+                    )
+                    """
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_tenant_backups_tenant_created "
+                    "ON kudiba_core.tenant_backups (tenant_id, created_at DESC)"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_tenant_backups_status "
+                    "ON kudiba_core.tenant_backups (status)"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_tenant_backups_created "
+                    "ON kudiba_core.tenant_backups (created_at)"
+                )
+            )
+    except Exception as e:
+        logger.warning("Migração automática de kudiba_core.tenant_backups ignorada: %s", e)
+
     # Auto-bootstrap do utilizador SYSADMIN se ativado no deploy
     if settings.bootstrap_sysadmin_enabled:
         try:
@@ -70,8 +115,17 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Falha não-bloqueante no bootstrap do utilizador SYSADMIN: %s", e)
 
+    try:
+        await app_state.backup_service.start()
+    except Exception as e:
+        logger.warning("Falha ao iniciar o agendador de backups: %s", e)
+
     yield
     # Fechamento gracioso
+    try:
+        await app_state.backup_service.stop()
+    except Exception:
+        logger.exception("Falha ao parar o agendador de backups")
     await app_state.cache.close()
     await engine.dispose()
 

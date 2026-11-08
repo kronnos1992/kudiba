@@ -93,7 +93,7 @@ impl CreateProductCommand {
             req.is_stockable,
             req.track_lots.unwrap_or(false),
             req.unit_of_measure.unwrap_or_else(|| "UN".to_string()),
-            req.sale_price,
+            req.sale_price.unwrap_or(rust_decimal::Decimal::ZERO),
             req.cost_price.unwrap_or(rust_decimal::Decimal::ZERO),
             req.tax_percentage
                 .unwrap_or(rust_decimal::Decimal::new(14, 0)),

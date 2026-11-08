@@ -280,6 +280,26 @@ def create_backoffice_router() -> APIRouter:
         app_state = get_app_state(request)
         return await app_state.get_client.execute(client_id)
 
+    @router.get(
+        "/clients/{client_id}/backups",
+        summary="Histórico de Cópias de Segurança do Cliente",
+        description="Lista as cópias de segurança lógicas associadas ao tenant do cliente subscritor.",
+    )
+    async def list_client_backups(
+        client_id: uuid.UUID,
+        request: Request,
+        limit: int = 50,
+        offset: int = 0,
+        _: SecurityContext = Depends(require_platform_admin),
+    ):
+        app_state = get_app_state(request)
+        detail = await app_state.get_client.execute(client_id)
+        if hasattr(app_state, "tenant_reader") and app_state.tenant_reader:
+            return await app_state.tenant_reader.list_tenant_backups(
+                detail.tenant_id, limit=limit, offset=offset
+            )
+        return {"items": [], "total": 0, "limit": limit, "offset": offset}
+
     @router.patch(
         "/clients/{client_id}",
         summary="Actualizar Cliente",

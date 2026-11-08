@@ -7,13 +7,14 @@ use crate::domain::error::InventoryError;
 use crate::domain::ports::db_session::DbSession;
 use crate::domain::ports::unit_of_work::UnitOfWorkFactory;
 use crate::domain::ports::{
-    BatchRepository, ProductRepository, StockRepository, WarehouseRepository,
+    BatchRepository, EntityRepository, ProductRepository, StockRepository, WarehouseRepository,
 };
 use crate::domain::services::{CmpCalculator, StockPolicy};
 
 pub struct ReceivePurchaseCommand {
     uow_factory: Arc<dyn UnitOfWorkFactory>,
     product_repo: Arc<dyn ProductRepository>,
+    entity_repo: Arc<dyn EntityRepository>,
     warehouse_repo: Arc<dyn WarehouseRepository>,
     stock_repo: Arc<dyn StockRepository>,
     batch_repo: Arc<dyn BatchRepository>,
@@ -23,6 +24,7 @@ impl ReceivePurchaseCommand {
     pub fn new(
         uow_factory: Arc<dyn UnitOfWorkFactory>,
         product_repo: Arc<dyn ProductRepository>,
+        entity_repo: Arc<dyn EntityRepository>,
         warehouse_repo: Arc<dyn WarehouseRepository>,
         stock_repo: Arc<dyn StockRepository>,
         batch_repo: Arc<dyn BatchRepository>,
@@ -30,6 +32,7 @@ impl ReceivePurchaseCommand {
         Self {
             uow_factory,
             product_repo,
+            entity_repo,
             warehouse_repo,
             stock_repo,
             batch_repo,
@@ -98,6 +101,26 @@ impl ReceivePurchaseCommand {
             .find_by_id(session, tenant_id, req.warehouse_id)
             .await?
             .ok_or(InventoryError::WarehouseNotFound(req.warehouse_id))?;
+
+        let supplier = self
+            .entity_repo
+            .find_by_id(session, tenant_id, req.supplier_id)
+            .await?
+            .ok_or_else(|| {
+                InventoryError::ValidationError(
+                    "Fornecedor não encontrado para este tenant".to_string(),
+                )
+            })?;
+        if !matches!(
+            supplier.entity_type,
+            crate::domain::entities::EntityKind::Supplier
+                | crate::domain::entities::EntityKind::Both
+        ) || !supplier.is_active
+        {
+            return Err(InventoryError::ValidationError(
+                "Selecione um fornecedor ativo".to_string(),
+            ));
+        }
 
         // O CMP é um custo médio ponderado por artigo (global ao tenant),
         // pelo que a base de ponderação é o total em stock de todos os armazéns.
@@ -183,7 +206,8 @@ impl ReceivePurchaseCommand {
             req.document_ref.clone(),
             enriched_notes,
             user_id,
-        )?;
+        )?
+        .with_supplier_id(Some(req.supplier_id));
 
         self.stock_repo.record_movement(session, &movement).await?;
         Ok(StockMovementResponse::from(movement))

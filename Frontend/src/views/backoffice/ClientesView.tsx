@@ -20,12 +20,17 @@ import {
   ExternalLink,
   AlertTriangle,
   CheckCircle2,
+  Archive,
+  HardDrive,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge, StatusType } from '../../components/common/StatusBadge';
 import { SortableHeader } from '../../components/common/SortableHeader';
 import { useTableSort } from '../../hooks/useTableSort';
 import { backofficeApi } from '../../api/backoffice';
+import { authApi } from '../../api/auth';
+import { BackupManager } from '../settings/BackupManager';
+import { toast } from '../../stores/toastStore';
 import { validateCompanyNif } from '../../utils/validators';
 import {
   AlvaraVerificationResult,
@@ -207,6 +212,7 @@ export const ClientesView: React.FC = () => {
   const [detailClient, setDetailClient] = useState<BackofficeClient | null>(null);
   const [renewClient, setRenewClient] = useState<BackofficeClient | null>(null);
   const [certificateClient, setCertificateClient] = useState<BackofficeClient | null>(null);
+  const [backupClient, setBackupClient] = useState<BackofficeClient | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [createAdmin, setCreateAdmin] = useState(false);
 
@@ -312,6 +318,16 @@ export const ClientesView: React.FC = () => {
     onSuccess: invalidate,
   });
 
+  const runScheduledBackupsMutation = useMutation({
+    mutationFn: () => authApi.runScheduledBackups(),
+    onSuccess: (res) => {
+      toast.success(res.message || 'Ciclo de backups diários concluído.');
+    },
+    onError: () => {
+      toast.error('Falha ao executar ciclo de backups agendados.');
+    },
+  });
+
   const toggleModule = (key: string) => {
     setForm((prev) => ({
       ...prev,
@@ -405,13 +421,24 @@ export const ClientesView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors cursor-pointer self-start md:self-auto"
-        >
-          <PlusCircle className="w-4 h-4" />
-          Novo Cliente
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+          <button
+            type="button"
+            onClick={() => runScheduledBackupsMutation.mutate()}
+            disabled={runScheduledBackupsMutation.isPending}
+            className="inline-flex items-center gap-2 px-3.5 py-2 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-semibold rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <HardDrive className="w-4 h-4 text-blue-600" />
+            {runScheduledBackupsMutation.isPending ? 'A gerar backups...' : 'Executar Backups Diários'}
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
+          >
+            <PlusCircle className="w-4 h-4" />
+            Novo Cliente
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -681,14 +708,30 @@ export const ClientesView: React.FC = () => {
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             title="Certificado Oficial de Licença"
-                            onClick={() => setCertificateClient(client)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCertificateClient(client);
+                            }}
                             className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"
                           >
                             <Award className="w-4 h-4" />
                           </button>
                           <button
+                            title="Cópias de Segurança da Base de Dados (Backups)"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBackupClient(client);
+                            }}
+                            className="p-1.5 rounded-lg text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-950/40 transition-colors"
+                          >
+                            <Archive className="w-4 h-4" />
+                          </button>
+                          <button
                             title="Detalhe do Cliente"
-                            onClick={() => setDetailClient(client)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDetailClient(client);
+                            }}
                             className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                           >
                             <Eye className="w-4 h-4" />
@@ -737,7 +780,15 @@ export const ClientesView: React.FC = () => {
                                   )}
                                 </h4>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setBackupClient(client)}
+                                  className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-violet-300 dark:border-violet-800 hover:bg-violet-50 dark:hover:bg-violet-950/40 text-violet-700 dark:text-violet-300 inline-flex items-center gap-1.5"
+                                >
+                                  <Archive className="w-3.5 h-3.5" />
+                                  Cópias de Segurança (BD)
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => setDetailClient(client)}
@@ -1451,6 +1502,20 @@ export const ClientesView: React.FC = () => {
               </div>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {backupClient && (
+        <Modal
+          title={`Cópias de Segurança — ${backupClient.company_name} (NIF: ${backupClient.nif})`}
+          icon={<Archive className="w-5 h-5 text-violet-600" />}
+          onClose={() => setBackupClient(null)}
+          wide
+        >
+          <BackupManager
+            tenantId={backupClient.tenant_id}
+            tenantName={backupClient.company_name}
+          />
         </Modal>
       )}
     </div>

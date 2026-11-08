@@ -7,6 +7,32 @@ from src.domain.error import EntityNotFoundError
 from src.domain.ports.tenant_repository import ITenantRepository
 
 
+def _extract_backup_settings(tenant: Tenant) -> dict:
+    raw = dict((tenant.database_connections or {}).get("backup_settings") or {})
+    default_folder = f"C:\\Backups\\Kudiba\\{tenant.slug or tenant.nif}"
+    freq = str(raw.get("schedule_frequency") or "DAILY").upper()
+    freq_hours = {
+        "HOURLY_1": 1,
+        "HOURLY_6": 6,
+        "HOURLY_12": 12,
+        "DAILY": 24,
+        "WEEKLY": 168,
+        "MONTHLY": 720,
+    }
+    return {
+        "storage_location": str(raw.get("storage_location") or default_folder),
+        "auto_save_local": bool(raw.get("auto_save_local", True)),
+        "preferred_format": str(raw.get("preferred_format") or "ZIP_DECIFRADO"),
+        "schedule_enabled": bool(raw.get("schedule_enabled", True)),
+        "schedule_frequency": freq if freq in freq_hours else "DAILY",
+        "schedule_interval_hours": int(
+            raw.get("schedule_interval_hours") or freq_hours.get(freq, 24)
+        ),
+        "schedule_time": str(raw.get("schedule_time") or "02:00"),
+        "retention_days": int(raw.get("retention_days") or 30),
+    }
+
+
 def tenant_to_settings_dto(tenant: Tenant) -> TenantSettingsDto:
     return TenantSettingsDto(
         id=tenant.id,
@@ -39,6 +65,7 @@ def tenant_to_settings_dto(tenant: Tenant) -> TenantSettingsDto:
         status=tenant.status,
         subscribed_modules=list(tenant.subscribed_modules or []),
         license_valid_until=tenant.license_valid_until,
+        backup_settings=_extract_backup_settings(tenant),
     )
 
 
@@ -82,6 +109,7 @@ def build_tenant_summary_dto(
         default_withholding_rate=float(tenant.default_withholding_rate) if tenant.default_withholding_rate is not None else 6.50,
         invoice_footer_notes=tenant.invoice_footer_notes,
         bank_accounts=list(tenant.bank_accounts or []),
+        backup_settings=_extract_backup_settings(tenant),
         onboarding_completed=bool(tenant.onboarding_completed),
     )
 

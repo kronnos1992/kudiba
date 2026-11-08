@@ -30,8 +30,10 @@ from src.application.queries import (
 )
 from src.config import Settings
 from src.domain.services.security_policy import AccountSecurityPolicy
+from src.infrastructure.backup import BackupStorage, TenantBackupService, TenantDataExporter
 from src.infrastructure.cache.redis_cache import RedisCacheService
 from src.infrastructure.persistence.audit_repository import SqlAlchemyAuditRepository
+from src.infrastructure.persistence.backup_repository import SqlAlchemyTenantBackupRepository
 from src.infrastructure.persistence.refresh_token_repository import SqlAlchemyRefreshTokenRepository
 from src.infrastructure.persistence.role_repository import SqlAlchemyRoleRepository
 from src.infrastructure.persistence.tenant_repository import SqlAlchemyTenantRepository
@@ -52,6 +54,7 @@ class AppState:
     role_repo: SqlAlchemyRoleRepository
     audit_repo: SqlAlchemyAuditRepository
     tenant_repo: SqlAlchemyTenantRepository
+    backup_service: TenantBackupService
 
     # Casos de Uso (Commands)
     authenticate_user: AuthenticateUserUseCase
@@ -89,6 +92,13 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
     refresh_token_repo = SqlAlchemyRefreshTokenRepository(session_factory)
     audit_repo = SqlAlchemyAuditRepository(session_factory)
     role_repo = SqlAlchemyRoleRepository(session_factory)
+    backup_service = TenantBackupService(
+        config=config,
+        repository=SqlAlchemyTenantBackupRepository(session_factory),
+        exporter=TenantDataExporter(config),
+        storage=BackupStorage(config),
+        audit_repository=audit_repo,
+    )
     hasher = Argon2PasswordHasher()
     token_service = JwtTokenService(
         secret=config.jwt_secret,
@@ -245,6 +255,7 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         role_repo=role_repo,
         audit_repo=audit_repo,
         tenant_repo=tenant_repo,
+        backup_service=backup_service,
         authenticate_user=authenticate_user,
         rotate_refresh_token=rotate_refresh_token,
         logout_user=logout_user,
