@@ -281,6 +281,7 @@ pub struct ProjectAssetSummaryDto {
 pub struct MonthlyCostTrendDto {
     pub month_label: String,
     pub period_month: i32,
+    pub fiscal_year: i32,
     pub budget_total: Decimal,
     pub realized_opex: Decimal,
     pub realized_capex: Decimal,
@@ -2920,50 +2921,65 @@ impl CostCenterService {
             }
         }
 
-        let monthly_trend = vec![
-            MonthlyCostTrendDto {
-                month_label: "Maio".to_string(),
-                period_month: 5,
-                budget_total: total_budget_monthly,
-                realized_opex: Decimal::new(11_450_000, 0),
-                realized_capex: Decimal::new(450_000, 0),
-            },
-            MonthlyCostTrendDto {
-                month_label: "Junho".to_string(),
-                period_month: 6,
-                budget_total: total_budget_monthly,
-                realized_opex: Decimal::new(11_980_000, 0),
-                realized_capex: Decimal::new(0, 0),
-            },
-            MonthlyCostTrendDto {
-                month_label: "Julho".to_string(),
-                period_month: 7,
-                budget_total: total_budget_monthly,
-                realized_opex: Decimal::new(12_310_000, 0),
-                realized_capex: Decimal::new(820_000, 0),
-            },
-            MonthlyCostTrendDto {
-                month_label: "Agosto".to_string(),
-                period_month: 8,
-                budget_total: total_budget_monthly,
-                realized_opex: Decimal::new(12_640_000, 0),
-                realized_capex: Decimal::new(300_000, 0),
-            },
-            MonthlyCostTrendDto {
-                month_label: "Setembro".to_string(),
-                period_month: 9,
-                budget_total: total_budget_monthly,
-                realized_opex: Decimal::new(12_890_000, 0),
-                realized_capex: Decimal::new(650_000, 0),
-            },
-            MonthlyCostTrendDto {
-                month_label: "Outubro (Atual)".to_string(),
-                period_month: 10,
-                budget_total: total_budget_monthly,
-                realized_opex: total_realized_opex,
-                realized_capex: total_realized_capex,
-            },
+        let now = Utc::now();
+        let current_year = now.year();
+        let current_month = now.month() as i32;
+        let month_names = [
+            "Janeiro",
+            "Fevereiro",
+            "Março",
+            "Abril",
+            "Maio",
+            "Junho",
+            "Julho",
+            "Agosto",
+            "Setembro",
+            "Outubro",
+            "Novembro",
+            "Dezembro",
         ];
+        let monthly_totals = sqlx::query(
+            r#"
+            SELECT
+                period_month,
+                COALESCE(SUM(allocated_amount) FILTER (WHERE NOT is_capex), 0) AS realized_opex,
+                COALESCE(SUM(allocated_amount) FILTER (WHERE is_capex), 0) AS realized_capex
+            FROM kudiba_accounting.cost_center_allocations
+            WHERE tenant_id = $1 AND fiscal_year = $2 AND period_month BETWEEN 1 AND $3
+            GROUP BY period_month
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(current_year)
+        .bind(current_month)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+        let monthly_trend = (1..=current_month)
+            .map(|period_month| {
+                let totals = monthly_totals
+                    .iter()
+                    .find(|row| row.get::<i32, _>("period_month") == period_month);
+                let month_name = month_names[(period_month - 1) as usize];
+                MonthlyCostTrendDto {
+                    month_label: if period_month == current_month {
+                        format!("{month_name} (Atual)")
+                    } else {
+                        month_name.to_string()
+                    },
+                    period_month,
+                    fiscal_year: current_year,
+                    budget_total: total_budget_monthly,
+                    realized_opex: totals
+                        .map(|row| row.get("realized_opex"))
+                        .unwrap_or_default(),
+                    realized_capex: totals
+                        .map(|row| row.get("realized_capex"))
+                        .unwrap_or_default(),
+                }
+            })
+            .collect();
 
         let unassigned_rows = sqlx::query(
             r#"

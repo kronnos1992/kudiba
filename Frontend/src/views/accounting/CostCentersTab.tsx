@@ -982,7 +982,7 @@ export const CostCentersTab: React.FC = () => {
 
               <GlassCard className="p-5 space-y-3">
                 <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                  Evolução Mensal dos Custos (2026)
+                  Evolução Mensal dos Custos ({dashboard.monthly_trend[0]?.fiscal_year ?? new Date().getFullYear()})
                 </h3>
                 <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
                   {dashboard.monthly_trend.map((m) => (

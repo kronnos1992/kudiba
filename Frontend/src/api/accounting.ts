@@ -422,6 +422,7 @@ export interface ProjectAssetSummary {
 export interface MonthlyCostTrend {
   month_label: string;
   period_month: number;
+  fiscal_year: number;
   budget_total: number | string;
   realized_opex: number | string;
   realized_capex: number | string;
