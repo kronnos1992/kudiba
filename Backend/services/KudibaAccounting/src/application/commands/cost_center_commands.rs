@@ -343,20 +343,52 @@ impl CostCenterService {
         Self { pool }
     }
 
-    pub async fn ensure_seeded(&self, tenant_id: Uuid) -> Result<(), DomainError> {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM kudiba_accounting.cost_centers WHERE tenant_id = $1",
+    pub async fn clear_cost_center_data(&self, tenant_id: Uuid) -> Result<(), DomainError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
+        for query in [
+            "DELETE FROM kudiba_accounting.cost_tracking_reclassifications WHERE tenant_id = $1",
+            "DELETE FROM kudiba_accounting.cost_center_allocations WHERE tenant_id = $1",
+            "DELETE FROM kudiba_accounting.cost_center_audit_logs WHERE tenant_id = $1",
+            "DELETE FROM kudiba_accounting.cost_allocation_rule_lines WHERE tenant_id = $1",
+            "DELETE FROM kudiba_accounting.cost_allocation_rules WHERE tenant_id = $1",
+            "DELETE FROM kudiba_accounting.cost_center_budgets WHERE tenant_id = $1",
+        ] {
+            sqlx::query(query)
+                .bind(tenant_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE kudiba_accounting.journal_lines
+            SET cost_center_id = NULL
+            WHERE tenant_id = $1
+              AND cost_center_id IN (
+                  SELECT id FROM kudiba_accounting.cost_centers WHERE tenant_id = $1
+              )
+            "#,
         )
         .bind(tenant_id)
-        .fetch_one(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
-        if count > 0 {
-            return Ok(());
-        }
+        sqlx::query("DELETE FROM kudiba_accounting.cost_centers WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
-        self.seed_default_structure(tenant_id).await
+        tx.commit()
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))
     }
 
     pub async fn seed_default_structure(&self, tenant_id: Uuid) -> Result<(), DomainError> {
@@ -1409,8 +1441,6 @@ impl CostCenterService {
         &self,
         tenant_id: Uuid,
     ) -> Result<Vec<CostCenterDto>, DomainError> {
-        self.ensure_seeded(tenant_id).await?;
-
         let rows = sqlx::query(
             r#"
             SELECT
@@ -1807,8 +1837,6 @@ impl CostCenterService {
         &self,
         tenant_id: Uuid,
     ) -> Result<Vec<AllocationRuleDto>, DomainError> {
-        self.ensure_seeded(tenant_id).await?;
-
         let rules = sqlx::query(
             r#"
             SELECT id, code, name, description, allocation_basis, default_account_code, is_active
@@ -2664,8 +2692,6 @@ impl CostCenterService {
         &self,
         tenant_id: Uuid,
     ) -> Result<CostCenterDashboardResponse, DomainError> {
-        self.ensure_seeded(tenant_id).await?;
-
         let centers = self.list_cost_centers(tenant_id).await?;
         let allocation_rules = self.list_allocation_rules(tenant_id).await?;
         let recent_allocations = self.list_recent_allocations(tenant_id).await?;

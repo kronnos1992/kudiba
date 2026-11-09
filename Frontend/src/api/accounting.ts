@@ -613,6 +613,10 @@ export const accountingApi = {
     return res.data;
   },
 
+  clearCostCenters: async (): Promise<void> => {
+    await apiClient.delete('/api/v1/accounting/cost-centers');
+  },
+
   updateCostCenter: async (
     id: string,
     payload: UpdateCostCenterPayload

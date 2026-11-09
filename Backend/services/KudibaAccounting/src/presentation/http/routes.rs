@@ -751,6 +751,19 @@ pub async fn list_cost_centers_handler(
     Ok(Json(list))
 }
 
+pub async fn clear_cost_centers_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<StatusCode, (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(&headers)?;
+    state
+        .cost_centers
+        .clear_cost_center_data(tenant_id)
+        .await
+        .map_err(map_domain_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn create_cost_center_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1075,7 +1088,9 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/accounting/cost-centers",
-            get(list_cost_centers_handler).post(create_cost_center_handler),
+            get(list_cost_centers_handler)
+                .post(create_cost_center_handler)
+                .delete(clear_cost_centers_handler),
         )
         .route(
             "/api/v1/accounting/cost-centers/{id}",

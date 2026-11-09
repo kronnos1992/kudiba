@@ -31,6 +31,7 @@ import {
   Search,
   Printer,
   FileSpreadsheet,
+  Trash2,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { KzAmount } from '../../components/common/KzAmount';
@@ -154,6 +155,18 @@ export const CostCentersTab: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounting_cost_centers_dashboard'] });
       setIsCreateCenterOpen(false);
+    },
+  });
+
+  const clearCostCentersMutation = useMutation({
+    mutationFn: accountingApi.clearCostCenters,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounting_cost_centers_dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['accounting_cost_centers_list'] });
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'Erro inesperado.';
+      window.alert(`Não foi possível limpar os dados dos centros de custos: ${message}`);
     },
   });
 
@@ -729,6 +742,21 @@ export const CostCentersTab: React.FC = () => {
           >
             <PlusCircle className="w-3.5 h-3.5" />
             Novo Centro de Custos
+          </button>
+
+          <button
+            type="button"
+            disabled={clearCostCentersMutation.isPending}
+            onClick={() => {
+              const confirmed = window.confirm(
+                'Isto apagará todos os centros de custos, orçamentos, rateios, reclassificações e auditoria analítica deste tenant. Os lançamentos contabilísticos serão preservados, mas perderão a associação ao centro de custos. Esta ação não pode ser desfeita. Continuar?'
+              );
+              if (confirmed) clearCostCentersMutation.mutate();
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/30 disabled:opacity-50 text-xs font-bold transition shadow-xs"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            {clearCostCentersMutation.isPending ? 'A limpar…' : 'Limpar todos os dados'}
           </button>
 
           <button
