@@ -113,7 +113,7 @@ class _FakeProvisioner:
 
 
 @pytest.mark.asyncio
-async def test_create_client_requires_and_persists_alvara_and_dates():
+async def test_create_client_alvara_is_optional_and_validates_dates_when_provided():
     client_repo = _FakeClientRepo()
     license_repo = _FakeLicenseRepo()
     provisioner = _FakeProvisioner()
@@ -121,16 +121,6 @@ async def test_create_client_requires_and_persists_alvara_and_dates():
     today = date.today()
     issue_date = today - timedelta(days=30)
     expiry_date = today + timedelta(days=365)
-
-    with pytest.raises(DomainError, match="alvará comercial"):
-        await use_case.execute(
-            CreateClientCommand(
-                company_name="Empresa Teste Lda",
-                nif="5417999888",
-                alvara_number="   ",
-                modules=["invoicing"],
-            )
-        )
 
     with pytest.raises(DomainError, match="data de validade"):
         await use_case.execute(
@@ -177,6 +167,21 @@ async def test_create_client_requires_and_persists_alvara_and_dates():
     assert provisioner.calls[0]["alvara_number"] == "ALV-2026/00412"
     assert provisioner.calls[0]["alvara_issue_date"] == issue_date
     assert provisioner.calls[0]["alvara_expiry_date"] == expiry_date
+
+    result_without_alvara = await use_case.execute(
+        CreateClientCommand(
+            company_name="Empresa Sem Alvará Lda",
+            nif="5417999881",
+            modules=["invoicing"],
+        )
+    )
+    assert result_without_alvara.alvara_number is None
+    assert result_without_alvara.alvara_issue_date is None
+    assert result_without_alvara.alvara_expiry_date is None
+    assert result_without_alvara.alvara_status == "MISSING"
+    assert provisioner.calls[1]["alvara_number"] is None
+    assert provisioner.calls[1]["alvara_issue_date"] is None
+    assert provisioner.calls[1]["alvara_expiry_date"] is None
 
 
 @pytest.mark.asyncio

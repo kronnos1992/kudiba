@@ -18,7 +18,7 @@ from src.presentation.http.deps import SecurityContext, get_app_state, require_p
 class CreateClientHttpRequest(BaseModel):
     company_name: str = Field(..., min_length=2, max_length=255)
     nif: str = Field(..., min_length=3, max_length=20)
-    alvara_number: str = Field(..., min_length=2, max_length=64, description="Número do Alvará Comercial")
+    alvara_number: Optional[str] = Field(None, max_length=64, description="Número do Alvará Comercial")
     alvara_issue_date: Optional[date] = Field(None, description="Data de Emissão do Alvará Comercial (auto-preenchida se omitida)")
     alvara_expiry_date: Optional[date] = Field(None, description="Data de Validade do Alvará Comercial (auto-preenchida se omitida)")
     sector_code: str = Field(default="GERAL", max_length=32, description="Sector de Actividade: GERAL, SEGUROS, BANCA, PETROLEO")

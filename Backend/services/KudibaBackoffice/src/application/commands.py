@@ -153,14 +153,12 @@ class CreateClientUseCase:
             raise DomainError("O código do template de plano de contas é inválido.")
 
         nif = cmd.nif.strip()
-        alvara_number = (cmd.alvara_number or "").strip()
-        if not alvara_number:
-            raise DomainError("Indique o número do alvará comercial do cliente.")
+        alvara_number = (cmd.alvara_number or "").strip() or None
         today = date.today()
 
         issue_date = cmd.alvara_issue_date
         expiry_date = cmd.alvara_expiry_date
-        if issue_date is None or expiry_date is None:
+        if alvara_number and (issue_date is None or expiry_date is None):
             year_match = re.search(r"\b(20[12][0-9])\b", alvara_number)
             if year_match:
                 year = int(year_match.group(1))
@@ -170,14 +168,18 @@ class CreateClientUseCase:
                 issue_date = issue_date or date(today.year, 1, 15)
                 expiry_date = expiry_date or date(today.year + 5, 1, 15)
 
-        if issue_date > today:
-            raise DomainError("A data de emissão do alvará não pode ser posterior à data actual.")
-        if expiry_date <= issue_date:
-            raise DomainError(
-                "A data de validade do alvará deve ser posterior à data de emissão."
-            )
-        if expiry_date < today:
-            raise DomainError("O alvará comercial informado já se encontra expirado.")
+        if not alvara_number:
+            issue_date = None
+            expiry_date = None
+        else:
+            if issue_date > today:
+                raise DomainError("A data de emissão do alvará não pode ser posterior à data actual.")
+            if expiry_date <= issue_date:
+                raise DomainError(
+                    "A data de validade do alvará deve ser posterior à data de emissão."
+                )
+            if expiry_date < today:
+                raise DomainError("O alvará comercial informado já se encontra expirado.")
         if await self.client_repo.find_by_nif(nif) or await self.provisioner.nif_exists(nif):
             raise ConflictError(f"Já existe um cliente registado com o NIF {nif}.")
         if cmd.admin_email and await self.provisioner.email_exists(cmd.admin_email.strip().lower()):

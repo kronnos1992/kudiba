@@ -119,13 +119,6 @@ const errorMessage = (error: unknown): string => {
   return detail || 'Ocorreu um erro ao processar o pedido.';
 };
 
-const defaultIssueDate = () => new Date().toISOString().slice(0, 10);
-const defaultExpiryDate = () => {
-  const d = new Date();
-  d.setFullYear(d.getFullYear() + 5);
-  return d.toISOString().slice(0, 10);
-};
-
 const SECTOR_CONFIG: Record<
   string,
   {
@@ -186,12 +179,18 @@ const SECTOR_CONFIG: Record<
   },
 };
 
-const emptyForm: CreateClientPayload = {
+type CreateClientForm = CreateClientPayload & {
+  alvara_number: string;
+  alvara_issue_date: string;
+  alvara_expiry_date: string;
+};
+
+const emptyForm: CreateClientForm = {
   company_name: '',
   nif: '',
   alvara_number: '',
-  alvara_issue_date: defaultIssueDate(),
-  alvara_expiry_date: defaultExpiryDate(),
+  alvara_issue_date: '',
+  alvara_expiry_date: '',
   sector_code: 'GERAL',
   accounting_template_code: 'PGC_GENERIC',
   modules: [],
@@ -216,7 +215,7 @@ export const ClientesView: React.FC = () => {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [createAdmin, setCreateAdmin] = useState(false);
 
-  const [form, setForm] = useState<CreateClientPayload>(emptyForm);
+  const [form, setForm] = useState<CreateClientForm>(emptyForm);
   const [adminForm, setAdminForm] = useState({ email: '', full_name: '', password: '' });
   const [renewForm, setRenewForm] = useState<RenewLicensePayload>({});
   const [formAlvaraCheck, setFormAlvaraCheck] = useState<AlvaraVerificationResult | null>(null);
@@ -261,7 +260,13 @@ export const ClientesView: React.FC = () => {
   };
 
   const createMutation = useMutation({
-    mutationFn: (payload: CreateClientPayload) => backofficeApi.createClient(payload),
+    mutationFn: (payload: CreateClientPayload) =>
+      backofficeApi.createClient({
+        ...payload,
+        alvara_number: payload.alvara_number?.trim() || null,
+        alvara_issue_date: payload.alvara_issue_date || null,
+        alvara_expiry_date: payload.alvara_expiry_date || null,
+      }),
     onSuccess: () => {
       invalidate();
       setShowCreateModal(false);
@@ -399,12 +404,6 @@ export const ClientesView: React.FC = () => {
   const canSubmitCreate =
     form.company_name.trim().length >= 2 &&
     validateCompanyNif(form.nif).isValid &&
-    form.alvara_number.trim().length >= 2 &&
-    Boolean(
-      form.alvara_issue_date &&
-      form.alvara_expiry_date &&
-      form.alvara_expiry_date > form.alvara_issue_date
-    ) &&
     form.modules.length > 0;
 
   return (
@@ -962,9 +961,8 @@ export const ClientesView: React.FC = () => {
             })()}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Field label="N.º do Alvará Comercial" required>
+              <Field label="N.º do Alvará Comercial (opcional)">
                 <input
-                  required
                   placeholder="Ex: ALV-2026/00412"
                   value={form.alvara_number}
                   onChange={(e) => {
@@ -982,9 +980,8 @@ export const ClientesView: React.FC = () => {
                   Validação automática e auto-preenchimento das datas legais ao sair do campo.
                 </p>
               </Field>
-              <Field label="Data de Emissão do Alvará" required>
+              <Field label="Data de Emissão do Alvará (opcional)">
                 <input
-                  required
                   type="date"
                   value={form.alvara_issue_date}
                   onChange={(e) => {
@@ -994,9 +991,8 @@ export const ClientesView: React.FC = () => {
                   className={inputClass}
                 />
               </Field>
-              <Field label="Data de Validade do Alvará" required>
+              <Field label="Data de Validade do Alvará (opcional)">
                 <input
-                  required
                   type="date"
                   value={form.alvara_expiry_date}
                   onChange={(e) => {

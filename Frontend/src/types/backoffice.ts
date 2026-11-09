@@ -98,9 +98,9 @@ export interface BackofficeClient {
 export interface CreateClientPayload {
   company_name: string;
   nif: string;
-  alvara_number: string;
-  alvara_issue_date?: string;
-  alvara_expiry_date?: string;
+  alvara_number?: string | null;
+  alvara_issue_date?: string | null;
+  alvara_expiry_date?: string | null;
   sector_code?: string;
   accounting_template_code?: string;
   modules: string[];
