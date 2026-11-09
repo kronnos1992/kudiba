@@ -38,8 +38,8 @@ export const LoginView: React.FC = () => {
   const { setSession } = useAuthStore();
   const { themeMode, toggleTheme } = useUiStore();
 
-  const [email, setEmail] = useState('sysadmin@kudiba.ao');
-  const [password, setPassword] = useState('SysAdmin@Kudiba2026!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,12 +100,6 @@ export const LoginView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleSelectPreset = (presetEmail: string, presetPass: string) => {
-    setEmail(presetEmail);
-    setPassword(presetPass);
-    setError(null);
   };
 
   return (
@@ -376,7 +370,7 @@ export const LoginView: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  autoComplete="email"
+                  autoComplete="off"
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all shadow-xs"
                   placeholder="admin@kudiba.ao"
                 />
@@ -399,7 +393,7 @@ export const LoginView: React.FC = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  autoComplete="current-password"
+                  autoComplete="off"
                   className="w-full pl-10 pr-11 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all shadow-xs"
                   placeholder="••••••••••••"
                 />
@@ -438,37 +432,6 @@ export const LoginView: React.FC = () => {
             </button>
           </form>
 
-          {/* Atalhos Rápidos para Demonstração / Testes */}
-          <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800">
-            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2.5 uppercase tracking-wider">
-              Acesso Rápido para Testes:
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => handleSelectPreset('sysadmin@kudiba.ao', 'SysAdmin@Kudiba2026!')}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-200/70 hover:bg-slate-300/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition-colors text-center cursor-pointer"
-              >
-                SysAdmin (Geral)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectPreset('vendedor@kudiba.ao', 'Vendedor@Kudiba2026!')}
-                className="px-2.5 py-1.5 rounded-lg bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 transition-colors text-center cursor-pointer border border-emerald-300/40"
-              >
-                Vendedor POS
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  handleSelectPreset('contabilidade@kudiba.ao', 'Contabilista@Kudiba2026!')
-                }
-                className="px-2.5 py-1.5 rounded-lg bg-slate-200/70 hover:bg-slate-300/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition-colors text-center cursor-pointer"
-              >
-                Contabilista
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* Rodapé do Formulário */}

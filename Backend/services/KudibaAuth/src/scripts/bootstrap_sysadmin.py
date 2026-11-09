@@ -23,6 +23,9 @@ async def main():
     target_name = args.name or settings.bootstrap_sysadmin_name
     target_tenant = args.tenant or settings.bootstrap_sysadmin_tenant_slug
 
+    if not target_email.strip() or not target_pass:
+        parser.error("Indique explicitamente --email e --password para criar o SYSADMIN.")
+
     print("=================================================================")
     print("Kudiba ERP: Injeção de Utilizador SYSADMIN (Superadministrador)")
     print("=================================================================")

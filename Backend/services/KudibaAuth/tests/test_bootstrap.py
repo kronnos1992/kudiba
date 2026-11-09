@@ -11,6 +11,16 @@ from src.infrastructure.persistence.models import (
 from src.infrastructure.security.argon2_hasher import Argon2PasswordHasher
 
 
+@pytest.mark.asyncio
+async def test_sysadmin_bootstrap_requires_explicit_credentials():
+    with pytest.raises(ValueError, match="requires an explicit email and password"):
+        await ensure_sysadmin_bootstrapped(
+            session_factory=None,
+            email="",
+            password="",
+        )
+
+
 class _FakeResult:
     def __init__(self, items):
         self._items = list(items)

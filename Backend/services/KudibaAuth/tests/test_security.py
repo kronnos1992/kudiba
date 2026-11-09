@@ -9,16 +9,18 @@ from src.config import Settings
 
 def test_production_requires_strong_jwt_secret_and_explicit_origins():
     with pytest.raises(ValidationError):
-        Settings(environment="production")
+        Settings(_env_file=None, environment="production")
 
     with pytest.raises(ValidationError):
         Settings(
+            _env_file=None,
             environment="production",
             jwt_secret="a" * 32,
             cors_allowed_origins=["*"],
         )
 
     settings = Settings(
+        _env_file=None,
         environment="production",
         jwt_secret="production-test-secret-with-at-least-32-bytes",
         database_url="postgresql+asyncpg://auth:secret@db.internal:5432/kudiba_auth",
@@ -29,16 +31,43 @@ def test_production_requires_strong_jwt_secret_and_explicit_origins():
 
     with pytest.raises(ValidationError, match="DATABASE_URL and REDIS_URL"):
         Settings(
+            _env_file=None,
             environment="production",
             jwt_secret="production-test-secret-with-at-least-32-bytes",
             cors_allowed_origins=["https://app.example.ao"],
         )
 
-    csv_settings = Settings(cors_allowed_origins="https://app.example.ao, https://admin.example.ao")
+    csv_settings = Settings(
+        _env_file=None,
+        cors_allowed_origins="https://app.example.ao, https://admin.example.ao",
+    )
     assert csv_settings.cors_allowed_origins == [
         "https://app.example.ao",
         "https://admin.example.ao",
     ]
+
+
+def test_sysadmin_bootstrap_is_opt_in_and_forbidden_in_production():
+    settings = Settings(_env_file=None)
+    assert settings.bootstrap_sysadmin_enabled is False
+    assert settings.bootstrap_sysadmin_email == ""
+    assert settings.bootstrap_sysadmin_password == ""
+
+    with pytest.raises(ValidationError, match="disabled in production"):
+        Settings(
+            _env_file=None,
+            environment="production",
+            bootstrap_sysadmin_enabled=True,
+            bootstrap_sysadmin_email="admin@example.ao",
+            bootstrap_sysadmin_password="explicit-secret",
+        )
+
+    with pytest.raises(ValidationError, match="requires explicit"):
+        Settings(
+            _env_file=None,
+            bootstrap_sysadmin_enabled=True,
+            bootstrap_sysadmin_email="admin@example.ao",
+        )
 
 
 def test_password_hashing_and_verification():

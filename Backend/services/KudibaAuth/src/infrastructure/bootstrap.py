@@ -16,8 +16,11 @@ async def ensure_sysadmin_bootstrapped(
     tenant_slug: str = "demo",
     password_hasher: Argon2PasswordHasher = None,
 ) -> bool:
-    hasher = password_hasher or Argon2PasswordHasher()
     clean_email = email.strip().lower()
+    if not clean_email or not password:
+        raise ValueError("SYSADMIN bootstrap requires an explicit email and password.")
+
+    hasher = password_hasher or Argon2PasswordHasher()
 
     async with session_scope(session_factory) as (session, owns_session):
         # 1. Obter ou validar o tenant alvo

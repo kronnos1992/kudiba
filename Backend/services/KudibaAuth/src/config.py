@@ -45,9 +45,9 @@ class Settings(BaseSettings):
     account_lockout_minutes: int = 15
 
     # Bootstrap Inicial de Sysadmin (Superusuário na Implantação de Containers)
-    bootstrap_sysadmin_enabled: bool = True
-    bootstrap_sysadmin_email: str = "sysadmin@kudiba.ao"
-    bootstrap_sysadmin_password: str = "SysAdmin@Kudiba2026!"
+    bootstrap_sysadmin_enabled: bool = False
+    bootstrap_sysadmin_email: str = ""
+    bootstrap_sysadmin_password: str = ""
     bootstrap_sysadmin_name: str = "Administrador do Sistema (SYSADMIN)"
     bootstrap_sysadmin_tenant_slug: str = "demo"
 
@@ -75,6 +75,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
+        if self.bootstrap_sysadmin_enabled:
+            if self.environment.lower() in {"prod", "production"}:
+                raise ValueError("Automatic SYSADMIN bootstrap is disabled in production.")
+            if not self.bootstrap_sysadmin_email.strip() or not self.bootstrap_sysadmin_password:
+                raise ValueError(
+                    "SYSADMIN bootstrap requires explicit BOOTSTRAP_SYSADMIN_EMAIL and BOOTSTRAP_SYSADMIN_PASSWORD."
+                )
         if self.environment.lower() in {"prod", "production"}:
             if self.jwt_secret == _DEVELOPMENT_JWT_SECRET or len(self.jwt_secret.encode("utf-8")) < 32:
                 raise ValueError("Production requires a JWT_SECRET with at least 32 bytes.")

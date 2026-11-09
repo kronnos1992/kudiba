@@ -4,17 +4,18 @@ Kudiba ERP — Master Data Reset & Realistic Historical Seeding Script
 Período: 01 de Janeiro de 2026 a 05 de Novembro de 2026.
 Volumes de vendas mensais variáveis, múltiplos clientes subscritores B2B com
 diferentes combinações de módulos, tesouraria, inventário, contabilidade e salários.
-Preserva integralmente o utilizador SYSADMIN e administradores da plataforma.
+Só deve ser executado explicitamente em desenvolvimento ou teste.
 """
 import asyncio
 import hashlib
 import json
+import os
 import uuid
 from datetime import datetime, date, timezone
 from decimal import Decimal
 import asyncpg
 
-PG_BASE = "postgresql://kudiba:kudiba_secret_pass@localhost:5432"
+PG_BASE = os.environ.get("KUDIBA_POSTGRES_BASE_URL", "")
 
 TENANT_ID = "a0000000-0000-0000-0000-000000000001"
 BRANCH_ID = "b0000000-0000-0000-0000-000000000001"
@@ -380,8 +381,7 @@ async def reset_all_data():
         DELETE FROM kudiba_core.user_tenants 
          WHERE user_id NOT IN ('e0000000-0000-0000-0000-000000000000', '6d4df40e-0616-4736-809c-acb1b56487b8');
         DELETE FROM kudiba_core.users 
-         WHERE id NOT IN ('e0000000-0000-0000-0000-000000000000', '6d4df40e-0616-4736-809c-acb1b56487b8')
-           AND email NOT IN ('sysadmin@kudiba.ao', 'admin@kudiba.ao');
+         WHERE id NOT IN ('e0000000-0000-0000-0000-000000000000', '6d4df40e-0616-4736-809c-acb1b56487b8');
         
         -- Atualizar tenant principal com dados oficiais
         UPDATE kudiba_core.tenants
@@ -1010,6 +1010,14 @@ async def seed_payroll_periods():
 
 
 async def main():
+    environment = os.environ.get("ENVIRONMENT", "").lower()
+    if environment not in {"development", "dev", "test"}:
+        raise RuntimeError("O reset de demonstração só pode ser executado em desenvolvimento ou teste.")
+    if os.environ.get("ALLOW_DEMO_SEED", "").lower() != "true":
+        raise RuntimeError("Defina ALLOW_DEMO_SEED=true para confirmar o reset de demonstração.")
+    if not PG_BASE:
+        raise RuntimeError("Defina KUDIBA_POSTGRES_BASE_URL com a URL base do PostgreSQL.")
+
     await reset_all_data()
     await seed_backoffice_subscribers()
     await seed_inventory_and_warehouses()
@@ -1021,7 +1029,7 @@ async def main():
     print("RESUMO DA OPERAÇÃO DE RESET E REPOVOAMENTO:")
     print("=================================================================")
     print("✓ Todos os dados de teste antigos foram limpos.")
-    print("✓ Utilizador SYSADMIN (sysadmin@kudiba.ao) e ADMIN mantidos e ativos.")
+    print("✓ Utilizadores SYSADMIN e ADMIN mantidos e ativos.")
     print("✓ 8 Clientes subscritores B2B registados no Backoffice com diferentes planos e módulos.")
     print("✓ Vendas de Janeiro de 2026 até hoje (05 de Novembro de 2026) geradas com volumes progressivos.")
     print("✓ Certificado AGT configurado formalmente como FE/528/AGT/2026.")

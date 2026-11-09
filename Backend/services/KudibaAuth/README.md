@@ -129,4 +129,4 @@ PYTHONPATH=. pytest tests/ -v
 ```
 **Resultado:** **18 testes aprovados** cobrindo hashing Argon2id, emissão/rotação/revogação de JWTs, detecção de reúso de refresh tokens, validação de tenants, proteção do último administrador, convites/auditoria, configuração segura e endpoints HTTP.
 
-Não existe conta nem palavra-passe padrão. Para provisionar o primeiro administrador do tenant, execute `python -m src.bootstrap_admin --tenant-id <UUID>` com o serviço configurado para aceder ao PostgreSQL. O comando recolhe as credenciais interactivamente e só cria o administrador quando o tenant ainda não tem um.
+Não existe conta nem palavra-passe padrão. O bootstrap automático do SYSADMIN vem desativado e é proibido em produção; nunca são usadas credenciais de fallback. Para provisionar o primeiro administrador do tenant, execute `python -m src.bootstrap_admin --tenant-id <UUID>` com o serviço configurado para aceder ao PostgreSQL. O comando recolhe as credenciais interactivamente e só cria o administrador quando o tenant ainda não tem um.

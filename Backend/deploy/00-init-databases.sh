@@ -158,9 +158,6 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_auth" <<-EO
        AND license_valid_until IS NULL;
 EOSQL
 
-# 8d. Bootstrap do utilizador SYSADMIN (Superadministrador do Sistema)
-echo "Provisionando utilizador inicial SYSADMIN no banco 'kudiba_auth'..."psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_auth" -f /docker-entrypoint-initdb.d/15-bootstrap-sysadmin.sql
-
 # 8e. Papéis de aplicação sem privilégios de superutilizador ou bypass de RLS
 echo "Provisionando papéis de aplicação para os serviços Rust..."
 APP_PASSWORD="${KUDIBA_APP_PASSWORD:-kudiba_app_secret}"
@@ -209,7 +206,6 @@ if [ -f /docker-entrypoint-initdb.d/26-tenant-accounting-profile.sql ]; then
 fi
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/07-payroll-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/08-integrations-schema.sql
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/15-bootstrap-sysadmin.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/24-universal-system-audit-trail.sql
 
 echo "================================================================="
