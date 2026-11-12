@@ -61,6 +61,7 @@ export const InvoicingView: React.FC = () => {
   const [proformaToConvert, setProformaToConvert] = useState<Proforma | null>(null);
   const [proformaSeries, setProformaSeries] = useState<string>('');
   const [proformaDocumentType, setProformaDocumentType] = useState<'FT' | 'FR'>('FT');
+  const [proformaPaymentMethod, setProformaPaymentMethod] = useState<string>('CREDITO');
   const [proformaApplyStampDuty, setProformaApplyStampDuty] = useState(false);
   const [proformaStampDutyRate, setProformaStampDutyRate] = useState('');
   const [existingPaymentAmount, setExistingPaymentAmount] = useState('');
@@ -478,6 +479,7 @@ export const InvoicingView: React.FC = () => {
         documentType: proformaDocumentType,
         applyStampDuty: proformaApplyStampDuty,
         stampDutyRate: proformaApplyStampDuty ? Number(proformaStampDutyRate) : undefined,
+        paymentMethods: [proformaPaymentMethod],
       });
     },
     onSuccess: async (result) => {
@@ -1441,6 +1443,7 @@ export const InvoicingView: React.FC = () => {
                                 const activeSeries = seriesList.find((series) => series.documentType === 'FT' && series.isActive);
                                 setProformaSeries(activeSeries?.seriesCode || '2026A');
                                 setProformaDocumentType('FT');
+                                setProformaPaymentMethod('CREDITO');
                                 setProformaApplyStampDuty(false);
                                 setProformaStampDutyRate('');
                                 setProformaToConvert(proforma);
@@ -3498,6 +3501,7 @@ export const InvoicingView: React.FC = () => {
                     const activeSeries = seriesList.find((series) => series.documentType === 'FT' && series.isActive);
                     setProformaSeries(activeSeries?.seriesCode || '2026A');
                     setProformaDocumentType('FT');
+                    setProformaPaymentMethod('CREDITO');
                     setProformaApplyStampDuty(false);
                     setProformaStampDutyRate('');
                     setProformaToConvert(selectedProforma);
@@ -3535,6 +3539,9 @@ export const InvoicingView: React.FC = () => {
                 onChange={(e) => {
                   const type = e.target.value as 'FT' | 'FR';
                   setProformaDocumentType(type);
+                  if (type === 'FR' && proformaPaymentMethod === 'CREDITO') {
+                    setProformaPaymentMethod('NUMERARIO');
+                  }
                   setProformaSeries(seriesList.find((series) => series.documentType === type && series.isActive)?.seriesCode || '2026A');
                 }}
                 className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
@@ -3552,6 +3559,21 @@ export const InvoicingView: React.FC = () => {
                 {!seriesList.some((series) => series.documentType === proformaDocumentType && series.isActive) && (
                   <option value="2026A">2026A (padrão)</option>
                 )}
+              </select>
+            </label>
+            <label className="block text-xs font-semibold">
+              Meio de pagamento
+              <select
+                value={proformaPaymentMethod}
+                onChange={(e) => setProformaPaymentMethod(e.target.value)}
+                className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
+              >
+                {proformaDocumentType === 'FT' && (
+                  <option value="CREDITO">A crédito (A Prazo)</option>
+                )}
+                <option value="NUMERARIO">Numerário (Dinheiro)</option>
+                <option value="MULTICAIXA">Multicaixa (TPA)</option>
+                <option value="TRANSFERENCIA">Transferência Bancária</option>
               </select>
             </label>
             <label className="flex items-center gap-2 text-xs font-semibold">

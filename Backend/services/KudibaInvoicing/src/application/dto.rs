@@ -168,6 +168,8 @@ pub struct ConvertProformaCommand {
     pub apply_stamp_duty: bool,
     #[serde(default, with = "rust_decimal::serde::float_option")]
     pub stamp_duty_rate: Option<Decimal>,
+    #[serde(default)]
+    pub payment_methods: Vec<String>,
 }
 
 fn default_convert_document_type() -> String {

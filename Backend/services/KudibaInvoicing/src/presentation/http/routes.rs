@@ -864,6 +864,25 @@ async fn convert_proforma_handler(
             .await;
         }
     };
+    let payment_methods = if !payload.payment_methods.is_empty() {
+        payload
+            .payment_methods
+            .into_iter()
+            .map(|m| {
+                let trimmed = m.trim();
+                if trimmed.eq_ignore_ascii_case("CREDITO") {
+                    "A crédito".to_string()
+                } else {
+                    trimmed.to_string()
+                }
+            })
+            .filter(|m| !m.is_empty())
+            .collect::<Vec<_>>()
+    } else if doc_type == "FT" {
+        vec!["A crédito".to_string()]
+    } else {
+        vec!["NUMERARIO".to_string()]
+    };
     let mut command = IssueInvoiceCommand {
         actor_user_id: Some(actor),
         tenant_id: payload.tenant_id,
@@ -878,7 +897,7 @@ async fn convert_proforma_handler(
         customer_country: row.try_get("customer_country").unwrap_or_default(),
         customer_nif: row.try_get("customer_nif").unwrap_or_default(),
         source_document_number: Some(proforma_number),
-        payment_methods: Vec::new(),
+        payment_methods,
         withholding_total: None,
         apply_withholding: Some(false),
         withholding_rate: None,

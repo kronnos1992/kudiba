@@ -325,6 +325,7 @@ export const invoicingApi = {
     documentType: 'FT' | 'FR';
     applyStampDuty?: boolean;
     stampDutyRate?: number;
+    paymentMethods?: string[];
   }): Promise<IssueInvoiceResult> => {
     const response = await apiClient.post<IssueInvoiceResult>(
       `/api/v1/fiscal/proformas/${id}/convert`,
