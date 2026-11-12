@@ -129,6 +129,9 @@ class _FakeProvisioner:
     async def slug_exists(self, slug):
         return False
 
+    async def email_exists(self, email):
+        return False
+
     async def provision_client_tenant(self, **kwargs):
         self.calls.append(kwargs)
 
@@ -302,6 +305,69 @@ async def test_create_client_auto_fills_dates_and_provisions_sector_chart():
     assert res.alvara_expiry_date == date(2030, 1, 15)
     assert len(chart_provisioner.calls) == 1
     assert chart_provisioner.calls[0]["template_code"] == "PCESR_01_26"
+
+
+@pytest.mark.asyncio
+async def test_create_client_with_admin_user():
+    client_repo = _FakeClientRepo()
+    license_repo = _FakeLicenseRepo()
+    provisioner = _FakeProvisioner()
+    use_case = CreateClientUseCase(client_repo, license_repo, provisioner)
+
+    cmd = CreateClientCommand(
+        company_name="EMOA COMÉRCIO GERAL E PRESTAÇÃO DE SERVIÇOS",
+        nif="5002302080",
+        modules=["invoicing", "inventory", "treasury", "payroll", "accounting", "integrations"],
+        contact_name="Emidelson Mascola",
+        contact_email="emidelsonmascola93@gmail.com",
+        contact_phone="921816741",
+        notes="para testes e melhorias",
+        plan="STANDARD",
+        seats=5,
+        admin_email="emidelsonmascola93@gmail.com",
+        admin_full_name="Emidelson Mascola",
+        admin_password="Hulbain01010101",
+        sector_code="GERAL",
+        accounting_template_code="PGC_GENERIC",
+    )
+    res = await use_case.execute(cmd)
+
+    assert res.company_name == "EMOA COMÉRCIO GERAL E PRESTAÇÃO DE SERVIÇOS"
+    assert res.nif == "5002302080"
+    assert res.sector_code == "GERAL"
+    assert res.accounting_template_code == "PGC_GENERIC"
+    assert res.license.plan == "STANDARD"
+    assert len(provisioner.calls) == 1
+    assert provisioner.calls[0]["admin_email"] == "emidelsonmascola93@gmail.com"
+    assert provisioner.calls[0]["admin_full_name"] == "Emidelson Mascola"
+    assert provisioner.calls[0]["admin_password_hash"] is not None
+    assert provisioner.calls[0]["admin_password_hash"].startswith("$argon2id$")
+
+
+@pytest.mark.asyncio
+async def test_create_client_rejects_duplicate_admin_email():
+    client_repo = _FakeClientRepo()
+    license_repo = _FakeLicenseRepo()
+    provisioner = _FakeProvisioner()
+
+    async def email_exists(email):
+        return email == "admin@empresa.ao"
+
+    provisioner.email_exists = email_exists
+    use_case = CreateClientUseCase(client_repo, license_repo, provisioner)
+
+    cmd = CreateClientCommand(
+        company_name="Nova Empresa Lda",
+        nif="5418999000",
+        modules=["invoicing"],
+        admin_email="admin@empresa.ao",
+        admin_full_name="Admin Teste",
+        admin_password="PasswordForte2026!",
+    )
+    from src.domain.error import ConflictError
+    with pytest.raises(ConflictError, match="Já existe um utilizador"):
+        await use_case.execute(cmd)
+
 
 
 

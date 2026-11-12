@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from typing import List, Optional
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.domain.ports import ITenantProvisioner
@@ -30,14 +30,16 @@ class SqlAlchemyTenantProvisioner(ITenantProvisioner):
     async def nif_exists(self, nif: str) -> bool:
         async with session_scope(self._session_factory) as (session, _):
             res = await session.execute(
-                select(TenantModel.id).where(TenantModel.nif == nif).limit(1)
+                select(TenantModel.id).where(TenantModel.nif == nif.strip()).limit(1)
             )
             return res.scalar_one_or_none() is not None
 
     async def email_exists(self, email: str) -> bool:
         async with session_scope(self._session_factory) as (session, _):
             res = await session.execute(
-                select(UserModel.id).where(UserModel.email == email).limit(1)
+                select(UserModel.id)
+                .where(func.lower(UserModel.email) == email.strip().lower())
+                .limit(1)
             )
             return res.scalar_one_or_none() is not None
 

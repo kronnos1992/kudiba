@@ -218,38 +218,48 @@ class CreateClientUseCase:
             Argon2PasswordHasher().hash(cmd.admin_password) if cmd.admin_password else None
         )
 
-        await self.provisioner.provision_client_tenant(
-            tenant_id=client.tenant_id,
-            slug=slug,
-            company_name=client.company_name,
-            nif=nif,
-            alvara_number=alvara_number,
-            alvara_issue_date=issue_date,
-            alvara_expiry_date=expiry_date,
-            sector_code=sector_code,
-            accounting_template_code=accounting_template_code,
-            license_valid_until=_mirror_datetime(valid_until),
-            modules=modules,
-            admin_email=cmd.admin_email.strip().lower() if cmd.admin_email else None,
-            admin_full_name=cmd.admin_full_name.strip() if cmd.admin_full_name else None,
-            admin_password_hash=admin_password_hash,
-        )
         try:
-            await self.client_repo.save(client)
-            await self.license_repo.save(license_entity)
-            if self.chart_provisioner:
-                try:
-                    await self.chart_provisioner.provision_chart(
-                        client.tenant_id,
-                        accounting_template_code,
-                        applied_by=cmd.admin_email or "BACKOFFICE",
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Aviso ao provisionar plano de contas {accounting_template_code} para {client.company_name}: {e}"
-                    )
-        except Exception:
-            await self.provisioner.delete_tenant(client.tenant_id)
+            await self.provisioner.provision_client_tenant(
+                tenant_id=client.tenant_id,
+                slug=slug,
+                company_name=client.company_name,
+                nif=nif,
+                alvara_number=alvara_number,
+                alvara_issue_date=issue_date,
+                alvara_expiry_date=expiry_date,
+                sector_code=sector_code,
+                accounting_template_code=accounting_template_code,
+                license_valid_until=_mirror_datetime(valid_until),
+                modules=modules,
+                admin_email=cmd.admin_email.strip().lower() if cmd.admin_email else None,
+                admin_full_name=cmd.admin_full_name.strip() if cmd.admin_full_name else None,
+                admin_password_hash=admin_password_hash,
+            )
+            try:
+                await self.client_repo.save(client)
+                await self.license_repo.save(license_entity)
+                if self.chart_provisioner:
+                    try:
+                        await self.chart_provisioner.provision_chart(
+                            client.tenant_id,
+                            accounting_template_code,
+                            applied_by=cmd.admin_email or "BACKOFFICE",
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Aviso ao provisionar plano de contas {accounting_template_code} para {client.company_name}: {e}"
+                        )
+            except Exception:
+                await self.provisioner.delete_tenant(client.tenant_id)
+                raise
+        except Exception as exc:
+            msg = str(getattr(exc, "orig", exc)).lower()
+            if "users_email" in msg or "idx_users_email" in msg:
+                raise ConflictError(f"Já existe um utilizador com o e-mail {cmd.admin_email}.")
+            if "tenants_nif" in msg or "clients_nif" in msg or "uq_tenants_nif" in msg:
+                raise ConflictError(f"Já existe uma empresa com o NIF {nif}.")
+            if "slug" in msg:
+                raise ConflictError(f"Já existe uma empresa com o identificador '{slug}'.")
             raise
 
         history = await self.license_repo.list_for_client(client.id)

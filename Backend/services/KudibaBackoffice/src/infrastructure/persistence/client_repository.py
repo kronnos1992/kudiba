@@ -21,7 +21,7 @@ class SqlAlchemyClientRepository(IClientRepository):
 
     async def find_by_nif(self, nif: str) -> Optional[Client]:
         async with session_scope(self._session_factory) as (session, _):
-            res = await session.execute(select(ClientModel).where(ClientModel.nif == nif))
+            res = await session.execute(select(ClientModel).where(ClientModel.nif == nif.strip()))
             m = res.scalar_one_or_none()
             return self._to_entity(m) if m else None
 

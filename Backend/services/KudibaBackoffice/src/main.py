@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.config import get_settings
@@ -197,6 +198,47 @@ async def request_validation_error_handler(request: Request, exc: RequestValidat
             "instance": request.url.path,
             "code": "UNPROCESSABLE_ENTITY",
             "errors": errors,
+        },
+    )
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError):
+    logger.exception("Violação de integridade na base de dados em %s: %s", request.url.path, exc)
+    msg = str(getattr(exc, "orig", exc)).lower()
+    detail = "Conflito de integridade de dados."
+    if "users_email" in msg or "idx_users_email" in msg:
+        detail = "Já existe um utilizador registado com o e-mail fornecido."
+    elif "tenants_nif" in msg or "clients_nif" in msg or "uq_tenants_nif" in msg:
+        detail = "Já existe uma empresa registada com o NIF fornecido."
+    elif "slug" in msg:
+        detail = "Já existe uma empresa registada com este identificador único."
+    return JSONResponse(
+        status_code=409,
+        content={
+            "type": "https://api.kudiba.ao/errors/conflict",
+            "title": "Conflito de Dados",
+            "status": 409,
+            "detail": detail,
+            "instance": request.url.path,
+            "code": "DATA_INTEGRITY_CONFLICT",
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Erro interno não tratado em %s: %s", request.url.path, exc)
+    detail_msg = str(exc) if str(exc) else "Ocorreu um erro interno inesperado no servidor."
+    return JSONResponse(
+        status_code=500,
+        content={
+            "type": "https://api.kudiba.ao/errors/internal-error",
+            "title": "Erro Interno do Servidor",
+            "status": 500,
+            "detail": detail_msg,
+            "instance": request.url.path,
+            "code": "INTERNAL_SERVER_ERROR",
         },
     )
 
