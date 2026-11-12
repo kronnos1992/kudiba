@@ -75,6 +75,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     networks:
       kudiba-internal-network:
         aliases:
@@ -117,6 +119,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       gateway-redis:
         condition: service_healthy
     networks:
@@ -145,6 +149,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     networks:
       kudiba-internal-network:
         aliases:
@@ -171,6 +177,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     networks:
       kudiba-internal-network:
         aliases:
@@ -197,6 +205,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     networks:
       kudiba-internal-network:
         aliases:
@@ -222,6 +232,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     networks:
       kudiba-internal-network:
         aliases:
@@ -252,6 +264,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     networks:
       kudiba-internal-network:
         aliases:
@@ -279,6 +293,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     networks:
       kudiba-internal-network:
         aliases:
@@ -345,39 +361,39 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./Backend/deploy/00-init-databases.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
-      - ./Backend/deploy/01-invoicing-schema.sql:/docker-entrypoint-initdb.d/01-invoicing-schema.sql:ro
-      - ./Backend/deploy/02-auth-schema.sql:/docker-entrypoint-initdb.d/02-auth-schema.sql:ro
-      - ./Backend/deploy/03-retire-demo-admin.sql:/docker-entrypoint-initdb.d/03-retire-demo-admin.sql:ro
-      - ./Backend/deploy/04-inventory-schema.sql:/docker-entrypoint-initdb.d/04-inventory-schema.sql:ro
-      - ./Backend/deploy/05-treasury-schema.sql:/docker-entrypoint-initdb.d/05-treasury-schema.sql:ro
-      - ./Backend/deploy/18-treasury-cash-flow-payables.sql:/docker-entrypoint-initdb.d/18-treasury-cash-flow-payables.sql:ro
-      - ./Backend/deploy/19-seed-treasury-cashflow.sql:/docker-entrypoint-initdb.d/19-seed-treasury-cashflow.sql:ro
-      - ./Backend/deploy/06-accounting-schema.sql:/docker-entrypoint-initdb.d/06-accounting-schema.sql:ro
-      - ./Backend/deploy/07-payroll-schema.sql:/docker-entrypoint-initdb.d/07-payroll-schema.sql:ro
-      - ./Backend/deploy/08-integrations-schema.sql:/docker-entrypoint-initdb.d/08-integrations-schema.sql:ro
-      - ./Backend/deploy/09-backoffice-schema.sql:/docker-entrypoint-initdb.d/09-backoffice-schema.sql:ro
-      - ./Backend/deploy/10-roles-per-tenant.sql:/docker-entrypoint-initdb.d/10-roles-per-tenant.sql:ro
-      - ./Backend/deploy/11-tenants-contingency.sql:/docker-entrypoint-initdb.d/11-tenants-contingency.sql:ro
-      - ./Backend/deploy/12-role-permission-overrides.sql:/docker-entrypoint-initdb.d/12-role-permission-overrides.sql:ro
-      - ./Backend/deploy/13-expand-full-permissions-matrix.sql:/docker-entrypoint-initdb.d/13-expand-full-permissions-matrix.sql:ro
-      - ./Backend/deploy/14-tenant-database-connections.sql:/docker-entrypoint-initdb.d/14-tenant-database-connections.sql:ro
-      - ./Backend/deploy/20-conflict-management-schema.sql:/docker-entrypoint-initdb.d/20-conflict-management-schema.sql:ro
-      - ./Backend/deploy/21-seed-conflict-cases.sql:/docker-entrypoint-initdb.d/21-seed-conflict-cases.sql:ro
-      - ./Backend/deploy/22-cost-centers-analytical-accounting.sql:/docker-entrypoint-initdb.d/22-cost-centers-analytical-accounting.sql:ro
-      - ./Backend/deploy/23-partial-invoice-payments.sql:/docker-entrypoint-initdb.d/23-partial-invoice-payments.sql:ro
-      - ./Backend/deploy/24-purchase-uom-conversion.sql:/docker-entrypoint-initdb.d/24-purchase-uom-conversion.sql:ro
-      - ./Backend/deploy/24-universal-system-audit-trail.sql:/docker-entrypoint-initdb.d/24-universal-system-audit-trail.sql:ro
-      - ./Backend/deploy/25-accounting-chart-templates.sql:/docker-entrypoint-initdb.d/25-accounting-chart-templates.sql:ro
-      - ./Backend/deploy/26-tenant-accounting-profile.sql:/docker-entrypoint-initdb.d/26-tenant-accounting-profile.sql:ro
-      - ./Backend/deploy/28-tenant-backups.sql:/docker-entrypoint-initdb.d/28-tenant-backups.sql:ro
-      - ./Backend/deploy/16-row-level-security.sql:/opt/kudiba/16-row-level-security.sql:ro
-      - ./Backend/deploy/17-application-role.sql:/opt/kudiba/17-application-role.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kudiba -d kudiba_erp"]
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - kudiba-internal-network
+
+  # ============================================================================
+  # 3b. INITIALIZAÇÃO IDEMPOTENTE DAS BASES DE DADOS
+  # Corre a partir da imagem publicada, cria as bases e aplica todos os SQL
+  # de Backend/deploy. Os serviços só arrancam depois de terminar com sucesso.
+  # ============================================================================
+  db-init:
+    image: ${DOCKERHUB_USERNAME:-kudiba}/kudiba-db-init:${IMAGE_TAG:-latest}
+    build:
+      context: ./Backend/deploy
+      dockerfile: Dockerfile
+    container_name: kudiba-db-init
+    restart: "no"
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGUSER=${POSTGRES_USER:-kudiba}
+      - PGPASSWORD=${POSTGRES_PASSWORD:-kudiba_secret_pass}
+      - POSTGRES_USER=${POSTGRES_USER:-kudiba}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-kudiba_secret_pass}
+      - POSTGRES_DB=kudiba_erp
+      - KUDIBA_APP_PASSWORD=${KUDIBA_APP_PASSWORD:-kudiba_app_secret}
+      - KUDIBA_INIT_TRACKING_DB=postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - kudiba-internal-network
 

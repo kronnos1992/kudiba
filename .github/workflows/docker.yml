@@ -55,6 +55,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - service: db-init
+            image: kudiba-db-init
+            context: ./Backend/deploy
+            dockerfile: ./Backend/deploy/Dockerfile
           - service: gateway
             image: kudiba-gateway
             context: ./Backend/gateway
