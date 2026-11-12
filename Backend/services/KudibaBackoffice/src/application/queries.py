@@ -1,3 +1,4 @@
+import logging
 from typing import List, Optional
 from datetime import date, datetime, timezone
 
@@ -16,6 +17,19 @@ from src.domain.error import EntityNotFoundError
 from src.domain.modules import BILLABLE_MODULES
 from src.domain.ports import IClientRepository, ILicenseRepository
 
+logger = logging.getLogger(__name__)
+
+
+async def _sync_best_effort(sync) -> None:
+    if sync is None:
+        return
+    try:
+        await sync.execute()
+    except Exception:
+        logger.exception(
+            "Falha ao sincronizar tenants de onboarding; a devolver os dados já registados no backoffice."
+        )
+
 
 class ListClientsUseCase:
     def __init__(
@@ -29,8 +43,7 @@ class ListClientsUseCase:
         self.sync = sync
 
     async def execute(self, search: Optional[str] = None, status: Optional[str] = None) -> List[ClientDto]:
-        if self.sync is not None:
-            await self.sync.execute()
+        await _sync_best_effort(self.sync)
         clients = await self.client_repo.list_all(search=search)
         current_map = await self.license_repo.find_current_map([c.id for c in clients])
         dtos = [
@@ -90,8 +103,7 @@ class GetPlatformSummaryUseCase:
         self.sync = sync
 
     async def execute(self) -> PlatformSummaryDto:
-        if self.sync is not None:
-            await self.sync.execute()
+        await _sync_best_effort(self.sync)
         today = date.today()
         clients = await self.client_repo.list_all()
         current_map = await self.license_repo.find_current_map([c.id for c in clients])
@@ -163,8 +175,7 @@ class GetPlatformCommercialSummaryUseCase:
         self.sync = sync
 
     async def execute(self) -> PlatformCommercialSummaryDto:
-        if self.sync is not None:
-            await self.sync.execute()
+        await _sync_best_effort(self.sync)
         clients = await self.client_repo.list_all()
 
         today = date.today()

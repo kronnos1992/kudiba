@@ -83,11 +83,13 @@ async def lifespan(app: FastAPI):
                     "ALTER TABLE kudiba_backoffice.clients "
                     "ADD COLUMN IF NOT EXISTS alvara_number VARCHAR(64), "
                     "ADD COLUMN IF NOT EXISTS alvara_issue_date DATE, "
-                    "ADD COLUMN IF NOT EXISTS alvara_expiry_date DATE"
+                    "ADD COLUMN IF NOT EXISTS alvara_expiry_date DATE, "
+                    "ADD COLUMN IF NOT EXISTS sector_code VARCHAR(32) NOT NULL DEFAULT 'GERAL', "
+                    "ADD COLUMN IF NOT EXISTS accounting_template_code VARCHAR(64) NOT NULL DEFAULT 'PGC_GENERIC'"
                 )
             )
     except Exception as e:
-        logger.warning("Migração automática de alvara em kudiba_backoffice ignorada: %s", e)
+        logger.warning("Migração automática em kudiba_backoffice.clients ignorada: %s", e)
 
     try:
         async with auth_engine.begin() as conn:
@@ -96,11 +98,17 @@ async def lifespan(app: FastAPI):
                     "ALTER TABLE kudiba_core.tenants "
                     "ADD COLUMN IF NOT EXISTS alvara_number VARCHAR(64), "
                     "ADD COLUMN IF NOT EXISTS alvara_issue_date DATE, "
-                    "ADD COLUMN IF NOT EXISTS alvara_expiry_date DATE"
+                    "ADD COLUMN IF NOT EXISTS alvara_expiry_date DATE, "
+                    "ADD COLUMN IF NOT EXISTS email VARCHAR(255), "
+                    "ADD COLUMN IF NOT EXISTS phone VARCHAR(64), "
+                    "ADD COLUMN IF NOT EXISTS sector_code VARCHAR(32) NOT NULL DEFAULT 'GERAL', "
+                    "ADD COLUMN IF NOT EXISTS accounting_template_code VARCHAR(64) NOT NULL DEFAULT 'PGC_GENERIC', "
+                    "ADD COLUMN IF NOT EXISTS license_valid_until TIMESTAMPTZ, "
+                    "ADD COLUMN IF NOT EXISTS subscribed_modules TEXT[]"
                 )
             )
     except Exception as e:
-        logger.warning("Migração automática de alvara em kudiba_core.tenants ignorada: %s", e)
+        logger.warning("Migração automática em kudiba_core.tenants ignorada: %s", e)
 
     yield
     await engine.dispose()

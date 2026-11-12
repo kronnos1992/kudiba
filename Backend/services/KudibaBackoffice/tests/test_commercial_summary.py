@@ -20,6 +20,11 @@ class FakeClientRepo:
         return list(self._clients)
 
 
+class FailingSync:
+    async def execute(self):
+        raise RuntimeError("kudiba_core.tenants indisponível")
+
+
 def _month_key(dt: datetime) -> str:
     return f"{dt.year:04d}-{dt.month:02d}"
 
@@ -70,3 +75,14 @@ async def test_commercial_summary_empty_platform():
     assert summary.new_this_month == 0
     assert summary.growth_rate is None
     assert all(b.count == 0 for b in summary.monthly)
+
+
+@pytest.mark.asyncio
+async def test_commercial_summary_survives_sync_failure():
+    now = datetime.now(timezone.utc)
+    repo = FakeClientRepo([FakeClient(now)])
+
+    summary = await GetPlatformCommercialSummaryUseCase(repo, sync=FailingSync()).execute()
+
+    assert summary.total_clients == 1
+    assert summary.new_this_month == 1
