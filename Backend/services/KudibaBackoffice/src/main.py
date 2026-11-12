@@ -92,6 +92,30 @@ async def lifespan(app: FastAPI):
         logger.warning("Migração automática em kudiba_backoffice.clients ignorada: %s", e)
 
     try:
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE SCHEMA IF NOT EXISTS kudiba_audit"))
+            await conn.execute(
+                text(
+                    "CREATE TABLE IF NOT EXISTS kudiba_audit.system_audit_trail ("
+                    "id UUID PRIMARY KEY DEFAULT gen_random_uuid(), "
+                    "tenant_id UUID NOT NULL, "
+                    "module VARCHAR(50) NOT NULL, "
+                    "action VARCHAR(100) NOT NULL, "
+                    "entity_type VARCHAR(50) NOT NULL, "
+                    "entity_id VARCHAR(100), "
+                    "document_reference VARCHAR(100), "
+                    "actor_user_id VARCHAR(100) DEFAULT 'sistema', "
+                    "actor_name VARCHAR(255) DEFAULT 'Sistema / Administrador', "
+                    "ip_address INET, "
+                    "details JSONB DEFAULT '{}'::jsonb, "
+                    "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+                    ")"
+                )
+            )
+    except Exception as e:
+        logger.warning("Migração automática da trilha de auditoria ignorada: %s", e)
+
+    try:
         async with auth_engine.begin() as conn:
             await conn.execute(
                 text(

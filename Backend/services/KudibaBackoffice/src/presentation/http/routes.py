@@ -1,3 +1,5 @@
+import ipaddress
+import logging
 import uuid
 from datetime import date
 from typing import List, Optional, Tuple
@@ -13,6 +15,17 @@ from src.application.dto import (
 )
 from src.domain.modules import BILLABLE_MODULES
 from src.presentation.http.deps import SecurityContext, get_app_state, require_platform_admin
+
+logger = logging.getLogger(__name__)
+
+
+def _normalize_ip(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        return None
 
 
 class CreateClientHttpRequest(BaseModel):
@@ -73,7 +86,7 @@ def extract_actor(request: Request, sec: Optional[SecurityContext]) -> Tuple[Opt
         ip_addr = ip_addr.split(",")[0].strip()
     elif request.client:
         ip_addr = request.client.host
-    return actor_id, actor_name, ip_addr
+    return actor_id, actor_name, _normalize_ip(ip_addr)
 
 
 async def record_audit(
@@ -91,18 +104,26 @@ async def record_audit(
     if not hasattr(app_state, "audit_repo") or not app_state.audit_repo:
         return
     actor_id, actor_name, ip_addr = extract_actor(request, sec) if request else (None, None, None)
-    await app_state.audit_repo.record_event(
-        tenant_id=tenant_id,
-        module=module,
-        action=action,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        document_reference=document_reference,
-        actor_user_id=actor_id,
-        actor_name=actor_name,
-        ip_address=ip_addr,
-        details=details or {},
-    )
+    try:
+        await app_state.audit_repo.record_event(
+            tenant_id=tenant_id,
+            module=module,
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            document_reference=document_reference,
+            actor_user_id=actor_id,
+            actor_name=actor_name,
+            ip_address=ip_addr,
+            details=details or {},
+        )
+    except Exception:
+        logger.exception(
+            "Falha ao registar evento de auditoria %s/%s para %s; a operação principal mantém-se.",
+            module,
+            action,
+            entity_id,
+        )
 
 
 def create_backoffice_router() -> APIRouter:

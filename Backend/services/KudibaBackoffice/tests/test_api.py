@@ -1,4 +1,6 @@
+import uuid
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -9,6 +11,7 @@ from src.application.dto import CreateClientCommand
 from src.domain.error import DomainError, InvalidModulesError
 from src.domain.modules import validate_modules
 from src.main import app
+from src.presentation.http.routes import record_audit
 
 
 @pytest.mark.asyncio
@@ -49,6 +52,24 @@ async def test_invalid_token_rejected():
         )
         assert response.status_code == 401
         assert response.json()["code"] == "UNAUTHORIZED"
+
+
+@pytest.mark.asyncio
+async def test_audit_failure_does_not_break_business_operation():
+    class FailingAuditRepo:
+        async def record_event(self, **kwargs):
+            raise RuntimeError("kudiba_audit indisponível")
+
+    app_state = SimpleNamespace(audit_repo=FailingAuditRepo())
+
+    await record_audit(
+        app_state,
+        tenant_id=uuid.uuid4(),
+        module="BACKOFFICE",
+        action="CRIACAO_CLIENTE_PLATAFORMA",
+        entity_type="CLIENT",
+        entity_id=str(uuid.uuid4()),
+    )
 
 
 def test_validate_modules_accepts_known_and_deduplicates():
