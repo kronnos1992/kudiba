@@ -98,6 +98,14 @@ fi
 # 6. Inicialização do schema de contabilidade no banco 'kudiba_accounting'
 echo "Aplicando schema de contabilidade no banco 'kudiba_accounting'..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_accounting" -f $SQL_DIR/06-accounting-schema.sql
+psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "kudiba_accounting" <<-EOSQL
+    ALTER TYPE kudiba_accounting.account_class ADD VALUE IF NOT EXISTS 'CLASS_0_CONTAS_DE_ORDEM';
+    ALTER TYPE kudiba_accounting.account_class ADD VALUE IF NOT EXISTS 'CLASS_1_MEIOS_FIXOS_INVESTIMENTOS';
+    ALTER TYPE kudiba_accounting.account_class ADD VALUE IF NOT EXISTS 'CLASS_4_MEIOS_MONETARIOS';
+    ALTER TYPE kudiba_accounting.account_class ADD VALUE IF NOT EXISTS 'CLASS_5_CAPITAL_RESERVAS';
+    ALTER TYPE kudiba_accounting.account_class ADD VALUE IF NOT EXISTS 'CLASS_6_PROVEITOS_POR_NATUREZA';
+    ALTER TYPE kudiba_accounting.account_class ADD VALUE IF NOT EXISTS 'CLASS_7_CUSTOS_POR_NATUREZA';
+EOSQL
 if [ -f $SQL_DIR/22-cost-centers-analytical-accounting.sql ]; then
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_accounting" -f $SQL_DIR/22-cost-centers-analytical-accounting.sql
 fi
@@ -260,6 +268,35 @@ fi
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f $SQL_DIR/07-payroll-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f $SQL_DIR/08-integrations-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f $SQL_DIR/24-universal-system-audit-trail.sql
+
+echo "Reconciliando baseline multi-tenant entre os microserviços..."
+psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "kudiba_auth" -c "COPY (SELECT id, slug, company_name, trade_name, nif, address_detail, city, province, postal_code, country, phone, email, website, logo_data_url, alvara_number, commercial_registry, share_capital, currency, tax_office_code, agt_cert_number, default_withholding_rate, invoice_footer_notes, bank_accounts, onboarding_completed, status, created_at, updated_at, tax_regime_code, license_valid_until, subscribed_modules, database_connections FROM kudiba_core.tenants) TO STDOUT WITH CSV;" | \
+psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "kudiba_invoicing" -c "COPY kudiba_core.tenants (id, slug, company_name, trade_name, nif, address_detail, city, province, postal_code, country, phone, email, website, logo_data_url, alvara_number, commercial_registry, share_capital, currency, tax_office_code, agt_cert_number, default_withholding_rate, invoice_footer_notes, bank_accounts, onboarding_completed, status, created_at, updated_at, tax_regime_code, license_valid_until, subscribed_modules, database_connections) FROM STDIN WITH CSV;" 2>/dev/null || true
+
+psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "kudiba_auth" <<-EOSQL
+    INSERT INTO kudiba_core.branches (id, tenant_id, code, name, is_active, created_at, updated_at)
+    SELECT gen_random_uuid(), t.id, 'SEDE', 'Sede', TRUE, NOW(), NOW()
+    FROM kudiba_core.tenants t
+    WHERE NOT EXISTS (SELECT 1 FROM kudiba_core.branches b WHERE b.tenant_id = t.id);
+EOSQL
+
+psql -v ON_ERROR_STOP=0 -t -A --username "$POSTGRES_USER" --dbname "kudiba_auth" -c "SELECT tenant_id || '|' || id FROM kudiba_core.branches WHERE code = 'SEDE';" | while IFS='|' read -r tid bid; do
+    [ -z "$tid" ] || [ -z "$bid" ] && continue
+    psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "kudiba_inventory" -c "
+        INSERT INTO kudiba_inventory.warehouses (id, tenant_id, branch_id, code, name, is_default, is_active, created_at, updated_at)
+        VALUES (gen_random_uuid(), '$tid'::uuid, '$bid'::uuid, 'SEDE', 'Armazém Geral - Sede', TRUE, TRUE, NOW(), NOW())
+        ON CONFLICT (tenant_id, code) DO NOTHING;
+    " 2>/dev/null || true
+done
+
+psql -v ON_ERROR_STOP=0 -t -A --username "$POSTGRES_USER" --dbname "kudiba_auth" -c "SELECT id FROM kudiba_core.tenants;" | while read -r tid; do
+    [ -z "$tid" ] && continue
+    psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "kudiba_treasury" -c "
+        INSERT INTO kudiba_treasury.cash_registers (id, tenant_id, code, name, is_active, created_at, updated_at)
+        VALUES (gen_random_uuid(), '$tid'::uuid, 'CX-01', 'Caixa Principal', TRUE, NOW(), NOW())
+        ON CONFLICT (tenant_id, code) DO NOTHING;
+    " 2>/dev/null || true
+done
 
 if [ "$INIT_SKIP_TRACKING" != "true" ]; then
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$INIT_TRACKING_DB" -c \

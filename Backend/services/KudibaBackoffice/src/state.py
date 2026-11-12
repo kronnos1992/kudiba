@@ -34,6 +34,7 @@ class AppState:
     session_factory: async_sessionmaker[AsyncSession]
     auth_session_factory: async_sessionmaker[AsyncSession]
     accounting_session_factory: Optional[async_sessionmaker[AsyncSession]]
+    invoicing_session_factory: Optional[async_sessionmaker[AsyncSession]]
     jwt_service: JwtTokenService
     create_client: CreateClientUseCase
     update_client: UpdateClientUseCase
@@ -55,11 +56,12 @@ def create_app_state(
     session_factory: async_sessionmaker[AsyncSession],
     auth_session_factory: async_sessionmaker[AsyncSession],
     accounting_session_factory: Optional[async_sessionmaker[AsyncSession]] = None,
+    invoicing_session_factory: Optional[async_sessionmaker[AsyncSession]] = None,
 ) -> AppState:
     client_repo = SqlAlchemyClientRepository(session_factory)
     license_repo = SqlAlchemyLicenseRepository(session_factory)
     audit_repo = SqlAlchemyAuditRepository(session_factory)
-    provisioner = SqlAlchemyTenantProvisioner(auth_session_factory)
+    provisioner = SqlAlchemyTenantProvisioner(auth_session_factory, invoicing_session_factory)
     tenant_reader = SqlAlchemyTenantReader(auth_session_factory)
     chart_provisioner = (
         SqlAlchemyChartProvisioner(accounting_session_factory)
@@ -74,6 +76,7 @@ def create_app_state(
         session_factory=session_factory,
         auth_session_factory=auth_session_factory,
         accounting_session_factory=accounting_session_factory,
+        invoicing_session_factory=invoicing_session_factory,
         jwt_service=jwt_service,
         create_client=CreateClientUseCase(
             client_repo, license_repo, provisioner, chart_provisioner=chart_provisioner

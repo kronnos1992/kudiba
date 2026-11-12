@@ -138,8 +138,8 @@ class SqlAlchemyChartProvisioner(IChartProvisioner):
                         (tenant_id, template_code, template_version, applied_at,
                          applied_by, mode, status, metadata)
                     VALUES
-                        (:tenant_id, :code, :version, NOW(), :applied_by, :mode, 'ACTIVE',
-                         jsonb_build_object('inserted_accounts', :inserted))
+                        (:tenant_id, :code, :version, NOW(), CAST(:applied_by AS VARCHAR), CAST(:mode AS VARCHAR), 'ACTIVE',
+                         jsonb_build_object('inserted_accounts', CAST(:inserted AS INTEGER)))
                     ON CONFLICT (tenant_id) DO UPDATE SET
                         template_code = EXCLUDED.template_code,
                         template_version = EXCLUDED.template_version,

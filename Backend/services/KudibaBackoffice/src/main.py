@@ -67,11 +67,29 @@ accounting_session_factory = async_sessionmaker(
     autoflush=False,
 )
 
+invoicing_session_factory = None
+if settings.async_invoicing_database_url:
+    invoicing_engine = create_async_engine(
+        settings.async_invoicing_database_url,
+        echo=False,
+        pool_size=5,
+        max_overflow=10,
+        pool_pre_ping=True,
+    )
+    invoicing_session_factory = async_sessionmaker(
+        bind=invoicing_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False,
+    )
+
 app_state = create_app_state(
     settings,
     session_factory,
     auth_session_factory,
     accounting_session_factory=accounting_session_factory,
+    invoicing_session_factory=invoicing_session_factory,
 )
 
 

@@ -17,8 +17,13 @@ from src.infrastructure.persistence.auth_models import (
 
 
 class SqlAlchemyTenantProvisioner(ITenantProvisioner):
-    def __init__(self, auth_session_factory: async_sessionmaker[AsyncSession]):
+    def __init__(
+        self,
+        auth_session_factory: async_sessionmaker[AsyncSession],
+        invoicing_session_factory: Optional[async_sessionmaker[AsyncSession]] = None,
+    ):
         self._session_factory = auth_session_factory
+        self._invoicing_session_factory = invoicing_session_factory
 
     async def slug_exists(self, slug: str) -> bool:
         async with session_scope(self._session_factory) as (session, _):
@@ -121,6 +126,30 @@ class SqlAlchemyTenantProvisioner(ITenantProvisioner):
                 session.add(
                     UserRoleModel(user_id=user_id, tenant_id=tenant_id, role_id="ADMIN")
                 )
+        if self._invoicing_session_factory:
+            async with session_scope(self._invoicing_session_factory) as (inv_session, _):
+                inv_session.add(
+                    TenantModel(
+                        id=tenant_id,
+                        slug=slug,
+                        company_name=company_name,
+                        nif=nif,
+                        alvara_number=alvara_number,
+                        alvara_issue_date=alvara_issue_date,
+                        alvara_expiry_date=alvara_expiry_date,
+                        currency="AOA",
+                        tax_regime_code="REGIME_GERAL",
+                        default_withholding_rate=6.50,
+                        bank_accounts=[],
+                        database_connections={},
+                        onboarding_completed=False,
+                        sector_code=sector_code,
+                        accounting_template_code=accounting_template_code,
+                        status="ACTIVE",
+                        license_valid_until=license_valid_until,
+                        subscribed_modules=modules,
+                    )
+                )
         return branch_id
 
     async def update_license_mirror(
@@ -141,6 +170,16 @@ class SqlAlchemyTenantProvisioner(ITenantProvisioner):
                 tenant.subscribed_modules = modules
             if status is not None:
                 tenant.status = status
+        if self._invoicing_session_factory:
+            async with session_scope(self._invoicing_session_factory) as (inv_session, _):
+                inv_tenant = await inv_session.get(TenantModel, tenant_id)
+                if inv_tenant is not None:
+                    if license_valid_until is not None:
+                        inv_tenant.license_valid_until = license_valid_until
+                    if modules is not None:
+                        inv_tenant.subscribed_modules = modules
+                    if status is not None:
+                        inv_tenant.status = status
 
     async def delete_tenant(self, tenant_id: uuid.UUID) -> None:
         async with session_scope(self._session_factory) as (session, _):
@@ -162,6 +201,11 @@ class SqlAlchemyTenantProvisioner(ITenantProvisioner):
             await session.execute(
                 delete(TenantModel).where(TenantModel.id == tenant_id)
             )
+        if self._invoicing_session_factory:
+            async with session_scope(self._invoicing_session_factory) as (inv_session, _):
+                await inv_session.execute(
+                    delete(TenantModel).where(TenantModel.id == tenant_id)
+                )
 
     async def is_platform_admin(self, user_id: uuid.UUID) -> bool:
         async with session_scope(self._session_factory) as (session, _):

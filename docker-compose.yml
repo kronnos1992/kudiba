@@ -290,6 +290,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-kudiba}:${POSTGRES_PASSWORD:-kudiba_secret_pass}@postgres:5432/kudiba_backoffice
       - AUTH_DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-kudiba}:${POSTGRES_PASSWORD:-kudiba_secret_pass}@postgres:5432/kudiba_auth
       - ACCOUNTING_DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-kudiba}:${POSTGRES_PASSWORD:-kudiba_secret_pass}@postgres:5432/kudiba_accounting
+      - INVOICING_DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-kudiba}:${POSTGRES_PASSWORD:-kudiba_secret_pass}@postgres:5432/kudiba_invoicing
       - JWT_SECRET=${JWT_SECRET:-kudiba_jwt_secret_development_key_change_in_production_2026}
     depends_on:
       postgres:

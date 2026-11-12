@@ -1,6 +1,6 @@
 import json
 from functools import lru_cache
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -10,6 +10,7 @@ _DEVELOPMENT_CORS_ORIGINS = {"http://localhost:3000", "http://localhost:5173"}
 _DEVELOPMENT_DATABASE_URL = "postgresql+asyncpg://kudiba:kudiba_secret_pass@localhost:5432/kudiba_backoffice"
 _DEVELOPMENT_AUTH_DATABASE_URL = "postgresql+asyncpg://kudiba:kudiba_secret_pass@localhost:5432/kudiba_auth"
 _DEVELOPMENT_ACCOUNTING_DATABASE_URL = "postgresql+asyncpg://kudiba:kudiba_secret_pass@localhost:5432/kudiba_accounting"
+_DEVELOPMENT_INVOICING_DATABASE_URL = "postgresql+asyncpg://kudiba:kudiba_secret_pass@localhost:5432/kudiba_invoicing"
 
 
 class Settings(BaseSettings):
@@ -18,6 +19,7 @@ class Settings(BaseSettings):
     database_url: str = _DEVELOPMENT_DATABASE_URL
     auth_database_url: str = _DEVELOPMENT_AUTH_DATABASE_URL
     accounting_database_url: str = _DEVELOPMENT_ACCOUNTING_DATABASE_URL
+    invoicing_database_url: Optional[str] = _DEVELOPMENT_INVOICING_DATABASE_URL
 
     jwt_secret: str = _DEVELOPMENT_JWT_SECRET
     jwt_algorithm: str = "HS256"
@@ -83,6 +85,12 @@ class Settings(BaseSettings):
     @property
     def async_accounting_database_url(self) -> str:
         return self._to_asyncpg(self.accounting_database_url)
+
+    @property
+    def async_invoicing_database_url(self) -> Optional[str]:
+        if not self.invoicing_database_url:
+            return None
+        return self._to_asyncpg(self.invoicing_database_url)
 
 
 @lru_cache
