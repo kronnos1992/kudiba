@@ -41,6 +41,7 @@ import {
   RecordedInvoicePayment,
 } from '../../api/invoicing';
 import { inventoryApi, StockBalance } from '../../api/inventory';
+import { exportProformaPdf } from './proformaPdfExporter';
 
 type ActiveTab = 'invoices' | 'proformas' | 'new_invoice' | 'series' | 'saft';
 
@@ -740,81 +741,8 @@ export const InvoicingView: React.FC = () => {
   };
 
   const handlePrintProforma = () => {
-    const el = document.getElementById('proforma-modal-a4');
-    if (!el) {
-      window.print();
-      return;
-    }
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow?.document;
-    if (!doc) {
-      window.print();
-      return;
-    }
-
-    const headStyles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
-      .map((s) => s.outerHTML)
-      .join('\n');
-
-    doc.open();
-    doc.write(`
-      <!DOCTYPE html>
-      <html lang="pt">
-      <head>
-        <meta charset="utf-8">
-        <title>Proforma_${selectedProforma?.documentNumber || 'FP'}</title>
-        ${headStyles}
-        <style>
-          @page {
-            size: A4 portrait;
-            margin: 8mm 10mm;
-          }
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          html, body {
-            background: #ffffff !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          .invoice-a4 {
-            width: 100% !important;
-            max-width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-          }
-          .no-print {
-            display: none !important;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="invoice-a4">
-          ${el.innerHTML}
-        </div>
-      </body>
-      </html>
-    `);
-    doc.close();
-
-    iframe.contentWindow?.focus();
-    setTimeout(() => {
-      iframe.contentWindow?.print();
-      setTimeout(() => {
-        iframe.remove();
-      }, 1000);
-    }, 250);
+    if (!selectedProforma) return;
+    exportProformaPdf(selectedProforma, activeTenant);
   };
 
   const handleAddLine = () => {
