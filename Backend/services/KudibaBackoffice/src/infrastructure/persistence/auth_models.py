@@ -1,9 +1,9 @@
 import uuid
 from datetime import date, datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import ARRAY, BigInteger, Boolean, Date, DateTime, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import ARRAY, BigInteger, Boolean, Date, DateTime, Numeric, String, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -26,6 +26,12 @@ class TenantModel(AuthBase):
     alvara_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     alvara_issue_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     alvara_expiry_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="AOA")
+    tax_regime_code: Mapped[str] = mapped_column(String(32), nullable=False, default="REGIME_GERAL")
+    default_withholding_rate: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=6.50)
+    bank_accounts: Mapped[List[Dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    database_connections: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    onboarding_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     sector_code: Mapped[str] = mapped_column(String(32), nullable=False, default="GERAL")
     accounting_template_code: Mapped[str] = mapped_column(
         String(64), nullable=False, default="PGC_GENERIC"

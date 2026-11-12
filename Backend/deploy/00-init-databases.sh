@@ -167,6 +167,15 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$DB_TARGET" <<-EOS
         ADD COLUMN IF NOT EXISTS license_valid_until TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS subscribed_modules TEXT[],
         ADD COLUMN IF NOT EXISTS database_connections JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+    ALTER TABLE kudiba_core.tenants
+        ALTER COLUMN currency SET DEFAULT 'AOA',
+        ALTER COLUMN tax_regime_code SET DEFAULT 'REGIME_GERAL',
+        ALTER COLUMN default_withholding_rate SET DEFAULT 6.50,
+        ALTER COLUMN bank_accounts SET DEFAULT '[]'::jsonb,
+        ALTER COLUMN database_connections SET DEFAULT '{}'::jsonb,
+        ALTER COLUMN onboarding_completed SET DEFAULT FALSE,
+        ALTER COLUMN status SET DEFAULT 'ACTIVE';
 EOSQL
 done
 
