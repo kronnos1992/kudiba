@@ -80,11 +80,14 @@ pub async fn rate_limit_middleware(
     // Reutiliza a conexão multiplexada do Redis do AppState
     let mut redis_conn = match state.get_redis_conn().await {
         Some(conn) => conn,
-        None => return rate_limit_unavailable_response(path),
+        None => {
+            tracing::error!(path = %path, "Rate limiting indisponível: sem conexão ao Redis");
+            return rate_limit_unavailable_response(path);
+        }
     };
 
     let script = redis::Script::new(SLIDING_WINDOW_LUA);
-    let result: Result<(i64, i64), _> = script
+    let mut result: Result<(i64, i64), redis::RedisError> = script
         .key(&key)
         .arg(now_unix)
         .arg(window_sec)
@@ -92,6 +95,26 @@ pub async fn rate_limit_middleware(
         .arg(&req_id)
         .invoke_async(&mut redis_conn)
         .await;
+
+    // O primeiro comando após uma quebra falha enquanto o ConnectionManager
+    // reconecta; repetir uma vez aguarda essa reconexão em vez de devolver 503.
+    if let Err(err) = &result {
+        if is_transient_redis_error(err) {
+            tracing::warn!(
+                error = %err,
+                path = %path,
+                "Falha transitória de ligação ao Redis no rate limiting; a repetir uma vez"
+            );
+            result = script
+                .key(&key)
+                .arg(now_unix)
+                .arg(window_sec)
+                .arg(limit)
+                .arg(&req_id)
+                .invoke_async(&mut redis_conn)
+                .await;
+        }
+    }
 
     match result {
         Ok((allowed, remaining)) => {
@@ -124,8 +147,19 @@ pub async fn rate_limit_middleware(
                 problem_resp
             }
         }
-        Err(_) => rate_limit_unavailable_response(path),
+        Err(err) => {
+            tracing::error!(
+                error = %err,
+                path = %path,
+                "Rate limiting indisponível: falha no Redis após nova tentativa"
+            );
+            rate_limit_unavailable_response(path)
+        }
     }
+}
+
+fn is_transient_redis_error(err: &redis::RedisError) -> bool {
+    err.is_io_error() || err.kind() == redis::ErrorKind::BusyLoadingError
 }
 
 fn is_login_or_refresh_path(path: &str) -> bool {
@@ -172,7 +206,7 @@ fn is_probe(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_auth_path, is_probe};
+    use super::{is_auth_path, is_probe, is_transient_redis_error};
 
     #[test]
     fn auth_routes_are_not_exempt_from_rate_limiting() {
@@ -192,5 +226,20 @@ mod tests {
         assert!(is_auth_path("/auth/login"));
         assert!(is_auth_path("/api/v1/auth/refresh"));
         assert!(!is_auth_path("/api/v1/invoices"));
+    }
+
+    #[test]
+    fn io_errors_are_retryable() {
+        let err = redis::RedisError::from(std::io::Error::new(
+            std::io::ErrorKind::ConnectionReset,
+            "connection reset by peer",
+        ));
+        assert!(is_transient_redis_error(&err));
+    }
+
+    #[test]
+    fn server_errors_are_not_retryable() {
+        let err = redis::RedisError::from((redis::ErrorKind::TypeError, "wrong type"));
+        assert!(!is_transient_redis_error(&err));
     }
 }
