@@ -180,10 +180,20 @@ class CreateClientUseCase:
                 )
             if expiry_date < today:
                 raise DomainError("O alvará comercial informado já se encontra expirado.")
-        if await self.client_repo.find_by_nif(nif) or await self.provisioner.nif_exists(nif):
+        if await self.client_repo.find_by_nif(nif):
             raise ConflictError(f"Já existe um cliente registado com o NIF {nif}.")
-        if cmd.admin_email and await self.provisioner.email_exists(cmd.admin_email.strip().lower()):
-            raise ConflictError(f"Já existe um utilizador com o e-mail {cmd.admin_email}.")
+
+        if await self.provisioner.nif_exists(nif):
+            logger.warning(
+                f"NIF {nif} encontrado nas bases de provisionamento sem registo correspondente em backoffice.clients. A purgar tenant órfão prévio..."
+            )
+            await self.provisioner.cleanup_orphan_by_nif(nif)
+
+        if cmd.admin_email:
+            clean_email = cmd.admin_email.strip().lower()
+            await self.provisioner.cleanup_orphan_user(clean_email)
+            if await self.provisioner.email_exists(clean_email):
+                raise ConflictError(f"Já existe um utilizador com o e-mail {cmd.admin_email}.")
 
         slug = await self._unique_slug(cmd.company_name)
         valid_until = add_one_year(today)
@@ -235,24 +245,26 @@ class CreateClientUseCase:
                 admin_full_name=cmd.admin_full_name.strip() if cmd.admin_full_name else None,
                 admin_password_hash=admin_password_hash,
             )
-            try:
-                await self.client_repo.save(client)
-                await self.license_repo.save(license_entity)
-                if self.chart_provisioner:
-                    try:
-                        await self.chart_provisioner.provision_chart(
-                            client.tenant_id,
-                            accounting_template_code,
-                            applied_by=cmd.admin_email or "BACKOFFICE",
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            f"Aviso ao provisionar plano de contas {accounting_template_code} para {client.company_name}: {e}"
-                        )
-            except Exception:
-                await self.provisioner.delete_tenant(client.tenant_id)
-                raise
+            await self.client_repo.save(client)
+            await self.license_repo.save(license_entity)
+            if self.chart_provisioner:
+                try:
+                    await self.chart_provisioner.provision_chart(
+                        client.tenant_id,
+                        accounting_template_code,
+                        applied_by=cmd.admin_email or "BACKOFFICE",
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Aviso ao provisionar plano de contas {accounting_template_code} para {client.company_name}: {e}"
+                    )
         except Exception as exc:
+            try:
+                await self.provisioner.delete_tenant(client.tenant_id)
+            except Exception as del_err:
+                logger.warning(
+                    f"Aviso ao reverter tenant {client.tenant_id} após erro de provisionamento: {del_err}"
+                )
             msg = str(getattr(exc, "orig", exc)).lower()
             if "users_email" in msg or "idx_users_email" in msg:
                 raise ConflictError(f"Já existe um utilizador com o e-mail {cmd.admin_email}.")

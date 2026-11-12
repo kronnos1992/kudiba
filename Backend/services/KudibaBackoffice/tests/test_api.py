@@ -132,6 +132,15 @@ class _FakeProvisioner:
     async def email_exists(self, email):
         return False
 
+    async def cleanup_orphan_by_nif(self, nif):
+        pass
+
+    async def cleanup_orphan_user(self, email):
+        pass
+
+    async def delete_tenant(self, tenant_id):
+        pass
+
     async def provision_client_tenant(self, **kwargs):
         self.calls.append(kwargs)
 
@@ -206,6 +215,44 @@ async def test_create_client_alvara_is_optional_and_validates_dates_when_provide
     assert provisioner.calls[1]["alvara_number"] is None
     assert provisioner.calls[1]["alvara_issue_date"] is None
     assert provisioner.calls[1]["alvara_expiry_date"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_client_auto_reconciles_orphan_tenant():
+    client_repo = _FakeClientRepo()
+    license_repo = _FakeLicenseRepo()
+    provisioner = _FakeProvisioner()
+
+    orphans_cleaned = []
+    orphan_users_cleaned = []
+
+    async def fake_cleanup_orphan(nif):
+        orphans_cleaned.append(nif)
+
+    async def fake_cleanup_user(email):
+        orphan_users_cleaned.append(email)
+
+    async def fake_nif_exists(nif):
+        return True
+
+    provisioner.nif_exists = fake_nif_exists
+    provisioner.cleanup_orphan_by_nif = fake_cleanup_orphan
+    provisioner.cleanup_orphan_user = fake_cleanup_user
+
+    use_case = CreateClientUseCase(client_repo, license_repo, provisioner)
+    res = await use_case.execute(
+        CreateClientCommand(
+            company_name="Orphan Recovery Lda",
+            nif="5009998888",
+            admin_email="admin@orphan.ao",
+            admin_full_name="Admin User",
+            admin_password="Password123!",
+            modules=["invoicing"],
+        )
+    )
+    assert res.nif == "5009998888"
+    assert "5009998888" in orphans_cleaned
+    assert "admin@orphan.ao" in orphan_users_cleaned
 
 
 @pytest.mark.asyncio

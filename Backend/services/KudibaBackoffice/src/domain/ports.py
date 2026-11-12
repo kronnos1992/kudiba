@@ -68,6 +68,14 @@ class ITenantProvisioner(ABC):
         pass
 
     @abstractmethod
+    async def cleanup_orphan_by_nif(self, nif: str) -> None:
+        pass
+
+    @abstractmethod
+    async def cleanup_orphan_user(self, email: str) -> None:
+        pass
+
+    @abstractmethod
     async def provision_client_tenant(
         self,
         *,

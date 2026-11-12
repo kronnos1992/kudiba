@@ -181,31 +181,89 @@ class SqlAlchemyTenantProvisioner(ITenantProvisioner):
                     if status is not None:
                         inv_tenant.status = status
 
-    async def delete_tenant(self, tenant_id: uuid.UUID) -> None:
-        async with session_scope(self._session_factory) as (session, _):
-            res = await session.execute(
-                select(UserTenantModel.user_id).where(UserTenantModel.tenant_id == tenant_id)
-            )
-            user_ids = [row[0] for row in res.all()]
-            await session.execute(
-                delete(UserRoleModel).where(UserRoleModel.tenant_id == tenant_id)
-            )
-            await session.execute(
-                delete(UserTenantModel).where(UserTenantModel.tenant_id == tenant_id)
-            )
-            if user_ids:
-                await session.execute(delete(UserModel).where(UserModel.id.in_(user_ids)))
-            await session.execute(
-                delete(BranchModel).where(BranchModel.tenant_id == tenant_id)
-            )
-            await session.execute(
-                delete(TenantModel).where(TenantModel.id == tenant_id)
-            )
+    async def cleanup_orphan_by_nif(self, nif: str) -> None:
+        clean_nif = nif.strip()
+        tenant_ids: List[uuid.UUID] = []
+        try:
+            async with session_scope(self._session_factory) as (session, _):
+                res = await session.execute(
+                    select(TenantModel.id).where(TenantModel.nif == clean_nif)
+                )
+                tenant_ids = [row[0] for row in res.all()]
+        except Exception as e:
+            logger.warning(f"Erro ao pesquisar tenant por NIF {clean_nif}: {e}")
+
+        for tid in tenant_ids:
+            logger.info(f"Removendo tenant órfão {tid} com NIF {clean_nif}")
+            await self.delete_tenant(tid)
+
         if self._invoicing_session_factory:
-            async with session_scope(self._invoicing_session_factory) as (inv_session, _):
-                await inv_session.execute(
+            try:
+                async with session_scope(self._invoicing_session_factory) as (inv_session, _):
+                    await inv_session.execute(
+                        delete(TenantModel).where(TenantModel.nif == clean_nif)
+                    )
+            except Exception as e:
+                logger.warning(f"Erro ao limpar tenant por NIF em kudiba_invoicing: {e}")
+
+    async def cleanup_orphan_user(self, email: str) -> None:
+        clean_email = email.strip().lower()
+        try:
+            async with session_scope(self._session_factory) as (session, _):
+                res = await session.execute(
+                    select(UserModel.id).where(func.lower(UserModel.email) == clean_email)
+                )
+                user_id = res.scalar_one_or_none()
+                if user_id:
+                    links = await session.execute(
+                        select(UserTenantModel.id).where(UserTenantModel.user_id == user_id)
+                    )
+                    if not links.first():
+                        await session.execute(delete(UserModel).where(UserModel.id == user_id))
+                        logger.info(f"Utilizador órfão {clean_email} removido.")
+        except Exception as e:
+            logger.warning(f"Aviso ao verificar utilizador órfão {clean_email}: {e}")
+
+    async def delete_tenant(self, tenant_id: uuid.UUID) -> None:
+        try:
+            async with session_scope(self._session_factory) as (session, _):
+                res = await session.execute(
+                    select(UserTenantModel.user_id).where(UserTenantModel.tenant_id == tenant_id)
+                )
+                user_ids = [row[0] for row in res.all()]
+                await session.execute(
+                    delete(UserRoleModel).where(UserRoleModel.tenant_id == tenant_id)
+                )
+                await session.execute(
+                    delete(UserTenantModel).where(UserTenantModel.tenant_id == tenant_id)
+                )
+                if user_ids:
+                    other = await session.execute(
+                        select(UserTenantModel.user_id).where(
+                            UserTenantModel.user_id.in_(user_ids)
+                        )
+                    )
+                    still_used = set(r[0] for r in other.all())
+                    exclusive = [uid for uid in user_ids if uid not in still_used]
+                    if exclusive:
+                        await session.execute(delete(UserModel).where(UserModel.id.in_(exclusive)))
+                await session.execute(
+                    delete(BranchModel).where(BranchModel.tenant_id == tenant_id)
+                )
+                await session.execute(
                     delete(TenantModel).where(TenantModel.id == tenant_id)
                 )
+        except Exception as e:
+            logger.warning(f"Aviso ao remover tenant {tenant_id} em kudiba_auth: {e}")
+
+        if self._invoicing_session_factory:
+            try:
+                async with session_scope(self._invoicing_session_factory) as (inv_session, _):
+                    await inv_session.execute(
+                        delete(TenantModel).where(TenantModel.id == tenant_id)
+                    )
+            except Exception as e:
+                logger.warning(f"Aviso ao remover tenant {tenant_id} em kudiba_invoicing: {e}")
 
     async def is_platform_admin(self, user_id: uuid.UUID) -> bool:
         async with session_scope(self._session_factory) as (session, _):

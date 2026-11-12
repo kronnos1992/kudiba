@@ -3037,174 +3037,6 @@ export const InvoicingView: React.FC = () => {
                                       Serviço
                                     </span>
                                   )}
-
-                                  {selectedProforma && (
-                                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-                                      <style>{`@media print { body * { visibility: hidden !important; } #proforma-print, #proforma-print * { visibility: visible !important; } #proforma-print { position: absolute; inset: 0; width: 100%; padding: 24px; } .no-print { display: none !important; } }`}</style>
-                                      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 text-slate-900 shadow-2xl">
-                                        <div className="no-print mb-4 flex justify-end gap-2">
-                                          <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">
-                                            <Printer className="h-4 w-4" /> Imprimir / Guardar PDF
-                                          </button>
-                                          <button onClick={() => setSelectedProforma(null)} className="rounded-lg border px-3 py-2 text-xs font-semibold">Fechar</button>
-                                        </div>
-                                        <div id="proforma-print" className="space-y-5">
-                                          <header className="border-b-2 border-slate-800 pb-4 text-center">
-                                            <p className="text-sm font-bold uppercase tracking-widest">Factura Proforma — Documento não fiscal</p>
-                                            <h2 className="mt-2 text-2xl font-extrabold">{selectedProforma.documentNumber}</h2>
-                                            <p className="mt-1 text-xs text-slate-600">Não substitui factura e não representa quitação de pagamento.</p>
-                                          </header>
-                                          <div className="grid grid-cols-2 gap-3 text-sm">
-                                            <p><strong>Cliente:</strong> {selectedProforma.customerName}</p>
-                                            <p><strong>NIF:</strong> {selectedProforma.customerNif || 'Consumidor Final'}</p>
-                                            <p className="col-span-2"><strong>Morada:</strong> {selectedProforma.customerAddress || '—'}</p>
-                                            <p><strong>Data:</strong> {new Date(selectedProforma.createdAt).toLocaleDateString('pt-AO')}</p>
-                                            <p><strong>Validade:</strong> confirmar com o emitente</p>
-                                          </div>
-                                          <table className="w-full border-collapse text-sm">
-                                            <thead><tr className="border-y border-slate-400 text-left">
-                                              <th className="py-2">Artigo / Descrição</th><th className="py-2 text-right">Qtd.</th>
-                                              <th className="py-2 text-right">Preço Unit.</th><th className="py-2 text-right">Total</th>
-                                            </tr></thead>
-                                            <tbody>
-                                              {selectedProforma.lines.map((line, index) => (
-                                                <tr key={`${line.productCode}-${index}`} className="border-b border-slate-200">
-                                                  <td className="py-2">{line.description}</td>
-                                                  <td className="py-2 text-right">{line.quantity}</td>
-                                                  <td className="py-2 text-right"><KzAmount value={line.unitPrice} /></td>
-                                                  <td className="py-2 text-right">
-                                                    <KzAmount value={
-                                                      (line.quantity * line.unitPrice - (line.discountAmount || 0)) *
-                                                      (1 + line.taxRate / 100)
-                                                    } />
-                                                  </td>
-                                                </tr>
-                                              ))}
-                                            </tbody>
-                                          </table>
-                                          <div className="ml-auto w-64 space-y-1 text-right text-sm">
-                                            <p>Incidência: <KzAmount value={selectedProforma.netTotal} /></p>
-                                            <p>IVA estimado: <KzAmount value={selectedProforma.taxTotal} /></p>
-                                            <p className="border-t border-slate-500 pt-2 text-lg font-extrabold">Total estimado: <KzAmount value={selectedProforma.grossTotal} /></p>
-                                          </div>
-                                          <p className="border-t border-slate-300 pt-3 text-xs text-slate-600">
-                                            Valores indicativos. Os dados fiscais, taxas e disponibilidade de stock serão novamente validados na emissão do documento definitivo.
-                                          </p>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {proformaToConvert && (
-                                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-                                      <div className="w-full max-w-md space-y-4 rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
-                                        <div>
-                                          <h3 className="text-base font-bold text-slate-900 dark:text-white">Converter proforma</h3>
-                                          <p className="mt-1 text-xs text-slate-500">{proformaToConvert.documentNumber} será associada ao novo documento fiscal.</p>
-                                        </div>
-                                        <label className="block text-xs font-semibold">
-                                          Tipo de documento
-                                          <select
-                                            value={proformaDocumentType}
-                                            onChange={(e) => {
-                                              const type = e.target.value as 'FT' | 'FR';
-                                              setProformaDocumentType(type);
-                                              setProformaSeries(seriesList.find((series) => series.documentType === type && series.isActive)?.seriesCode || '2026A');
-                                            }}
-                                            className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
-                                          >
-                                            <option value="FT">FT — Factura</option>
-                                            <option value="FR">FR — Factura-Recibo</option>
-                                          </select>
-                                        </label>
-                                        <label className="block text-xs font-semibold">
-                                          Série fiscal
-                                          <select value={proformaSeries} onChange={(e) => setProformaSeries(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-                                            {seriesList.filter((series) => series.documentType === proformaDocumentType && series.isActive).map((series) => (
-                                              <option key={series.id} value={series.seriesCode}>{series.seriesCode} (sequência {series.currentSequence})</option>
-                                            ))}
-                                            {!seriesList.some((series) => series.documentType === proformaDocumentType && series.isActive) && (
-                                              <option value="2026A">2026A (padrão)</option>
-                                            )}
-                                          </select>
-                                        </label>
-                                        <label className="flex items-center gap-2 text-xs font-semibold">
-                                          <input
-                                            type="checkbox"
-                                            checked={proformaApplyStampDuty}
-                                            onChange={(e) => setProformaApplyStampDuty(e.target.checked)}
-                                            className="rounded border-slate-300"
-                                          />
-                                          Aplicar imposto de selo (quando aplicável)
-                                        </label>
-                                        {proformaApplyStampDuty && (
-                                          <label className="block text-xs font-semibold">
-                                            Taxa de imposto de selo (%)
-                                            <input
-                                              type="number"
-                                              min="0.01"
-                                              max="100"
-                                              step="0.01"
-                                              required
-                                              value={proformaStampDutyRate}
-                                              onChange={(e) => setProformaStampDutyRate(e.target.value)}
-                                              className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
-                                            />
-                                          </label>
-                                        )}
-                                        {convertProformaMutation.isError && <p className="text-xs text-rose-600">{(convertProformaMutation.error as any)?.response?.data?.error || (convertProformaMutation.error as Error).message}</p>}
-                                        <div className="flex justify-end gap-2">
-                                          <button onClick={() => setProformaToConvert(null)} className="rounded-lg border px-3 py-2 text-xs font-semibold">Cancelar</button>
-                                          <button
-                                            disabled={
-                                              convertProformaMutation.isPending ||
-                                              (proformaApplyStampDuty &&
-                                                (!Number.isFinite(Number(proformaStampDutyRate)) ||
-                                                  Number(proformaStampDutyRate) <= 0 ||
-                                                  Number(proformaStampDutyRate) > 100))
-                                            }
-                                            onClick={() => convertProformaMutation.mutate()}
-                                            className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
-                                          >
-                                            {convertProformaMutation.isPending ? 'A emitir...' : 'Emitir documento fiscal'}
-                                          </button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {cashReceiptPayment && (
-                                    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
-                                      <style>{`@media print { body * { visibility: hidden !important; } #cash-receipt-print, #cash-receipt-print * { visibility: visible !important; } #cash-receipt-print { position: absolute; inset: 0; width: 100%; padding: 24px; } .no-print { display: none !important; } }`}</style>
-                                      <div className="w-full max-w-xl rounded-2xl bg-white p-5 text-slate-900 shadow-2xl">
-                                        <div className="no-print mb-4 flex justify-end gap-2">
-                                          <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">
-                                            <Printer className="h-4 w-4" /> Imprimir recibo
-                                          </button>
-                                          <button onClick={() => setCashReceiptPayment(null)} className="rounded-lg border px-3 py-2 text-xs font-semibold">Fechar</button>
-                                        </div>
-                                        <div id="cash-receipt-print" className="space-y-5">
-                                          <header className="border-b-2 border-slate-800 pb-3 text-center">
-                                            <h2 className="text-lg font-extrabold uppercase">Comprovativo Interno de Recebimento</h2>
-                                            <p className="text-xs">Documento interno — não substitui recibo fiscal</p>
-                                          </header>
-                                          <div className="space-y-3 text-sm">
-                                            <p><strong>N.º interno:</strong> CX-{cashReceiptPayment.id.slice(0, 8).toUpperCase()}</p>
-                                            <p><strong>Cliente:</strong> {cashReceiptPayment.customerName}</p>
-                                            <p><strong>Factura associada:</strong> {cashReceiptPayment.documentNumber}</p>
-                                            <p><strong>Valor recebido:</strong> <KzAmount value={cashReceiptPayment.amount} /></p>
-                                            <p><strong>Meio:</strong> Numerário</p>
-                                            <p><strong>Data/hora:</strong> {new Date(cashReceiptPayment.receivedAt).toLocaleString('pt-AO')}</p>
-                                            <p><strong>Responsável de caixa:</strong> {cashReceiptPayment.cashierUserId}</p>
-                                          </div>
-                                          <div className="grid grid-cols-2 gap-8 pt-10 text-center text-xs">
-                                            <div className="border-t border-slate-700 pt-2">Assinatura do responsável de caixa</div>
-                                            <div className="border-t border-slate-700 pt-2">Assinatura do cliente</div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
                                 </div>
                               </td>
                               <td className="py-2 px-3 text-right font-mono">{line.originalQty}</td>
@@ -3371,6 +3203,176 @@ export const InvoicingView: React.FC = () => {
                         })`}
                   </span>
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal: Ver / Imprimir Proforma */}
+      {selectedProforma && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <style>{`@media print { body * { visibility: hidden !important; } #proforma-print, #proforma-print * { visibility: visible !important; } #proforma-print { position: absolute; inset: 0; width: 100%; padding: 24px; } .no-print { display: none !important; } }`}</style>
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 text-slate-900 shadow-2xl">
+            <div className="no-print mb-4 flex justify-end gap-2">
+              <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">
+                <Printer className="h-4 w-4" /> Imprimir / Guardar PDF
+              </button>
+              <button onClick={() => setSelectedProforma(null)} className="rounded-lg border px-3 py-2 text-xs font-semibold">Fechar</button>
+            </div>
+            <div id="proforma-print" className="space-y-5">
+              <header className="border-b-2 border-slate-800 pb-4 text-center">
+                <p className="text-sm font-bold uppercase tracking-widest">Factura Proforma — Documento não fiscal</p>
+                <h2 className="mt-2 text-2xl font-extrabold">{selectedProforma.documentNumber}</h2>
+                <p className="mt-1 text-xs text-slate-600">Não substitui factura e não representa quitação de pagamento.</p>
+              </header>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <p><strong>Cliente:</strong> {selectedProforma.customerName}</p>
+                <p><strong>NIF:</strong> {selectedProforma.customerNif || 'Consumidor Final'}</p>
+                <p className="col-span-2"><strong>Morada:</strong> {selectedProforma.customerAddress || '—'}</p>
+                <p><strong>Data:</strong> {new Date(selectedProforma.createdAt).toLocaleDateString('pt-AO')}</p>
+                <p><strong>Validade:</strong> confirmar com o emitente</p>
+              </div>
+              <table className="w-full border-collapse text-sm">
+                <thead><tr className="border-y border-slate-400 text-left">
+                  <th className="py-2">Artigo / Descrição</th><th className="py-2 text-right">Qtd.</th>
+                  <th className="py-2 text-right">Preço Unit.</th><th className="py-2 text-right">Total</th>
+                </tr></thead>
+                <tbody>
+                  {selectedProforma.lines.map((line, index) => (
+                    <tr key={`${line.productCode}-${index}`} className="border-b border-slate-200">
+                      <td className="py-2">{line.description}</td>
+                      <td className="py-2 text-right">{line.quantity}</td>
+                      <td className="py-2 text-right"><KzAmount value={line.unitPrice} /></td>
+                      <td className="py-2 text-right">
+                        <KzAmount value={
+                          (line.quantity * line.unitPrice - (line.discountAmount || 0)) *
+                          (1 + line.taxRate / 100)
+                        } />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="ml-auto w-64 space-y-1 text-right text-sm">
+                <p>Incidência: <KzAmount value={selectedProforma.netTotal} /></p>
+                <p>IVA estimado: <KzAmount value={selectedProforma.taxTotal} /></p>
+                <p className="border-t border-slate-500 pt-2 text-lg font-extrabold">Total estimado: <KzAmount value={selectedProforma.grossTotal} /></p>
+              </div>
+              <p className="border-t border-slate-300 pt-3 text-xs text-slate-600">
+                Valores indicativos. Os dados fiscais, taxas e disponibilidade de stock serão novamente validados na emissão do documento definitivo.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Converter Proforma */}
+      {proformaToConvert && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md space-y-4 rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Converter proforma</h3>
+              <p className="mt-1 text-xs text-slate-500">{proformaToConvert.documentNumber} será associada ao novo documento fiscal.</p>
+            </div>
+            <label className="block text-xs font-semibold">
+              Tipo de documento
+              <select
+                value={proformaDocumentType}
+                onChange={(e) => {
+                  const type = e.target.value as 'FT' | 'FR';
+                  setProformaDocumentType(type);
+                  setProformaSeries(seriesList.find((series) => series.documentType === type && series.isActive)?.seriesCode || '2026A');
+                }}
+                className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
+              >
+                <option value="FT">FT — Factura</option>
+                <option value="FR">FR — Factura-Recibo</option>
+              </select>
+            </label>
+            <label className="block text-xs font-semibold">
+              Série fiscal
+              <select value={proformaSeries} onChange={(e) => setProformaSeries(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+                {seriesList.filter((series) => series.documentType === proformaDocumentType && series.isActive).map((series) => (
+                  <option key={series.id} value={series.seriesCode}>{series.seriesCode} (sequência {series.currentSequence})</option>
+                ))}
+                {!seriesList.some((series) => series.documentType === proformaDocumentType && series.isActive) && (
+                  <option value="2026A">2026A (padrão)</option>
+                )}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-xs font-semibold">
+              <input
+                type="checkbox"
+                checked={proformaApplyStampDuty}
+                onChange={(e) => setProformaApplyStampDuty(e.target.checked)}
+                className="rounded border-slate-300"
+              />
+              Aplicar imposto de selo (quando aplicável)
+            </label>
+            {proformaApplyStampDuty && (
+              <label className="block text-xs font-semibold">
+                Taxa de imposto de selo (%)
+                <input
+                  type="number"
+                  min="0.01"
+                  max="100"
+                  step="0.01"
+                  required
+                  value={proformaStampDutyRate}
+                  onChange={(e) => setProformaStampDutyRate(e.target.value)}
+                  className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
+                />
+              </label>
+            )}
+            {convertProformaMutation.isError && <p className="text-xs text-rose-600">{(convertProformaMutation.error as any)?.response?.data?.error || (convertProformaMutation.error as Error).message}</p>}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setProformaToConvert(null)} className="rounded-lg border px-3 py-2 text-xs font-semibold">Cancelar</button>
+              <button
+                disabled={
+                  convertProformaMutation.isPending ||
+                  (proformaApplyStampDuty &&
+                    (!Number.isFinite(Number(proformaStampDutyRate)) ||
+                      Number(proformaStampDutyRate) <= 0 ||
+                      Number(proformaStampDutyRate) > 100))
+                }
+                onClick={() => convertProformaMutation.mutate()}
+                className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+              >
+                {convertProformaMutation.isPending ? 'A emitir...' : 'Emitir documento fiscal'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Comprovativo Interno de Recebimento */}
+      {cashReceiptPayment && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+          <style>{`@media print { body * { visibility: hidden !important; } #cash-receipt-print, #cash-receipt-print * { visibility: visible !important; } #cash-receipt-print { position: absolute; inset: 0; width: 100%; padding: 24px; } .no-print { display: none !important; } }`}</style>
+          <div className="w-full max-w-xl rounded-2xl bg-white p-5 text-slate-900 shadow-2xl">
+            <div className="no-print mb-4 flex justify-end gap-2">
+              <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">
+                <Printer className="h-4 w-4" /> Imprimir recibo
+              </button>
+              <button onClick={() => setCashReceiptPayment(null)} className="rounded-lg border px-3 py-2 text-xs font-semibold">Fechar</button>
+            </div>
+            <div id="cash-receipt-print" className="space-y-5">
+              <header className="border-b-2 border-slate-800 pb-3 text-center">
+                <h2 className="text-lg font-extrabold uppercase">Comprovativo Interno de Recebimento</h2>
+                <p className="text-xs">Documento interno — não substitui recibo fiscal</p>
+              </header>
+              <div className="space-y-3 text-sm">
+                <p><strong>N.º interno:</strong> CX-{cashReceiptPayment.id.slice(0, 8).toUpperCase()}</p>
+                <p><strong>Cliente:</strong> {cashReceiptPayment.customerName}</p>
+                <p><strong>Factura associada:</strong> {cashReceiptPayment.documentNumber}</p>
+                <p><strong>Valor recebido:</strong> <KzAmount value={cashReceiptPayment.amount} /></p>
+                <p><strong>Meio:</strong> Numerário</p>
+                <p><strong>Data/hora:</strong> {new Date(cashReceiptPayment.receivedAt).toLocaleString('pt-AO')}</p>
+                <p><strong>Responsável de caixa:</strong> {cashReceiptPayment.cashierUserId}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-8 pt-10 text-center text-xs">
+                <div className="border-t border-slate-700 pt-2">Assinatura do responsável de caixa</div>
+                <div className="border-t border-slate-700 pt-2">Assinatura do cliente</div>
               </div>
             </div>
           </div>
