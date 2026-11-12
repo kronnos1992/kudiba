@@ -739,6 +739,84 @@ export const InvoicingView: React.FC = () => {
     }
   };
 
+  const handlePrintProforma = () => {
+    const el = document.getElementById('proforma-modal-a4');
+    if (!el) {
+      window.print();
+      return;
+    }
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (!doc) {
+      window.print();
+      return;
+    }
+
+    const headStyles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map((s) => s.outerHTML)
+      .join('\n');
+
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html lang="pt">
+      <head>
+        <meta charset="utf-8">
+        <title>Proforma_${selectedProforma?.documentNumber || 'FP'}</title>
+        ${headStyles}
+        <style>
+          @page {
+            size: A4 portrait;
+            margin: 8mm 10mm;
+          }
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          html, body {
+            background: #ffffff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          .invoice-a4 {
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="invoice-a4">
+          ${el.innerHTML}
+        </div>
+      </body>
+      </html>
+    `);
+    doc.close();
+
+    iframe.contentWindow?.focus();
+    setTimeout(() => {
+      iframe.contentWindow?.print();
+      setTimeout(() => {
+        iframe.remove();
+      }, 1000);
+    }, 250);
+  };
+
   const handleAddLine = () => {
     setLines((prev) => [
       ...prev,
@@ -3214,7 +3292,7 @@ export const InvoicingView: React.FC = () => {
       {/* Modal: Ver / Imprimir Proforma com Estilo Oficial Idêntico às Facturas A4 */}
       {selectedProforma && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
-          <style>{`@media print { body * { visibility: hidden !important; } #proforma-modal-a4, #proforma-modal-a4 * { visibility: visible !important; } #proforma-modal-a4 { position: absolute; inset: 0; width: 100%; padding: 0; margin: 0; background: #FFFFFF !important; } .no-print { display: none !important; } }`}</style>
+          <style>{`@media print { @page { size: A4 portrait; margin: 8mm 10mm; } html, body { background: #ffffff !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; } body * { visibility: hidden !important; } #proforma-modal-a4, #proforma-modal-a4 * { visibility: visible !important; } #proforma-modal-a4 { position: fixed !important; left: 0 !important; top: 0 !important; width: 100% !important; margin: 0 !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: #FFFFFF !important; } .no-print { display: none !important; } }`}</style>
           <div className="bg-slate-100 dark:bg-slate-900 rounded-2xl shadow-2xl max-w-2xl w-full p-3 sm:p-6 relative my-4 sm:my-8 max-h-[92vh] overflow-y-auto">
             <button
               onClick={() => setSelectedProforma(null)}
@@ -3513,7 +3591,7 @@ export const InvoicingView: React.FC = () => {
                 </button>
               )}
               <button
-                onClick={() => window.print()}
+                onClick={handlePrintProforma}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-sm font-bold shadow-xs transition-colors"
               >
                 <Printer className="w-4 h-4" />

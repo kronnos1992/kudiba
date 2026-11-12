@@ -54,10 +54,9 @@ export const buildCompanyReportMeta = (
   ].filter(Boolean);
 
   const companyDescription =
-    tenant?.invoice_footer_notes ||
-    (descParts.length > 0
+    descParts.length > 0
       ? descParts.join(' · ')
-      : 'Sociedade Comercial de Direito Angolano · Contabilidade e Gestão Certificada');
+      : 'Sociedade Comercial de Direito Angolano · Contabilidade e Gestão Certificada';
 
   const dateCode = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const documentCode = `REL-${nif.slice(-4)}-${dateCode}`;
