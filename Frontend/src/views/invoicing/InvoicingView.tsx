@@ -3208,59 +3208,313 @@ export const InvoicingView: React.FC = () => {
           </div>
         </div>
       )}
-      {/* Modal: Ver / Imprimir Proforma */}
+      {/* Modal: Ver / Imprimir Proforma com Estilo Oficial Idêntico às Facturas A4 */}
       {selectedProforma && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-          <style>{`@media print { body * { visibility: hidden !important; } #proforma-print, #proforma-print * { visibility: visible !important; } #proforma-print { position: absolute; inset: 0; width: 100%; padding: 24px; } .no-print { display: none !important; } }`}</style>
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 text-slate-900 shadow-2xl">
-            <div className="no-print mb-4 flex justify-end gap-2">
-              <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">
-                <Printer className="h-4 w-4" /> Imprimir / Guardar PDF
-              </button>
-              <button onClick={() => setSelectedProforma(null)} className="rounded-lg border px-3 py-2 text-xs font-semibold">Fechar</button>
-            </div>
-            <div id="proforma-print" className="space-y-5">
-              <header className="border-b-2 border-slate-800 pb-4 text-center">
-                <p className="text-sm font-bold uppercase tracking-widest">Factura Proforma — Documento não fiscal</p>
-                <h2 className="mt-2 text-2xl font-extrabold">{selectedProforma.documentNumber}</h2>
-                <p className="mt-1 text-xs text-slate-600">Não substitui factura e não representa quitação de pagamento.</p>
-              </header>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <p><strong>Cliente:</strong> {selectedProforma.customerName}</p>
-                <p><strong>NIF:</strong> {selectedProforma.customerNif || 'Consumidor Final'}</p>
-                <p className="col-span-2"><strong>Morada:</strong> {selectedProforma.customerAddress || '—'}</p>
-                <p><strong>Data:</strong> {new Date(selectedProforma.createdAt).toLocaleDateString('pt-AO')}</p>
-                <p><strong>Validade:</strong> confirmar com o emitente</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
+          <style>{`@media print { body * { visibility: hidden !important; } #proforma-modal-a4, #proforma-modal-a4 * { visibility: visible !important; } #proforma-modal-a4 { position: absolute; inset: 0; width: 100%; padding: 0; margin: 0; background: #FFFFFF !important; } .no-print { display: none !important; } }`}</style>
+          <div className="bg-slate-100 dark:bg-slate-900 rounded-2xl shadow-2xl max-w-2xl w-full p-3 sm:p-6 relative my-4 sm:my-8 max-h-[92vh] overflow-y-auto">
+            <button
+              onClick={() => setSelectedProforma(null)}
+              className="no-print absolute top-3 right-3 sm:top-4 sm:right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div id="proforma-modal-a4" className="invoice-a4 bg-white text-slate-900 p-4 sm:p-8 rounded-lg shadow-sm border border-slate-200">
+              {/* Cabeçalho da Empresa e do Documento */}
+              <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
+                <div className="flex items-start gap-3">
+                  {activeTenant?.logo_data_url && (
+                    <img
+                      src={activeTenant.logo_data_url}
+                      alt="Logótipo"
+                      className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg object-contain border border-slate-200 bg-white p-1 shrink-0"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <h3 className="text-base sm:text-lg font-extrabold text-emerald-800">
+                      {activeTenant?.trade_name || activeTenant?.name || 'KUDIBA COMÉRCIO GERAL, LDA'}
+                    </h3>
+                    {activeTenant?.trade_name &&
+                      activeTenant?.name &&
+                      activeTenant.trade_name !== activeTenant.name && (
+                        <p className="text-xs font-semibold text-slate-700">{activeTenant.name}</p>
+                      )}
+                    <p className="text-xs text-slate-600">
+                      {activeTenant?.address_detail || '—'}
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      {activeTenant?.city || 'Luanda'}
+                      {activeTenant?.province ? ` — ${activeTenant.province}` : ''},{' '}
+                      {activeTenant?.country === 'AO' || !activeTenant?.country
+                        ? 'Angola'
+                        : activeTenant.country}
+                    </p>
+                    <p className="text-xs font-mono text-slate-700 font-bold mt-1">
+                      NIF: {activeTenant?.nif || '—'}
+                      {activeTenant?.commercial_registry
+                        ? ` | Reg. Com.: ${activeTenant.commercial_registry}`
+                        : ''}
+                    </p>
+                    {activeTenant?.share_capital && (
+                      <p className="text-[11px] text-slate-500">
+                        Capital Social: {activeTenant.share_capital}
+                      </p>
+                    )}
+                    {(activeTenant?.phone || activeTenant?.email || activeTenant?.website) && (
+                      <p className="text-[11px] text-slate-500 mt-0.5 break-words">
+                        {[activeTenant?.phone, activeTenant?.email, activeTenant?.website]
+                          .filter(Boolean)
+                          .join(' • ')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="sm:text-right shrink-0">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block">
+                    FACTURA PROFORMA
+                  </span>
+                  <h4 className="text-base sm:text-lg font-extrabold text-slate-900 mt-0.5">
+                    {selectedProforma.documentNumber}
+                  </h4>
+                  <p className="text-xs text-slate-600 mt-1">
+                    Data: {new Date(selectedProforma.createdAt).toLocaleDateString('pt-AO')}
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1 sm:justify-end">
+                    <span className="inline-block text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      PROFORMA
+                    </span>
+                    <span className="inline-block text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                      DOCUMENTO NÃO FISCAL
+                    </span>
+                  </div>
+                </div>
               </div>
-              <table className="w-full border-collapse text-sm">
-                <thead><tr className="border-y border-slate-400 text-left">
-                  <th className="py-2">Artigo / Descrição</th><th className="py-2 text-right">Qtd.</th>
-                  <th className="py-2 text-right">Preço Unit.</th><th className="py-2 text-right">Total</th>
-                </tr></thead>
-                <tbody>
-                  {selectedProforma.lines.map((line, index) => (
-                    <tr key={`${line.productCode}-${index}`} className="border-b border-slate-200">
-                      <td className="py-2">{line.description}</td>
-                      <td className="py-2 text-right">{line.quantity}</td>
-                      <td className="py-2 text-right"><KzAmount value={line.unitPrice} /></td>
-                      <td className="py-2 text-right">
-                        <KzAmount value={
-                          (line.quantity * line.unitPrice - (line.discountAmount || 0)) *
-                          (1 + line.taxRate / 100)
-                        } />
-                      </td>
+
+              <div className="border-t border-slate-200 my-4" />
+
+              {/* Caixas de Dados do Adquirente e Operação */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Exmo.(s) Sr.(s) / Adquirente
+                  </span>
+                  <p className="font-bold text-sm text-slate-900">{selectedProforma.customerName}</p>
+                  <p className="text-xs font-mono text-slate-600 mt-0.5">
+                    NIF: {selectedProforma.customerNif || 'Consumidor Final'}
+                  </p>
+                  {selectedProforma.customerAddress && (
+                    <p className="text-xs text-slate-600 mt-0.5">{selectedProforma.customerAddress}</p>
+                  )}
+                  {(selectedProforma.customerCity || selectedProforma.customerCountry) && (
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {[selectedProforma.customerCity, selectedProforma.customerCountry].filter(Boolean).join(' — ')}
+                    </p>
+                  )}
+                </div>
+                <div className="sm:text-right">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Dados da Operação Comercial
+                  </span>
+                  <p className="text-xs text-slate-600">
+                    <span className="text-slate-400">Moeda:</span> {selectedProforma.currency || 'AOA'}
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    <span className="text-slate-400">Estado:</span>{' '}
+                    <span className="font-semibold text-slate-800">
+                      {selectedProforma.status === 'CONVERTED'
+                        ? 'Convertida em Factura'
+                        : selectedProforma.status === 'CONVERTING'
+                        ? 'A Converter'
+                        : 'Aberta / Aguarda Adjudicação'}
+                    </span>
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    <span className="text-slate-400">Validade da Proposta:</span> 30 dias a contar da emissão
+                  </p>
+                </div>
+              </div>
+
+              {/* Tabela de Artigos e Serviços */}
+              <div className="overflow-x-auto mb-6">
+                <table className="w-full text-xs text-left">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-200 font-bold text-slate-700">
+                      <th className="py-2 px-3 text-center w-10">N.º</th>
+                      <th className="py-2 px-3">Código</th>
+                      <th className="py-2 px-3">Descrição do Artigo / Serviço</th>
+                      <th className="py-2 px-3 text-center">Qtd</th>
+                      <th className="py-2 px-3 text-right">Preço Unit.</th>
+                      <th className="py-2 px-3 text-right">Taxa IVA</th>
+                      <th className="py-2 px-3 text-right">Total Líquido</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="ml-auto w-64 space-y-1 text-right text-sm">
-                <p>Incidência: <KzAmount value={selectedProforma.netTotal} /></p>
-                <p>IVA estimado: <KzAmount value={selectedProforma.taxTotal} /></p>
-                <p className="border-t border-slate-500 pt-2 text-lg font-extrabold">Total estimado: <KzAmount value={selectedProforma.grossTotal} /></p>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedProforma.lines?.map((line, i) => {
+                      const net = line.quantity * line.unitPrice - (line.discountAmount || 0);
+                      const lineTotal = net * (1 + line.taxRate / 100);
+                      return (
+                        <tr key={i}>
+                          <td className="py-2.5 px-3 text-center font-mono text-slate-400">
+                            {String(i + 1).padStart(2, '0')}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono text-slate-500 whitespace-nowrap">
+                            {line.productCode}
+                          </td>
+                          <td className="py-2.5 px-3 font-semibold text-slate-800">
+                            {line.description}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono">{line.quantity}</td>
+                          <td className="py-2.5 px-3 text-right font-mono whitespace-nowrap">
+                            <KzAmount value={line.unitPrice} />
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono">
+                            {line.taxRate}%
+                            {line.taxRate === 0 && line.taxExemptionCode ? ` (${line.taxExemptionCode})` : ''}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold whitespace-nowrap text-slate-900">
+                            <KzAmount value={line.lineTotal || lineTotal} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <p className="border-t border-slate-300 pt-3 text-xs text-slate-600">
-                Valores indicativos. Os dados fiscais, taxas e disponibilidade de stock serão novamente validados na emissão do documento definitivo.
-              </p>
+
+              {/* Resumo de Incidência de IVA e Totais */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
+                <div className="text-xs">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2">
+                    Resumo de Incidência de IVA
+                  </span>
+                  <div className="rounded-lg border border-slate-200 overflow-hidden">
+                    <table className="w-full text-[11px] text-left">
+                      <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                        <tr>
+                          <th className="py-1.5 px-2">Taxa</th>
+                          <th className="py-1.5 px-2 text-right">Incidência</th>
+                          <th className="py-1.5 px-2 text-right">Valor IVA</th>
+                          <th className="py-1.5 px-2">Motivo</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {(() => {
+                          const groups: Record<number, { base: number; tax: number; exemption?: string }> = {};
+                          for (const line of selectedProforma.lines || []) {
+                            const net = line.quantity * line.unitPrice - (line.discountAmount || 0);
+                            const tax = net * (line.taxRate / 100);
+                            if (!groups[line.taxRate]) {
+                              groups[line.taxRate] = {
+                                base: 0,
+                                tax: 0,
+                                exemption: line.taxExemptionCode || (line.taxRate === 0 ? 'M02' : undefined),
+                              };
+                            }
+                            groups[line.taxRate].base += net;
+                            groups[line.taxRate].tax += tax;
+                          }
+                          return Object.entries(groups).map(([rate, g]) => (
+                            <tr key={rate}>
+                              <td className="py-1.5 px-2 font-mono">{rate}%</td>
+                              <td className="py-1.5 px-2 text-right font-mono">
+                                <KzAmount value={g.base} />
+                              </td>
+                              <td className="py-1.5 px-2 text-right font-mono">
+                                <KzAmount value={g.tax} />
+                              </td>
+                              <td className="py-1.5 px-2 text-slate-500">{g.exemption || '—'}</td>
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="flex justify-end items-end">
+                  <div className="w-full space-y-1.5 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Total Ilíquido:</span>
+                      <KzAmount value={selectedProforma.netTotal} />
+                    </div>
+                    <div className="flex justify-between text-slate-600">
+                      <span>Total Base Tributável:</span>
+                      <KzAmount value={selectedProforma.netTotal} />
+                    </div>
+                    <div className="flex justify-between text-slate-600">
+                      <span>Total de IVA:</span>
+                      <KzAmount value={selectedProforma.taxTotal} />
+                    </div>
+                    <div className="border-t border-slate-300 pt-1.5 flex justify-between font-extrabold text-sm text-slate-900">
+                      <span>TOTAL ESTIMADO:</span>
+                      <span className="text-emerald-800">
+                        <KzAmount value={selectedProforma.grossTotal} />
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Coordenadas Bancárias */}
+              {activeTenant?.bank_accounts && activeTenant.bank_accounts.length > 0 && (
+                <div className="border-t border-slate-200 pt-3 mb-4 text-[11px] text-slate-600">
+                  <p className="font-bold uppercase tracking-wider text-[10px] text-slate-400 mb-1">
+                    Coordenadas Bancárias para Pagamento / Adjudicação
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {activeTenant.bank_accounts.map((acc, idx) => (
+                      <div key={idx} className="font-mono text-[11px] break-all bg-slate-50 p-1.5 rounded border border-slate-100">
+                        <span className="font-bold text-slate-700">{acc.bank_name}:</span>{' '}
+                        {acc.iban} ({acc.currency || 'AOA'})
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Rodapé Oficial */}
+              <div className="border-t border-slate-200 pt-3 text-center text-[10px] text-slate-500 space-y-1">
+                <p className="font-semibold text-slate-600">
+                  Este documento tem carácter meramente informativo e não possui valor fiscal nem serve de quitação de pagamento.
+                </p>
+                <p className="text-slate-400">
+                  Os valores e disponibilidade de stock serão confirmados na emissão da respectiva Factura definitiva · Processado por Kudiba ERP
+                </p>
+              </div>
+            </div>
+
+            {/* Barra de Ações */}
+            <div className="no-print flex flex-wrap items-center justify-end gap-2 sm:gap-3 mt-4">
+              <button
+                onClick={() => setSelectedProforma(null)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 transition-colors"
+              >
+                Fechar
+              </button>
+              {selectedProforma.status === 'OPEN' && (
+                <button
+                  onClick={() => {
+                    const activeSeries = seriesList.find((series) => series.documentType === 'FT' && series.isActive);
+                    setProformaSeries(activeSeries?.seriesCode || '2026A');
+                    setProformaDocumentType('FT');
+                    setProformaApplyStampDuty(false);
+                    setProformaStampDutyRate('');
+                    setProformaToConvert(selectedProforma);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-bold shadow-xs transition-colors"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>Converter em Factura</span>
+                </button>
+              )}
+              <button
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-sm font-bold shadow-xs transition-colors"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Imprimir / Guardar PDF</span>
+              </button>
             </div>
           </div>
         </div>
