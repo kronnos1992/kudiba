@@ -388,6 +388,10 @@ impl JournalEntryRepository for PostgresJournalEntryRepository {
             "source_document_ref": entry.source_document_ref
         });
 
+        tx.commit()
+            .await
+            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
+
         let _ = sqlx::query(
             r#"
             INSERT INTO kudiba_audit.system_audit_trail
@@ -399,7 +403,7 @@ impl JournalEntryRepository for PostgresJournalEntryRepository {
         .bind(entry.id.to_string())
         .bind(entry.source_document_ref.as_deref().unwrap_or(&entry.description))
         .bind(audit_details)
-        .execute(&mut *tx)
+        .execute(&self.pool)
         .await;
 
         tracing::info!(
@@ -410,9 +414,6 @@ impl JournalEntryRepository for PostgresJournalEntryRepository {
             "[AUDIT_ACCOUNTING] Lançamento contabilístico registado e auditado"
         );
 
-        tx.commit()
-            .await
-            .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
         Ok(())
     }
 
