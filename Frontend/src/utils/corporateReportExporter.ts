@@ -205,7 +205,7 @@ const KPI_TONE_HEX: Record<ReportTone, { text: string; border: string; bg: strin
   purple: { text: '#6b21a8', border: '#7c3aed', bg: '#faf5ff' },
 };
 
-const escapeHtml = (raw: string | number | null | undefined): string => {
+export const escapeHtml = (raw: string | number | null | undefined): string => {
   if (raw === null || raw === undefined) return '';
   return String(raw)
     .replace(/&/g, '&amp;')
@@ -535,25 +535,13 @@ export const exportCorporateReportExcel = (doc: CorporateReportDocument) => {
     <body>
       <table>
         <tr>
-          <td colspan="${maxCols}" style="background-color:#0f172a; color:#ffffff; font-size:14pt; font-weight:bold; text-align:center; padding:10px 12px;">
-            ${escapeHtml(doc.meta.companyName.toUpperCase())}${doc.meta.tradeName ? ` — ${escapeHtml(doc.meta.tradeName)}` : ''}
+          <td colspan="${maxCols}" style="background-color:#0f172a; color:#ffffff; font-size:11pt; font-weight:bold; text-align:left; padding:8px 10px;">
+            ${escapeHtml(doc.meta.companyName.toUpperCase())}
           </td>
         </tr>
-        ${
-          doc.meta.companyDescription
-            ? `<tr>
-                <td colspan="${maxCols}" style="background-color:#f8fafc; font-size:9pt; color:#334155; font-style:italic; text-align:center; padding:4px 10px; border-left:1px solid #cbd5e1; border-right:1px solid #cbd5e1;">
-                  ${escapeHtml(doc.meta.companyDescription)}
-                </td>
-              </tr>`
-            : ''
-        }
         <tr>
-          <td colspan="${maxCols}" style="background-color:#f8fafc; font-size:9pt; color:#334155; text-align:center; padding:4px 10px; border-bottom:2px solid #0f172a; border-left:1px solid #cbd5e1; border-right:1px solid #cbd5e1;">
-            NIF: <b>${escapeHtml(doc.meta.nif)}</b>
-            ${doc.meta.address ? ` &nbsp;|&nbsp; Sede: <b>${escapeHtml(doc.meta.address)}</b>` : ''}
-            ${doc.meta.branchName ? ` &nbsp;|&nbsp; Unidade: <b>${escapeHtml(doc.meta.branchName)}</b>` : ''}
-            ${doc.meta.contacts ? ` &nbsp;|&nbsp; ${escapeHtml(doc.meta.contacts)}` : ''}
+          <td colspan="${maxCols}" style="background-color:#f8fafc; font-size:8.5pt; color:#334155; text-align:left; padding:4px 10px; border-bottom:2px solid #0f172a; border-left:1px solid #cbd5e1; border-right:1px solid #cbd5e1;">
+            NIF: <b>${escapeHtml(doc.meta.nif)}</b> &nbsp;|&nbsp; Moeda: <b>${escapeHtml(doc.meta.currency || 'Kwanzas (AOA)')}</b>
           </td>
         </tr>
         <tr>
@@ -781,76 +769,57 @@ export const exportCorporateReportPdf = (doc: CorporateReportDocument) => {
         .header-box {
           display: flex;
           justify-content: space-between;
-          align-items: flex-start;
-          gap: 16px;
-          border-bottom: 2px solid #0f172a;
-          padding-bottom: 12px;
-          margin-bottom: 10px;
+          align-items: flex-end;
+          gap: 12px;
+          border-bottom: 1.5px solid #0f172a;
+          padding-bottom: 5px;
+          margin-bottom: 8px;
         }
         .brand-col {
           display: flex;
+          flex-direction: column;
           align-items: flex-start;
-          gap: 12px;
-          max-width: 60%;
+          gap: 1.5px;
         }
         .company-logo {
-          width: 56px;
-          height: 56px;
+          max-height: 28px;
+          max-width: 85px;
           object-fit: contain;
-          border-radius: 8px;
-          border: 1px solid #cbd5e1;
-          background: #ffffff;
-          padding: 3px;
-          flex-shrink: 0;
+          margin-bottom: 2px;
         }
         .company-monogram {
-          width: 52px;
-          height: 52px;
-          border-radius: 10px;
-          background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+          width: 24px;
+          height: 24px;
+          border-radius: 4px;
+          background: linear-gradient(135deg, #0f172a 0%, #047857 100%);
           color: #ffffff;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 16pt;
+          font-size: 8.5pt;
           font-weight: 800;
-          flex-shrink: 0;
-          border: 1px solid #1e293b;
-          letter-spacing: 0.5px;
+          margin-bottom: 2px;
         }
         .company-name {
-          font-size: 13.5pt;
+          font-size: 8.5pt;
           font-weight: 800;
           color: #0f172a;
           text-transform: uppercase;
-          letter-spacing: -0.3px;
+          letter-spacing: -0.2px;
           line-height: 1.15;
         }
-        .company-trade {
-          font-size: 8.5pt;
-          font-weight: 700;
-          color: #047857;
-          margin-top: 1px;
-        }
-        .company-desc {
-          font-size: 7.6pt;
+        .company-meta {
+          font-size: 7.2pt;
           color: #334155;
-          font-style: italic;
-          margin-top: 3px;
-          line-height: 1.3;
-        }
-        .company-sub {
-          font-size: 7.8pt;
-          color: #475569;
-          margin-top: 2.5px;
+          line-height: 1.2;
         }
         .doc-box {
           text-align: right;
-          max-width: 40%;
+          max-width: 45%;
           background: #f8fafc;
           border: 1px solid #cbd5e1;
-          border-radius: 8px;
-          padding: 8px 12px;
+          border-radius: 4px;
+          padding: 3px 7px;
         }
         .doc-badge {
           display: inline-block;
@@ -859,22 +828,22 @@ export const exportCorporateReportPdf = (doc: CorporateReportDocument) => {
           font-size: 6.8pt;
           font-weight: 700;
           text-transform: uppercase;
-          padding: 2px 8px;
-          border-radius: 4px;
-          margin-bottom: 4px;
-          letter-spacing: 0.5px;
+          padding: 1px 5px;
+          border-radius: 3px;
+          margin-bottom: 2px;
+          letter-spacing: 0.3px;
         }
         .doc-title {
-          font-size: 10.2pt;
+          font-size: 9pt;
           font-weight: 800;
           color: #0f172a;
           text-transform: uppercase;
           line-height: 1.2;
         }
         .doc-meta {
-          font-size: 7.6pt;
+          font-size: 6.9pt;
           color: #475569;
-          margin-top: 3px;
+          margin-top: 1px;
         }
         .meta-strip {
           display: grid;
@@ -1084,15 +1053,9 @@ export const exportCorporateReportPdf = (doc: CorporateReportDocument) => {
       <div class="header-box">
         <div class="brand-col">
           ${logoHtml}
-          <div>
-            <div class="company-name">${escapeHtml(doc.meta.companyName)}</div>
-            ${doc.meta.tradeName ? `<div class="company-trade">${escapeHtml(doc.meta.tradeName)}</div>` : ''}
-            ${doc.meta.companyDescription ? `<div class="company-desc">${escapeHtml(doc.meta.companyDescription)}</div>` : ''}
-            <div class="company-sub">
-              NIF: <strong>${escapeHtml(doc.meta.nif)}</strong>
-              ${doc.meta.address ? ` &nbsp;·&nbsp; ${escapeHtml(doc.meta.address)}` : ''}
-            </div>
-            ${doc.meta.contacts ? `<div class="company-sub">${escapeHtml(doc.meta.contacts)}</div>` : ''}
+          <div class="company-name">${escapeHtml(doc.meta.companyName)}</div>
+          <div class="company-meta">
+            NIF: <strong>${escapeHtml(doc.meta.nif)}</strong> &nbsp;·&nbsp; Moeda: <strong>${escapeHtml(doc.meta.currency || 'Kwanzas (AOA)')}</strong>
           </div>
         </div>
         <div class="doc-box">
@@ -1112,8 +1075,8 @@ export const exportCorporateReportPdf = (doc: CorporateReportDocument) => {
           <strong>${escapeHtml(doc.meta.branchName || 'Sede Principal')}</strong>
         </div>
         <div class="meta-strip-item">
-          <span>Moeda &amp; Certificação</span>
-          <strong>${escapeHtml(doc.meta.currency || 'Kwanzas (AOA)')} · ${escapeHtml(doc.meta.agtCertNumber || 'AGT')}</strong>
+          <span>Certificação de Software</span>
+          <strong>${escapeHtml(doc.meta.agtCertNumber || 'FE/528/AGT/2026')}</strong>
         </div>
         <div class="meta-strip-item">
           <span>Enquadramento Legal</span>

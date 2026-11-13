@@ -443,8 +443,7 @@ export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
                 : ''
             }
             <p class="title">${companyMeta.companyName}</p>
-            <p class="desc">${companyMeta.companyDescription}</p>
-            <p class="meta">NIF: <strong>${companyMeta.nif}</strong> · Filial: ${activeBranch?.name || 'Sede Principal'}</p>
+            <p class="meta">NIF: <strong>${companyMeta.nif}</strong> · Moeda: <strong>${companyMeta.currency || 'AOA'}</strong> · Filial: ${activeBranch?.name || 'Sede Principal'}</p>
             <p class="meta" style="margin-top:4px; font-weight:bold;">RELATÓRIO DE SESSÃO DE CAIXA / FECHO X</p>
             <p class="meta">Posto: <strong>${sessionReport.register_code} — ${sessionReport.register_name}</strong></p>
             <p class="meta">Data/Hora: ${new Date().toLocaleString('pt-AO')}</p>

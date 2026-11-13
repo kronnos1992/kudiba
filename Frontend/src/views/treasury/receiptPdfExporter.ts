@@ -1,6 +1,6 @@
 import { TreasuryReceipt } from '../../api/treasury';
 import { useAuthStore } from '../../stores/authStore';
-import { buildCompanyReportMeta } from '../../utils/corporateReportExporter';
+import { buildCompanyReportMeta, escapeHtml } from '../../utils/corporateReportExporter';
 
 export interface ReceiptCompanyMeta {
   name: string;
@@ -30,7 +30,6 @@ export const generateReceiptHtml = (
   const { activeTenant, activeBranch } = useAuthStore.getState();
   const enriched = buildCompanyReportMeta(activeTenant, activeBranch);
   const logoDataUrl = company.logoDataUrl || enriched.logoDataUrl;
-  const companyDesc = company.description || enriched.companyDescription;
   const initials = (company.name || enriched.companyName)
     .split(/\s+/)
     .filter(Boolean)
@@ -38,8 +37,8 @@ export const generateReceiptHtml = (
     .map((w) => w[0]?.toUpperCase() || '')
     .join('');
   const logoHtml = logoDataUrl
-    ? `<img src="${logoDataUrl}" alt="Logotipo" style="max-height:58px; max-width:130px; object-fit:contain; border-radius:6px; border:1px solid #e2e8f0; padding:4px; background:#fff;" />`
-    : `<div style="width:52px; height:52px; border-radius:10px; background:linear-gradient(135deg,#0f172a 0%,#047857 100%); color:#fff; display:flex; align-items:center; justify-content:center; font-size:16pt; font-weight:900;">${initials || 'KD'}</div>`;
+    ? `<img src="${logoDataUrl}" alt="Logotipo" style="max-height:28px; max-width:85px; object-fit:contain; margin-bottom:2px;" />`
+    : `<div style="width:24px; height:24px; border-radius:4px; background:linear-gradient(135deg,#0f172a 0%,#047857 100%); color:#fff; display:flex; align-items:center; justify-content:center; font-size:8.5pt; font-weight:900; margin-bottom:2px;">${escapeHtml(initials || 'KD')}</div>`;
   const totalNum = typeof receipt.total_amount === 'string' ? parseFloat(receipt.total_amount) : receipt.total_amount;
   const issuedDate = new Date(receipt.issued_at || receipt.created_at);
   const formattedDate = issuedDate.toLocaleDateString('pt-AO', {
@@ -109,25 +108,30 @@ export const generateReceiptHtml = (
     .header-box {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
+      align-items: flex-end;
       border-bottom: 2px solid #059669;
-      padding-bottom: 16px;
-      margin-bottom: 20px;
+      padding-bottom: 8px;
+      margin-bottom: 12px;
     }
     .company-col {
-      max-width: 55%;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1.5px;
+      max-width: 60%;
     }
     .company-name {
-      font-size: 16pt;
+      font-size: 8.5pt;
       font-weight: 800;
       color: #0f172a;
-      letter-spacing: -0.3px;
+      letter-spacing: -0.2px;
       text-transform: uppercase;
+      line-height: 1.15;
     }
     .company-meta {
-      font-size: 9.5pt;
-      color: #475569;
-      margin-top: 4px;
+      font-size: 7.2pt;
+      color: #334155;
+      line-height: 1.2;
     }
     .company-nif {
       font-weight: 700;
@@ -287,28 +291,17 @@ export const generateReceiptHtml = (
 </head>
 <body>
   <div class="header-box">
-    <div class="company-col" style="display:flex; align-items:flex-start; gap:12px;">
+    <div class="company-col">
       ${logoHtml}
-      <div>
-        <div class="company-name">${company.name || enriched.companyName}</div>
-        ${
-          enriched.tradeName && enriched.tradeName.toUpperCase() !== (company.name || enriched.companyName).toUpperCase()
-            ? `<div style="font-size:9pt; font-weight:700; color:#047857; margin-top:1px;">${enriched.tradeName}</div>`
-            : ''
-        }
-        <div style="font-size:8.5pt; color:#475569; font-style:italic; margin-top:2px;">${companyDesc}</div>
-        <div class="company-meta">
-          <div>NIF: <span class="company-nif">${company.nif || enriched.nif}</span></div>
-          <div>${company.address || enriched.address}${company.city ? ` · ${company.city}` : ''}</div>
-          ${company.phone || enriched.contacts ? `<div>Contactos: ${company.phone || enriched.contacts}</div>` : ''}
-        </div>
+      <div class="company-name">${escapeHtml(company.name || enriched.companyName)}</div>
+      <div class="company-meta">
+        NIF: <span class="company-nif">${escapeHtml(company.nif || enriched.nif)}</span> &nbsp;·&nbsp; Moeda: <strong>${escapeHtml(receipt.currency || 'AOA')}</strong>
       </div>
     </div>
     <div class="doc-col">
       <div class="doc-badge">RECIBO DE QUITAÇÃO</div>
-      <div class="doc-number">${receipt.receipt_number}</div>
+      <div class="doc-number">${escapeHtml(receipt.receipt_number)}</div>
       <div class="doc-date">Data: ${formattedDate} às ${formattedTime}</div>
-      <div class="doc-date">Moeda: <strong>${receipt.currency || 'AOA'}</strong></div>
     </div>
   </div>
 

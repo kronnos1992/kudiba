@@ -1,4 +1,5 @@
 import { useAuthStore } from '../../stores/authStore';
+import { escapeHtml } from '../../utils/corporateReportExporter';
 import { CashFlowData } from './CashFlowStatement';
 import { FinancialNotesData } from './FinancialNotesStatement';
 
@@ -1326,9 +1327,9 @@ export const exportFinancialStatementPdf = (
       <div class="header-box">
         <div class="brand-box">
           ${logoHtml}
-          <div class="company-name">${meta.companyName}</div>
+          <div class="company-name">${escapeHtml(meta.companyName)}</div>
           <div class="company-meta">
-            NIF: <strong>${meta.nif}</strong> &nbsp;·&nbsp; Moeda: <strong>${meta.currency || 'Kwanzas (AOA)'}</strong>
+            NIF: <strong>${escapeHtml(meta.nif)}</strong> &nbsp;·&nbsp; Moeda: <strong>${escapeHtml(meta.currency || 'Kwanzas (AOA)')}</strong>
           </div>
         </div>
         <div class="doc-meta-box">
