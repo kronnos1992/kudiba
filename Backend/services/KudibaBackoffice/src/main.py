@@ -67,6 +67,7 @@ accounting_session_factory = async_sessionmaker(
     autoflush=False,
 )
 
+invoicing_engine = None
 invoicing_session_factory = None
 if settings.async_invoicing_database_url:
     invoicing_engine = create_async_engine(
@@ -90,6 +91,40 @@ app_state = create_app_state(
     auth_session_factory,
     accounting_session_factory=accounting_session_factory,
     invoicing_session_factory=invoicing_session_factory,
+)
+
+_TENANT_SCHEMA_ALTER = (
+    "ALTER TABLE kudiba_core.tenants "
+    "ADD COLUMN IF NOT EXISTS trade_name VARCHAR(255), "
+    "ADD COLUMN IF NOT EXISTS address_detail TEXT, "
+    "ADD COLUMN IF NOT EXISTS city VARCHAR(128), "
+    "ADD COLUMN IF NOT EXISTS province VARCHAR(128), "
+    "ADD COLUMN IF NOT EXISTS postal_code VARCHAR(32), "
+    "ADD COLUMN IF NOT EXISTS country VARCHAR(2) DEFAULT 'AO', "
+    "ADD COLUMN IF NOT EXISTS phone VARCHAR(64), "
+    "ADD COLUMN IF NOT EXISTS email VARCHAR(255), "
+    "ADD COLUMN IF NOT EXISTS website VARCHAR(255), "
+    "ADD COLUMN IF NOT EXISTS logo_data_url TEXT, "
+    "ADD COLUMN IF NOT EXISTS commercial_registry VARCHAR(64), "
+    "ADD COLUMN IF NOT EXISTS alvara_number VARCHAR(64), "
+    "ADD COLUMN IF NOT EXISTS alvara_issue_date DATE, "
+    "ADD COLUMN IF NOT EXISTS alvara_expiry_date DATE, "
+    "ADD COLUMN IF NOT EXISTS share_capital VARCHAR(64), "
+    "ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'AOA', "
+    "ADD COLUMN IF NOT EXISTS tax_regime_code VARCHAR(32) NOT NULL DEFAULT 'REGIME_GERAL', "
+    "ADD COLUMN IF NOT EXISTS tax_office_code VARCHAR(128), "
+    "ADD COLUMN IF NOT EXISTS agt_cert_number VARCHAR(64), "
+    "ADD COLUMN IF NOT EXISTS default_withholding_rate NUMERIC(5, 2) NOT NULL DEFAULT 6.50, "
+    "ADD COLUMN IF NOT EXISTS invoice_footer_notes TEXT, "
+    "ADD COLUMN IF NOT EXISTS bank_accounts JSONB NOT NULL DEFAULT '[]'::jsonb, "
+    "ADD COLUMN IF NOT EXISTS database_connections JSONB NOT NULL DEFAULT '{}'::jsonb, "
+    "ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE, "
+    "ADD COLUMN IF NOT EXISTS sector_code VARCHAR(32) NOT NULL DEFAULT 'GERAL', "
+    "ADD COLUMN IF NOT EXISTS accounting_template_code VARCHAR(64) NOT NULL DEFAULT 'PGC_GENERIC', "
+    "ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE', "
+    "ADD COLUMN IF NOT EXISTS contingency_started_at TIMESTAMPTZ, "
+    "ADD COLUMN IF NOT EXISTS license_valid_until TIMESTAMPTZ, "
+    "ADD COLUMN IF NOT EXISTS subscribed_modules TEXT[]"
 )
 
 
@@ -135,24 +170,17 @@ async def lifespan(app: FastAPI):
         logger.warning("Migração automática da trilha de auditoria ignorada: %s", e)
 
     async with auth_engine.begin() as conn:
-        await conn.execute(
-            text(
-                "ALTER TABLE kudiba_core.tenants "
-                "ADD COLUMN IF NOT EXISTS alvara_number VARCHAR(64), "
-                "ADD COLUMN IF NOT EXISTS alvara_issue_date DATE, "
-                "ADD COLUMN IF NOT EXISTS alvara_expiry_date DATE, "
-                "ADD COLUMN IF NOT EXISTS email VARCHAR(255), "
-                "ADD COLUMN IF NOT EXISTS phone VARCHAR(64), "
-                "ADD COLUMN IF NOT EXISTS sector_code VARCHAR(32) NOT NULL DEFAULT 'GERAL', "
-                "ADD COLUMN IF NOT EXISTS accounting_template_code VARCHAR(64) NOT NULL DEFAULT 'PGC_GENERIC', "
-                "ADD COLUMN IF NOT EXISTS license_valid_until TIMESTAMPTZ, "
-                "ADD COLUMN IF NOT EXISTS subscribed_modules TEXT[]"
-            )
-        )
+        await conn.execute(text(_TENANT_SCHEMA_ALTER))
+
+    if invoicing_engine is not None:
+        async with invoicing_engine.begin() as conn:
+            await conn.execute(text(_TENANT_SCHEMA_ALTER))
 
     yield
     await engine.dispose()
     await auth_engine.dispose()
+    if invoicing_engine is not None:
+        await invoicing_engine.dispose()
 
 
 app = FastAPI(

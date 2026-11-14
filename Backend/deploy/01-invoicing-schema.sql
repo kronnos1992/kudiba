@@ -300,12 +300,19 @@ ALTER TABLE kudiba_core.tenants
     ADD COLUMN IF NOT EXISTS alvara_expiry_date DATE,
     ADD COLUMN IF NOT EXISTS share_capital VARCHAR(64),
     ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'AOA',
+    ADD COLUMN IF NOT EXISTS tax_regime_code VARCHAR(32) NOT NULL DEFAULT 'REGIME_GERAL',
     ADD COLUMN IF NOT EXISTS tax_office_code VARCHAR(128),
     ADD COLUMN IF NOT EXISTS agt_cert_number VARCHAR(64),
     ADD COLUMN IF NOT EXISTS default_withholding_rate NUMERIC(5, 2) NOT NULL DEFAULT 6.50,
     ADD COLUMN IF NOT EXISTS invoice_footer_notes TEXT,
     ADD COLUMN IF NOT EXISTS bank_accounts JSONB NOT NULL DEFAULT '[]'::jsonb,
-    ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE;
+    ADD COLUMN IF NOT EXISTS database_connections JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS sector_code VARCHAR(32) NOT NULL DEFAULT 'GERAL',
+    ADD COLUMN IF NOT EXISTS accounting_template_code VARCHAR(64) NOT NULL DEFAULT 'PGC_GENERIC',
+    ADD COLUMN IF NOT EXISTS contingency_started_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS license_valid_until TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS subscribed_modules TEXT[];
 
 -- Outbox transacional para o sistema de contabilidade consumir sem perder eventos.
 CREATE TABLE IF NOT EXISTS kudiba_core.accounting_outbox (
