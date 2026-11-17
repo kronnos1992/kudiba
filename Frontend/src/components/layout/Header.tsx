@@ -291,14 +291,6 @@ export const Header: React.FC = () => {
             </div>
           )}
         </div>
-
-        <button
-          onClick={() => logout()}
-          title="Terminar Sessão"
-          className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-        </button>
       </div>
 
       {isPasswordModalOpen && (
