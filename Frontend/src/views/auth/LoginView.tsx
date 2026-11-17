@@ -1,26 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Lock,
-  Mail,
-  ShieldCheck,
-  Loader2,
-  Timer,
-  Receipt,
-  Calculator,
-  Boxes,
-  Users,
-  Eye,
-  EyeOff,
-  Sun,
-  Moon,
-  CheckCircle2,
-  Sparkles,
-  QrCode,
-  Building2,
-  TrendingUp,
-  Cpu,
   ArrowRight,
   BadgeCheck,
+  Boxes,
+  Calculator,
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+  Mail,
+  Moon,
+  Receipt,
+  ShieldCheck,
+  Sun,
+  Timer,
+  Users,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -34,6 +28,13 @@ const formatCountdown = (totalSeconds: number): string => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
+const highlights = [
+  { icon: Receipt, label: 'Faturação e POS', detail: 'Operações fiscais num só lugar' },
+  { icon: Calculator, label: 'Contabilidade', detail: 'Controlo financeiro simplificado' },
+  { icon: Boxes, label: 'Inventário', detail: 'Stock e armazéns sempre alinhados' },
+  { icon: Users, label: 'Recursos Humanos', detail: 'Equipas, salários e assiduidade' },
+];
+
 export const LoginView: React.FC = () => {
   const { setSession } = useAuthStore();
   const { themeMode, toggleTheme } = useUiStore();
@@ -45,7 +46,9 @@ export const LoginView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [lockSeconds, setLockSeconds] = useState<number | null>(null);
   const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
-  const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy' | 'data_processing' | 'subscription' | 'fiscal'>('terms');
+  const [legalModalTab, setLegalModalTab] = useState<
+    'terms' | 'privacy' | 'data_processing' | 'subscription' | 'fiscal'
+  >('terms');
 
   useEffect(() => {
     if (lockSeconds === null) return;
@@ -54,12 +57,12 @@ export const LoginView: React.FC = () => {
       setError(null);
       return;
     }
-    const t = setTimeout(() => setLockSeconds((v) => (v === null ? null : v - 1)), 1000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setLockSeconds((value) => (value === null ? null : value - 1)), 1000);
+    return () => clearTimeout(timer);
   }, [lockSeconds]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (lockSeconds !== null && lockSeconds > 0) return;
     setError(null);
     setLockSeconds(null);
@@ -103,409 +106,285 @@ export const LoginView: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col lg:flex-row bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
-      {/* =========================================================================
-          PAINEL ESQUERDO: FLYER KUDIBA ERP (SHOWCASE INSTITUCIONAL & TRIBUTÁRIO)
-          ========================================================================= */}
-      <div className="relative w-full lg:w-7/12 xl:w-3/5 bg-gradient-to-br from-slate-950 via-emerald-950 to-slate-900 text-white p-6 sm:p-10 lg:p-14 flex flex-col justify-between overflow-hidden shadow-2xl">
-        {/* Elementos Decorativos de Fundo / Iluminação */}
-        <div className="absolute top-0 right-0 -mt-24 -mr-24 w-96 h-96 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 -mb-24 -ml-24 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div
-          className="absolute inset-0 opacity-[0.03] pointer-events-none"
-          style={{
-            backgroundImage: `radial-gradient(circle at 1px 1px, white 1px, transparent 0)`,
-            backgroundSize: '24px 24px',
-          }}
-        />
+    <main className="min-h-screen bg-[#f3f6f3] p-0 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:p-4 lg:p-8">
+      <div className="mx-auto flex min-h-screen max-w-[1440px] overflow-hidden bg-white shadow-xl shadow-slate-900/5 dark:bg-slate-900 sm:min-h-[min(900px,calc(100vh-2rem))] sm:rounded-[28px] lg:min-h-[min(900px,calc(100vh-4rem))]">
+        <section className="relative hidden w-[52%] flex-col justify-between overflow-hidden bg-[#073b2c] p-10 text-white lg:flex xl:p-14">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_15%_15%,rgba(52,211,153,0.22),transparent_38%),radial-gradient(ellipse_at_85%_90%,rgba(20,184,166,0.2),transparent_35%)]" />
+          <div
+            className="absolute inset-0 opacity-[0.07]"
+            style={{
+              backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)',
+              backgroundSize: '24px 24px',
+            }}
+          />
 
-        {/* TOPO DO FLYER: Branding & Badges de Certificação */}
-        <div className="relative z-10">
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-            <div className="flex items-center gap-3.5">
-              <div className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-emerald-600 to-emerald-400 p-0.5 shadow-xl shadow-emerald-900/50">
-                <div className="w-full h-full bg-slate-950/80 rounded-[14px] flex items-center justify-center">
-                  <span className="font-black text-2xl tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-amber-300">
-                    K
-                  </span>
-                </div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-emerald-900 shadow-lg shadow-black/10">
+                <span className="text-2xl font-black tracking-tighter">K</span>
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-2xl font-black tracking-tight text-white">Kudiba</span>
-                  <span className="px-2 py-0.5 text-xs font-black tracking-wide uppercase rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  <span className="text-2xl font-extrabold tracking-tight">Kudiba</span>
+                  <span className="rounded-md border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-100">
                     ERP
                   </span>
                 </div>
-                <p className="text-xs text-emerald-200/80 font-medium tracking-wide">
-                  Solução Integrada de Gestão Empresarial · Angola
-                </p>
+                <p className="mt-0.5 text-xs text-emerald-100/70">Gestão simples. Negócios em movimento.</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-900/40 border border-emerald-500/30 backdrop-blur-md">
-              <BadgeCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="text-xs font-semibold text-emerald-200 tracking-wide">
-                Certificação AGT n.º FE/528/AGT/2026
-              </span>
+            <div className="mt-20 max-w-xl xl:mt-24">
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-200/20 bg-white/[0.08] px-3 py-1.5 text-xs font-medium text-emerald-100">
+                <ShieldCheck className="h-4 w-4" />
+                Gestão empresarial integrada
+              </div>
+              <h1 className="text-4xl font-semibold leading-[1.15] tracking-tight xl:text-[52px]">
+                Tudo o que a sua empresa precisa,
+                <span className="text-emerald-300"> num só lugar.</span>
+              </h1>
+              <p className="mt-5 max-w-lg text-base leading-7 text-emerald-50/75">
+                Simplifique a gestão do dia a dia e tenha mais tempo para fazer o seu negócio crescer.
+              </p>
             </div>
           </div>
 
-          {/* HEADLINE PRINCIPAL DO FLYER */}
-          <div className="max-w-2xl mb-10">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-emerald-300 text-xs font-semibold uppercase tracking-wider mb-4">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Conformidade Fiscal Total · Decreto Presidencial 71/25</span>
-            </div>
-            <h1 className="text-3xl sm:text-4xl xl:text-5xl font-extrabold tracking-tight text-white leading-tight mb-4">
-              A inteligência e o rigor fiscal que a sua empresa merece.
-            </h1>
-            <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
-              Desenvolvido com tecnologia de topo para responder com exatidão às exigências da
-              Administração Geral Tributária (AGT) e ao Plano Geral de Contabilidade (PGC) de Angola.
-            </p>
-          </div>
-
-          {/* GRID DE MÓDULOS DESTAQUE (4 CARDS VISUAIS) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-            {/* Card 1: Faturação & POS */}
-            <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-emerald-500/40 backdrop-blur-md transition-all duration-200 group">
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-105 transition-transform">
-                  <Receipt className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                    Faturação &amp; POS AGT
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                  </h3>
-                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    Assinatura digital RSA-2048 em tempo real, QR Code oficial, impressão térmica e
-                    exportação SAF-T AO validada.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Card 2: Contabilidade Geral PGC */}
-            <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-emerald-500/40 backdrop-blur-md transition-all duration-200 group">
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover:scale-105 transition-transform">
-                  <Calculator className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                    Contabilidade PGC Angola
-                    <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
-                  </h3>
-                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    Decreto n.º 82/01 (Classes 0 a 8), Balancetes a 4 e 6 Colunas, DRE, DFC e Balanço
-                    patrimonial automatizado.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Card 3: Inventário & CMP */}
-            <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-emerald-500/40 backdrop-blur-md transition-all duration-200 group">
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20 group-hover:scale-105 transition-transform">
-                  <Boxes className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                    Gestão de Stocks &amp; CMP
-                    <CheckCircle2 className="w-3.5 h-3.5 text-teal-400" />
-                  </h3>
-                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    Custeio a Custo Médio Ponderado, multi-armazéns, rastreabilidade de lotes, controlo
-                    de validade e saídas automáticas.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Card 4: Salários & Recursos Humanos */}
-            <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-emerald-500/40 backdrop-blur-md transition-all duration-200 group">
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 group-hover:scale-105 transition-transform">
-                  <Users className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                    Salários, IRT &amp; INSS
-                    <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
-                  </h3>
-                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    Folha salarial adaptada à Lei Geral do Trabalho 12/23, escalões de IRT 28/20 e
-                    retenção de INSS patronal e laboral.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* SIMULADOR VISUAL DE DOCUMENTO FISCAL VERIFICADO (FLYER BADGE) */}
-          <div className="hidden sm:flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/70 to-slate-900/80 border border-emerald-500/30 backdrop-blur-md">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-300">
-                <QrCode className="w-5 h-5" />
-              </div>
+          <div className="relative z-10 mt-12 rounded-3xl border border-white/15 bg-white/[0.08] p-5 shadow-2xl shadow-black/10 backdrop-blur-sm xl:p-6">
+            <div className="mb-5 flex items-center justify-between">
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-white">Motor Fiscal Descentralizado</span>
-                  <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    Rust Core
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  Latência ultrabaixa (&lt;10ms) · Encriptação SHA-256 Chained Hash
-                </p>
+                <p className="text-xs font-medium text-emerald-100/65">A sua operação, de forma clara</p>
+                <p className="mt-1 text-sm font-semibold">Uma plataforma. Toda a empresa.</p>
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-300/15 text-emerald-200">
+                <BadgeCheck className="h-5 w-5" />
               </div>
             </div>
-            <div className="text-right">
-              <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider">
-                Moeda Operacional
-              </span>
-              <p className="text-xs font-extrabold text-white">Kwanza Angolano (AOA)</p>
+            <div className="grid grid-cols-2 gap-3">
+              {highlights.map(({ icon: Icon, label, detail }) => (
+                <div key={label} className="flex items-start gap-3 rounded-2xl bg-slate-950/15 p-3.5">
+                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-emerald-200">
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">{label}</p>
+                    <p className="mt-1 text-[11px] leading-4 text-emerald-50/65">{detail}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        </div>
 
-        {/* RODAPÉ DO FLYER: Métricas e Selos de Confiança */}
-        <div className="relative z-10 pt-8 mt-6 border-t border-white/10 flex flex-wrap items-center justify-between gap-4 text-xs text-slate-400">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-1.5">
-              <Building2 className="w-4 h-4 text-emerald-400" />
-              <span>Multi-Filial &amp; Holding</span>
+          <p className="relative z-10 mt-8 text-xs text-emerald-100/55">
+            Feito para empresas que querem avançar.
+          </p>
+        </section>
+
+        <section className="flex min-h-screen w-full flex-col px-6 py-6 dark:bg-slate-900 sm:px-10 lg:min-h-0 lg:w-[48%] lg:px-12 xl:px-20">
+          <header className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              Acesso seguro
             </div>
-            <div className="flex items-center gap-1.5">
-              <TrendingUp className="w-4 h-4 text-amber-400" />
-              <span>Auditoria SAFT-AO XML</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Cpu className="w-4 h-4 text-teal-400" />
-              <span>Gateway Perimétrico :8080</span>
-            </div>
-          </div>
-          <span className="text-slate-500 text-[11px]">
-            República de Angola · Ministério das Finanças
-          </span>
-        </div>
-      </div>
-
-      {/* =========================================================================
-          PAINEL DIREITO: FORMULÁRIO DE LOGIN (ELEGANTE, MODERNO E RESPONSIVO)
-          ========================================================================= */}
-      <div className="w-full lg:w-5/12 xl:w-2/5 flex flex-col justify-between p-6 sm:p-10 lg:p-12 xl:p-16">
-        {/* Topo do painel de login: seletor de tema claro/escuro */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>Ambiente Autenticado Seguro</span>
-          </div>
-
-          <button
-            onClick={toggleTheme}
-            type="button"
-            className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors shadow-xs cursor-pointer"
-            title="Alternar Modo Escuro / Claro"
-          >
-            {themeMode === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
-        </div>
-
-        {/* Conteúdo Central do Formulário */}
-        <div className="w-full max-w-md mx-auto my-auto">
-          <div className="mb-8">
-            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-              Entrar na sua Conta
-            </h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-              Introduza as suas credenciais de utilizador para aceder ao ERP e terminar operações fiscais.
-            </p>
-          </div>
-
-          {/* Mensagem de Erro / Bloqueio Temporário */}
-          {error && (
-            <div
-              className={`mb-6 p-4 rounded-xl border text-sm animate-in fade-in duration-200 ${
-                lockSeconds !== null
-                  ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300'
-                  : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300'
-              }`}
+            <button
+              onClick={toggleTheme}
+              type="button"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              title="Alternar modo escuro / claro"
+              aria-label="Alternar modo escuro / claro"
             >
-              <div className="flex items-start gap-2.5">
+              {themeMode === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+          </header>
+
+          <div className="mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center py-12">
+            <div className="mb-9 lg:hidden">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-700 text-white">
+                  <span className="text-xl font-black">K</span>
+                </div>
+                <span className="text-xl font-extrabold tracking-tight dark:text-white">Kudiba</span>
+              </div>
+            </div>
+
+            <div className="mb-8">
+              <p className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-400">
+                Bem-vindo de volta
+              </p>
+              <h2 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[34px]">
+                Entre na sua conta
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                Introduza os seus dados para continuar para o Kudiba ERP.
+              </p>
+            </div>
+
+            {error && (
+              <div
+                role="alert"
+                aria-live="polite"
+                className={`mb-6 flex items-start gap-3 rounded-xl border p-4 text-sm ${
+                  lockSeconds !== null
+                    ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300'
+                    : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-300'
+                }`}
+              >
                 {lockSeconds !== null ? (
-                  <Timer className="w-4 h-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <Timer className="mt-0.5 h-4 w-4 shrink-0" />
                 ) : (
-                  <Lock className="w-4 h-4 mt-0.5 shrink-0 text-rose-600 dark:text-rose-400" />
+                  <Lock className="mt-0.5 h-4 w-4 shrink-0" />
                 )}
-                <div>
+                <span>
                   {lockSeconds !== null ? (
                     <>
-                      Conta temporariamente bloqueada por excesso de tentativas falhadas. Tente
-                      novamente em{' '}
-                      <span className="font-bold tabular-nums">{formatCountdown(lockSeconds)}</span>.
+                      Conta temporariamente bloqueada. Tente novamente em{' '}
+                      <strong className="tabular-nums">{formatCountdown(lockSeconds)}</strong>.
                     </>
                   ) : (
                     error
                   )}
-                </div>
+                </span>
               </div>
-            </div>
-          )}
+            )}
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
-                Email Corporativo
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                  <Mail className="w-4 h-4" />
-                </div>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  autoComplete="off"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all shadow-xs"
-                  placeholder="admin@kudiba.ao"
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                  Palavra-passe
-                </label>
-                <span className="text-xs text-slate-400 dark:text-slate-500">Mínimo 8 carateres</span>
-              </div>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  autoComplete="off"
-                  className="w-full pl-10 pr-11 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all shadow-xs"
-                  placeholder="••••••••••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                  title={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label
+                  htmlFor="login-email"
+                  className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300"
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+                  Email
+                </label>
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-400" />
+                  <input
+                    id="login-email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    required
+                    autoComplete="username"
+                    placeholder="nome@empresa.ao"
+                    className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:border-slate-600 dark:focus:border-emerald-400 dark:focus:ring-emerald-400/10"
+                  />
+                </div>
               </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <label
+                    htmlFor="login-password"
+                    className="block text-sm font-semibold text-slate-700 dark:text-slate-300"
+                  >
+                    Palavra-passe
+                  </label>
+                </div>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-400" />
+                  <input
+                    id="login-password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    required
+                    autoComplete="current-password"
+                    placeholder="Introduza a sua palavra-passe"
+                    className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-11 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:border-slate-600 dark:focus:border-emerald-400 dark:focus:ring-emerald-400/10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:hover:text-slate-200"
+                    title={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}
+                    aria-label={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}
+                  >
+                    {showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || (lockSeconds !== null && lockSeconds > 0)}
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/15 transition hover:bg-emerald-800 focus:outline-none focus:ring-4 focus:ring-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    A entrar...
+                  </>
+                ) : lockSeconds !== null && lockSeconds > 0 ? (
+                  <>
+                    <Timer className="h-4 w-4" />
+                    Bloqueado ({formatCountdown(lockSeconds)})
+                  </>
+                ) : (
+                  <>
+                    Entrar
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-7 flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              As suas credenciais são transmitidas em segurança
             </div>
-
-            <button
-              type="submit"
-              disabled={loading || (lockSeconds !== null && lockSeconds > 0)}
-              className="w-full py-3.5 px-5 rounded-xl bg-gradient-to-r from-emerald-700 via-emerald-600 to-teal-700 hover:from-emerald-800 hover:to-teal-800 text-white font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-700/25 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-all disabled:opacity-60 cursor-pointer"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>A autenticar na rede Kudiba...</span>
-                </>
-              ) : lockSeconds !== null && lockSeconds > 0 ? (
-                <>
-                  <Timer className="w-4 h-4" />
-                  <span>Conta Bloqueada ({formatCountdown(lockSeconds)})</span>
-                </>
-              ) : (
-                <>
-                  <span>Entrar no Sistema</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </form>
-
-        </div>
-
-        {/* Rodapé do Formulário */}
-        <div className="pt-5 border-t border-slate-200 dark:border-slate-800 space-y-3">
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-medium">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
-              <span>Gateway Perimétrico :8080</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setLegalModalTab('fiscal');
-                setIsLegalModalOpen(true);
-              }}
-              className="cursor-pointer hover:opacity-80 transition-opacity"
-            >
-              <StatusBadge status="ok" label="FE/528/AGT/2026" size="small" />
-            </button>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-slate-400 dark:text-slate-500">
-            <button
-              type="button"
-              onClick={() => {
-                setLegalModalTab('terms');
-                setIsLegalModalOpen(true);
-              }}
-              className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer underline underline-offset-2"
+          <footer className="border-t border-slate-100 pt-5 dark:border-slate-800">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+              <span className="flex items-center gap-2">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                Serviço disponível
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setLegalModalTab('fiscal');
+                  setIsLegalModalOpen(true);
+                }}
+                className="transition-opacity hover:opacity-80"
+              >
+                <StatusBadge status="ok" label="FE/528/AGT/2026" size="small" />
+              </button>
+            </div>
+            <nav
+              aria-label="Informação legal"
+              className="flex flex-wrap justify-center gap-x-3 gap-y-2 text-[11px] text-slate-400 dark:text-slate-500"
             >
-              Termos de Uso
-            </button>
-            <span>•</span>
-            <button
-              type="button"
-              onClick={() => {
-                setLegalModalTab('privacy');
-                setIsLegalModalOpen(true);
-              }}
-              className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer underline underline-offset-2"
-            >
-              Privacidade (Lei 22/11)
-            </button>
-            <span>•</span>
-            <button
-              type="button"
-              onClick={() => {
-                setLegalModalTab('data_processing');
-                setIsLegalModalOpen(true);
-              }}
-              className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer underline underline-offset-2"
-            >
-              Tratamento de Dados
-            </button>
-            <span>•</span>
-            <button
-              type="button"
-              onClick={() => {
-                setLegalModalTab('subscription');
-                setIsLegalModalOpen(true);
-              }}
-              className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer underline underline-offset-2"
-            >
-              Contrato de Subscrição
-            </button>
-          </div>
-        </div>
-
-        <TermsAndPoliciesModal
-          isOpen={isLegalModalOpen}
-          onClose={() => setIsLegalModalOpen(false)}
-          defaultTab={legalModalTab}
-        />
+              {(
+                [
+                  ['terms', 'Termos de Uso'],
+                  ['privacy', 'Privacidade (Lei 22/11)'],
+                  ['data_processing', 'Tratamento de Dados'],
+                  ['subscription', 'Contrato de Subscrição'],
+                ] as const
+              ).map(([tab, label], index) => (
+                <React.Fragment key={tab}>
+                  {index > 0 && <span aria-hidden="true">·</span>}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLegalModalTab(tab);
+                      setIsLegalModalOpen(true);
+                    }}
+                    className="underline underline-offset-2 transition-colors hover:text-emerald-700 dark:hover:text-emerald-400"
+                  >
+                    {label}
+                  </button>
+                </React.Fragment>
+              ))}
+            </nav>
+          </footer>
+        </section>
       </div>
-    </div>
+
+      <TermsAndPoliciesModal
+        isOpen={isLegalModalOpen}
+        onClose={() => setIsLegalModalOpen(false)}
+        defaultTab={legalModalTab}
+      />
+    </main>
   );
 };
