@@ -19,12 +19,14 @@ impl PostgresCashMovementRepository {
 
 #[async_trait]
 impl CashMovementRepository for PostgresCashMovementRepository {
-    async fn save(&self, movement: &CashMovement) -> Result<(), DomainError> {
-        sqlx::query(
+    async fn save(&self, movement: &CashMovement) -> Result<Uuid, DomainError> {
+        let inserted = sqlx::query_scalar::<_, Uuid>(
             r#"
             INSERT INTO kudiba_treasury.cash_movements
-                (id, tenant_id, session_id, register_id, movement_type, amount, reason, operator_user_id, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                (id, tenant_id, session_id, register_id, movement_type, amount, reason, operator_user_id, idempotency_key, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+            RETURNING id
             "#,
         )
         .bind(movement.id)
@@ -35,12 +37,32 @@ impl CashMovementRepository for PostgresCashMovementRepository {
         .bind(movement.amount)
         .bind(&movement.reason)
         .bind(&movement.operator_user_id)
+        .bind(&movement.idempotency_key)
         .bind(movement.created_at)
-        .execute(&self.pool)
+        .fetch_optional(&self.pool)
         .await
         .map_err(|e| DomainError::DatabaseError(e.to_string()))?;
 
-        Ok(())
+        if let Some(id) = inserted {
+            return Ok(id);
+        }
+
+        let key = movement.idempotency_key.as_ref().ok_or_else(|| {
+            DomainError::DatabaseError(
+                "inserção de movimento de caixa sem idempotência falhou".to_string(),
+            )
+        })?;
+        sqlx::query_scalar::<_, Uuid>(
+            r#"
+            SELECT id FROM kudiba_treasury.cash_movements
+            WHERE tenant_id = $1 AND idempotency_key = $2
+            "#,
+        )
+        .bind(movement.tenant_id)
+        .bind(key)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::DatabaseError(e.to_string()))
     }
 
     async fn list_by_session(

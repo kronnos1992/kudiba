@@ -219,7 +219,21 @@ fn build_events(
             "invoiceId": issued.invoice_id,
             "documentNumber": issued.document_number,
             "documentType": request.invoice.document_type,
-            "lines": &request.invoice.lines,
+            "lines": request
+                .invoice
+                .lines
+                .iter()
+                .enumerate()
+                .map(|(index, line)| {
+                    json!({
+                        "lineNumber": index + 1,
+                        "productCode": line.product_code,
+                        "description": line.description,
+                        "quantity": line.quantity,
+                        "unitPrice": line.unit_price,
+                    })
+                })
+                .collect::<Vec<_>>(),
         }),
         idempotency_key: format!("pos-checkout:{}:stock", key),
     });

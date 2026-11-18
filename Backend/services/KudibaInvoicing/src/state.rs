@@ -63,6 +63,8 @@ pub struct AppState {
     #[allow(dead_code)]
     pub event_publisher: Arc<crate::infrastructure::outbox::MultiChannelEventPublisher>,
     pub outbox_worker: Arc<crate::infrastructure::outbox::OutboxWorker>,
+    pub pos_checkout_worker:
+        Arc<crate::infrastructure::pos_checkout::worker::PosCheckoutEventWorker>,
     pub saft_jobs: Arc<crate::infrastructure::saft::SaftJobRegistry>,
 }
 
@@ -200,12 +202,25 @@ impl AppState {
                     ),
                 );
                 Arc::new(crate::infrastructure::outbox::OutboxWorker::new(
-                    session_factory,
+                    session_factory.clone(),
                     publ,
                     std::time::Duration::from_millis(config.outbox_poll_interval_ms),
                     config.outbox_batch_size,
                 ))
             },
+            pos_checkout_worker: Arc::new(
+                crate::infrastructure::pos_checkout::worker::PosCheckoutEventWorker::new(
+                    session_factory.clone(),
+                    reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_secs(5))
+                        .build()
+                        .unwrap_or_default(),
+                    config.treasury_service_url.clone(),
+                    config.inventory_service_url.clone(),
+                    std::time::Duration::from_millis(config.outbox_poll_interval_ms),
+                    config.outbox_batch_size,
+                ),
+            ),
             saft_jobs: Arc::new(crate::infrastructure::saft::SaftJobRegistry::new()),
             agt_client,
             signer,

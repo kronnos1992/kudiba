@@ -155,6 +155,8 @@ pub struct RecordCashMovementRequest {
     pub reason: String,
     #[serde(default)]
     pub operator_user_id: String,
+    #[serde(default)]
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

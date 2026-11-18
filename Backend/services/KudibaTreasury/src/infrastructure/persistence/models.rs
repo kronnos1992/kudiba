@@ -136,6 +136,7 @@ impl From<CashMovementRow> for CashMovement {
             amount: m.amount,
             reason: m.reason,
             operator_user_id: m.operator_user_id,
+            idempotency_key: None,
             created_at: m.created_at,
         }
     }

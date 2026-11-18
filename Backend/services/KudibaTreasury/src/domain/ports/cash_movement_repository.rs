@@ -6,7 +6,7 @@ use crate::domain::error::DomainError;
 
 #[async_trait]
 pub trait CashMovementRepository: Send + Sync {
-    async fn save(&self, movement: &CashMovement) -> Result<(), DomainError>;
+    async fn save(&self, movement: &CashMovement) -> Result<Uuid, DomainError>;
     async fn list_by_session(
         &self,
         tenant_id: Uuid,

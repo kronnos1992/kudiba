@@ -109,6 +109,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         worker.run_loop(outbox_shutdown_rx).await;
     });
 
+    let (pos_checkout_shutdown_tx, pos_checkout_shutdown_rx) = tokio::sync::watch::channel(false);
+    let pos_checkout_worker = app_state.pos_checkout_worker.clone();
+    tokio::spawn(async move {
+        pos_checkout_worker.run_loop(pos_checkout_shutdown_rx).await;
+    });
+
     // =========================================================================
     // ETAPA 4: SERVIDOR gRPC (CONTRATO kudiba.fiscal.v1)
     // =========================================================================
@@ -156,6 +162,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let _ = outbox_shutdown_tx.send(true);
+    let _ = pos_checkout_shutdown_tx.send(true);
     tracing::info!("KudibaInvoicing encerrado com sucesso.");
     Ok(())
 }
