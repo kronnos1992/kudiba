@@ -622,6 +622,86 @@ pub async fn record_movement_handler(
     Ok((StatusCode::CREATED, Json(movement)))
 }
 
+const INTERNAL_SIGNATURE_MAX_AGE_SECS: i64 = 300;
+
+fn internal_auth_error() -> (StatusCode, Json<ProblemDetail>) {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(ProblemDetail::new(
+            StatusCode::UNAUTHORIZED,
+            "Serviço Não Autenticado",
+            "A assinatura HMAC interna é obrigatória e deve ser válida.",
+            "INTERNAL_SIGNATURE_INVALID",
+        )),
+    )
+}
+
+fn decode_hex(value: &str) -> Option<Vec<u8>> {
+    if !value.len().is_multiple_of(2) {
+        return None;
+    }
+    value
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|chunk| {
+            std::str::from_utf8(chunk)
+                .ok()
+                .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+        })
+        .collect()
+}
+
+fn verify_internal_signature(
+    headers: &HeaderMap,
+    secret: &str,
+    method: &str,
+    path: &str,
+) -> Result<(), (StatusCode, Json<ProblemDetail>)> {
+    let timestamp = headers
+        .get("X-Gateway-Timestamp")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .ok_or_else(internal_auth_error)?;
+    let timestamp_secs: i64 = timestamp.parse().map_err(|_| internal_auth_error())?;
+    if (chrono::Utc::now().timestamp() - timestamp_secs).abs() > INTERNAL_SIGNATURE_MAX_AGE_SECS {
+        return Err(internal_auth_error());
+    }
+
+    let provided = headers
+        .get("X-Gateway-Signature")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .ok_or_else(internal_auth_error)?;
+    let provided_bytes = decode_hex(provided).ok_or_else(internal_auth_error)?;
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret.as_bytes());
+    let canonical = format!("{}:{}:{}", timestamp, method, path);
+    ring::hmac::verify(&key, canonical.as_bytes(), &provided_bytes)
+        .map_err(|_| internal_auth_error())
+}
+
+pub async fn internal_record_cash_movement_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(mut payload): Json<RecordCashMovementRequest>,
+) -> Result<(StatusCode, Json<CashMovementResponse>), (StatusCode, Json<ProblemDetail>)> {
+    verify_internal_signature(
+        &headers,
+        &state.config.internal_gateway_secret,
+        "POST",
+        "/api/v1/treasury/internal/cash-movements",
+    )?;
+    let tenant_id = extract_tenant_id(&headers)?;
+    payload.operator_user_id =
+        extract_user_id(&headers).unwrap_or_else(|_| "pos-checkout".to_string());
+    let movement = state
+        .record_movement_cmd
+        .execute(tenant_id, payload)
+        .await
+        .map_err(map_domain_error)?;
+
+    Ok((StatusCode::CREATED, Json(movement)))
+}
+
 pub async fn list_session_movements_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1283,6 +1363,10 @@ pub fn create_router(state: AppState) -> Router {
         // Cash Movements
         .route("/api/v1/treasury/movements", post(record_movement_handler))
         .route(
+            "/api/v1/treasury/internal/cash-movements",
+            post(internal_record_cash_movement_handler),
+        )
+        .route(
             "/api/v1/treasury/sessions/{id}/movements",
             get(list_session_movements_handler),
         )
@@ -1312,4 +1396,61 @@ pub fn create_router(state: AppState) -> Router {
         )
         .layer(axum::middleware::from_fn(tenant_scope_middleware))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SECRET: &str = "test-internal-secret";
+    const PATH: &str = "/api/v1/treasury/internal/cash-movements";
+
+    fn compute_signature(secret: &str, timestamp: &str) -> String {
+        let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret.as_bytes());
+        let canonical = format!("{}:POST:{}", timestamp, PATH);
+        let tag = ring::hmac::sign(&key, canonical.as_bytes());
+        tag.as_ref()
+            .iter()
+            .map(|byte| format!("{:02x}", byte))
+            .collect()
+    }
+
+    fn signed_headers(secret: &str, timestamp: &str, signature: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Gateway-Timestamp", timestamp.parse().unwrap());
+        headers.insert("X-Gateway-Signature", signature.parse().unwrap());
+        let computed = compute_signature(secret, timestamp);
+        if signature == "valid" {
+            headers.insert("X-Gateway-Signature", computed.parse().unwrap());
+        }
+        headers
+    }
+
+    #[test]
+    fn internal_signature_accepts_a_fresh_valid_signature() {
+        let timestamp = chrono::Utc::now().timestamp().to_string();
+        let headers = signed_headers(SECRET, &timestamp, "valid");
+
+        assert!(verify_internal_signature(&headers, SECRET, "POST", PATH).is_ok());
+    }
+
+    #[test]
+    fn internal_signature_rejects_a_tampered_signature() {
+        let timestamp = chrono::Utc::now().timestamp().to_string();
+        let headers = signed_headers(
+            SECRET,
+            &timestamp,
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        );
+
+        assert!(verify_internal_signature(&headers, SECRET, "POST", PATH).is_err());
+    }
+
+    #[test]
+    fn internal_signature_rejects_a_stale_timestamp() {
+        let timestamp = (chrono::Utc::now().timestamp() - 3600).to_string();
+        let headers = signed_headers(SECRET, &timestamp, "valid");
+
+        assert!(verify_internal_signature(&headers, SECRET, "POST", PATH).is_err());
+    }
 }

@@ -51,6 +51,7 @@ pub struct Config {
     pub db_max_connections: u32,
     pub rabbitmq_url: String,
     pub environment: String,
+    pub internal_gateway_secret: String,
 }
 
 impl Config {
@@ -76,12 +77,17 @@ impl Config {
 
         let environment = env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
 
+        let internal_gateway_secret = env::var("INTERNAL_GATEWAY_SECRET").unwrap_or_else(|_| {
+            "kudiba_internal_gateway_secret_development_key_change_in_production_2026".to_string()
+        });
+
         Self {
             http_port,
             database_url,
             db_max_connections,
             rabbitmq_url,
             environment,
+            internal_gateway_secret,
         }
     }
 

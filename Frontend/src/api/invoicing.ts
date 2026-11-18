@@ -129,6 +129,18 @@ export interface IssueInvoiceResult {
   isContingency: boolean;
 }
 
+export interface PosCheckoutResponse {
+  checkoutId: string;
+  tenantId: string;
+  state: 'FISCAL_PENDING' | 'FISCAL_ISSUED' | 'RECONCILING';
+  replay: boolean;
+  invoiceId?: string | null;
+  documentNumber?: string | null;
+  invoice?: (IssueInvoiceResult & Partial<Invoice>) | null;
+  pendingEvents: string[];
+  error?: string | null;
+}
+
 export interface Proforma {
   id: string;
   documentNumber: string;
@@ -291,6 +303,26 @@ export const invoicingApi = {
     const data = response.data;
     if (data.invoiceId && !data.id) {
       data.id = data.invoiceId;
+    }
+    return data;
+  },
+
+  posCheckout: async (payload: IssueInvoicePayload): Promise<PosCheckoutResponse> => {
+    const headers: Record<string, string> = { 'X-Tenant-ID': payload.tenantId };
+    if (payload.cashSessionId) {
+      headers['X-Cash-Session-ID'] = payload.cashSessionId;
+    }
+    if (payload.idempotencyKey) {
+      headers['Idempotency-Key'] = payload.idempotencyKey;
+    }
+    const response = await apiClient.post<PosCheckoutResponse>(
+      '/api/v1/fiscal/pos/checkout',
+      payload,
+      { headers }
+    );
+    const data = response.data;
+    if (data.state === 'RECONCILING') {
+      throw new Error(data.error || 'Checkout fiscal pendente de reconciliação.');
     }
     return data;
   },

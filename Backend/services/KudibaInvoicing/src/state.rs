@@ -217,6 +217,7 @@ impl AppState {
                         .unwrap_or_default(),
                     config.treasury_service_url.clone(),
                     config.inventory_service_url.clone(),
+                    config.internal_gateway_secret.clone(),
                     std::time::Duration::from_millis(config.outbox_poll_interval_ms),
                     config.outbox_batch_size,
                 ),

@@ -649,50 +649,24 @@ export const PosView: React.FC = () => {
       }
 
       try {
-        const issued = await invoicingApi.issueInvoice({
+        const checkout = await invoicingApi.posCheckout({
           ...payload,
           idempotencyKey,
         });
-        const invoiceId = issued.invoiceId || issued.id || '';
-
-        // 1. Registar entrada na Sessão de Caixa aberta (Tesouraria)
-        if (currentSession?.status === 'OPEN') {
-          try {
-            await treasuryApi.recordMovement({
-              session_id: currentSession.id,
-              movement_type: 'SALE_RECEIPT',
-              amount: Number(issued.grossTotal || totalGross).toFixed(2),
-              reason: `Venda POS ${issued.documentNumber} (${selectedPaymentMethod})`,
-            });
-          } catch {
-            // Segue sem bloquear o talão fiscal já assinado
-          }
+        const issued = checkout.invoice;
+        const invoiceId = checkout.invoiceId || issued?.invoiceId || issued?.id;
+        if (!invoiceId || !issued) {
+          throw new Error('O checkout fiscal não devolveu o documento emitido.');
         }
 
-        // 2. Abater stock no Inventário para artigos movimentáveis
-        try {
-          await inventoryApi.processInvoiceIssued({
-            invoiceId,
-            tenantId: activeTenant!.id,
-            documentNumber: issued.documentNumber,
-            documentType: 'FR',
-            lines: cartSnapshot.map((item, idx) => ({
-              lineNumber: idx + 1,
-              productCode: item.code,
-              description: item.name,
-              quantity: item.qty,
-              unitPrice: item.unitPrice,
-            })),
-          });
-        } catch {
-          // Segue sem bloquear o talão fiscal já assinado
-        }
-
-        // 3. Obter o documento fiscal completo (ou construir fallback completo com linhas)
         let fullInvoice: Invoice;
         try {
           fullInvoice = await invoicingApi.getInvoice(invoiceId);
-        } catch {
+        } catch (loadError) {
+          console.warn(
+            'Comprovativo fiscal completo indisponível; a mostrar dados do checkout.',
+            loadError
+          );
           fullInvoice = {
             id: invoiceId,
             tenantId: activeTenant!.id,

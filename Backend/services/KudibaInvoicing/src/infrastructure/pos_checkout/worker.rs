@@ -14,6 +14,7 @@ pub struct PosCheckoutEventWorker {
     client: reqwest::Client,
     treasury_url: Option<String>,
     inventory_url: Option<String>,
+    internal_gateway_secret: String,
     poll_interval: Duration,
     batch_size: i64,
 }
@@ -24,6 +25,7 @@ impl PosCheckoutEventWorker {
         client: reqwest::Client,
         treasury_url: Option<String>,
         inventory_url: Option<String>,
+        internal_gateway_secret: String,
         poll_interval: Duration,
         batch_size: i64,
     ) -> Self {
@@ -32,6 +34,7 @@ impl PosCheckoutEventWorker {
             client,
             treasury_url,
             inventory_url,
+            internal_gateway_secret,
             poll_interval,
             batch_size,
         }
@@ -154,14 +157,25 @@ impl PosCheckoutEventWorker {
         let base = self.treasury_url.as_ref().ok_or_else(|| {
             DomainError::Persistence("TREASURY_SERVICE_URL não configurada".to_string())
         })?;
-        let endpoint = format!("{}/api/v1/treasury/movements", base.trim_end_matches('/'));
+        let endpoint = format!(
+            "{}/api/v1/treasury/internal/cash-movements",
+            base.trim_end_matches('/')
+        );
+        let timestamp = chrono::Utc::now().timestamp().to_string();
+        let signature = internal_signature(
+            &self.internal_gateway_secret,
+            &timestamp,
+            "POST",
+            "/api/v1/treasury/internal/cash-movements",
+        );
 
         let response = self
             .client
             .post(&endpoint)
             .header("X-Resolved-Tenant-ID", tenant_id.to_string())
             .header("X-Resolved-User-ID", "pos-checkout")
-            .header("X-Resolved-Roles", "SUPER_ADMIN")
+            .header("X-Gateway-Timestamp", timestamp)
+            .header("X-Gateway-Signature", signature)
             .json(&body)
             .send()
             .await
@@ -223,6 +237,16 @@ impl PosCheckoutEventWorker {
 
         tracing::info!("POS Checkout Event Worker encerrado graciosamente.");
     }
+}
+
+fn internal_signature(secret: &str, timestamp: &str, method: &str, path: &str) -> String {
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret.as_bytes());
+    let canonical = format!("{}:{}:{}", timestamp, method, path);
+    let tag = ring::hmac::sign(&key, canonical.as_bytes());
+    tag.as_ref()
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect()
 }
 
 fn cash_movement_body(payload: &Value, idempotency_key: &str) -> Result<Value, DomainError> {
@@ -302,5 +326,26 @@ mod tests {
     fn cash_movement_rejects_a_payload_without_a_session() {
         let payload = json!({ "amount": 10 });
         assert!(cash_movement_body(&payload, "key").is_err());
+    }
+
+    #[test]
+    fn internal_signature_matches_the_gateway_canonical_form() {
+        let signature = internal_signature(
+            "secret",
+            "1700000000",
+            "POST",
+            "/api/v1/treasury/internal/cash-movements",
+        );
+
+        assert_eq!(signature.len(), 64);
+        assert_ne!(
+            signature,
+            internal_signature(
+                "secret",
+                "1700000001",
+                "POST",
+                "/api/v1/treasury/internal/cash-movements"
+            )
+        );
     }
 }

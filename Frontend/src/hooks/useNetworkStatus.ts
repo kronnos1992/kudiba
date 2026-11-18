@@ -114,8 +114,8 @@ export function useNetworkStatus(): UseNetworkStatusReturn {
         }
 
         try {
-          // Emissão idempotente; stock e tesouraria seguem via Outbox/RabbitMQ.
-          const issueRes = await invoicingApi.issueInvoice({
+          // Coordenação durável: stock e tesouraria seguem pela outbox de checkout.
+          const issueRes = await invoicingApi.posCheckout({
             tenantId: sale.tenantId,
             documentType: 'FR',
             seriesCode: sale.seriesCode,
@@ -136,8 +136,9 @@ export function useNetworkStatus(): UseNetworkStatusReturn {
             idempotencyKey: sale.id,
           });
 
-          const invoiceId = issueRes.invoiceId || issueRes.id;
-          const docNumber = issueRes.documentNumber;
+          const invoiceId =
+            issueRes.invoiceId || issueRes.invoice?.invoiceId || issueRes.invoice?.id;
+          const docNumber = issueRes.documentNumber || issueRes.invoice?.documentNumber;
           if (!invoiceId || !docNumber) {
             throw new Error('A resposta do servidor não confirmou a fatura e o número fiscal.');
           }
