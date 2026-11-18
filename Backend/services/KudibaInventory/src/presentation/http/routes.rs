@@ -1,7 +1,9 @@
 use axum::{
-    extract::{Path, Query, State},
+    body::{to_bytes, Body},
+    extract::{Path, Query, Request, State},
     http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    middleware::Next,
+    response::{IntoResponse, Response},
     routing::{get, patch, post},
     Json, Router,
 };
@@ -40,6 +42,62 @@ impl ProblemDetail {
             error_code: error_code.to_string(),
         }
     }
+}
+
+const MAX_SIGNATURE_BODY_BYTES: usize = 10 * 1024 * 1024;
+
+pub async fn gateway_signature_middleware(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let path = request.uri().path().to_string();
+    if !state.config.enforce_gateway_signature || matches!(path.as_str(), "/health" | "/ready") {
+        return next.run(request).await;
+    }
+
+    let query = request.uri().query().unwrap_or("").to_string();
+    let (parts, body) = request.into_parts();
+    let body_bytes = match to_bytes(body, MAX_SIGNATURE_BODY_BYTES).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                Json(ProblemDetail::new(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "Payload Excessivo",
+                    "O corpo da requisição excede o limite permitido para validação da assinatura.",
+                    "REQUEST_BODY_LIMIT_EXCEEDED",
+                )),
+            )
+                .into_response();
+        }
+    };
+
+    if kudiba_gateway_signature::verify_signature(
+        &parts.headers,
+        &state.config.internal_gateway_secret,
+        parts.method.as_str(),
+        &path,
+        &query,
+        &body_bytes,
+    )
+    .is_err()
+    {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ProblemDetail::new(
+                StatusCode::UNAUTHORIZED,
+                "Serviço Não Autenticado",
+                "A assinatura HMAC interna é obrigatória e deve ser válida.",
+                "INTERNAL_SIGNATURE_INVALID",
+            )),
+        )
+            .into_response();
+    }
+
+    next.run(Request::from_parts(parts, Body::from(body_bytes)))
+        .await
 }
 
 fn map_domain_error(err: InventoryError) -> (StatusCode, Json<ProblemDetail>) {
@@ -1345,6 +1403,81 @@ pub fn create_router(state: AppState) -> Router {
             "/api/v1/inventory/system-audit-trail",
             get(system_audit_trail_handler),
         )
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            gateway_signature_middleware,
+        ))
         .layer(axum::middleware::from_fn(tenant_scope_middleware))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kudiba_gateway_signature::{compute_signature, verify_signature};
+
+    fn signed_headers(timestamp: &str, signature: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Gateway-Timestamp", timestamp.parse().unwrap());
+        headers.insert("X-Gateway-Signature", signature.parse().unwrap());
+        headers
+    }
+
+    #[test]
+    fn assinatura_valida_e_aceite() {
+        let timestamp = chrono::Utc::now().timestamp().to_string();
+        let body = br#"{"code":"P1"}"#;
+        let signature = compute_signature(
+            "secret",
+            &timestamp,
+            "POST",
+            "/api/v1/inventory/products",
+            "",
+            body,
+        );
+        let headers = signed_headers(&timestamp, &signature);
+        assert!(verify_signature(
+            &headers,
+            "secret",
+            "POST",
+            "/api/v1/inventory/products",
+            "",
+            body
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn corpo_e_query_tamper_sao_rejeitados() {
+        let timestamp = chrono::Utc::now().timestamp().to_string();
+        let body = br#"{"code":"P1"}"#;
+        let signature = compute_signature(
+            "secret",
+            &timestamp,
+            "POST",
+            "/api/v1/inventory/products",
+            "limit=1",
+            body,
+        );
+        let headers = signed_headers(&timestamp, &signature);
+
+        assert!(verify_signature(
+            &headers,
+            "secret",
+            "POST",
+            "/api/v1/inventory/products",
+            "limit=1",
+            br#"{"code":"P2"}"#
+        )
+        .is_err());
+        assert!(verify_signature(
+            &headers,
+            "secret",
+            "POST",
+            "/api/v1/inventory/products",
+            "limit=2",
+            body
+        )
+        .is_err());
+    }
 }

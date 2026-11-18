@@ -6,6 +6,7 @@ from pydantic_settings import NoDecode
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEVELOPMENT_JWT_SECRET = "kudiba_jwt_secret_development_key_change_in_production_2026"
+_DEVELOPMENT_INTERNAL_GATEWAY_SECRET = "kudiba_internal_gateway_secret_development_key_change_in_production_2026"
 _DEVELOPMENT_CORS_ORIGINS = {"http://localhost:3000", "http://localhost:5173"}
 _DEVELOPMENT_DATABASE_URL = "postgresql+asyncpg://kudiba:kudiba_secret_pass@localhost:5432/kudiba_auth"
 _DEVELOPMENT_DATABASE_URLS = {
@@ -37,6 +38,8 @@ class Settings(BaseSettings):
     # Segredo criptográfico compartilhado com o API Gateway (Rust)
     jwt_secret: str = _DEVELOPMENT_JWT_SECRET
     jwt_algorithm: str = "HS256"
+    internal_gateway_secret: str = _DEVELOPMENT_INTERNAL_GATEWAY_SECRET
+    enforce_gateway_signature: bool = True
     jwt_access_expiration_minutes: int = 15
     refresh_token_expiration_days: int = 7
     
@@ -75,6 +78,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
+        is_production = self.environment.lower() in {"prod", "production"}
+        if (self.enforce_gateway_signature or is_production) and (
+            self.internal_gateway_secret == _DEVELOPMENT_INTERNAL_GATEWAY_SECRET
+            or len(self.internal_gateway_secret.encode("utf-8")) < 32
+        ):
+            raise ValueError(
+                "INTERNAL_GATEWAY_SECRET must be an explicit, non-default secret of at least 32 bytes."
+            )
         if self.bootstrap_sysadmin_enabled:
             if self.environment.lower() in {"prod", "production"}:
                 raise ValueError("Automatic SYSADMIN bootstrap is disabled in production.")

@@ -543,10 +543,18 @@ struct MockCashMovementRepository {
 
 #[async_trait]
 impl CashMovementRepository for MockCashMovementRepository {
-    async fn save(&self, movement: &CashMovement) -> Result<(), DomainError> {
+    async fn save(&self, movement: &CashMovement) -> Result<Uuid, DomainError> {
         let mut lock = self.items.lock().unwrap();
+        if let Some(key) = &movement.idempotency_key {
+            if let Some(existing) = lock
+                .iter()
+                .find(|item| item.idempotency_key.as_ref() == Some(key))
+            {
+                return Ok(existing.id);
+            }
+        }
         lock.push(movement.clone());
-        Ok(())
+        Ok(movement.id)
     }
 
     async fn list_by_session(
@@ -872,6 +880,7 @@ async fn test_full_application_use_case_flow() {
                 amount: dec!(5000),
                 reason: "Troco adicional de moedas".to_string(),
                 operator_user_id: "usr-operator-01".to_string(),
+                idempotency_key: None,
             },
         )
         .await
@@ -888,6 +897,7 @@ async fn test_full_application_use_case_flow() {
                 amount: dec!(4000),
                 reason: "Transferência para cofre".to_string(),
                 operator_user_id: "usr-operator-01".to_string(),
+                idempotency_key: None,
             },
         )
         .await
@@ -904,6 +914,7 @@ async fn test_full_application_use_case_flow() {
                 amount: dec!(20000),
                 reason: "Tentativa excessiva".to_string(),
                 operator_user_id: "usr-operator-01".to_string(),
+                idempotency_key: None,
             },
         )
         .await;
@@ -1223,6 +1234,69 @@ fn test_parse_incoming_invoice_direct_and_outbox_envelope() {
     assert_eq!(parsed_outbox.gross_total, dec!(125000.00));
     assert_eq!(parsed_outbox.tenant_id, tenant_id);
     assert_eq!(parsed_outbox.invoice_id, invoice_id);
+}
+
+#[tokio::test]
+async fn cash_movement_idempotency_key_prevents_duplicates() {
+    let tenant_id = Uuid::new_v4();
+    let reg_repo = Arc::new(MockCashRegisterRepository::default());
+    let pos_repo = Arc::new(MockPosSessionRepository::default());
+    let sess_repo = Arc::new(MockCashSessionRepository::default());
+    let mov_repo = Arc::new(MockCashMovementRepository::default());
+
+    let register = CreateCashRegisterHandler::new(reg_repo.clone())
+        .execute(
+            tenant_id,
+            CreateCashRegisterRequest {
+                branch_id: None,
+                code: "CX-POS".to_string(),
+                name: "Caixa POS".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+    let _pos_session = OpenPosSessionHandler::new(reg_repo.clone(), pos_repo.clone())
+        .execute(
+            tenant_id,
+            "usr-manager".to_string(),
+            OpenPosSessionRequest {
+                register_id: register.id,
+                notes: None,
+            },
+        )
+        .await
+        .unwrap();
+    let session = OpenCashSessionHandler::new(reg_repo, sess_repo.clone(), pos_repo)
+        .execute(
+            tenant_id,
+            OpenCashSessionRequest {
+                register_id: register.id,
+                operator_user_id: "usr-operator".to_string(),
+                opening_balance: dec!(1000),
+            },
+        )
+        .await
+        .unwrap();
+
+    let handler = RecordCashMovementHandler::new(sess_repo, mov_repo.clone());
+    let key = "pos-checkout:sale-1:cash".to_string();
+    let request = |key: String| RecordCashMovementRequest {
+        session_id: session.id,
+        movement_type: MovementType::SaleReceipt,
+        amount: dec!(116),
+        reason: "Venda POS FT/1".to_string(),
+        operator_user_id: "pos-checkout".to_string(),
+        idempotency_key: Some(key),
+    };
+
+    let first = handler
+        .execute(tenant_id, request(key.clone()))
+        .await
+        .unwrap();
+    let retry = handler.execute(tenant_id, request(key)).await.unwrap();
+
+    assert_eq!(first.id, retry.id);
+    assert_eq!(mov_repo.items.lock().unwrap().len(), 1);
 }
 
 #[derive(Default)]

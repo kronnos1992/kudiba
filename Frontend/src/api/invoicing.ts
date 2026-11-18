@@ -65,6 +65,7 @@ export interface IssueInvoicePayload {
   customerCountry?: string;
   sourceDocumentNumber?: string;
   paymentMethods: string[];
+  paymentAmounts?: Array<{ paymentMethod: string; amount: number }>;
   applyWithholding?: boolean;
   withholdingRate?: number;
   applyStampDuty?: boolean;
@@ -127,6 +128,43 @@ export interface IssueInvoiceResult {
   issuedAt: string;
   systemEntryDate: string;
   isContingency: boolean;
+}
+
+export interface PosCheckoutResponse {
+  checkoutId: string;
+  tenantId: string;
+  state: 'FISCAL_PENDING' | 'FISCAL_ISSUED' | 'RECONCILING';
+  replay: boolean;
+  invoiceId?: string | null;
+  documentNumber?: string | null;
+  invoice?: (IssueInvoiceResult & Partial<Invoice>) | null;
+  pendingEvents: string[];
+  printJob?: {
+    printJobId: string;
+    terminalId?: string | null;
+    documentNumber: string;
+    payloadHash: string;
+    jobClass: string;
+    copyType: string;
+    copyId?: string;
+    printAuthorization?: string;
+    envelope: {
+      documentType: string;
+      documentNumber: string;
+      customerName: string;
+      customerNif?: string | null;
+      hash: string;
+      validationChars: string;
+      totalAmount: string;
+      lines: Array<{
+        lineNumber?: number;
+        description: string;
+        quantity: number | string;
+        unitPrice: string;
+      }>;
+    };
+  } | null;
+  error?: string | null;
 }
 
 export interface Proforma {
@@ -291,6 +329,26 @@ export const invoicingApi = {
     const data = response.data;
     if (data.invoiceId && !data.id) {
       data.id = data.invoiceId;
+    }
+    return data;
+  },
+
+  posCheckout: async (payload: IssueInvoicePayload): Promise<PosCheckoutResponse> => {
+    const headers: Record<string, string> = { 'X-Tenant-ID': payload.tenantId };
+    if (payload.cashSessionId) {
+      headers['X-Cash-Session-ID'] = payload.cashSessionId;
+    }
+    if (payload.idempotencyKey) {
+      headers['Idempotency-Key'] = payload.idempotencyKey;
+    }
+    const response = await apiClient.post<PosCheckoutResponse>(
+      '/api/v1/fiscal/pos/checkout',
+      payload,
+      { headers }
+    );
+    const data = response.data;
+    if (data.state === 'RECONCILING') {
+      throw new Error(data.error || 'Checkout fiscal pendente de reconciliação.');
     }
     return data;
   },

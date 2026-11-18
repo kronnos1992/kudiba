@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use sqlx::PgPool;
 
+use crate::application::commands::coordinate_checkout::CoordinateCheckoutUseCase;
 use crate::application::commands::create_fiscal_series::CreateFiscalSeriesUseCase;
 use crate::application::commands::issue_invoice::IssueInvoiceUseCase;
 use crate::application::commands::resolve_tax_regime::ResolveTaxRegimeUseCase;
@@ -41,6 +42,7 @@ pub struct AppState {
     pub signer: Arc<RsaCryptoSigner>,
     pub agt_client: Arc<AgtClient>,
     pub issue_invoice: Arc<IssueInvoiceUseCase>,
+    pub coordinate_checkout: Arc<CoordinateCheckoutUseCase>,
     pub cancel_invoice:
         Arc<crate::application::commands::cancel_invoice::CancelInvoiceWithCreditNoteUseCase>,
     pub create_series: Arc<CreateFiscalSeriesUseCase>,
@@ -61,6 +63,8 @@ pub struct AppState {
     #[allow(dead_code)]
     pub event_publisher: Arc<crate::infrastructure::outbox::MultiChannelEventPublisher>,
     pub outbox_worker: Arc<crate::infrastructure::outbox::OutboxWorker>,
+    pub pos_checkout_worker:
+        Arc<crate::infrastructure::pos_checkout::worker::PosCheckoutEventWorker>,
     pub saft_jobs: Arc<crate::infrastructure::saft::SaftJobRegistry>,
 }
 
@@ -107,6 +111,16 @@ impl AppState {
             invoice_repository.clone(),
             tax_regime_repository.clone(),
             crypto_signer.clone(),
+            config.allow_local_contingency,
+        ));
+        let coordinate_checkout = Arc::new(CoordinateCheckoutUseCase::new(
+            Arc::new(
+                crate::infrastructure::persistence::pos_checkout_repository::PgPosCheckoutRepository::new(
+                    pool.clone(),
+                ),
+            ),
+            issue_invoice.clone(),
+            config.internal_gateway_secret.clone(),
         ));
         let cancel_invoice = Arc::new(
             crate::application::commands::cancel_invoice::CancelInvoiceWithCreditNoteUseCase::new(
@@ -119,6 +133,7 @@ impl AppState {
         Ok(Self {
             pool: pool.clone(),
             issue_invoice,
+            coordinate_checkout,
             cancel_invoice,
             create_series: Arc::new(CreateFiscalSeriesUseCase::new(
                 session_factory.clone(),
@@ -189,12 +204,26 @@ impl AppState {
                     ),
                 );
                 Arc::new(crate::infrastructure::outbox::OutboxWorker::new(
-                    session_factory,
+                    session_factory.clone(),
                     publ,
                     std::time::Duration::from_millis(config.outbox_poll_interval_ms),
                     config.outbox_batch_size,
                 ))
             },
+            pos_checkout_worker: Arc::new(
+                crate::infrastructure::pos_checkout::worker::PosCheckoutEventWorker::new(
+                    session_factory.clone(),
+                    reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_secs(5))
+                        .build()
+                        .unwrap_or_default(),
+                    config.treasury_service_url.clone(),
+                    config.inventory_service_url.clone(),
+                    config.internal_gateway_secret.clone(),
+                    std::time::Duration::from_millis(config.outbox_poll_interval_ms),
+                    config.outbox_batch_size,
+                ),
+            ),
             saft_jobs: Arc::new(crate::infrastructure::saft::SaftJobRegistry::new()),
             agt_client,
             signer,

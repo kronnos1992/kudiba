@@ -39,6 +39,7 @@ export interface OfflinePosSale {
   customerName: string;
   customerNif?: string;
   paymentMethod: string;
+  paymentAmounts?: Array<{ paymentMethod: string; amount: number }>;
   amountTendered: number;
   changeDue: number;
   netTotal: number;

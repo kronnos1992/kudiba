@@ -22,7 +22,7 @@ use crate::errors::ProblemDetail;
 use crate::middleware::{
     access_log::access_log_middleware, auth::auth_middleware,
     contingency::agt_contingency_middleware, correlation::correlation_id_middleware,
-    idempotency::idempotency_middleware, ratelimit::rate_limit_middleware,
+    idempotency::idempotency_middleware, ratelimit::rate_limit_middleware, sanitize_middleware,
     tenant::tenant_resolver_middleware,
 };
 use crate::proxy::{
@@ -162,7 +162,10 @@ pub fn create_router(
         .layer(axum_mw::from_fn_with_state(
             state.clone(),
             rate_limit_middleware,
-        ));
+        ))
+        // Webhooks são públicos, mas os headers pertencentes ao gateway também
+        // não podem ser forjados por sistemas externos.
+        .layer(axum_mw::from_fn(sanitize_middleware));
 
     // =========================================================================
     // ROTAS PROTEGIDAS DO ENTRYPOINT (REVERSE PROXY)
@@ -268,6 +271,9 @@ pub fn create_router(
         .layer(TimeoutLayer::new(state.config.write_timeout))
         .layer(RequestBodyLimitLayer::new(state.config.max_body_bytes))
         .layer(cors_layer)
+        // Camada final (mais externa): nenhum route group confia em headers
+        // de identidade ou assinatura vindos do cliente, incluindo webhooks.
+        .layer(axum_mw::from_fn(sanitize_middleware))
 }
 
 async fn health_handler() -> Json<serde_json::Value> {

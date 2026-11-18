@@ -31,6 +31,7 @@ redis = { version = "0.26", features = ["tokio-comp", "connection-manager", "aio
 # Criptografia, Tokens JWT e Segurança
 jsonwebtoken = "9.3"
 ring = "0.17"
+kudiba-gateway-signature = { path = "../gateway_signature" }
 
 
 # Observabilidade, Métricas e Logs Estruturados

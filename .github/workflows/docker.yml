@@ -24,6 +24,7 @@ env:
   POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
   KUDIBA_APP_PASSWORD: ${{ secrets.KUDIBA_APP_PASSWORD }}
   JWT_SECRET: ${{ secrets.JWT_SECRET }}
+  INTERNAL_GATEWAY_SECRET: ${{ secrets.INTERNAL_GATEWAY_SECRET }}
   RABBITMQ_DEFAULT_USER: ${{ secrets.RABBITMQ_DEFAULT_USER }}
   RABBITMQ_DEFAULT_PASS: ${{ secrets.RABBITMQ_DEFAULT_PASS }}
   AGT_RSA_PRIVATE_KEY_PEM: ${{ secrets.AGT_RSA_PRIVATE_KEY_PEM }}
@@ -61,7 +62,7 @@ jobs:
             dockerfile: ./Backend/deploy/Dockerfile
           - service: gateway
             image: kudiba-gateway
-            context: ./Backend/gateway
+            context: .
             dockerfile: ./Backend/gateway/Dockerfile
           - service: invoicing
             image: kudiba-invoicing
@@ -73,11 +74,11 @@ jobs:
             dockerfile: ./Backend/services/KudibaAuth/Dockerfile
           - service: inventory
             image: kudiba-inventory
-            context: ./Backend/services/KudibaInventory
+            context: .
             dockerfile: ./Backend/services/KudibaInventory/Dockerfile
           - service: treasury
             image: kudiba-treasury
-            context: ./Backend/services/KudibaTreasury
+            context: .
             dockerfile: ./Backend/services/KudibaTreasury/Dockerfile
           - service: accounting
             image: kudiba-accounting

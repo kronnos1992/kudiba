@@ -6,5 +6,6 @@ pub mod agt;
 pub mod crypto;
 pub mod outbox;
 pub mod persistence;
+pub mod pos_checkout;
 pub mod reports;
 pub mod saft;

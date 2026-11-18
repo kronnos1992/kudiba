@@ -35,6 +35,8 @@ chrono = { version = "0.4", features = ["serde"] }
 rust_decimal = { version = "1", features = ["serde", "maths", "serde-with-float"] }
 rust_decimal_macros = "1"
 regex = "1.10"
+ring = "0.17"
+kudiba-gateway-signature = { path = "../../gateway_signature" }
 
 thiserror = "2"
 async-trait = "0.1"

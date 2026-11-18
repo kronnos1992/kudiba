@@ -8,8 +8,8 @@ use serde_json::Value;
 use std::time::Duration;
 
 use crate::errors::ProblemDetail;
-use crate::proxy::compute_gateway_signature;
 use crate::server::AppState;
+use kudiba_gateway_signature::compute_signature;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -274,15 +274,24 @@ async fn fetch_page(
 ) -> Option<AuditPage> {
     let url = format!("{}{}", base_url.trim_end_matches('/'), path);
     let timestamp = chrono::Utc::now().timestamp().to_string();
-    let canonical = format!("{}:GET:{}", timestamp, path);
-    let signature =
-        compute_gateway_signature(state.config.internal_gateway_secret.as_bytes(), &canonical);
 
     let mut request = state
         .http_client
         .get(&url)
         .query(query)
-        .timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(5));
+
+    let built = request.try_clone()?.build().ok()?;
+    let upstream_url = built.url();
+    let signature = compute_signature(
+        &state.config.internal_gateway_secret,
+        &timestamp,
+        "GET",
+        upstream_url.path(),
+        upstream_url.query().unwrap_or(""),
+        b"",
+    );
+    request = request
         .header("X-Gateway-Timestamp", timestamp)
         .header("X-Gateway-Signature", signature);
 

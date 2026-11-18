@@ -43,6 +43,7 @@ rsa = { version = "0.9", features = ["sha2", "pem"] }
 sha2 = "0.10"
 base64 = "0.22"
 ring = "0.17"
+kudiba-gateway-signature = { path = "../../gateway_signature" }
 rand_core = { version = "0.6", features = ["getrandom"] }
 zeroize = { version = "1", features = ["derive"] }
 

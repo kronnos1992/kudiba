@@ -9,7 +9,11 @@ from src.config import Settings
 
 def test_production_requires_strong_jwt_secret_and_explicit_origins():
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, environment="production")
+        Settings(
+            _env_file=None,
+            environment="production",
+            internal_gateway_secret="explicit-gateway-secret-with-at-least-32-bytes",
+        )
 
     with pytest.raises(ValidationError):
         Settings(
@@ -23,6 +27,7 @@ def test_production_requires_strong_jwt_secret_and_explicit_origins():
         _env_file=None,
         environment="production",
         jwt_secret="production-test-secret-with-at-least-32-bytes",
+        internal_gateway_secret="explicit-gateway-secret-with-at-least-32-bytes",
         database_url="postgresql+asyncpg://auth:secret@db.internal:5432/kudiba_auth",
         redis_url="redis://redis.internal:6379/0",
         cors_allowed_origins=["https://app.example.ao"],
@@ -33,6 +38,7 @@ def test_production_requires_strong_jwt_secret_and_explicit_origins():
         Settings(
             _env_file=None,
             environment="production",
+            internal_gateway_secret="explicit-gateway-secret-with-at-least-32-bytes",
             jwt_secret="production-test-secret-with-at-least-32-bytes",
             cors_allowed_origins=["https://app.example.ao"],
         )
@@ -57,6 +63,7 @@ def test_sysadmin_bootstrap_is_opt_in_and_forbidden_in_production():
         Settings(
             _env_file=None,
             environment="production",
+            internal_gateway_secret="explicit-gateway-secret-with-at-least-32-bytes",
             bootstrap_sysadmin_enabled=True,
             bootstrap_sysadmin_email="admin@example.ao",
             bootstrap_sysadmin_password="explicit-secret",

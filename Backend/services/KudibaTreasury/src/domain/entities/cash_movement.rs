@@ -16,6 +16,7 @@ pub struct CashMovement {
     pub amount: Decimal,
     pub reason: String,
     pub operator_user_id: String,
+    pub idempotency_key: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -58,7 +59,15 @@ impl CashMovement {
             amount,
             reason,
             operator_user_id,
+            idempotency_key: None,
             created_at: Utc::now(),
         })
+    }
+
+    pub fn with_idempotency_key(mut self, key: Option<String>) -> Self {
+        self.idempotency_key = key
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        self
     }
 }

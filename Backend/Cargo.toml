@@ -2,10 +2,12 @@
 resolver = "2"
 members = [
     "gateway",
+    "gateway_signature",
     "services/KudibaInvoicing",
     "services/KudibaInventory",
     "services/KudibaTreasury",
     "services/KudibaAccounting",
+    "services/KudibaHardwareBridge",
 ]
 
 [profile.release]

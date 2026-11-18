@@ -99,6 +99,12 @@ apply-rls: ## Aplica Row-Level Security às bases multi-tenant
 apply-application-roles: ## Configura papéis PostgreSQL sem bypass de RLS
 	bash Backend/deploy/apply-application-roles.sh
 
+apply-pos-migrations: ## Aplica as migrações 32 e 33 do checkout POS em bases existentes
+	bash Backend/deploy/apply-pos-migrations.sh
+
+apply-pos-migrations-remote: ## Aplica as migrações 32/33 no Postgres remoto via SSH+Docker
+	PG_SSH_HOST=$${PG_SSH_HOST:-kudiba@192.168.32.62} PG_CONTAINER=$${PG_CONTAINER:-demo-postgres} bash Backend/deploy/apply-pos-migrations.sh
+
 # -----------------------------------------------------------------------------
 # KudibaAuth (Python)
 # -----------------------------------------------------------------------------

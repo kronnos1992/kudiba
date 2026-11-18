@@ -87,7 +87,7 @@ async def test_gateway_signature_verification():
 
         now = str(int(time.time()))
         path = "/api/v1/payroll/departments"
-        canonical = f"{now}:GET:{path}"
+        canonical = f"{now}:GET:{path}::{hashlib.sha256(b'').hexdigest()}"
         valid_sig = hmac.new(
             settings.internal_gateway_secret.encode("utf-8"),
             canonical.encode("utf-8"),

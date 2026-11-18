@@ -2,42 +2,37 @@
 # Multi-stage Dockerfile para o Kudiba API Gateway em RUST
 # ==============================================================================
 
-# Estágio 1: Build & Compilação Otimizada
 FROM rust:alpine AS builder
 
-WORKDIR /app
+WORKDIR /build/gateway
 
-# Instalar dependências de build musl e certificados CA
 RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static git ca-certificates
 
-# Copiar arquivos de dependências para cache inteligente
-COPY Cargo.toml Cargo.lock* ./
+COPY Backend/Cargo.lock ./Cargo.lock
+COPY Backend/gateway/Cargo.toml ./
+COPY Backend/gateway_signature/Cargo.toml /build/gateway_signature/Cargo.toml
 
-# Criar dummy source para compilar apenas as dependências (camada de cache)
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release || true
-RUN rm -rf src
+RUN mkdir -p src /build/gateway_signature/src \
+    && echo "fn main() {}" > src/main.rs \
+    && echo "" > /build/gateway_signature/src/lib.rs \
+    && cargo build --release || true \
+    && rm -rf src
 
-# Copiar código-fonte real e documentação OpenAPI
-COPY src ./src
-COPY docs ./docs
+COPY Backend/gateway/src ./src
+COPY Backend/gateway/docs ./docs
+COPY Backend/gateway_signature/src /build/gateway_signature/src
 
-# Compilação final estática para produção
-RUN touch src/main.rs && cargo build --release
+RUN touch src/main.rs /build/gateway_signature/src/lib.rs && cargo build --release
 
-# Estágio 2: Imagem Mínima de Execução (Alpine < 20MB)
 FROM alpine:3.20 AS runner
 
-# Usuário de segurança não-root
 RUN addgroup -S kudiba && adduser -S kudiba -G kudiba
 
 WORKDIR /app
 
-# Copiar certificados TLS e timezone
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-# Copiar o binário compilado em Rust
-COPY --from=builder /app/target/release/kudiba-gateway /app/kudiba-gateway
+COPY --from=builder /build/gateway/target/release/kudiba-gateway /app/kudiba-gateway
 
 USER kudiba:kudiba
 

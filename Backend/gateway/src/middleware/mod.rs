@@ -1,3 +1,5 @@
+use axum::{extract::Request, http::HeaderMap, middleware::Next, response::Response};
+
 pub mod access_log;
 pub mod auth;
 pub mod contingency;
@@ -5,6 +7,45 @@ pub mod correlation;
 pub mod idempotency;
 pub mod ratelimit;
 pub mod tenant;
+
+/// Headers que só podem ser definidos pelo gateway ou pelo próprio serviço.
+/// O cliente nunca os controla, directamente ou por duplicação de valores.
+pub fn is_gateway_owned_header(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "x-resolved-tenant-id"
+            | "x-resolved-tenant-slug"
+            | "x-resolved-user-id"
+            | "x-resolved-user-name"
+            | "x-resolved-email"
+            | "x-resolved-user-email"
+            | "x-resolved-roles"
+            | "x-resolved-branch-id"
+            | "x-user-id"
+            | "x-user-name"
+            | "x-gateway-timestamp"
+            | "x-gateway-signature"
+    )
+}
+
+/// Remove, na entrada, qualquer cópia fornecida pelo cliente de headers
+/// pertencentes ao gateway. Os middlewares internos voltam a injectar os
+/// valores autenticados antes do encaminhamento para os microsserviços.
+pub fn sanitize_gateway_headers(headers: &mut HeaderMap) {
+    let owned: Vec<_> = headers
+        .keys()
+        .filter(|name| is_gateway_owned_header(name.as_str()))
+        .cloned()
+        .collect();
+    for name in owned {
+        headers.remove(name);
+    }
+}
+
+pub async fn sanitize_middleware(mut req: Request, next: Next) -> Response {
+    sanitize_gateway_headers(req.headers_mut());
+    next.run(req).await
+}
 
 pub fn is_auth_service_path(path: &str) -> bool {
     let clean = path.trim_end_matches('/');
@@ -57,7 +98,32 @@ pub fn is_public_path(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_auth_service_path, is_public_path};
+    use super::{
+        is_auth_service_path, is_gateway_owned_header, is_public_path, sanitize_gateway_headers,
+    };
+    use axum::http::HeaderMap;
+
+    #[test]
+    fn ingress_sanitization_removes_all_client_supplied_gateway_headers() {
+        let mut headers = HeaderMap::new();
+        for name in [
+            "X-Resolved-Tenant-ID",
+            "x-resolved-roles",
+            "X-User-ID",
+            "X-Gateway-Signature",
+            "x-gateway-timestamp",
+        ] {
+            headers.insert(name, "forged".parse().unwrap());
+        }
+        headers.insert("authorization", "Bearer token".parse().unwrap());
+
+        sanitize_gateway_headers(&mut headers);
+
+        assert!(headers
+            .keys()
+            .all(|name| !is_gateway_owned_header(name.as_str())));
+        assert_eq!(headers.get("authorization").unwrap(), "Bearer token");
+    }
 
     #[test]
     fn auth_service_paths_are_routed_without_tenant_resolution() {

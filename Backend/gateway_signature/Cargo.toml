@@ -1,0 +1,15 @@
+[package]
+name = "kudiba-gateway-signature"
+version = "1.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "kudiba_gateway_signature"
+path = "src/lib.rs"
+
+[dependencies]
+axum = { version = "0.8", features = ["macros"] }
+chrono = { version = "0.4", features = ["clock"] }
+ring = "0.17"
+serde_json = "1.0"

@@ -64,7 +64,7 @@ impl RecordCashMovementHandler {
             }
         }
 
-        let movement = CashMovement::new(
+        let mut movement = CashMovement::new(
             tenant_id,
             req.session_id,
             session.register_id,
@@ -72,9 +72,10 @@ impl RecordCashMovementHandler {
             req.amount,
             req.reason,
             req.operator_user_id,
-        )?;
+        )?
+        .with_idempotency_key(req.idempotency_key);
 
-        self.movement_repo.save(&movement).await?;
+        movement.id = self.movement_repo.save(&movement).await?;
 
         Ok(movement.into())
     }

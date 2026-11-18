@@ -26,6 +26,22 @@ fn default_true() -> bool {
     true
 }
 
+/// Normaliza um meio de pagamento para comparação: sem espaços, em maiúsculas,
+/// com os aliases de numerário convertidos para um único valor canónico.
+pub(crate) fn normalize_payment_method(method: &str) -> String {
+    let normalized = method.trim().to_uppercase();
+    match normalized.as_str() {
+        "NUMERARIO" | "NUMERÁRIO" | "CASH" | "DINHEIRO" | "EFETIVO" | "CAIXA" => {
+            "CASH".to_string()
+        }
+        _ => normalized,
+    }
+}
+
+pub(crate) fn is_cash_payment_method(method: &str) -> bool {
+    normalize_payment_method(method) == "CASH"
+}
+
 // =============================================================================
 // ENQUADRAMENTO FISCAL DE IVA
 // =============================================================================
@@ -191,6 +207,15 @@ pub struct RecordInvoicePaymentCommand {
     pub proof_base64: Option<String>,
 }
 
+/// Alocação explícita de um montante a um meio de pagamento.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentAmountInput {
+    pub payment_method: String,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub amount: Decimal,
+}
+
 /// Comando de emissão de documento fiscal (POST /api/v1/invoices)
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -215,6 +240,9 @@ pub struct IssueInvoiceCommand {
     pub source_document_number: Option<String>,
     #[serde(default)]
     pub payment_methods: Vec<String>,
+    /// Montantes por meio de pagamento. Quando presente, a soma tem de coincidir com o total a pagar.
+    #[serde(default)]
+    pub payment_amounts: Vec<PaymentAmountInput>,
     /// Valor explícito de retenção na fonte. Se omitido, pode ser calculado automaticamente via `applyWithholding`.
     #[serde(default, with = "rust_decimal::serde::float_option")]
     pub withholding_total: Option<Decimal>,
@@ -491,5 +519,24 @@ mod tests {
         assert_eq!(command.withholding_total, Some(Decimal::new(1025, 2)));
         assert_eq!(command.stamp_duty_total, Some(Decimal::new(25, 1)));
         assert_eq!(command.actor_user_id, None);
+    }
+
+    #[test]
+    fn aliases_de_numerario_sao_reconhecidos_como_cash() {
+        for method in [
+            "NUMERARIO",
+            " numerario ",
+            "Numerário",
+            "cash",
+            "  Dinheiro",
+            "EFETIVO",
+            "caixa",
+        ] {
+            assert!(is_cash_payment_method(method), "{method}");
+            assert_eq!(normalize_payment_method(method), "CASH");
+        }
+
+        assert!(!is_cash_payment_method("MBWAY"));
+        assert_eq!(normalize_payment_method(" multicaixa "), "MULTICAIXA");
     }
 }

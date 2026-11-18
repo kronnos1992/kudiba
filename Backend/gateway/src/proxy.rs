@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::errors::ProblemDetail;
 use crate::server::AppState;
+use kudiba_gateway_signature::compute_signature;
 
 /// Handler de Reverse Proxy para o Core API Server
 ///
@@ -157,15 +158,6 @@ pub async fn forward_to_backoffice(State(state): State<AppState>, req: Request) 
     .await
 }
 
-pub fn compute_gateway_signature(secret: &[u8], payload: &str) -> String {
-    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret);
-    let tag = ring::hmac::sign(&key, payload.as_bytes());
-    tag.as_ref()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>()
-}
-
 fn ensure_correlation_id(headers: &hyper::HeaderMap) -> String {
     headers
         .get("x-correlation-id")
@@ -250,10 +242,13 @@ async fn forward_request(
     let method = parts.method;
     let mut builder = client.request(method.clone(), &target_url);
 
-    // Copia headers, filtrando hop-by-hop, tracers do próprio gateway e preservando
-    // o contexto de correlação para toda a cadeia de microsserviços.
+    // Copia headers, filtrando hop-by-hop e os headers de assinatura (que são
+    // sempre gerados de novo abaixo). Os headers X-Resolved-*/X-User-* injectados
+    // pelos middlewares do gateway são preservados até ao microsserviço.
     for (k, v) in &parts.headers {
-        if k != "host"
+        if k != "x-gateway-signature"
+            && k != "x-gateway-timestamp"
+            && k != "host"
             && k != "content-length"
             && k != "x-forwarded-for"
             && k != "traceparent"
@@ -282,9 +277,18 @@ async fn forward_request(
     builder = builder.header("traceparent", traceparent);
 
     let timestamp = chrono::Utc::now().timestamp().to_string();
-    let uri_path = parts.uri.path();
-    let canonical = format!("{}:{}:{}", timestamp, method.as_str(), uri_path);
-    let signature = compute_gateway_signature(internal_secret.as_bytes(), &canonical);
+    let (upstream_path, upstream_query) = match path_override {
+        Some(override_path) => override_path.split_once('?').unwrap_or((override_path, "")),
+        None => (parts.uri.path(), parts.uri.query().unwrap_or("")),
+    };
+    let signature = compute_signature(
+        internal_secret,
+        &timestamp,
+        method.as_str(),
+        upstream_path,
+        upstream_query,
+        &body_bytes,
+    );
 
     builder = builder
         .header("X-Gateway-Timestamp", timestamp)
@@ -348,9 +352,194 @@ async fn forward_request(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_child_traceparent, build_traceparent, ensure_correlation_id, is_valid_traceparent,
+        build_child_traceparent, build_traceparent, ensure_correlation_id, forward_request,
+        is_valid_traceparent,
     };
-    use hyper::HeaderMap;
+    use crate::middleware::{is_gateway_owned_header, sanitize_gateway_headers};
+    use axum::{body::Body, extract::Request, routing::post, Json, Router};
+    use hyper::{HeaderMap, StatusCode};
+    use kudiba_gateway_signature::{compute_signature, verify_signature};
+    use reqwest::Client;
+    use serde_json::{json, Value};
+    use tokio::net::TcpListener;
+
+    #[test]
+    fn client_cannot_supply_gateway_owned_headers() {
+        for name in [
+            "X-Gateway-Signature",
+            "x-gateway-timestamp",
+            "X-Resolved-Roles",
+            "X-User-ID",
+            "X-Resolved-User-Email",
+        ] {
+            assert!(
+                is_gateway_owned_header(name),
+                "o cabeçalho {name} não pode ser aceite do cliente"
+            );
+        }
+        assert!(!is_gateway_owned_header("authorization"));
+        assert!(!is_gateway_owned_header("content-type"));
+    }
+
+    #[tokio::test]
+    async fn resolved_headers_survive_forwarding_and_forged_copies_are_removed() {
+        async fn echo(headers: HeaderMap) -> Json<Value> {
+            Json(json!({
+                "tenant": headers
+                    .get("x-resolved-tenant-id")
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or(""),
+                "user": headers
+                    .get("x-user-id")
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or(""),
+                "signature": headers
+                    .get("x-gateway-signature")
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or(""),
+                "timestamp": headers
+                    .get("x-gateway-timestamp")
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or(""),
+            }))
+        }
+
+        let upstream = Router::new().route("/forward", post(echo));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, upstream).await.unwrap();
+        });
+
+        let secret = "test-gateway-secret";
+        let body: &[u8] = br#"{"amount":"1"}"#;
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/forward")
+            .header("x-resolved-tenant-id", "forged-tenant")
+            .header("x-user-id", "forged-user")
+            .header("x-gateway-signature", "forged-signature")
+            .header("x-gateway-timestamp", "1")
+            .body(Body::from(body))
+            .unwrap();
+
+        sanitize_gateway_headers(request.headers_mut());
+        request
+            .headers_mut()
+            .insert("x-resolved-tenant-id", "generated-tenant".parse().unwrap());
+        request
+            .headers_mut()
+            .insert("x-user-id", "generated-user".parse().unwrap());
+
+        let response = forward_request(
+            &Client::new(),
+            &format!("http://{address}"),
+            request,
+            1024,
+            None,
+            secret,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let bytes = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        let echoed: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(echoed["tenant"], "generated-tenant");
+        assert_eq!(echoed["user"], "generated-user");
+        assert_ne!(echoed["signature"], "forged-signature");
+
+        let mut upstream_headers = HeaderMap::new();
+        upstream_headers.insert(
+            "x-gateway-timestamp",
+            echoed["timestamp"].as_str().unwrap().parse().unwrap(),
+        );
+        upstream_headers.insert(
+            "x-gateway-signature",
+            echoed["signature"].as_str().unwrap().parse().unwrap(),
+        );
+        assert!(verify_signature(&upstream_headers, secret, "POST", "/forward", "", body).is_ok());
+    }
+
+    #[tokio::test]
+    async fn signature_uses_the_upstream_path_when_rewritten() {
+        async fn echo(headers: HeaderMap) -> Json<Value> {
+            Json(json!({
+                "signature": headers
+                    .get("x-gateway-signature")
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or(""),
+                "timestamp": headers
+                    .get("x-gateway-timestamp")
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or(""),
+            }))
+        }
+
+        let upstream = Router::new().route("/rewritten", axum::routing::get(echo));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, upstream).await.unwrap();
+        });
+
+        let secret = "test-gateway-secret";
+        let request = Request::builder()
+            .method("GET")
+            .uri("/perimeter-path")
+            .body(Body::empty())
+            .unwrap();
+        let response = forward_request(
+            &Client::new(),
+            &format!("http://{address}"),
+            request,
+            1024,
+            Some("/rewritten"),
+            secret,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let bytes = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        let echoed: Value = serde_json::from_slice(&bytes).unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-gateway-timestamp",
+            echoed["timestamp"].as_str().unwrap().parse().unwrap(),
+        );
+        headers.insert(
+            "x-gateway-signature",
+            echoed["signature"].as_str().unwrap().parse().unwrap(),
+        );
+        assert!(verify_signature(&headers, secret, "GET", "/rewritten", "", b"").is_ok());
+        assert!(verify_signature(&headers, secret, "GET", "/perimeter-path", "", b"").is_err());
+    }
+
+    #[test]
+    fn regenerated_signature_is_bound_to_body_and_query() {
+        let secret = "test-gateway-secret";
+        let timestamp = chrono::Utc::now().timestamp().to_string();
+        let body = br#"{"amount":"1"}"#;
+        let signature = compute_signature(secret, &timestamp, "POST", "/forward", "limit=1", body);
+        let mut headers = HeaderMap::new();
+        headers.insert("x-gateway-timestamp", timestamp.parse().unwrap());
+        headers.insert("x-gateway-signature", signature.parse().unwrap());
+
+        assert!(verify_signature(&headers, secret, "POST", "/forward", "limit=1", body).is_ok());
+        assert!(verify_signature(
+            &headers,
+            secret,
+            "POST",
+            "/forward",
+            "limit=1",
+            br#"{"amount":"2"}"#
+        )
+        .is_err());
+        assert!(verify_signature(&headers, secret, "POST", "/forward", "limit=2", body).is_err());
+    }
 
     #[test]
     fn ensure_correlation_id_reuses_incoming_value() {

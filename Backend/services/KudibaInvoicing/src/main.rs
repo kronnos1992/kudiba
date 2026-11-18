@@ -109,6 +109,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         worker.run_loop(outbox_shutdown_rx).await;
     });
 
+    let (pos_checkout_shutdown_tx, pos_checkout_shutdown_rx) = tokio::sync::watch::channel(false);
+    let pos_checkout_worker = app_state.pos_checkout_worker.clone();
+    tokio::spawn(async move {
+        pos_checkout_worker.run_loop(pos_checkout_shutdown_rx).await;
+    });
+
     // =========================================================================
     // ETAPA 4: SERVIDOR gRPC (CONTRATO kudiba.fiscal.v1)
     // =========================================================================
@@ -156,6 +162,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let _ = outbox_shutdown_tx.send(true);
+    let _ = pos_checkout_shutdown_tx.send(true);
     tracing::info!("KudibaInvoicing encerrado com sucesso.");
     Ok(())
 }
@@ -475,6 +482,26 @@ async fn ensure_schema(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
 
         CREATE INDEX IF NOT EXISTS idx_invoice_payments_tenant_invoice
             ON kudiba_core.invoice_payments(tenant_id, invoice_id, received_at DESC);
+
+        CREATE TABLE IF NOT EXISTS kudiba_core.invoice_payment_allocations (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES kudiba_core.tenants(id) ON DELETE RESTRICT,
+            invoice_id UUID NOT NULL REFERENCES kudiba_core.invoices(id) ON DELETE RESTRICT,
+            payment_method VARCHAR(40) NOT NULL,
+            amount NUMERIC(18, 2) NOT NULL CHECK (amount > 0),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_invoice_payment_allocation UNIQUE (invoice_id, payment_method)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_invoice_payment_allocations_tenant_invoice
+            ON kudiba_core.invoice_payment_allocations(tenant_id, invoice_id);
+
+        ALTER TABLE kudiba_core.invoice_payment_allocations ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE kudiba_core.invoice_payment_allocations FORCE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS tenant_isolation_policy ON kudiba_core.invoice_payment_allocations;
+        CREATE POLICY tenant_isolation_policy ON kudiba_core.invoice_payment_allocations
+            USING (tenant_id = get_current_tenant_id())
+            WITH CHECK (tenant_id = get_current_tenant_id());
 
         ALTER TABLE kudiba_core.proformas ENABLE ROW LEVEL SECURITY;
         ALTER TABLE kudiba_core.proformas FORCE ROW LEVEL SECURITY;

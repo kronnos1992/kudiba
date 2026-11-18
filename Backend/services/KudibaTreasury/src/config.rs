@@ -51,6 +51,8 @@ pub struct Config {
     pub db_max_connections: u32,
     pub rabbitmq_url: String,
     pub environment: String,
+    pub internal_gateway_secret: String,
+    pub enforce_gateway_signature: bool,
 }
 
 impl Config {
@@ -75,6 +77,23 @@ impl Config {
             .unwrap_or_else(|_| "amqp://kudiba:kudiba_rabbit_pass@localhost:5672/%2f".to_string());
 
         let environment = env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
+        let is_production = environment.eq_ignore_ascii_case("production")
+            || environment.eq_ignore_ascii_case("prod");
+
+        const DEVELOPMENT_INTERNAL_GATEWAY_SECRET: &str =
+            "kudiba_internal_gateway_secret_development_key_change_in_production_2026";
+        let internal_gateway_secret = env::var("INTERNAL_GATEWAY_SECRET")
+            .unwrap_or_else(|_| DEVELOPMENT_INTERNAL_GATEWAY_SECRET.to_string());
+
+        let enforce_gateway_signature = env::var("ENFORCE_GATEWAY_SIGNATURE")
+            .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if (enforce_gateway_signature || is_production)
+            && (internal_gateway_secret == DEVELOPMENT_INTERNAL_GATEWAY_SECRET
+                || internal_gateway_secret.len() < 32)
+        {
+            panic!("INTERNAL_GATEWAY_SECRET must be an explicit, non-default secret when signature enforcement is on or in production.");
+        }
 
         Self {
             http_port,
@@ -82,6 +101,8 @@ impl Config {
             db_max_connections,
             rabbitmq_url,
             environment,
+            internal_gateway_secret,
+            enforce_gateway_signature,
         }
     }
 
