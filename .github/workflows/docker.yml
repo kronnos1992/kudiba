@@ -62,7 +62,7 @@ jobs:
             dockerfile: ./Backend/deploy/Dockerfile
           - service: gateway
             image: kudiba-gateway
-            context: ./Backend/gateway
+            context: .
             dockerfile: ./Backend/gateway/Dockerfile
           - service: invoicing
             image: kudiba-invoicing
@@ -74,11 +74,11 @@ jobs:
             dockerfile: ./Backend/services/KudibaAuth/Dockerfile
           - service: inventory
             image: kudiba-inventory
-            context: ./Backend/services/KudibaInventory
+            context: .
             dockerfile: ./Backend/services/KudibaInventory/Dockerfile
           - service: treasury
             image: kudiba-treasury
-            context: ./Backend/services/KudibaTreasury
+            context: .
             dockerfile: ./Backend/services/KudibaTreasury/Dockerfile
           - service: accounting
             image: kudiba-accounting

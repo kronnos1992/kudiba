@@ -5,8 +5,8 @@ services:
   gateway:
     image: ${DOCKERHUB_USERNAME:-kudiba}/kudiba-gateway:${IMAGE_TAG:-latest}
     build:
-      context: ./Backend/gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Backend/gateway/Dockerfile
     container_name: kudiba-api-gateway
     restart: unless-stopped
     ports:
@@ -140,8 +140,8 @@ services:
   inventory:
     image: ${DOCKERHUB_USERNAME:-kudiba}/kudiba-inventory:${IMAGE_TAG:-latest}
     build:
-      context: ./Backend/services/KudibaInventory
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Backend/services/KudibaInventory/Dockerfile
     container_name: kudiba-inventory
     restart: unless-stopped
     environment:
@@ -170,8 +170,8 @@ services:
   treasury:
     image: ${DOCKERHUB_USERNAME:-kudiba}/kudiba-treasury:${IMAGE_TAG:-latest}
     build:
-      context: ./Backend/services/KudibaTreasury
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Backend/services/KudibaTreasury/Dockerfile
     container_name: kudiba-treasury
     restart: unless-stopped
     environment:
