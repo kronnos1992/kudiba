@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use sqlx::Row;
 use uuid::Uuid;
 
+use crate::application::commands::coordinate_checkout::PosCheckoutRequest;
 use crate::application::commands::sync_agt::SyncAgtCommand;
 use crate::application::dto::{
     CancelInvoiceCommand, ConvertProformaCommand, CreateFiscalSeriesCommand, CreateProformaCommand,
@@ -54,6 +55,7 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/fiscal/invoices",
             post(issue_invoice_handler).get(list_invoices_handler),
         )
+        .route("/api/v1/fiscal/pos/checkout", post(pos_checkout_handler))
         // REST: consulta de documento fiscal
         .route("/api/v1/invoices/{id}", get(get_invoice_handler))
         .route("/api/v1/fiscal/invoices/{id}", get(get_invoice_handler))
@@ -313,6 +315,91 @@ async fn issue_invoice_handler(
                 "Documento fiscal emitido com sucesso e registado na trilha de auditoria fiscal"
             );
             (StatusCode::CREATED, Json(result)).into_response()
+        }
+        Err(err) => domain_error(err),
+    }
+}
+
+async fn pos_checkout_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: String,
+) -> Response {
+    let mut request: PosCheckoutRequest = match serde_json::from_str(&body) {
+        Ok(request) => request,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": format!("payload inválido: {}", err) })),
+            )
+                .into_response();
+        }
+    };
+
+    if let Some(header_key) = headers
+        .get("Idempotency-Key")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+    {
+        if header_key != request.idempotency_key.trim() {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Idempotency-Key difere de idempotencyKey" })),
+            )
+                .into_response();
+        }
+    }
+
+    let actor = match authorize_tenant(
+        &headers,
+        request.invoice.tenant_id,
+        &[
+            "ADMIN",
+            "ADMINISTRADOR",
+            "GESTOR",
+            "OPERADOR_FACTURACAO",
+            "BILLING_OPERATOR",
+            "OPERADOR_CAIXA",
+            "CASHIER",
+        ],
+    ) {
+        Ok(actor) => actor,
+        Err(response) => return response.into_response(),
+    };
+    request.invoice.actor_user_id = Some(actor);
+
+    if let Err(security_err) = check_cashier_and_session_security(&headers, &mut request.invoice) {
+        return security_err.into_response();
+    }
+
+    if let Some(session_id) = request.invoice.cash_session_id {
+        if let Err(session_err) = validate_cash_session(
+            &state.pool,
+            state.config.treasury_service_url.as_deref(),
+            request.invoice.tenant_id,
+            session_id,
+            &headers,
+        )
+        .await
+        {
+            return session_err.into_response();
+        }
+    }
+
+    if let Err(stock_err) = validate_stock_and_service_integrity(
+        &state.pool,
+        state.config.inventory_service_url.as_deref(),
+        &mut request.invoice,
+    )
+    .await
+    {
+        return stock_err.into_response();
+    }
+
+    match state.coordinate_checkout.execute(request, &body).await {
+        Ok(result) => (StatusCode::CREATED, Json(result)).into_response(),
+        Err(DomainError::ConcurrencyConflict(message)) => {
+            (StatusCode::CONFLICT, Json(json!({ "error": message }))).into_response()
         }
         Err(err) => domain_error(err),
     }

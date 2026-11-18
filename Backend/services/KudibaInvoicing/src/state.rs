@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use sqlx::PgPool;
 
+use crate::application::commands::coordinate_checkout::CoordinateCheckoutUseCase;
 use crate::application::commands::create_fiscal_series::CreateFiscalSeriesUseCase;
 use crate::application::commands::issue_invoice::IssueInvoiceUseCase;
 use crate::application::commands::resolve_tax_regime::ResolveTaxRegimeUseCase;
@@ -41,6 +42,7 @@ pub struct AppState {
     pub signer: Arc<RsaCryptoSigner>,
     pub agt_client: Arc<AgtClient>,
     pub issue_invoice: Arc<IssueInvoiceUseCase>,
+    pub coordinate_checkout: Arc<CoordinateCheckoutUseCase>,
     pub cancel_invoice:
         Arc<crate::application::commands::cancel_invoice::CancelInvoiceWithCreditNoteUseCase>,
     pub create_series: Arc<CreateFiscalSeriesUseCase>,
@@ -108,6 +110,14 @@ impl AppState {
             tax_regime_repository.clone(),
             crypto_signer.clone(),
         ));
+        let coordinate_checkout = Arc::new(CoordinateCheckoutUseCase::new(
+            Arc::new(
+                crate::infrastructure::persistence::pos_checkout_repository::PgPosCheckoutRepository::new(
+                    pool.clone(),
+                ),
+            ),
+            issue_invoice.clone(),
+        ));
         let cancel_invoice = Arc::new(
             crate::application::commands::cancel_invoice::CancelInvoiceWithCreditNoteUseCase::new(
                 session_factory.clone(),
@@ -119,6 +129,7 @@ impl AppState {
         Ok(Self {
             pool: pool.clone(),
             issue_invoice,
+            coordinate_checkout,
             cancel_invoice,
             create_series: Arc::new(CreateFiscalSeriesUseCase::new(
                 session_factory.clone(),
