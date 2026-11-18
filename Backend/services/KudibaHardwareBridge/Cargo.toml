@@ -11,7 +11,11 @@ name = "kudiba_hardware_bridge"
 path = "src/lib.rs"
 
 [dependencies]
-tokio = { version = "1.40", features = ["net", "io-util", "time", "rt", "macros", "sync"] }
+tokio = { version = "1.40", features = ["full"] }
+axum = { version = "0.8", features = ["macros"] }
+tower-http = { version = "0.6", features = ["cors"] }
+subtle = "2"
+rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uuid = { version = "1.10", features = ["v4", "serde"] }
@@ -19,6 +23,10 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 async-trait = "0.1"
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+kudiba-gateway-signature = { path = "../../gateway_signature" }
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["full"] }
+tower = { version = "0.5", features = ["util"] }

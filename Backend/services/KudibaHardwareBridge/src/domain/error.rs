@@ -16,4 +16,14 @@ pub enum DeviceError {
     InvalidIdempotencyKey,
     #[error("campo obrigatório vazio: {0}")]
     EmptyField(&'static str),
+    #[error("emparelhamento expirado")]
+    PairingExpired,
+    #[error("código de emparelhamento inválido")]
+    PairingInvalid,
+    #[error("demasiadas tentativas de emparelhamento")]
+    PairingLocked,
+    #[error("agente local ainda não emparelhado")]
+    NotPaired,
+    #[error("token já emparelhado; rotação não disponível neste modo")]
+    FixedToken,
 }

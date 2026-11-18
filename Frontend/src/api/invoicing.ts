@@ -65,6 +65,7 @@ export interface IssueInvoicePayload {
   customerCountry?: string;
   sourceDocumentNumber?: string;
   paymentMethods: string[];
+  paymentAmounts?: Array<{ paymentMethod: string; amount: number }>;
   applyWithholding?: boolean;
   withholdingRate?: number;
   applyStampDuty?: boolean;
@@ -138,6 +139,31 @@ export interface PosCheckoutResponse {
   documentNumber?: string | null;
   invoice?: (IssueInvoiceResult & Partial<Invoice>) | null;
   pendingEvents: string[];
+  printJob?: {
+    printJobId: string;
+    terminalId?: string | null;
+    documentNumber: string;
+    payloadHash: string;
+    jobClass: string;
+    copyType: string;
+    copyId?: string;
+    printAuthorization?: string;
+    envelope: {
+      documentType: string;
+      documentNumber: string;
+      customerName: string;
+      customerNif?: string | null;
+      hash: string;
+      validationChars: string;
+      totalAmount: string;
+      lines: Array<{
+        lineNumber?: number;
+        description: string;
+        quantity: number | string;
+        unitPrice: string;
+      }>;
+    };
+  } | null;
   error?: string | null;
 }
 

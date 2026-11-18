@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from src.config import get_settings
 from src.domain.error import DomainError
 from src.presentation.http.error_handlers import domain_error_handler
+from src.presentation.http.gateway_signature import install_gateway_signature_middleware
 from src.presentation.http.routes import create_auth_router
 from src.state import create_app_state
 
@@ -202,6 +203,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+install_gateway_signature_middleware(
+    app,
+    settings.internal_gateway_secret,
+    settings.enforce_gateway_signature,
 )
 
 

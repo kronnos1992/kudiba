@@ -5,7 +5,9 @@ use chrono::{DateTime, TimeZone, Utc};
 use rust_decimal::Decimal;
 use sqlx::Row;
 
-use crate::application::dto::{InvoiceLineInput, IssueInvoiceCommand, IssueInvoiceResult};
+use crate::application::dto::{
+    normalize_payment_method, InvoiceLineInput, IssueInvoiceCommand, IssueInvoiceResult,
+};
 use crate::domain::entities::fiscal_series::FiscalSeries;
 use crate::domain::entities::invoice::Invoice;
 use crate::domain::entities::invoice_line::InvoiceLine;
@@ -41,6 +43,7 @@ pub struct IssueInvoiceUseCase {
     invoice_repository: Arc<dyn InvoiceRepository>,
     tax_regime_repository: Arc<dyn TaxRegimeRepository>,
     crypto_signer: Arc<dyn CryptoSigner>,
+    allow_local_contingency: bool,
 }
 
 impl IssueInvoiceUseCase {
@@ -51,6 +54,7 @@ impl IssueInvoiceUseCase {
         invoice_repository: Arc<dyn InvoiceRepository>,
         tax_regime_repository: Arc<dyn TaxRegimeRepository>,
         crypto_signer: Arc<dyn CryptoSigner>,
+        allow_local_contingency: bool,
     ) -> Self {
         Self {
             uow_factory,
@@ -58,6 +62,7 @@ impl IssueInvoiceUseCase {
             invoice_repository,
             tax_regime_repository,
             crypto_signer,
+            allow_local_contingency,
         }
     }
 
@@ -65,6 +70,7 @@ impl IssueInvoiceUseCase {
         &self,
         mut command: IssueInvoiceCommand,
     ) -> Result<IssueInvoiceResult, DomainError> {
+        ensure_contingency_allowed(&command, self.allow_local_contingency)?;
         command.document_type = command.document_type.trim().to_uppercase();
         if let Some(reference) = command.source_document_number.as_mut() {
             *reference = reference.trim().to_string();
@@ -289,6 +295,8 @@ impl IssueInvoiceUseCase {
             ));
         }
 
+        validate_payment_allocations(&command, gross_total + stamp_duty_total - withholding_total)?;
+
         // 4. Carimba as datas fiscais (emissão = data, registo = instante exacto)
         let system_entry_date = Utc::now();
         let issued_at: DateTime<Utc> = Utc.from_utc_datetime(
@@ -359,6 +367,22 @@ impl IssueInvoiceUseCase {
             .await
             .map_err(persistence_error)?;
 
+        for allocation in &command.payment_amounts {
+            sqlx::query(
+                "INSERT INTO kudiba_core.invoice_payment_allocations
+                    (id, tenant_id, invoice_id, payment_method, amount)
+                 VALUES ($1, $2, $3, $4, $5)",
+            )
+            .bind(Uuid::new_v4())
+            .bind(command.tenant_id)
+            .bind(invoice.id)
+            .bind(normalize_payment_method(&allocation.payment_method))
+            .bind(allocation.amount)
+            .execute(&mut *session.connection())
+            .await
+            .map_err(|err| DomainError::Persistence(err.to_string()))?;
+        }
+
         // 8. Avança o ponteiro de sequência e encadeia o hash do documento
         series
             .advance_sequence(&signature.hash_sha256)
@@ -419,6 +443,78 @@ fn resolve_stamp_duty(
         ));
     }
     Ok(TaxAndDutyCalculator::calculate_stamp_duty(base, rate))
+}
+
+pub(crate) fn ensure_contingency_allowed(
+    command: &IssueInvoiceCommand,
+    allow_local_contingency: bool,
+) -> Result<(), DomainError> {
+    if command.is_contingency && !allow_local_contingency {
+        return Err(DomainError::invalid(
+            "Emissão em contingência local não autorizada nesta instalação.",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_payment_allocations(
+    command: &IssueInvoiceCommand,
+    amount_due: Decimal,
+) -> Result<(), DomainError> {
+    if matches!(
+        command.document_type.trim().to_ascii_uppercase().as_str(),
+        "NC" | "ND"
+    ) {
+        return Ok(());
+    }
+    if command.payment_amounts.is_empty() {
+        if command.payment_methods.len() > 1 {
+            return Err(DomainError::invalid(
+                "Com vários meios de pagamento é obrigatório informar paymentAmounts com o montante de cada um.",
+            ));
+        }
+        return Ok(());
+    }
+
+    let mut allocated = Decimal::ZERO;
+    let mut seen_methods = std::collections::HashSet::new();
+    for allocation in &command.payment_amounts {
+        let method = allocation.payment_method.trim();
+        if method.is_empty() {
+            return Err(DomainError::invalid(
+                "O meio de pagamento de cada alocação é obrigatório.",
+            ));
+        }
+        if allocation.amount <= Decimal::ZERO || allocation.amount.scale() > 2 {
+            return Err(DomainError::invalid(
+                "Os montantes por meio de pagamento devem ser positivos e ter até duas casas decimais.",
+            ));
+        }
+        let normalized = normalize_payment_method(method);
+        if !command
+            .payment_methods
+            .iter()
+            .any(|declared| normalize_payment_method(declared) == normalized)
+        {
+            return Err(DomainError::invalid(format!(
+                "O meio de pagamento '{method}' não consta em paymentMethods."
+            )));
+        }
+        if !seen_methods.insert(normalized) {
+            return Err(DomainError::invalid(format!(
+                "O meio de pagamento '{method}' foi alocado mais do que uma vez."
+            )));
+        }
+        allocated += allocation.amount;
+    }
+
+    if allocated != amount_due {
+        return Err(DomainError::invalid(format!(
+            "A soma dos montantes por meio de pagamento ({allocated}) não coincide com o total a pagar ({amount_due})."
+        )));
+    }
+
+    Ok(())
 }
 
 pub(crate) fn validate_issue_command(command: &IssueInvoiceCommand) -> Result<(), DomainError> {
@@ -779,6 +875,7 @@ mod tests {
             customer_nif: None,
             source_document_number: None,
             payment_methods: vec!["Numerário".into()],
+            payment_amounts: Vec::new(),
             withholding_total: None,
             apply_withholding: None,
             withholding_rate: None,
@@ -820,5 +917,175 @@ mod tests {
         };
 
         assert!(validate_issue_command(&cmd_bem).is_ok());
+    }
+
+    #[test]
+    fn valida_alocacao_de_pagamento_misto() {
+        use crate::application::dto::PaymentAmountInput;
+
+        let mut cmd = IssueInvoiceCommand {
+            actor_user_id: None,
+            tenant_id: Uuid::new_v4(),
+            document_type: "FR".into(),
+            series_code: "2026A".into(),
+            fiscal_year: 2026,
+            customer_name: "Consumidor Final".into(),
+            customer_address: None,
+            customer_city: None,
+            customer_country: None,
+            customer_nif: None,
+            source_document_number: None,
+            payment_methods: vec!["NUMERARIO".into(), "MULTICAIXA".into()],
+            payment_amounts: vec![
+                PaymentAmountInput {
+                    payment_method: "NUMERARIO".into(),
+                    amount: Decimal::from(40),
+                },
+                PaymentAmountInput {
+                    payment_method: "MULTICAIXA".into(),
+                    amount: Decimal::from(60),
+                },
+            ],
+            withholding_total: None,
+            apply_withholding: None,
+            withholding_rate: None,
+            stamp_duty_total: None,
+            apply_stamp_duty: None,
+            stamp_duty_rate: None,
+            currency: "AOA".into(),
+            is_contingency: false,
+            key_version: "1".into(),
+            transport: None,
+            cash_session_id: None,
+            lines: Vec::new(),
+        };
+
+        assert!(validate_payment_allocations(&cmd, Decimal::from(100)).is_ok());
+        cmd.payment_amounts[1].amount = Decimal::from(50);
+        assert!(validate_payment_allocations(&cmd, Decimal::from(100)).is_err());
+        cmd.payment_amounts[1].amount = Decimal::from(60);
+        cmd.payment_amounts[1].payment_method = "TRANSFERENCIA".into();
+        assert!(validate_payment_allocations(&cmd, Decimal::from(100)).is_err());
+    }
+
+    #[test]
+    fn exige_alocacao_explicita_quando_ha_varios_meios_de_pagamento() {
+        let mut cmd = IssueInvoiceCommand {
+            actor_user_id: None,
+            tenant_id: Uuid::new_v4(),
+            document_type: "FR".into(),
+            series_code: "2026A".into(),
+            fiscal_year: 2026,
+            customer_name: "Consumidor Final".into(),
+            customer_address: None,
+            customer_city: None,
+            customer_country: None,
+            customer_nif: None,
+            source_document_number: None,
+            payment_methods: vec![" efetivo ".into(), "MBWAY".into()],
+            payment_amounts: Vec::new(),
+            withholding_total: None,
+            apply_withholding: None,
+            withholding_rate: None,
+            stamp_duty_total: None,
+            apply_stamp_duty: None,
+            stamp_duty_rate: None,
+            currency: "AOA".into(),
+            is_contingency: false,
+            key_version: "1".into(),
+            transport: None,
+            cash_session_id: None,
+            lines: Vec::new(),
+        };
+
+        let err = validate_payment_allocations(&cmd, Decimal::from(100)).unwrap_err();
+        assert!(err.to_string().contains("paymentAmounts"));
+
+        cmd.payment_methods = vec!["DINHEIRO".into()];
+        assert!(validate_payment_allocations(&cmd, Decimal::from(100)).is_ok());
+
+        cmd.document_type = "NC".into();
+        cmd.payment_methods = vec!["DINHEIRO".into(), "MBWAY".into()];
+        assert!(validate_payment_allocations(&cmd, Decimal::from(100)).is_ok());
+    }
+
+    #[test]
+    fn alias_de_numerario_e_aceite_na_alocacao() {
+        use crate::application::dto::PaymentAmountInput;
+
+        let cmd = IssueInvoiceCommand {
+            actor_user_id: None,
+            tenant_id: Uuid::new_v4(),
+            document_type: "FR".into(),
+            series_code: "2026A".into(),
+            fiscal_year: 2026,
+            customer_name: "Consumidor Final".into(),
+            customer_address: None,
+            customer_city: None,
+            customer_country: None,
+            customer_nif: None,
+            source_document_number: None,
+            payment_methods: vec!["Numerário".into(), "MBWAY".into()],
+            payment_amounts: vec![
+                PaymentAmountInput {
+                    payment_method: " CAIXA ".into(),
+                    amount: Decimal::from(40),
+                },
+                PaymentAmountInput {
+                    payment_method: "mbway".into(),
+                    amount: Decimal::from(60),
+                },
+            ],
+            withholding_total: None,
+            apply_withholding: None,
+            withholding_rate: None,
+            stamp_duty_total: None,
+            apply_stamp_duty: None,
+            stamp_duty_rate: None,
+            currency: "AOA".into(),
+            is_contingency: false,
+            key_version: "1".into(),
+            transport: None,
+            cash_session_id: None,
+            lines: Vec::new(),
+        };
+
+        assert!(validate_payment_allocations(&cmd, Decimal::from(100)).is_ok());
+    }
+
+    #[test]
+    fn contingencia_local_e_rejeitada_no_caso_de_uso() {
+        let mut cmd = IssueInvoiceCommand {
+            actor_user_id: None,
+            tenant_id: Uuid::new_v4(),
+            document_type: "FT".into(),
+            series_code: "2026A".into(),
+            fiscal_year: 2026,
+            customer_name: "Cliente".into(),
+            customer_address: Some("Rua 1".into()),
+            customer_city: Some("Luanda".into()),
+            customer_country: Some("AO".into()),
+            customer_nif: None,
+            source_document_number: None,
+            payment_methods: vec!["A crédito".into()],
+            payment_amounts: Vec::new(),
+            withholding_total: None,
+            apply_withholding: None,
+            withholding_rate: None,
+            stamp_duty_total: None,
+            apply_stamp_duty: None,
+            stamp_duty_rate: None,
+            currency: "AOA".into(),
+            lines: Vec::new(),
+            is_contingency: true,
+            key_version: "1".into(),
+            transport: None,
+            cash_session_id: None,
+        };
+
+        assert!(ensure_contingency_allowed(&cmd, false).is_err());
+        assert!(ensure_contingency_allowed(&cmd, true).is_ok());
+        cmd.is_contingency = false;
+        assert!(ensure_contingency_allowed(&cmd, false).is_ok());
     }
 }

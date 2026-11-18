@@ -1,5 +1,7 @@
-use axum::extract::{DefaultBodyLimit, Path, Query, State};
+use axum::body::{to_bytes, Body};
+use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -39,6 +41,56 @@ async fn tenant_scope_middleware(
         .and_then(|value| Uuid::parse_str(value.trim()).ok());
 
     crate::config::with_tenant_context(tenant, next.run(req)).await
+}
+
+const MAX_SIGNATURE_BODY_BYTES: usize = 10 * 1024 * 1024;
+
+pub async fn gateway_signature_middleware(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let path = request.uri().path().to_string();
+    let public = matches!(path.as_str(), "/health" | "/ready")
+        || ["/api-docs", "/swagger", "/scalar", "/docs"]
+            .iter()
+            .any(|prefix| path.starts_with(prefix));
+    if !state.config.enforce_gateway_signature || public {
+        return next.run(request).await;
+    }
+
+    let query = request.uri().query().unwrap_or("").to_string();
+    let (parts, body) = request.into_parts();
+    let body_bytes = match to_bytes(body, MAX_SIGNATURE_BODY_BYTES).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return ApiError::new(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "O corpo da requisição excede o limite permitido para validação da assinatura.",
+            )
+            .into_response();
+        }
+    };
+
+    if kudiba_gateway_signature::verify_signature(
+        &parts.headers,
+        &state.config.internal_gateway_secret,
+        parts.method.as_str(),
+        &path,
+        &query,
+        &body_bytes,
+    )
+    .is_err()
+    {
+        return ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "Assinatura perimétrica do Gateway ausente ou inválida.",
+        )
+        .into_response();
+    }
+
+    next.run(Request::from_parts(parts, Body::from(body_bytes)))
+        .await
 }
 
 /// Constrói o router REST interno do motor fiscal
@@ -198,6 +250,10 @@ pub fn router(state: AppState) -> Router {
             get(get_fiscal_tenant_handler).put(upsert_fiscal_tenant_handler),
         )
         .merge(crate::presentation::http::swagger::router::<AppState>())
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            gateway_signature_middleware,
+        ))
         .layer(axum::middleware::from_fn(tenant_scope_middleware))
         .layer(DefaultBodyLimit::max(3 * 1024 * 1024))
         .with_state(state)
@@ -278,6 +334,12 @@ async fn issue_invoice_handler(
         Err(response) => return response.into_response(),
     };
     command.actor_user_id = Some(actor);
+    if let Err(contingency_err) = reject_unauthorized_contingency(
+        command.is_contingency,
+        state.config.allow_local_contingency,
+    ) {
+        return contingency_err.into_response();
+    }
 
     if let Err(security_err) = check_cashier_and_session_security(&headers, &mut command) {
         return security_err.into_response();
@@ -287,6 +349,7 @@ async fn issue_invoice_handler(
         if let Err(session_err) = validate_cash_session(
             &state.pool,
             state.config.treasury_service_url.as_deref(),
+            &state.config.internal_gateway_secret,
             command.tenant_id,
             session_id,
             &headers,
@@ -300,6 +363,7 @@ async fn issue_invoice_handler(
     if let Err(stock_err) = validate_stock_and_service_integrity(
         &state.pool,
         state.config.inventory_service_url.as_deref(),
+        &state.config.internal_gateway_secret,
         &mut command,
     )
     .await
@@ -367,6 +431,12 @@ async fn pos_checkout_handler(
         Err(response) => return response.into_response(),
     };
     request.invoice.actor_user_id = Some(actor);
+    if let Err(contingency_err) = reject_unauthorized_contingency(
+        request.invoice.is_contingency,
+        state.config.allow_local_contingency,
+    ) {
+        return contingency_err.into_response();
+    }
 
     if let Err(security_err) = check_cashier_and_session_security(&headers, &mut request.invoice) {
         return security_err.into_response();
@@ -376,6 +446,7 @@ async fn pos_checkout_handler(
         if let Err(session_err) = validate_cash_session(
             &state.pool,
             state.config.treasury_service_url.as_deref(),
+            &state.config.internal_gateway_secret,
             request.invoice.tenant_id,
             session_id,
             &headers,
@@ -389,6 +460,7 @@ async fn pos_checkout_handler(
     if let Err(stock_err) = validate_stock_and_service_integrity(
         &state.pool,
         state.config.inventory_service_url.as_deref(),
+        &state.config.internal_gateway_secret,
         &mut request.invoice,
     )
     .await
@@ -985,6 +1057,7 @@ async fn convert_proforma_handler(
         customer_nif: row.try_get("customer_nif").unwrap_or_default(),
         source_document_number: Some(proforma_number),
         payment_methods,
+        payment_amounts: Vec::new(),
         withholding_total: None,
         apply_withholding: Some(false),
         withholding_rate: None,
@@ -1004,6 +1077,7 @@ async fn convert_proforma_handler(
     if let Err(stock_err) = validate_stock_and_service_integrity(
         &state.pool,
         state.config.inventory_service_url.as_deref(),
+        &state.config.internal_gateway_secret,
         &mut command,
     )
     .await
@@ -3357,62 +3431,34 @@ async fn sync_agt_handler(
     }
 }
 
-#[allow(dead_code)]
-fn compute_gateway_signature(secret: &[u8], payload: &str) -> String {
-    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret);
-    let tag = ring::hmac::sign(&key, payload.as_bytes());
-    tag.as_ref()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>()
-}
-
-#[allow(dead_code)]
+#[cfg(test)]
 fn verify_internal_gateway_signature(
     headers: &HeaderMap,
     method: &str,
     uri_path: &str,
+    query: &str,
+    body: &[u8],
     secret: &str,
     enforce: bool,
 ) -> Result<(), ApiError> {
-    let sig_opt = headers
-        .get("X-Gateway-Signature")
-        .and_then(|v| v.to_str().ok());
-    let ts_opt = headers
-        .get("X-Gateway-Timestamp")
-        .and_then(|v| v.to_str().ok());
-
-    if let (Some(sig), Some(ts)) = (sig_opt, ts_opt) {
-        let timestamp = ts.parse::<i64>().map_err(|_| {
-            ApiError::new(
-                StatusCode::UNAUTHORIZED,
-                "Timestamp perimétrico do Gateway inválido.",
-            )
-        })?;
-        let now = chrono::Utc::now().timestamp();
-        if (now - timestamp).abs() > 300 {
+    if headers.get("X-Gateway-Signature").is_none() || headers.get("X-Gateway-Timestamp").is_none()
+    {
+        if enforce {
             return Err(ApiError::new(
                 StatusCode::UNAUTHORIZED,
-                "Timestamp perimétrico do Gateway expirado ou desincronizado.",
+                "Assinatura perimétrica do Gateway ausente.",
             ));
         }
-
-        let canonical = format!("{}:{}:{}", ts, method, uri_path);
-        let expected = compute_gateway_signature(secret.as_bytes(), &canonical);
-        if sig != expected {
-            return Err(ApiError::new(
-                StatusCode::UNAUTHORIZED,
-                "Assinatura perimétrica do Gateway inválida.",
-            ));
-        }
-    } else if enforce {
-        return Err(ApiError::new(
-            StatusCode::UNAUTHORIZED,
-            "Assinatura perimétrica do Gateway ausente.",
-        ));
+        return Ok(());
     }
 
-    Ok(())
+    kudiba_gateway_signature::verify_signature(headers, secret, method, uri_path, query, body)
+        .map_err(|_| {
+            ApiError::new(
+                StatusCode::UNAUTHORIZED,
+                "Assinatura perimétrica do Gateway inválida.",
+            )
+        })
 }
 
 fn authorized_tenant_id(headers: &HeaderMap, allowed_roles: &[&str]) -> Result<Uuid, ApiError> {
@@ -3533,9 +3579,57 @@ fn check_cashier_and_session_security(
     Ok(())
 }
 
+fn reject_unauthorized_contingency(is_contingency: bool, allowed: bool) -> Result<(), ApiError> {
+    if is_contingency && !allowed {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "Contingência fiscal local desativada: exige parecer jurídico AGT e seed assinado.",
+        ));
+    }
+    Ok(())
+}
+
+fn signed_internal_request(
+    builder: reqwest::RequestBuilder,
+    secret: &str,
+    method: &str,
+    path: &str,
+    query: &str,
+    body: &[u8],
+) -> reqwest::RequestBuilder {
+    let timestamp = Utc::now().timestamp().to_string();
+    let signature =
+        kudiba_gateway_signature::compute_signature(secret, &timestamp, method, path, query, body);
+    builder
+        .header("X-Gateway-Timestamp", timestamp)
+        .header("X-Gateway-Signature", signature)
+}
+
+fn cash_session_status_from_upstream(body: &[u8]) -> Result<String, ApiError> {
+    let payload: serde_json::Value = serde_json::from_slice(body).map_err(|error| {
+        tracing::warn!(error = %error, "resposta inválida da Tesouraria ao validar sessão de caixa");
+        ApiError::new(
+            StatusCode::BAD_GATEWAY,
+            "A resposta da Tesouraria ao validar a sessão de caixa não é um JSON válido.",
+        )
+    })?;
+    payload
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .filter(|status| !status.trim().is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::BAD_GATEWAY,
+                "A resposta da Tesouraria não contém o estado da sessão de caixa.",
+            )
+        })
+}
+
 async fn validate_cash_session(
     pool: &sqlx::PgPool,
     treasury_service_url: Option<&str>,
+    internal_gateway_secret: &str,
     tenant_id: Uuid,
     session_id: Uuid,
     headers: &HeaderMap,
@@ -3551,9 +3645,16 @@ async fn validate_cash_session(
             .build()
             .unwrap_or_default();
 
-        let mut request = client
-            .get(&endpoint)
-            .header("X-Resolved-Tenant-ID", tenant_id.to_string());
+        let mut request = signed_internal_request(
+            client
+                .get(&endpoint)
+                .header("X-Resolved-Tenant-ID", tenant_id.to_string()),
+            internal_gateway_secret,
+            "GET",
+            &format!("/api/v1/treasury/sessions/{}", session_id),
+            "",
+            b"",
+        );
         for header_name in [
             "X-Resolved-Branch-ID",
             "X-Resolved-User-ID",
@@ -3564,26 +3665,44 @@ async fn validate_cash_session(
             }
         }
 
-        if let Ok(resp) = request.send().await {
-            if resp.status() == reqwest::StatusCode::NOT_FOUND {
-                return Err(ApiError::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "A sessão de caixa informada não existe nesta organização.",
-                ));
-            }
-            if resp.status().is_success() {
-                if let Ok(json) = resp.json::<serde_json::Value>().await {
-                    let status = json.get("status").and_then(|v| v.as_str()).unwrap_or("");
-                    if status.eq_ignore_ascii_case("CLOSED") {
-                        return Err(ApiError::new(
-                            StatusCode::UNPROCESSABLE_ENTITY,
-                            "A sessão de caixa informada encontra-se encerrada. É necessário abrir uma nova sessão para emitir vendas.",
-                        ));
-                    }
-                    return Ok(());
-                }
-            }
+        let resp = request.send().await.map_err(|error| {
+            tracing::warn!(error = %error, "falha ao contactar a Tesouraria para validar sessão de caixa");
+            ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Não foi possível validar a sessão de caixa junto da Tesouraria.",
+            )
+        })?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "A sessão de caixa informada não existe nesta organização.",
+            ));
         }
+        if !resp.status().is_success() {
+            tracing::warn!(
+                status = %resp.status(),
+                "a Tesouraria não validou a sessão de caixa"
+            );
+            return Err(ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Não foi possível validar a sessão de caixa junto da Tesouraria.",
+            ));
+        }
+        let body = resp.bytes().await.map_err(|error| {
+            tracing::warn!(error = %error, "falha ao ler a resposta da Tesouraria sobre a sessão de caixa");
+            ApiError::new(
+                StatusCode::BAD_GATEWAY,
+                "Não foi possível ler a validação da sessão de caixa da Tesouraria.",
+            )
+        })?;
+        let status = cash_session_status_from_upstream(&body)?;
+        if status.eq_ignore_ascii_case("CLOSED") {
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "A sessão de caixa informada encontra-se encerrada. É necessário abrir uma nova sessão para emitir vendas.",
+            ));
+        }
+        return Ok(());
     }
 
     let query_res = sqlx::query_scalar::<_, String>(
@@ -3610,9 +3729,13 @@ async fn validate_cash_session(
         )),
         Err(err) => {
             tracing::warn!(
-                "Não foi possível verificar sessão de caixa na base local ({err}); autorizando emissão."
+                error = %err,
+                "Não foi possível verificar a sessão de caixa na base local; emissão bloqueada."
             );
-            Ok(())
+            Err(ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Não foi possível validar a sessão de caixa na base de dados.",
+            ))
         }
     }
 }
@@ -3620,6 +3743,7 @@ async fn validate_cash_session(
 async fn validate_stock_and_service_integrity(
     pool: &sqlx::PgPool,
     inventory_service_url: Option<&str>,
+    internal_gateway_secret: &str,
     command: &mut IssueInvoiceCommand,
 ) -> Result<(), ApiError> {
     let doc_type = command.document_type.trim().to_uppercase();
@@ -3729,12 +3853,17 @@ async fn validate_stock_and_service_integrity(
                         .build()
                         .unwrap_or_default();
 
-                    if let Ok(resp) = client
-                        .get(&endpoint)
-                        .header("X-Resolved-Tenant-ID", command.tenant_id.to_string())
-                        .send()
-                        .await
-                    {
+                    let request = signed_internal_request(
+                        client
+                            .get(&endpoint)
+                            .header("X-Resolved-Tenant-ID", command.tenant_id.to_string()),
+                        internal_gateway_secret,
+                        "GET",
+                        &format!("/api/v1/inventory/products/by-code/{}", code),
+                        "",
+                        b"",
+                    );
+                    if let Ok(resp) = request.send().await {
                         if resp.status().is_success() {
                             if let Ok(json) = resp.json::<serde_json::Value>().await {
                                 let ptype = json
@@ -4075,6 +4204,32 @@ mod authorization_tests {
     use super::*;
 
     #[test]
+    fn sessao_de_caixa_aberta_e_aceite() {
+        let status = cash_session_status_from_upstream(br#"{"status":"OPEN"}"#).unwrap();
+        assert_eq!(status, "OPEN");
+    }
+
+    #[test]
+    fn sessao_de_caixa_encerrada_e_recusada() {
+        let status = cash_session_status_from_upstream(br#"{"status":"CLOSED"}"#).unwrap();
+        assert_eq!(status, "CLOSED");
+    }
+
+    #[test]
+    fn resposta_invalida_da_tesouraria_bloqueia_a_emissao() {
+        assert!(cash_session_status_from_upstream(b"not json").is_err());
+        assert!(cash_session_status_from_upstream(br#"{}"#).is_err());
+        assert!(cash_session_status_from_upstream(br#"{"status":""}"#).is_err());
+    }
+
+    #[test]
+    fn contingencia_local_e_recusada_sem_autorizacao_explicita() {
+        assert!(reject_unauthorized_contingency(true, false).is_err());
+        assert!(reject_unauthorized_contingency(true, true).is_ok());
+        assert!(reject_unauthorized_contingency(false, false).is_ok());
+    }
+
+    #[test]
     fn exige_tenant_utilizador_e_perfil_permitido() {
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -4128,14 +4283,19 @@ mod authorization_tests {
         let now = chrono::Utc::now().timestamp().to_string();
         let method = "POST";
         let path = "/api/v1/invoices";
-        let canonical = format!("{}:{}:{}", now, method, path);
-        let signature = compute_gateway_signature(secret.as_bytes(), &canonical);
+        let body = br#"{"total":10}"#;
+        let signature = kudiba_gateway_signature::compute_signature(
+            secret, &now, method, path, "limit=1", body,
+        );
 
         let mut headers = HeaderMap::new();
         headers.insert("X-Gateway-Timestamp", now.parse().unwrap());
         headers.insert("X-Gateway-Signature", signature.parse().unwrap());
 
-        assert!(verify_internal_gateway_signature(&headers, method, path, secret, true).is_ok());
+        assert!(verify_internal_gateway_signature(
+            &headers, method, path, "limit=1", body, secret, true
+        )
+        .is_ok());
     }
 
     #[test]
@@ -4144,26 +4304,46 @@ mod authorization_tests {
         let now = chrono::Utc::now().timestamp().to_string();
         let method = "POST";
         let path = "/api/v1/invoices";
+        let body = br#"{"total":10}"#;
 
         let mut headers = HeaderMap::new();
         headers.insert("X-Gateway-Timestamp", now.parse().unwrap());
         headers.insert("X-Gateway-Signature", "invalid_signature".parse().unwrap());
 
-        let err =
-            verify_internal_gateway_signature(&headers, method, path, secret, true).unwrap_err();
+        let err = verify_internal_gateway_signature(&headers, method, path, "", body, secret, true)
+            .unwrap_err();
         assert_eq!(err.status(), StatusCode::UNAUTHORIZED);
+
+        let signature =
+            kudiba_gateway_signature::compute_signature(secret, &now, method, path, "", body);
+        headers.insert("X-Gateway-Signature", signature.parse().unwrap());
+        assert!(verify_internal_gateway_signature(
+            &headers,
+            method,
+            path,
+            "",
+            br#"{"total":11}"#,
+            secret,
+            true
+        )
+        .is_err());
+        assert!(verify_internal_gateway_signature(
+            &headers, method, path, "limit=2", body, secret, true
+        )
+        .is_err());
 
         // Expirado (mais de 300 segundos atrás)
         let expired = (chrono::Utc::now().timestamp() - 600).to_string();
-        let canonical = format!("{}:{}:{}", expired, method, path);
-        let signature = compute_gateway_signature(secret.as_bytes(), &canonical);
+        let signature =
+            kudiba_gateway_signature::compute_signature(secret, &expired, method, path, "", body);
 
         let mut exp_headers = HeaderMap::new();
         exp_headers.insert("X-Gateway-Timestamp", expired.parse().unwrap());
         exp_headers.insert("X-Gateway-Signature", signature.parse().unwrap());
 
-        let err_exp = verify_internal_gateway_signature(&exp_headers, method, path, secret, true)
-            .unwrap_err();
+        let err_exp =
+            verify_internal_gateway_signature(&exp_headers, method, path, "", body, secret, true)
+                .unwrap_err();
         assert_eq!(err_exp.status(), StatusCode::UNAUTHORIZED);
     }
 
@@ -4190,6 +4370,7 @@ mod authorization_tests {
             customer_nif: None,
             source_document_number: None,
             payment_methods: vec!["NUMERARIO".to_string()],
+            payment_amounts: Vec::new(),
             withholding_total: None,
             apply_withholding: None,
             withholding_rate: None,
@@ -4234,6 +4415,7 @@ mod authorization_tests {
             customer_nif: None,
             source_document_number: None,
             payment_methods: vec!["NUMERARIO".to_string()],
+            payment_amounts: Vec::new(),
             withholding_total: None,
             apply_withholding: None,
             withholding_rate: None,
@@ -4277,6 +4459,7 @@ mod authorization_tests {
             customer_nif: None,
             source_document_number: None,
             payment_methods: vec!["A CRÉDITO".to_string()],
+            payment_amounts: Vec::new(),
             withholding_total: None,
             apply_withholding: None,
             withholding_rate: None,
@@ -4319,6 +4502,7 @@ mod authorization_tests {
             customer_nif: None,
             source_document_number: None,
             payment_methods: vec!["A CRÉDITO".to_string()],
+            payment_amounts: Vec::new(),
             withholding_total: None,
             apply_withholding: None,
             withholding_rate: None,

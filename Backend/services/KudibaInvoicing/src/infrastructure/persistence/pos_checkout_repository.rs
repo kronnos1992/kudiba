@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use serde_json::Value;
+use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -199,6 +199,36 @@ impl PosCheckoutRepository for PgPosCheckoutRepository {
         .execute(&self.pool)
         .await
         .map_err(|e| DomainError::Persistence(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn reset_to_fiscal_pending(
+        &self,
+        tenant_id: Uuid,
+        checkout_id: Uuid,
+        retry_count: u32,
+    ) -> Result<(), DomainError> {
+        let result = json!({ "retryCount": retry_count });
+        let updated = sqlx::query(
+            "UPDATE kudiba_core.pos_checkout_intents
+             SET state = $1, result = $2, last_error = NULL, updated_at = NOW()
+             WHERE id = $3 AND tenant_id = $4 AND state = $5",
+        )
+        .bind(CheckoutState::FiscalPending.as_str())
+        .bind(&result)
+        .bind(checkout_id)
+        .bind(tenant_id)
+        .bind(CheckoutState::Reconciling.as_str())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::Persistence(e.to_string()))?;
+
+        if updated.rows_affected() != 1 {
+            return Err(DomainError::ConcurrencyConflict(
+                "checkout não está mais em reconciliação; repita com a mesma chave".to_string(),
+            ));
+        }
 
         Ok(())
     }

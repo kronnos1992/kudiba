@@ -39,12 +39,19 @@ impl JobRepository for InMemoryJobRepository {
         Ok(jobs.get(&id).cloned())
     }
 
-    async fn find_by_idempotency_key(&self, key: &str) -> Result<Option<PrintJob>, DeviceError> {
+    async fn find_by_idempotency_key(
+        &self,
+        tenant_id: Uuid,
+        key: &str,
+    ) -> Result<Option<PrintJob>, DeviceError> {
         let jobs = self
             .jobs
             .lock()
             .map_err(|_| DeviceError::Busy("repositório".into()))?;
-        Ok(jobs.values().find(|j| j.idempotency_key() == key).cloned())
+        Ok(jobs
+            .values()
+            .find(|j| j.tenant_id() == tenant_id && j.idempotency_key() == key)
+            .cloned())
     }
 }
 
@@ -77,6 +84,16 @@ impl PrinterPort for RecordingPrinter {
 #[derive(Default)]
 pub struct RecordingDrawer {
     pub calls: Mutex<u32>,
+    outcome: TransportOutcome,
+}
+
+impl RecordingDrawer {
+    pub fn new(outcome: TransportOutcome) -> Self {
+        Self {
+            calls: Mutex::new(0),
+            outcome,
+        }
+    }
 }
 
 #[async_trait]
@@ -87,7 +104,7 @@ impl DrawerPort for RecordingDrawer {
             .lock()
             .map_err(|_| DeviceError::Busy("gaveta".into()))?;
         *calls += 1;
-        Ok(TransportOutcome::TransportAccepted)
+        Ok(self.outcome)
     }
 }
 
@@ -134,13 +151,18 @@ mod tests {
         repository.save(job).await.unwrap();
 
         let found = repository
-            .find_by_idempotency_key("sale-2")
+            .find_by_idempotency_key(Uuid::from_u128(1), "sale-2")
             .await
             .unwrap()
             .unwrap();
         assert_eq!(found.id(), id);
         assert!(repository
-            .find_by_idempotency_key("missing")
+            .find_by_idempotency_key(Uuid::from_u128(1), "missing")
+            .await
+            .unwrap()
+            .is_none());
+        assert!(repository
+            .find_by_idempotency_key(Uuid::from_u128(9), "sale-2")
             .await
             .unwrap()
             .is_none());

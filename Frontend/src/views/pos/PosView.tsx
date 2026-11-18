@@ -43,6 +43,16 @@ import { authApi, TenantMember } from '../../api/auth';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { validateInvoiceCustomerNif } from '../../utils/validators';
 import {
+  bridgeStatus,
+  openCashDrawer,
+  pairBridge,
+  requestBridgeChallenge,
+  revokeBridgeToken,
+  rotateBridgeToken,
+  submitPrintJob,
+  type BridgePrintJob,
+} from '../../services/hardwareBridge';
+import {
   cachePosProducts,
   getCachedPosProducts,
   saveOfflineSale,
@@ -82,6 +92,9 @@ export const PosView: React.FC = () => {
   const [productSearch, setProductSearch] = useState('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('NUMERARIO');
   const [amountTendered, setAmountTendered] = useState<string>('');
+  const [extraPayments, setExtraPayments] = useState<
+    Array<{ method: string; amount: string }>
+  >([]);
   const [lastPaymentSummary, setLastPaymentSummary] = useState<{
     method: string;
     tendered: number;
@@ -106,7 +119,9 @@ export const PosView: React.FC = () => {
 
   // Modais de Relatórios POS
   const [issuedInvoice, setIssuedInvoice] = useState<Invoice | null>(null);
+  const [issuedPrintJob, setIssuedPrintJob] = useState<BridgePrintJob | null>(null);
   const [ticketModalOpen, setTicketModalOpen] = useState(false);
+  const [bridgeActionBusy, setBridgeActionBusy] = useState(false);
   const [leituraXText, setLeituraXText] = useState<string | null>(null);
   const [fechoZResult, setFechoZResult] = useState<PosDailyReportResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -123,8 +138,35 @@ export const PosView: React.FC = () => {
   const [zReportEndDate, setZReportEndDate] = useState(getLocalDateString);
   const zReportDateRange = resolveReportDateRange(zReportStartDate, zReportEndDate);
 
+  const [bridgeCode, setBridgeCode] = useState('');
+  const [bridgePaired, setBridgePaired] = useState<boolean | null>(null);
+  const [bridgeAwaitingCode, setBridgeAwaitingCode] = useState(false);
+  const [bridgeBusy, setBridgeBusy] = useState(false);
+  const [bridgeMessage, setBridgeMessage] = useState<string | null>(null);
+
   const roles = (user?.roles ?? []).map((r) => r.toUpperCase());
   const isManager = roles.some((r) => ['ADMIN', 'SYSADMIN', 'SUPER_ADMIN'].includes(r));
+
+  const refreshBridgeStatus = React.useCallback(async () => {
+    try {
+      const status = await bridgeStatus();
+      setBridgePaired(status.paired);
+      setBridgeAwaitingCode(status.awaitingCode);
+      setBridgeMessage(
+        status.locked
+          ? 'Emparelhamento temporariamente bloqueado; aguarde a expiração ou peça um novo código.'
+          : null
+      );
+    } catch {
+      setBridgePaired(null);
+      setBridgeAwaitingCode(false);
+      setBridgeMessage('Agente local indisponível. Confirme que o serviço está a correr neste posto.');
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void refreshBridgeStatus();
+  }, [activeTenant?.id, refreshBridgeStatus]);
 
   // Queries
   const {
@@ -308,10 +350,35 @@ export const PosView: React.FC = () => {
   const totalGross = subtotal + totalTax;
 
   const tenderedNum = Number(amountTendered) || 0;
-  const changeDue =
-    selectedPaymentMethod === 'NUMERARIO' && tenderedNum >= totalGross
-      ? tenderedNum - totalGross
-      : 0;
+
+  const paymentAllocations = React.useMemo(() => {
+    const extras = extraPayments.map((payment) => ({
+      method: payment.method,
+      amount: Number(payment.amount) || 0,
+    }));
+    const allocatedExtras = extras.reduce((sum, payment) => sum + payment.amount, 0);
+    const primary = Math.max(0, Number((totalGross - allocatedExtras).toFixed(2)));
+    return [{ method: selectedPaymentMethod, amount: primary }, ...extras];
+  }, [extraPayments, selectedPaymentMethod, totalGross]);
+
+  const cashAllocated = paymentAllocations
+    .filter((payment) => ['NUMERARIO', 'CASH', 'DINHEIRO'].includes(payment.method))
+    .reduce((sum, payment) => sum + payment.amount, 0);
+  const changeDue = cashAllocated > 0 && tenderedNum > cashAllocated ? tenderedNum - cashAllocated : 0;
+
+  React.useEffect(() => {
+    if (cashAllocated <= 0 && amountTendered !== '') {
+      setAmountTendered('');
+    }
+  }, [cashAllocated, amountTendered]);
+  const paymentAmounts = paymentAllocations.map((payment) => ({
+    paymentMethod: payment.method,
+    amount: Number(payment.amount.toFixed(2)),
+  }));
+  const paymentMethods = [...new Set(paymentAllocations.map((payment) => payment.method))];
+  const paymentAllocationsValid =
+    paymentAllocations.every((payment) => payment.amount > 0) &&
+    Math.abs(paymentAllocations.reduce((sum, payment) => sum + payment.amount, 0) - totalGross) < 0.01;
 
   const cartStockErrors = React.useMemo(() => {
     if (isContingencyMode) return [];
@@ -521,6 +588,12 @@ export const PosView: React.FC = () => {
         setErrorMessage(msg);
         throw new Error(msg);
       }
+      if (!paymentAllocationsValid) {
+        const msg = 'A soma dos meios de pagamento tem de coincidir com o total da venda.';
+        setErrorMessage(msg);
+        toast.error(msg);
+        throw new Error(msg);
+      }
       const currentYear = new Date().getFullYear();
       const activeSeries =
         seriesList.find((s) => s.documentType === 'FR' && s.isActive)?.seriesCode ||
@@ -557,7 +630,8 @@ export const PosView: React.FC = () => {
         customerAddress: isGenericCustomer ? undefined : (matchedEntity?.address_detail || undefined),
         customerCity: isGenericCustomer ? undefined : (matchedEntity?.city || undefined),
         customerCountry: isGenericCustomer ? 'AO' : (matchedEntity?.country_code || 'AO'),
-        paymentMethods: [selectedPaymentMethod],
+        paymentMethods,
+        paymentAmounts,
         lines: cartSnapshot.map((item) => ({
           productCode: item.code,
           description: item.name,
@@ -618,10 +692,8 @@ export const PosView: React.FC = () => {
           customerName: customerNameVal,
           customerNif: customerNifVal,
           paymentMethod: selectedPaymentMethod,
-          amountTendered:
-            selectedPaymentMethod === 'NUMERARIO' && tenderedNum > 0
-              ? tenderedNum
-              : totalGross,
+          paymentAmounts,
+          amountTendered: cashAllocated > 0 && tenderedNum > 0 ? tenderedNum : totalGross,
           changeDue: Number(changeDue.toFixed(2)),
           netTotal: Number(subtotal.toFixed(2)),
           taxTotal: Number(totalTax.toFixed(2)),
@@ -657,6 +729,23 @@ export const PosView: React.FC = () => {
         const invoiceId = checkout.invoiceId || issued?.invoiceId || issued?.id;
         if (!invoiceId || !issued) {
           throw new Error('O checkout fiscal não devolveu o documento emitido.');
+        }
+
+        try {
+          const printResult = await submitPrintJob(checkout.printJob, activeTenant!.id);
+          if ('skipped' in printResult) {
+            toast.warning(`Impressão local não enviada: ${printResult.reason}`);
+          } else if (printResult.state === 'TRANSPORT_ACCEPTED') {
+            toast.success(
+              printResult.replay
+                ? 'Impressão já tinha sido entregue ao agente local.'
+                : 'Envelope fiscal entregue ao agente local (saída física não confirmada).'
+            );
+          } else {
+            toast.warning(`Estado da impressão: ${printResult.state}. Verifique a impressora.`);
+          }
+        } catch (printError: any) {
+          toast.warning(printError?.message || 'Falha ao entregar impressão ao agente local.');
         }
 
         let fullInvoice: Invoice;
@@ -709,7 +798,7 @@ export const PosView: React.FC = () => {
           };
         }
 
-        return { kind: 'online' as const, invoice: fullInvoice };
+        return { kind: 'online' as const, invoice: fullInvoice, printJob: checkout.printJob ?? null };
       } catch (err: any) {
         const isNetworkFailure =
           !err?.response || [502, 503, 504].includes(Number(err?.response?.status));
@@ -728,21 +817,18 @@ export const PosView: React.FC = () => {
           ? Number(result.invoice.grossTotal || totalGross)
           : Number(result.sale.grossTotal || totalGross);
       const tenderedForSummary =
-        selectedPaymentMethod === 'NUMERARIO'
-          ? (tenderedNum >= gross ? tenderedNum : gross)
-          : gross;
+        cashAllocated > 0 ? (tenderedNum >= cashAllocated ? tenderedNum : cashAllocated) : gross;
       const changeForSummary =
-        selectedPaymentMethod === 'NUMERARIO' && tenderedNum > gross
-          ? tenderedNum - gross
-          : 0;
+        cashAllocated > 0 && tenderedNum > cashAllocated ? tenderedNum - cashAllocated : 0;
       setLastPaymentSummary({
-        method: selectedPaymentMethod,
+        method: paymentMethods.join(' + '),
         tendered: tenderedForSummary,
         change: changeForSummary,
       });
 
       if (result.kind === 'online') {
         setIssuedInvoice(result.invoice);
+        setIssuedPrintJob(result.printJob);
         setTicketModalOpen(true);
       } else {
         setOfflineReceipt(result.sale);
@@ -754,6 +840,7 @@ export const PosView: React.FC = () => {
 
       setCart([]);
       setAmountTendered('');
+      setExtraPayments([]);
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: ['fiscal_audit_trail'] });
       queryClient.invalidateQueries({ queryKey: ['pos_products'] });
@@ -876,6 +963,136 @@ export const PosView: React.FC = () => {
       );
     },
   });
+
+  const handlePairBridge = async () => {
+    if (!activeTenant?.id) {
+      toast.error('Selecione uma empresa antes de emparelhar o agente local.');
+      return;
+    }
+    if (!/^\d{6}$/.test(bridgeCode.trim())) {
+      toast.error('Introduza o código de 6 dígitos mostrado no arranque do agente.');
+      return;
+    }
+    setBridgeBusy(true);
+    setBridgeMessage(null);
+    try {
+      await pairBridge(
+        bridgeCode.trim(),
+        activeTenant.id,
+        `POS ${activeRegister?.code || '01'}`
+      );
+      setBridgePaired(true);
+      setBridgeAwaitingCode(false);
+      setBridgeCode('');
+      toast.success('Agente local emparelhado com esta empresa.');
+    } catch (error: any) {
+      const detail = error?.message || 'Não foi possível emparelhar o agente local.';
+      setBridgeMessage(detail);
+      toast.error(detail);
+      await refreshBridgeStatus();
+    } finally {
+      setBridgeBusy(false);
+    }
+  };
+
+  const handleRequestBridgeChallenge = async () => {
+    setBridgeBusy(true);
+    setBridgeMessage(null);
+    try {
+      await requestBridgeChallenge();
+      await refreshBridgeStatus();
+      toast.success('Novo código emitido. Consulte o log do agente local.');
+    } catch (error: any) {
+      const detail = error?.message || 'Não foi possível emitir novo código.';
+      setBridgeMessage(detail);
+      toast.error(detail);
+    } finally {
+      setBridgeBusy(false);
+    }
+  };
+
+  const handleRotateBridgeToken = async () => {
+    if (!activeTenant?.id) return;
+    setBridgeBusy(true);
+    setBridgeMessage(null);
+    try {
+      await rotateBridgeToken(activeTenant.id);
+      toast.success('Token local rotacionado. A sessão continua emparelhada.');
+    } catch (error: any) {
+      const detail = error?.message || 'Não foi possível rodar o token local.';
+      setBridgeMessage(detail);
+      toast.error(detail);
+    } finally {
+      setBridgeBusy(false);
+    }
+  };
+
+  const handleRevokeBridgeToken = async () => {
+    if (!activeTenant?.id) return;
+    setBridgeBusy(true);
+    setBridgeMessage(null);
+    try {
+      await revokeBridgeToken(activeTenant.id);
+      setBridgePaired(false);
+      setBridgeAwaitingCode(true);
+      toast.success('Credencial revogada. Use o novo código do agente para voltar a emparelhar.');
+    } catch (error: any) {
+      const detail = error?.message || 'Não foi possível revogar o token local.';
+      setBridgeMessage(detail);
+      toast.error(detail);
+    } finally {
+      setBridgeBusy(false);
+    }
+  };
+
+  const handleOpenDrawer = async () => {
+    if (!activeTenant?.id || !issuedPrintJob) return;
+    if (
+      !window.confirm(
+        'Confirmar a abertura da gaveta? Esta ação fica registada na auditoria do agente local.'
+      )
+    ) {
+      return;
+    }
+    setBridgeActionBusy(true);
+    try {
+      await openCashDrawer(
+        issuedPrintJob.printJobId,
+        activeTenant.id,
+        `Abertura após emissão de ${issuedInvoice?.documentNumber || issuedPrintJob.documentNumber}`
+      );
+      toast.success('Comando de abertura da gaveta entregue ao agente local.');
+    } catch (error: any) {
+      toast.warning(error?.message || 'Não foi possível abrir a gaveta.');
+    } finally {
+      setBridgeActionBusy(false);
+    }
+  };
+
+  const handleCopyReprint = async () => {
+    if (!activeTenant?.id || !issuedPrintJob) return;
+    if (!window.confirm('Emitir uma cópia auditada deste talão? A gaveta não será aberta.')) {
+      return;
+    }
+    setBridgeActionBusy(true);
+    try {
+      const copyJob: BridgePrintJob = {
+        ...issuedPrintJob,
+        copyType: 'COPY',
+        copyId: crypto.randomUUID(),
+      };
+      const result = await submitPrintJob(copyJob, activeTenant.id);
+      if ('skipped' in result) {
+        toast.warning(`Cópia não enviada: ${result.reason}`);
+      } else {
+        toast.success(`Cópia entregue ao agente local (${result.state}).`);
+      }
+    } catch (error: any) {
+      toast.warning(error?.message || 'Não foi possível reimprimir a cópia.');
+    } finally {
+      setBridgeActionBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -1354,8 +1571,77 @@ export const PosView: React.FC = () => {
                   </div>
                 </div>
 
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase">
+                      Pagamento misto
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExtraPayments((current) => [
+                          ...current,
+                          { method: current.length === 0 ? 'MULTICAIXA' : 'TRANSFERENCIA', amount: '' },
+                        ])
+                      }
+                      className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+                    >
+                      + Adicionar meio
+                    </button>
+                  </div>
+                  {extraPayments.map((payment, index) => (
+                    <div key={index} className="grid grid-cols-[1fr_110px_auto] gap-1.5">
+                      <select
+                        value={payment.method}
+                        onChange={(event) =>
+                          setExtraPayments((current) =>
+                            current.map((item, i) =>
+                              i === index ? { ...item, method: event.target.value } : item
+                            )
+                          )
+                        }
+                        className="px-2 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white"
+                      >
+                        {['NUMERARIO', 'MULTICAIXA', 'TRANSFERENCIA'].map((method) => (
+                          <option key={method} value={method}>
+                            {method}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={payment.amount}
+                        onChange={(event) =>
+                          setExtraPayments((current) =>
+                            current.map((item, i) =>
+                              i === index ? { ...item, amount: event.target.value } : item
+                            )
+                          )
+                        }
+                        className="px-2 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-mono font-bold text-slate-900 dark:text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExtraPayments((current) => current.filter((_, i) => i !== index))
+                        }
+                        className="px-2 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  {extraPayments.length > 0 && (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                      Restante no meio principal: <KzAmount value={paymentAllocations[0].amount} />
+                    </p>
+                  )}
+                </div>
+
                 {/* Cálculo de Troco em Numerário */}
-                {selectedPaymentMethod === 'NUMERARIO' && totalGross > 0 && (
+                {cashAllocated > 0 && totalGross > 0 && (
                   <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-2">
                     <div className="flex items-center justify-between text-xs">
                       <label className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
@@ -1364,7 +1650,7 @@ export const PosView: React.FC = () => {
                       </label>
                       <button
                         type="button"
-                        onClick={() => setAmountTendered(totalGross.toFixed(2))}
+                        onClick={() => setAmountTendered(cashAllocated.toFixed(2))}
                         className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
                       >
                         Valor Exato
@@ -1401,20 +1687,20 @@ export const PosView: React.FC = () => {
                     {tenderedNum > 0 && (
                       <div
                         className={`p-2 rounded-lg flex items-center justify-between text-xs font-bold ${
-                          tenderedNum >= totalGross
+                          tenderedNum >= cashAllocated
                             ? 'bg-emerald-100/70 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 border border-emerald-500/30'
                             : 'bg-amber-100/70 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border border-amber-500/30'
                         }`}
                       >
                         <span className="flex items-center gap-1">
                           <Coins className="w-3.5 h-3.5" />
-                          {tenderedNum >= totalGross ? 'Troco a Devolver:' : 'Falta Receber:'}
+                          {tenderedNum >= cashAllocated ? 'Troco a Devolver:' : 'Falta Receber:'}
                         </span>
                         <span className="font-mono text-sm">
-                          {tenderedNum >= totalGross ? (
+                          {tenderedNum >= cashAllocated ? (
                             <KzAmount value={changeDue} />
                           ) : (
-                            <KzAmount value={totalGross - tenderedNum} />
+                            <KzAmount value={cashAllocated - tenderedNum} />
                           )}
                         </span>
                       </div>
@@ -1422,6 +1708,94 @@ export const PosView: React.FC = () => {
                   </div>
                 )}
               </div>
+            </div>
+
+            <div className="no-print">
+              <GlassCard className="p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Unlock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-[11px] font-bold uppercase text-slate-500">
+                      Agente local de impressão
+                    </span>
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                      bridgePaired === true
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400'
+                        : bridgeAwaitingCode
+                          ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                    }`}
+                  >
+                    {bridgePaired === null
+                      ? 'A verificar'
+                      : bridgePaired
+                        ? 'Emparelhado'
+                        : bridgeAwaitingCode
+                          ? 'Código pendente'
+                          : 'Indisponível'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                  Código de 6 dígitos gerado no arranque do agente, válido 5 minutos. Nunca o partilhe.
+                </p>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  <input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={bridgeCode}
+                    onChange={(event) => setBridgeCode(event.target.value.replace(/\D/g, ''))}
+                    placeholder="000000"
+                    className="w-24 px-2 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-mono font-bold tracking-widest text-center text-slate-900 dark:text-white"
+                  />
+                  <button
+                    type="button"
+                    disabled={bridgeBusy || bridgePaired === true}
+                    onClick={handlePairBridge}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-bold disabled:opacity-50 cursor-pointer"
+                  >
+                    Emparelhar
+                  </button>
+                  {bridgePaired !== true && (
+                    <button
+                      type="button"
+                      disabled={bridgeBusy}
+                      onClick={handleRequestBridgeChallenge}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+                    >
+                      Novo código
+                    </button>
+                  )}
+                  {bridgePaired === true && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={bridgeBusy}
+                        onClick={handleRotateBridgeToken}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+                      >
+                        Rodar token
+                      </button>
+                      <button
+                        type="button"
+                        disabled={bridgeBusy}
+                        onClick={handleRevokeBridgeToken}
+                        className="px-2.5 py-1.5 rounded-lg border border-rose-300 dark:border-rose-800 text-[11px] font-bold text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-50 cursor-pointer"
+                      >
+                        Revogar
+                      </button>
+                    </>
+                  )}
+                </div>
+                {bridgeMessage && (
+                  <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-1.5 flex items-start gap-1">
+                    <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                    {bridgeMessage}
+                  </p>
+                )}
+              </GlassCard>
             </div>
 
             {/* Totais e Botão de Emissão */}
@@ -1489,9 +1863,8 @@ export const PosView: React.FC = () => {
                   issueFrMutation.isPending ||
                   (!isCashSessionOpen && !isContingencyMode) ||
                   cartStockErrors.length > 0 ||
-                  (selectedPaymentMethod === 'NUMERARIO' &&
-                    tenderedNum > 0 &&
-                    tenderedNum < totalGross)
+                  !paymentAllocationsValid ||
+                  (cashAllocated > 0 && tenderedNum > 0 && tenderedNum < cashAllocated)
                 }
                 onClick={() => issueFrMutation.mutate()}
                 className="w-full py-3 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-md shadow-emerald-700/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
@@ -2129,7 +2502,10 @@ export const PosView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-slate-900 relative">
             <button
-              onClick={() => setTicketModalOpen(false)}
+              onClick={() => {
+                setTicketModalOpen(false);
+                setIssuedPrintJob(null);
+              }}
               className="no-print absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
             >
               <X className="w-4 h-4" />
@@ -2238,12 +2614,33 @@ export const PosView: React.FC = () => {
               </div>
             </div>
 
-            <div className="no-print flex items-center justify-end gap-2 mt-4">
+            <div className="no-print flex flex-wrap items-center justify-end gap-2 mt-4">
               <button
-                onClick={() => setTicketModalOpen(false)}
+                onClick={() => {
+                  setTicketModalOpen(false);
+                  setIssuedPrintJob(null);
+                }}
                 className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
               >
                 Fechar
+              </button>
+              <button
+                onClick={handleCopyReprint}
+                disabled={!issuedPrintJob || bridgePaired !== true || bridgeActionBusy}
+                title="Reimpressão auditada (COPY); não abre a gaveta"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-emerald-700 text-emerald-700 hover:bg-emerald-50 text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Cópia Auditada</span>
+              </button>
+              <button
+                onClick={handleOpenDrawer}
+                disabled={!issuedPrintJob || bridgePaired !== true || bridgeActionBusy}
+                title="Abre a gaveta apenas para o original com saída concluída"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <Unlock className="w-4 h-4" />
+                <span>Abrir Gaveta</span>
               </button>
               <button
                 onClick={() => window.print()}

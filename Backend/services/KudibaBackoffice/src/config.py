@@ -6,6 +6,7 @@ from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 _DEVELOPMENT_JWT_SECRET = "kudiba_jwt_secret_development_key_change_in_production_2026"
+_DEVELOPMENT_INTERNAL_GATEWAY_SECRET = "kudiba_internal_gateway_secret_development_key_change_in_production_2026"
 _DEVELOPMENT_CORS_ORIGINS = {"http://localhost:3000", "http://localhost:5173"}
 _DEVELOPMENT_DATABASE_URL = "postgresql+asyncpg://kudiba:kudiba_secret_pass@localhost:5432/kudiba_backoffice"
 _DEVELOPMENT_AUTH_DATABASE_URL = "postgresql+asyncpg://kudiba:kudiba_secret_pass@localhost:5432/kudiba_auth"
@@ -23,6 +24,8 @@ class Settings(BaseSettings):
 
     jwt_secret: str = _DEVELOPMENT_JWT_SECRET
     jwt_algorithm: str = "HS256"
+    internal_gateway_secret: str = _DEVELOPMENT_INTERNAL_GATEWAY_SECRET
+    enforce_gateway_signature: bool = True
 
     cors_allowed_origins: Annotated[List[str], NoDecode] = [
         "http://localhost:3000",
@@ -48,7 +51,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
-        if self.environment.lower() in {"prod", "production"}:
+        is_production = self.environment.lower() in {"prod", "production"}
+        if (self.enforce_gateway_signature or is_production) and (
+            self.internal_gateway_secret == _DEVELOPMENT_INTERNAL_GATEWAY_SECRET
+            or len(self.internal_gateway_secret.encode("utf-8")) < 32
+        ):
+            raise ValueError(
+                "INTERNAL_GATEWAY_SECRET must be an explicit, non-default secret of at least 32 bytes."
+            )
+        if is_production:
             if self.jwt_secret == _DEVELOPMENT_JWT_SECRET or len(self.jwt_secret.encode("utf-8")) < 32:
                 raise ValueError("Production requires a JWT_SECRET with at least 32 bytes.")
             if (

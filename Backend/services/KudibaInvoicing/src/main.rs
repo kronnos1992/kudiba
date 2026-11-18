@@ -483,6 +483,26 @@ async fn ensure_schema(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
         CREATE INDEX IF NOT EXISTS idx_invoice_payments_tenant_invoice
             ON kudiba_core.invoice_payments(tenant_id, invoice_id, received_at DESC);
 
+        CREATE TABLE IF NOT EXISTS kudiba_core.invoice_payment_allocations (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES kudiba_core.tenants(id) ON DELETE RESTRICT,
+            invoice_id UUID NOT NULL REFERENCES kudiba_core.invoices(id) ON DELETE RESTRICT,
+            payment_method VARCHAR(40) NOT NULL,
+            amount NUMERIC(18, 2) NOT NULL CHECK (amount > 0),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_invoice_payment_allocation UNIQUE (invoice_id, payment_method)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_invoice_payment_allocations_tenant_invoice
+            ON kudiba_core.invoice_payment_allocations(tenant_id, invoice_id);
+
+        ALTER TABLE kudiba_core.invoice_payment_allocations ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE kudiba_core.invoice_payment_allocations FORCE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS tenant_isolation_policy ON kudiba_core.invoice_payment_allocations;
+        CREATE POLICY tenant_isolation_policy ON kudiba_core.invoice_payment_allocations
+            USING (tenant_id = get_current_tenant_id())
+            WITH CHECK (tenant_id = get_current_tenant_id());
+
         ALTER TABLE kudiba_core.proformas ENABLE ROW LEVEL SECURITY;
         ALTER TABLE kudiba_core.proformas FORCE ROW LEVEL SECURITY;
         DROP POLICY IF EXISTS tenant_isolation_policy ON kudiba_core.proformas;

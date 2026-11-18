@@ -69,6 +69,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_invoicing" 
 if [ -f $SQL_DIR/30-invoicing-proformas-and-payments.sql ]; then
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_invoicing" -f $SQL_DIR/30-invoicing-proformas-and-payments.sql
 fi
+if [ -f "$SQL_DIR/32-pos-checkout-schema.sql" ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_invoicing" -f "$SQL_DIR/32-pos-checkout-schema.sql"
+fi
 
 # 3. Inicialização do schema de identidade e RBAC no banco 'kudiba_auth'
 echo "Aplicando schema de autenticação no banco 'kudiba_auth'..."
@@ -93,6 +96,9 @@ if [ -f $SQL_DIR/23-partial-invoice-payments.sql ]; then
 fi
 if [ -f $SQL_DIR/31-treasury-receivable-payments.sql ]; then
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_treasury" -f $SQL_DIR/31-treasury-receivable-payments.sql
+fi
+if [ -f "$SQL_DIR/33-treasury-cash-movement-idempotency.sql" ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_treasury" -f "$SQL_DIR/33-treasury-cash-movement-idempotency.sql"
 fi
 
 # 6. Inicialização do schema de contabilidade no banco 'kudiba_accounting'
@@ -250,12 +256,18 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f $
 if [ -f $SQL_DIR/30-invoicing-proformas-and-payments.sql ]; then
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f $SQL_DIR/30-invoicing-proformas-and-payments.sql
 fi
+if [ -f "$SQL_DIR/32-pos-checkout-schema.sql" ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f "$SQL_DIR/32-pos-checkout-schema.sql"
+fi
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f $SQL_DIR/02-auth-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f $SQL_DIR/04-inventory-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f $SQL_DIR/05-treasury-schema.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f $SQL_DIR/18-treasury-cash-flow-payables.sql
 if [ -f $SQL_DIR/31-treasury-receivable-payments.sql ]; then
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f $SQL_DIR/31-treasury-receivable-payments.sql
+fi
+if [ -f "$SQL_DIR/33-treasury-cash-movement-idempotency.sql" ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f "$SQL_DIR/33-treasury-cash-movement-idempotency.sql"
 fi
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f $SQL_DIR/19-seed-treasury-cashflow.sql
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f $SQL_DIR/06-accounting-schema.sql

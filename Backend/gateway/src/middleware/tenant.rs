@@ -1,18 +1,14 @@
 use axum::{extract::Request, http::HeaderValue, middleware::Next, response::Response};
 use uuid::Uuid;
 
-use crate::middleware::{is_auth_service_path, is_public_path};
+use crate::middleware::{is_auth_service_path, is_public_path, sanitize_gateway_headers};
 
 /// Middleware de higienização contra Header Spoofing e resolução Multi-Tenant
 pub async fn tenant_resolver_middleware(mut req: Request, next: Next) -> Response {
     let path = req.uri().path().to_string();
 
-    // 1. Sanitizar a requisição: remover headers internos forjados externamente
-    req.headers_mut().remove("X-Resolved-Tenant-ID");
-    req.headers_mut().remove("X-Resolved-Tenant-Slug");
-    req.headers_mut().remove("X-Resolved-User-ID");
-    req.headers_mut().remove("X-Resolved-Roles");
-    req.headers_mut().remove("X-Resolved-Branch-ID");
+    // 1. Sanitizar a requisição: remover headers internos forjados externamente.
+    sanitize_gateway_headers(req.headers_mut());
 
     // 2. Rotas públicas não exigem identificação prévia de tenant
     if is_public_path(&path) {

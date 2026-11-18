@@ -41,4 +41,11 @@ pub trait PosCheckoutRepository: Send + Sync {
         error: &str,
         result: &Value,
     ) -> Result<(), DomainError>;
+
+    async fn reset_to_fiscal_pending(
+        &self,
+        tenant_id: Uuid,
+        checkout_id: Uuid,
+        retry_count: u32,
+    ) -> Result<(), DomainError>;
 }

@@ -1,7 +1,9 @@
 use axum::{
-    extract::{Path, Query, State},
+    body::{to_bytes, Body},
+    extract::{Path, Query, Request, State},
     http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    middleware::Next,
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -44,6 +46,51 @@ impl ProblemDetail {
             error_code: error_code.to_string(),
         }
     }
+}
+
+const MAX_SIGNATURE_BODY_BYTES: usize = 10 * 1024 * 1024;
+
+pub async fn gateway_signature_middleware(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let path = request.uri().path().to_string();
+    if !state.config.enforce_gateway_signature || matches!(path.as_str(), "/health" | "/ready") {
+        return next.run(request).await;
+    }
+
+    let query = request.uri().query().unwrap_or("").to_string();
+    let (parts, body) = request.into_parts();
+    let body_bytes = match to_bytes(body, MAX_SIGNATURE_BODY_BYTES).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                Json(ProblemDetail::new(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "Payload Excessivo",
+                    "O corpo da requisição excede o limite permitido para validação da assinatura.",
+                    "REQUEST_BODY_LIMIT_EXCEEDED",
+                )),
+            )
+                .into_response();
+        }
+    };
+
+    if let Err(error) = verify_internal_signature(
+        &parts.headers,
+        &state.config.internal_gateway_secret,
+        parts.method.as_str(),
+        &path,
+        &query,
+        &body_bytes,
+    ) {
+        return error.into_response();
+    }
+
+    next.run(Request::from_parts(parts, Body::from(body_bytes)))
+        .await
 }
 
 pub fn map_domain_error(err: DomainError) -> (StatusCode, Json<ProblemDetail>) {
@@ -622,8 +669,6 @@ pub async fn record_movement_handler(
     Ok((StatusCode::CREATED, Json(movement)))
 }
 
-const INTERNAL_SIGNATURE_MAX_AGE_SECS: i64 = 300;
-
 fn internal_auth_error() -> (StatusCode, Json<ProblemDetail>) {
     (
         StatusCode::UNAUTHORIZED,
@@ -636,63 +681,61 @@ fn internal_auth_error() -> (StatusCode, Json<ProblemDetail>) {
     )
 }
 
-fn decode_hex(value: &str) -> Option<Vec<u8>> {
-    if !value.len().is_multiple_of(2) {
-        return None;
-    }
-    value
-        .as_bytes()
-        .chunks_exact(2)
-        .map(|chunk| {
-            std::str::from_utf8(chunk)
-                .ok()
-                .and_then(|pair| u8::from_str_radix(pair, 16).ok())
-        })
-        .collect()
-}
-
 fn verify_internal_signature(
     headers: &HeaderMap,
     secret: &str,
     method: &str,
     path: &str,
+    query: &str,
+    body: &[u8],
 ) -> Result<(), (StatusCode, Json<ProblemDetail>)> {
-    let timestamp = headers
-        .get("X-Gateway-Timestamp")
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .ok_or_else(internal_auth_error)?;
-    let timestamp_secs: i64 = timestamp.parse().map_err(|_| internal_auth_error())?;
-    if (chrono::Utc::now().timestamp() - timestamp_secs).abs() > INTERNAL_SIGNATURE_MAX_AGE_SECS {
-        return Err(internal_auth_error());
-    }
-
-    let provided = headers
-        .get("X-Gateway-Signature")
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .ok_or_else(internal_auth_error)?;
-    let provided_bytes = decode_hex(provided).ok_or_else(internal_auth_error)?;
-    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret.as_bytes());
-    let canonical = format!("{}:{}:{}", timestamp, method, path);
-    ring::hmac::verify(&key, canonical.as_bytes(), &provided_bytes)
+    kudiba_gateway_signature::verify_signature(headers, secret, method, path, query, body)
         .map_err(|_| internal_auth_error())
 }
 
 pub async fn internal_record_cash_movement_handler(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(mut payload): Json<RecordCashMovementRequest>,
+    request: Request,
 ) -> Result<(StatusCode, Json<CashMovementResponse>), (StatusCode, Json<ProblemDetail>)> {
+    let path = "/api/v1/treasury/internal/cash-movements";
+    let (parts, body) = request.into_parts();
+    let body_bytes = to_bytes(body, MAX_SIGNATURE_BODY_BYTES)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                Json(ProblemDetail::new(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "Payload Excessivo",
+                    "O corpo da requisição excede o limite permitido para validação da assinatura.",
+                    "REQUEST_BODY_LIMIT_EXCEEDED",
+                )),
+            )
+        })?;
     verify_internal_signature(
-        &headers,
+        &parts.headers,
         &state.config.internal_gateway_secret,
         "POST",
-        "/api/v1/treasury/internal/cash-movements",
+        path,
+        parts.uri.query().unwrap_or(""),
+        &body_bytes,
     )?;
-    let tenant_id = extract_tenant_id(&headers)?;
+    let mut payload: RecordCashMovementRequest =
+        serde_json::from_slice(&body_bytes).map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ProblemDetail::new(
+                    StatusCode::BAD_REQUEST,
+                    "Payload Inválido",
+                    "O corpo da requisição não é um JSON válido.",
+                    "INVALID_PAYLOAD",
+                )),
+            )
+        })?;
+    let headers = &parts.headers;
+    let tenant_id = extract_tenant_id(headers)?;
     payload.operator_user_id =
-        extract_user_id(&headers).unwrap_or_else(|_| "pos-checkout".to_string());
+        extract_user_id(headers).unwrap_or_else(|_| "pos-checkout".to_string());
     let movement = state
         .record_movement_cmd
         .execute(tenant_id, payload)
@@ -1394,6 +1437,10 @@ pub fn create_router(state: AppState) -> Router {
             "/api/v1/treasury/system-audit-trail",
             get(system_audit_trail_handler),
         )
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            gateway_signature_middleware,
+        ))
         .layer(axum::middleware::from_fn(tenant_scope_middleware))
         .with_state(state)
 }
@@ -1405,23 +1452,20 @@ mod tests {
     const SECRET: &str = "test-internal-secret";
     const PATH: &str = "/api/v1/treasury/internal/cash-movements";
 
-    fn compute_signature(secret: &str, timestamp: &str) -> String {
-        let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret.as_bytes());
-        let canonical = format!("{}:POST:{}", timestamp, PATH);
-        let tag = ring::hmac::sign(&key, canonical.as_bytes());
-        tag.as_ref()
-            .iter()
-            .map(|byte| format!("{:02x}", byte))
-            .collect()
+    const BODY: &[u8] = br#"{"amount":"10"}"#;
+
+    fn compute_signature(secret: &str, timestamp: &str, query: &str, body: &[u8]) -> String {
+        kudiba_gateway_signature::compute_signature(secret, timestamp, "POST", PATH, query, body)
     }
 
     fn signed_headers(secret: &str, timestamp: &str, signature: &str) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert("X-Gateway-Timestamp", timestamp.parse().unwrap());
-        headers.insert("X-Gateway-Signature", signature.parse().unwrap());
-        let computed = compute_signature(secret, timestamp);
         if signature == "valid" {
+            let computed = compute_signature(secret, timestamp, "", BODY);
             headers.insert("X-Gateway-Signature", computed.parse().unwrap());
+        } else {
+            headers.insert("X-Gateway-Signature", signature.parse().unwrap());
         }
         headers
     }
@@ -1431,7 +1475,7 @@ mod tests {
         let timestamp = chrono::Utc::now().timestamp().to_string();
         let headers = signed_headers(SECRET, &timestamp, "valid");
 
-        assert!(verify_internal_signature(&headers, SECRET, "POST", PATH).is_ok());
+        assert!(verify_internal_signature(&headers, SECRET, "POST", PATH, "", BODY).is_ok());
     }
 
     #[test]
@@ -1443,7 +1487,33 @@ mod tests {
             "0000000000000000000000000000000000000000000000000000000000000000",
         );
 
-        assert!(verify_internal_signature(&headers, SECRET, "POST", PATH).is_err());
+        assert!(verify_internal_signature(&headers, SECRET, "POST", PATH, "", BODY).is_err());
+    }
+
+    #[test]
+    fn internal_signature_rejects_a_tampered_body() {
+        let timestamp = chrono::Utc::now().timestamp().to_string();
+        let headers = signed_headers(SECRET, &timestamp, "valid");
+
+        assert!(verify_internal_signature(
+            &headers,
+            SECRET,
+            "POST",
+            PATH,
+            "",
+            br#"{"amount":"11"}"#
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn internal_signature_rejects_a_tampered_query() {
+        let timestamp = chrono::Utc::now().timestamp().to_string();
+        let headers = signed_headers(SECRET, &timestamp, "valid");
+
+        assert!(
+            verify_internal_signature(&headers, SECRET, "POST", PATH, "limit=2", BODY).is_err()
+        );
     }
 
     #[test]
@@ -1451,6 +1521,6 @@ mod tests {
         let timestamp = (chrono::Utc::now().timestamp() - 3600).to_string();
         let headers = signed_headers(SECRET, &timestamp, "valid");
 
-        assert!(verify_internal_signature(&headers, SECRET, "POST", PATH).is_err());
+        assert!(verify_internal_signature(&headers, SECRET, "POST", PATH, "", BODY).is_err());
     }
 }

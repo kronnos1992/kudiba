@@ -144,6 +144,7 @@ impl CancelInvoiceWithCreditNoteUseCase {
             customer_nif: Some(original_invoice.customer_nif.clone()),
             source_document_number: Some(original_invoice.document_number.clone()),
             payment_methods: original_invoice.payment_methods.clone(),
+            payment_amounts: Vec::new(),
             withholding_total: if original_invoice.withholding_total.is_zero() {
                 None
             } else {
@@ -252,5 +253,52 @@ mod tests {
         assert!(validate_not_credit_note("FT").is_ok());
         assert!(validate_not_credit_note("FR").is_ok());
         assert!(validate_not_credit_note("VD").is_ok());
+    }
+
+    #[test]
+    fn nota_de_credito_em_contingencia_e_bloqueada_pelo_dominio() {
+        use crate::application::commands::issue_invoice::ensure_contingency_allowed;
+        use rust_decimal::Decimal;
+        use uuid::Uuid;
+
+        let command = IssueInvoiceCommand {
+            actor_user_id: None,
+            tenant_id: Uuid::new_v4(),
+            document_type: "NC".into(),
+            series_code: "2026A".into(),
+            fiscal_year: 2026,
+            customer_name: "Cliente".into(),
+            customer_address: Some("Rua 1".into()),
+            customer_city: Some("Luanda".into()),
+            customer_country: Some("AO".into()),
+            customer_nif: None,
+            source_document_number: Some("FT 2026A/1".into()),
+            payment_methods: vec!["A crédito".into()],
+            payment_amounts: Vec::new(),
+            withholding_total: None,
+            apply_withholding: None,
+            withholding_rate: None,
+            stamp_duty_total: None,
+            apply_stamp_duty: None,
+            stamp_duty_rate: None,
+            currency: "AOA".into(),
+            lines: vec![InvoiceLineInput {
+                product_code: "P1".into(),
+                description: "Anulação".into(),
+                quantity: Decimal::ONE,
+                unit_price: Decimal::from(100),
+                discount_amount: None,
+                tax_rate: Decimal::from(14),
+                tax_exemption_code: None,
+                is_service: None,
+            }],
+            is_contingency: true,
+            key_version: "1".into(),
+            transport: None,
+            cash_session_id: None,
+        };
+
+        assert!(ensure_contingency_allowed(&command, false).is_err());
+        assert!(ensure_contingency_allowed(&command, true).is_ok());
     }
 }

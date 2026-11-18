@@ -1,21 +1,22 @@
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::domain::error::DeviceError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum JobClass {
     FiscalEnvelope,
     ContingencyLocal,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CopyType {
     Original,
     Copy,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PrintState {
     Queued,
     Submitting,
@@ -26,7 +27,7 @@ pub enum PrintState {
     ResolvedByOperator,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrintJob {
     id: Uuid,
     tenant_id: Uuid,
@@ -149,7 +150,16 @@ impl PrintJob {
     }
 
     pub fn allows_drawer(&self) -> bool {
-        self.copy_type == CopyType::Original
+        self.copy_type == CopyType::Original && self.is_terminal_success()
+    }
+
+    pub fn is_terminal_success(&self) -> bool {
+        matches!(
+            self.state,
+            PrintState::TransportAccepted
+                | PrintState::PhysicalOutputConfirmed
+                | PrintState::ResolvedByOperator
+        )
     }
 
     pub fn can_auto_retry(&self) -> bool {
@@ -224,13 +234,17 @@ mod tests {
     }
 
     #[test]
-    fn original_starts_queued_and_allows_drawer() {
-        let job = job();
+    fn original_starts_queued_and_only_allows_drawer_after_success() {
+        let mut job = job();
         assert_eq!(job.state(), PrintState::Queued);
         assert_eq!(job.copy_type(), CopyType::Original);
         assert!(job.is_fiscal());
-        assert!(job.allows_drawer());
+        assert!(!job.allows_drawer());
         assert_eq!(job.attempts(), 0);
+
+        job.mark_submitting().unwrap();
+        job.mark_transport_accepted().unwrap();
+        assert!(job.allows_drawer());
     }
 
     #[test]
@@ -343,6 +357,6 @@ mod tests {
         .unwrap();
 
         assert!(!job.is_fiscal());
-        assert!(job.allows_drawer());
+        assert!(!job.allows_drawer());
     }
 }

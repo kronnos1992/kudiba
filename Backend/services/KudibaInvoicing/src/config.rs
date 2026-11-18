@@ -82,11 +82,11 @@ pub struct Config {
     /// Versão do serviço exposta nos endpoints de metadados
     pub service_version: &'static str,
     /// Segredo partilhado para validação da assinatura perimétrica do Gateway
-    #[allow(dead_code)]
     pub internal_gateway_secret: String,
     /// Se ativado, rejeita requisições sem assinatura perimétrica válida do Gateway
-    #[allow(dead_code)]
     pub enforce_gateway_signature: bool,
+    /// CONTINGENCY_LOCAL só pode ser ativado após parecer jurídico AGT e seed assinado
+    pub allow_local_contingency: bool,
     /// URL base do serviço de Tesouraria (para validação de sessões de caixa do POS)
     pub treasury_service_url: Option<String>,
     /// URL base do serviço de Inventário (para validação prévia de stock e catálogo)
@@ -152,11 +152,9 @@ impl Config {
                 .filter(|s| !s.trim().is_empty()),
             environment: environment.clone(),
             service_version: env!("CARGO_PKG_VERSION"),
-            internal_gateway_secret: env::var("INTERNAL_GATEWAY_SECRET").unwrap_or_else(|_| {
-                "kudiba_internal_gateway_secret_development_key_change_in_production_2026"
-                    .to_string()
-            }),
-            enforce_gateway_signature: env::var("ENFORCE_GATEWAY_SIGNATURE")
+            internal_gateway_secret: read_internal_gateway_secret(&environment),
+            enforce_gateway_signature: read_enforce_gateway_signature(),
+            allow_local_contingency: env::var("ALLOW_LOCAL_CONTINGENCY")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
             treasury_service_url: env::var("TREASURY_SERVICE_URL")
@@ -222,6 +220,28 @@ impl Config {
 
         Ok(pool)
     }
+}
+
+const DEVELOPMENT_INTERNAL_GATEWAY_SECRET: &str =
+    "kudiba_internal_gateway_secret_development_key_change_in_production_2026";
+
+fn read_internal_gateway_secret(environment: &str) -> String {
+    let secret = env::var("INTERNAL_GATEWAY_SECRET")
+        .unwrap_or_else(|_| DEVELOPMENT_INTERNAL_GATEWAY_SECRET.to_string());
+    let is_production =
+        environment.eq_ignore_ascii_case("production") || environment.eq_ignore_ascii_case("prod");
+    if (is_production || read_enforce_gateway_signature())
+        && (secret == DEVELOPMENT_INTERNAL_GATEWAY_SECRET || secret.len() < 32)
+    {
+        panic!("INTERNAL_GATEWAY_SECRET must be an explicit, non-default secret when signature enforcement is on or in production.");
+    }
+    secret
+}
+
+fn read_enforce_gateway_signature() -> bool {
+    env::var("ENFORCE_GATEWAY_SIGNATURE")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
 }
 
 fn read_port(variable: &str, default: u16) -> u16 {

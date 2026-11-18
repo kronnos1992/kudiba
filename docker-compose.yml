@@ -34,6 +34,7 @@ services:
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
       - JWT_SECRET=${JWT_SECRET:-kudiba_jwt_secret_development_key_change_in_production_2026}
+      - INTERNAL_GATEWAY_SECRET=${INTERNAL_GATEWAY_SECRET:?INTERNAL_GATEWAY_SECRET must be exported for gateway signature verification}
       - AGT_CONTINGENCY_MAX_DAYS=60
     depends_on:
       gateway-redis:
@@ -56,8 +57,8 @@ services:
     restart: unless-stopped
     # Sem `ports:` — o motor fiscal é alcançável apenas pela rede interna
     # (alias `fiscal-engine`), nunca a partir do perímetro. As rotas fiscais
-    # dependem dos headers X-Resolved-* injectados pelo Gateway, que o serviço
-    # não valida por conta própria.
+    # dependem dos headers X-Resolved-* injectados pelo Gateway e da assinatura
+    # HMAC perimetral, validada pelo próprio serviço.
     environment:
       - PORT=9090
       - GRPC_PORT=9091
@@ -72,6 +73,8 @@ services:
       - AGT_SOFTWARE_CERT=${AGT_SOFTWARE_CERT:-FE/528/AGT/2026}
       - DB_MAX_CONNECTIONS=20
       - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER:-kudiba}:${RABBITMQ_DEFAULT_PASS:-kudiba_rabbit_pass}@rabbitmq:5672/%2f
+      - INTERNAL_GATEWAY_SECRET=${INTERNAL_GATEWAY_SECRET:?INTERNAL_GATEWAY_SECRET must be exported for gateway signature verification}
+      - ENFORCE_GATEWAY_SIGNATURE=1
     depends_on:
       postgres:
         condition: service_healthy
@@ -114,6 +117,8 @@ services:
       - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
       - BACKUP_INCLUDE_ERP_REPLICA=${BACKUP_INCLUDE_ERP_REPLICA:-false}
       - BACKUP_MAX_FILE_SIZE_MB=${BACKUP_MAX_FILE_SIZE_MB:-512}
+      - INTERNAL_GATEWAY_SECRET=${INTERNAL_GATEWAY_SECRET:?INTERNAL_GATEWAY_SECRET must be exported for gateway signature verification}
+      - ENFORCE_GATEWAY_SIGNATURE=1
     volumes:
       - kudiba_backups:/app/backups
     depends_on:
@@ -146,6 +151,8 @@ services:
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - DB_MAX_CONNECTIONS=20
       - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER:-kudiba}:${RABBITMQ_DEFAULT_PASS:-kudiba_rabbit_pass}@rabbitmq:5672/%2f
+      - INTERNAL_GATEWAY_SECRET=${INTERNAL_GATEWAY_SECRET:?INTERNAL_GATEWAY_SECRET must be exported for gateway signature verification}
+      - ENFORCE_GATEWAY_SIGNATURE=1
     depends_on:
       postgres:
         condition: service_healthy
@@ -174,6 +181,8 @@ services:
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - DB_MAX_CONNECTIONS=20
       - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER:-kudiba}:${RABBITMQ_DEFAULT_PASS:-kudiba_rabbit_pass}@rabbitmq:5672/%2f
+      - INTERNAL_GATEWAY_SECRET=${INTERNAL_GATEWAY_SECRET:?INTERNAL_GATEWAY_SECRET must be exported for gateway signature verification}
+      - ENFORCE_GATEWAY_SIGNATURE=1
     depends_on:
       postgres:
         condition: service_healthy
@@ -229,6 +238,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-kudiba}:${POSTGRES_PASSWORD:-kudiba_secret_pass}@postgres:5432/kudiba_payroll
       - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER:-kudiba}:${RABBITMQ_DEFAULT_PASS:-kudiba_rabbit_pass}@rabbitmq:5672/%2f
       - JWT_SECRET=${JWT_SECRET:-kudiba_jwt_secret_development_key_change_in_production_2026}
+      - INTERNAL_GATEWAY_SECRET=${INTERNAL_GATEWAY_SECRET:?INTERNAL_GATEWAY_SECRET must be exported for gateway signature verification}
+      - ENFORCE_GATEWAY_SIGNATURE=1
     depends_on:
       postgres:
         condition: service_healthy
@@ -261,6 +272,8 @@ services:
       # Chave Fernet para cifrar credenciais de integrações (em produção definir)
       - INTEGRATION_ENCRYPTION_KEY=${INTEGRATION_ENCRYPTION_KEY:-}
       - SCHEDULER_ENABLED=true
+      - INTERNAL_GATEWAY_SECRET=${INTERNAL_GATEWAY_SECRET:?INTERNAL_GATEWAY_SECRET must be exported for gateway signature verification}
+      - ENFORCE_GATEWAY_SIGNATURE=1
     depends_on:
       postgres:
         condition: service_healthy
@@ -292,6 +305,8 @@ services:
       - ACCOUNTING_DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-kudiba}:${POSTGRES_PASSWORD:-kudiba_secret_pass}@postgres:5432/kudiba_accounting
       - INVOICING_DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-kudiba}:${POSTGRES_PASSWORD:-kudiba_secret_pass}@postgres:5432/kudiba_invoicing
       - JWT_SECRET=${JWT_SECRET:-kudiba_jwt_secret_development_key_change_in_production_2026}
+      - INTERNAL_GATEWAY_SECRET=${INTERNAL_GATEWAY_SECRET:?INTERNAL_GATEWAY_SECRET must be exported for gateway signature verification}
+      - ENFORCE_GATEWAY_SIGNATURE=1
     depends_on:
       postgres:
         condition: service_healthy

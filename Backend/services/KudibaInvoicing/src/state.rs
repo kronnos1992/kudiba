@@ -111,6 +111,7 @@ impl AppState {
             invoice_repository.clone(),
             tax_regime_repository.clone(),
             crypto_signer.clone(),
+            config.allow_local_contingency,
         ));
         let coordinate_checkout = Arc::new(CoordinateCheckoutUseCase::new(
             Arc::new(
@@ -119,6 +120,7 @@ impl AppState {
                 ),
             ),
             issue_invoice.clone(),
+            config.internal_gateway_secret.clone(),
         ));
         let cancel_invoice = Arc::new(
             crate::application::commands::cancel_invoice::CancelInvoiceWithCreditNoteUseCase::new(

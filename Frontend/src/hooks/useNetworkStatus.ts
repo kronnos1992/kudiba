@@ -123,7 +123,9 @@ export function useNetworkStatus(): UseNetworkStatusReturn {
             cashSessionId: sale.cashSessionId,
             customerName: sale.customerName,
             customerNif: sale.customerNif,
-            paymentMethods: [sale.paymentMethod],
+            paymentMethods:
+              sale.paymentAmounts?.map((payment) => payment.paymentMethod) ?? [sale.paymentMethod],
+            paymentAmounts: sale.paymentAmounts,
             lines: sale.lines.map((l) => ({
               productCode: l.productCode,
               description: l.description,

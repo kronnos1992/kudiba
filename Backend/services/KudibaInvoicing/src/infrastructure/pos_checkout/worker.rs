@@ -74,7 +74,7 @@ impl PosCheckoutEventWorker {
             "SELECT id, event_type, payload, idempotency_key \
              FROM kudiba_core.pos_checkout_events \
              WHERE tenant_id = $1 AND published_at IS NULL \
-               AND event_type IN ('CASH_MOVEMENT', 'STOCK_DISPATCH') \
+               AND event_type IN ('CASH_MOVEMENT', 'STOCK_DISPATCH', 'PRINT_JOB') \
              ORDER BY created_at ASC \
              LIMIT $2",
         )
@@ -106,6 +106,7 @@ impl PosCheckoutEventWorker {
                         .await
                 }
                 "STOCK_DISPATCH" => self.publish_stock_dispatch(tenant_id, &payload).await,
+                "PRINT_JOB" => prepare_device_pickup(&payload),
                 other => Err(DomainError::Persistence(format!(
                     "evento de checkout não suportado: {}",
                     other
@@ -162,11 +163,13 @@ impl PosCheckoutEventWorker {
             base.trim_end_matches('/')
         );
         let timestamp = chrono::Utc::now().timestamp().to_string();
+        let body_bytes = kudiba_gateway_signature::canonical_json_bytes(&body).unwrap_or_default();
         let signature = internal_signature(
             &self.internal_gateway_secret,
             &timestamp,
             "POST",
             "/api/v1/treasury/internal/cash-movements",
+            &body_bytes,
         );
 
         let response = self
@@ -196,12 +199,24 @@ impl PosCheckoutEventWorker {
             "{}/api/v1/inventory/events/invoice-issued",
             base.trim_end_matches('/')
         );
+        let timestamp = chrono::Utc::now().timestamp().to_string();
+        let body_bytes =
+            kudiba_gateway_signature::canonical_json_bytes(payload).unwrap_or_default();
+        let signature = internal_signature(
+            &self.internal_gateway_secret,
+            &timestamp,
+            "POST",
+            "/api/v1/inventory/events/invoice-issued",
+            &body_bytes,
+        );
 
         let response = self
             .client
             .post(&endpoint)
             .header("X-Resolved-Tenant-ID", tenant_id.to_string())
             .header("X-Resolved-User-ID", "pos-checkout")
+            .header("X-Gateway-Timestamp", timestamp)
+            .header("X-Gateway-Signature", signature)
             .json(payload)
             .send()
             .await
@@ -239,14 +254,46 @@ impl PosCheckoutEventWorker {
     }
 }
 
-fn internal_signature(secret: &str, timestamp: &str, method: &str, path: &str) -> String {
-    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret.as_bytes());
-    let canonical = format!("{}:{}:{}", timestamp, method, path);
-    let tag = ring::hmac::sign(&key, canonical.as_bytes());
-    tag.as_ref()
-        .iter()
-        .map(|byte| format!("{:02x}", byte))
-        .collect()
+fn prepare_device_pickup(payload: &Value) -> Result<(), DomainError> {
+    let print_job_id = payload
+        .get("printJobId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| DomainError::Persistence("PRINT_JOB sem printJobId".to_string()))?;
+    let envelope = payload
+        .get("envelope")
+        .and_then(Value::as_object)
+        .ok_or_else(|| DomainError::Persistence("PRINT_JOB sem envelope".to_string()))?;
+    let hash = envelope
+        .get("hash")
+        .and_then(Value::as_str)
+        .ok_or_else(|| DomainError::Persistence("PRINT_JOB sem hash no envelope".to_string()))?;
+    let payload_hash = payload
+        .get("payloadHash")
+        .and_then(Value::as_str)
+        .ok_or_else(|| DomainError::Persistence("PRINT_JOB sem payloadHash".to_string()))?;
+    if hash != payload_hash {
+        return Err(DomainError::Persistence(
+            "hash do envelope PRINT_JOB divergente do hash da venda".to_string(),
+        ));
+    }
+
+    tracing::info!(
+        print_job_id = print_job_id,
+        "PRINT_JOB disponibilizado para recolha pelo agente local via SPA; saída física não confirmada"
+    );
+    Ok(())
+}
+
+fn internal_signature(
+    secret: &str,
+    timestamp: &str,
+    method: &str,
+    path: &str,
+    body: &[u8],
+) -> String {
+    kudiba_gateway_signature::compute_signature(secret, timestamp, method, path, "", body)
 }
 
 fn cash_movement_body(payload: &Value, idempotency_key: &str) -> Result<Value, DomainError> {
@@ -329,23 +376,46 @@ mod tests {
     }
 
     #[test]
-    fn internal_signature_matches_the_gateway_canonical_form() {
-        let signature = internal_signature(
-            "secret",
-            "1700000000",
-            "POST",
-            "/api/v1/treasury/internal/cash-movements",
-        );
+    fn print_job_is_accepted_only_with_a_matching_envelope_hash() {
+        let valid = json!({
+            "printJobId": "pos-checkout:sale-1:print",
+            "payloadHash": "hash-abc",
+            "envelope": { "hash": "hash-abc" }
+        });
+        assert!(prepare_device_pickup(&valid).is_ok());
 
-        assert_eq!(signature.len(), 64);
+        let tampered = json!({
+            "printJobId": "pos-checkout:sale-1:print",
+            "payloadHash": "hash-abc",
+            "envelope": { "hash": "hash-outro" }
+        });
+        assert!(prepare_device_pickup(&tampered).is_err());
+    }
+
+    #[test]
+    fn internal_signature_matches_the_gateway_canonical_form() {
+        let path = "/api/v1/treasury/internal/cash-movements";
+        let body = br#"{"amount":"10"}"#;
+        let signature = internal_signature("secret", "1700000000", "POST", path, body);
+
+        assert_eq!(
+            signature,
+            kudiba_gateway_signature::compute_signature(
+                "secret",
+                "1700000000",
+                "POST",
+                path,
+                "",
+                body
+            )
+        );
         assert_ne!(
             signature,
-            internal_signature(
-                "secret",
-                "1700000001",
-                "POST",
-                "/api/v1/treasury/internal/cash-movements"
-            )
+            internal_signature("secret", "1700000001", "POST", path, body)
+        );
+        assert_ne!(
+            signature,
+            internal_signature("secret", "1700000000", "POST", path, br#"{"amount":"11"}"#)
         );
     }
 }

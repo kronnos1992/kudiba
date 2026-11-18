@@ -1,6 +1,19 @@
 use std::env;
 use std::time::Duration;
 
+const DEVELOPMENT_INTERNAL_GATEWAY_SECRET: &str =
+    "kudiba_internal_gateway_secret_development_key_change_in_production_2026";
+
+fn gateway_secret_validation_error(secret: &str, is_production: bool) -> Option<&'static str> {
+    if is_production && (secret == DEVELOPMENT_INTERNAL_GATEWAY_SECRET || secret.len() < 32) {
+        Some(
+            "Production INTERNAL_GATEWAY_SECRET must be a non-default secret of at least 32 bytes.",
+        )
+    } else {
+        None
+    }
+}
+
 /// Configurações carregadas do ambiente com tipagem estrita e fallbacks seguros
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -198,10 +211,13 @@ impl Config {
             panic!("Production JWT_SECRET must be a non-default secret of at least 32 bytes.");
         }
 
-        const DEVELOPMENT_INTERNAL_GATEWAY_SECRET: &str =
-            "kudiba_internal_gateway_secret_development_key_change_in_production_2026";
         let internal_gateway_secret = env::var("INTERNAL_GATEWAY_SECRET")
             .unwrap_or_else(|_| DEVELOPMENT_INTERNAL_GATEWAY_SECRET.to_string());
+        if let Some(message) =
+            gateway_secret_validation_error(&internal_gateway_secret, is_production)
+        {
+            panic!("{message}");
+        }
 
         let (postgres_host, postgres_port) = parse_postgres_config();
         let (rabbitmq_host, rabbitmq_port) = parse_rabbitmq_config();
@@ -282,5 +298,30 @@ fn host_from_url(var: &str, default_port: u16) -> Option<(String, u16)> {
     match host_port.split_once(':') {
         Some((h, p)) => Some((h.to_string(), p.parse().unwrap_or(default_port))),
         None => Some((host_port.to_string(), default_port)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{gateway_secret_validation_error, DEVELOPMENT_INTERNAL_GATEWAY_SECRET};
+
+    #[test]
+    fn production_rejects_the_development_gateway_secret() {
+        assert!(
+            gateway_secret_validation_error(DEVELOPMENT_INTERNAL_GATEWAY_SECRET, true).is_some()
+        );
+        assert!(gateway_secret_validation_error("too-short", true).is_some());
+    }
+
+    #[test]
+    fn an_explicit_gateway_secret_is_accepted() {
+        assert!(
+            gateway_secret_validation_error("explicit-secret-with-at-least-32-bytes", true)
+                .is_none()
+        );
+        assert!(
+            gateway_secret_validation_error("explicit-secret-with-at-least-32-bytes", false)
+                .is_none()
+        );
     }
 }

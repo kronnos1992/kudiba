@@ -5,6 +5,9 @@ use uuid::Uuid;
 
 use crate::domain::error::DomainError;
 
+/// Número máximo de reexecuções permitidas para uma intenção em RECONCILING.
+pub const MAX_CHECKOUT_RETRIES: u32 = 3;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CheckoutState {
@@ -104,6 +107,34 @@ impl PosCheckoutIntent {
         self.state != CheckoutState::FiscalPending
     }
 
+    pub fn retry_count(&self) -> u32 {
+        self.result
+            .as_ref()
+            .and_then(|result| result.get("retryCount"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            .min(MAX_CHECKOUT_RETRIES as u64) as u32
+    }
+
+    pub fn can_retry(&self) -> bool {
+        self.state == CheckoutState::Reconciling && self.retry_count() < MAX_CHECKOUT_RETRIES
+    }
+
+    pub fn retry_from_reconciling(&mut self) -> Result<(), DomainError> {
+        if self.state != CheckoutState::Reconciling {
+            return Err(DomainError::ConcurrencyConflict(format!(
+                "checkout {} não está em reconciliação",
+                self.id
+            )));
+        }
+        let retries = self.retry_count() + 1;
+        self.state = CheckoutState::FiscalPending;
+        self.last_error = None;
+        self.result = Some(serde_json::json!({ "retryCount": retries }));
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
     pub fn mark_fiscal_issued(
         &mut self,
         invoice_id: Uuid,
@@ -198,6 +229,44 @@ mod tests {
         assert!(intent.is_replayable());
         assert_eq!(intent.state, CheckoutState::Reconciling);
         assert_eq!(intent.last_error.as_deref(), Some("fatura não emitida"));
+    }
+
+    #[test]
+    fn reconciling_intents_can_retry_up_to_the_cap() {
+        let mut intent = intent();
+        intent
+            .mark_reconciling(
+                "erro",
+                serde_json::json!({ "error": "erro", "retryCount": 2 }),
+            )
+            .unwrap();
+
+        assert_eq!(intent.retry_count(), 2);
+        assert!(intent.can_retry());
+        intent.retry_from_reconciling().unwrap();
+
+        assert_eq!(intent.state, CheckoutState::FiscalPending);
+        assert_eq!(intent.retry_count(), 3);
+        assert!(intent.last_error.is_none());
+        assert!(!intent.can_retry());
+        assert!(intent
+            .mark_fiscal_issued(Uuid::new_v4(), "FT/2".into(), serde_json::json!({}))
+            .is_ok());
+    }
+
+    #[test]
+    fn reconciling_intent_at_cap_cannot_retry() {
+        let mut intent = intent();
+        intent
+            .mark_reconciling(
+                "erro",
+                serde_json::json!({ "error": "erro", "retryCount": MAX_CHECKOUT_RETRIES }),
+            )
+            .unwrap();
+
+        assert_eq!(intent.retry_count(), MAX_CHECKOUT_RETRIES);
+        assert!(!intent.can_retry());
+        assert!(intent.retry_from_reconciling().is_ok());
     }
 
     #[test]
