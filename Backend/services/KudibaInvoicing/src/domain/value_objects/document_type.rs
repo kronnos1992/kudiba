@@ -17,6 +17,13 @@ impl DocumentType {
         matches!(self, Self::Invoice | Self::DebitNote | Self::ProForma)
     }
 
+    pub fn requires_bank_coordinates_in_a4(self) -> bool {
+        matches!(
+            self,
+            Self::Invoice | Self::InvoiceReceipt | Self::DebitNote | Self::ProForma
+        )
+    }
+
     pub fn parse(value: &str) -> Result<Self, DomainError> {
         match value.trim().to_ascii_uppercase().as_str() {
             "FT" => Ok(Self::Invoice),
@@ -58,5 +65,11 @@ mod tests {
                 .unwrap()
                 .requires_bank_coordinates());
         }
+        assert!(DocumentType::parse("FR")
+            .unwrap()
+            .requires_bank_coordinates_in_a4());
+        assert!(!DocumentType::parse("FR")
+            .unwrap()
+            .requires_bank_coordinates());
     }
 }

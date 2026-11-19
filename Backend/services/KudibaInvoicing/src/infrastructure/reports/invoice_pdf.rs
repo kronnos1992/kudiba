@@ -52,7 +52,8 @@ impl InvoicePdfGenerator {
         company_name: &str,
         software_cert: &str,
     ) -> Result<Vec<u8>, DomainError> {
-        if DocumentType::parse(&invoice.document_type)?.requires_bank_coordinates()
+        let document_type = DocumentType::parse(&invoice.document_type)?;
+        if document_type.requires_bank_coordinates_in_a4()
             && !tenant.is_some_and(|tenant| {
                 tenant
                     .bank_accounts
@@ -1030,7 +1031,7 @@ impl InvoicePdfGenerator {
         // =====================================================================
         Self::draw_horizontal_line(&mut operations, 40.0, 555.0, 115.0, 0.8, (0.8, 0.8, 0.8));
 
-        if matches!(invoice.document_type.as_str(), "FT" | "ND") {
+        if document_type.requires_bank_coordinates_in_a4() {
             if let Some(t) = tenant {
                 let bank_accounts = t
                     .bank_accounts
@@ -1918,7 +1919,7 @@ mod tests {
         invoice_receipt.document_type = "FR".to_string();
         assert!(InvoicePdfGenerator::generate_pdf_with_tenant(
             &invoice_receipt,
-            Some(&tenant_without_banking),
+            Some(&tenant),
             "Kudiba Tecnologia SA",
             "999/AGT/2026",
         )
@@ -2142,7 +2143,12 @@ mod tests {
             tax_office_code: Some("01".to_string()),
             agt_cert_number: Some("FE/528/AGT/2026".to_string()),
             invoice_footer_notes: None,
-            bank_accounts: vec![],
+            bank_accounts: vec![crate::domain::entities::tenant::TenantBankAccount {
+                bank_name: "BAI".to_string(),
+                account_number: Some("123456789".to_string()),
+                iban: "AO06004000001234567890123".to_string(),
+                ..Default::default()
+            }],
             status: "ACTIVE".to_string(),
             tax_regime_code: "GERAL".to_string(),
             contingency_started_at: None,

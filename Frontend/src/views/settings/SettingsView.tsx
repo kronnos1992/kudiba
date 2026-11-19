@@ -405,11 +405,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
       toast.warning('O endereço e a cidade da sede são obrigatórios para documentos oficiais e SAF-T (AO).');
       return;
     }
+    const hasIncompleteBankAccount = companyForm.bank_accounts.some((account) => {
+      const hasAnyDetails =
+        account.bank_name.trim() ||
+        account.account_number?.trim() ||
+        account.iban.trim();
+      return Boolean(
+        hasAnyDetails &&
+          (!account.bank_name.trim() ||
+            !account.account_number?.trim() ||
+            !account.iban.trim())
+      );
+    });
+    if (hasIncompleteBankAccount) {
+      toast.warning('Complete Banco, Número da Conta e IBAN em cada conta bancária ou remova a conta incompleta.');
+      return;
+    }
 
     setSavingCompany(true);
+    let tenantSettingsSaved = false;
     try {
       const cleanedBanks = companyForm.bank_accounts.filter(
-        (b) => b.bank_name.trim() !== '' && b.iban.trim() !== ''
+        (b) =>
+          b.bank_name.trim() !== '' &&
+          Boolean(b.account_number?.trim()) &&
+          b.iban.trim() !== ''
       );
       const payload = {
         company_name: companyForm.company_name.trim(),
@@ -451,15 +471,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
       };
 
       const saved = await authApi.updateTenantSettings(payload);
-
-      try {
-        await invoicingApi.syncFiscalTenant({
-          ...payload,
-          slug: activeTenant?.slug || saved.slug,
-        });
-      } catch {
-        // Sincronização secundária silenciosa
-      }
+      tenantSettingsSaved = true;
+      await invoicingApi.syncFiscalTenant({
+        ...payload,
+        slug: activeTenant?.slug || saved.slug,
+      });
 
       updateActiveTenantSettings({
         ...saved,
@@ -468,10 +484,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
       queryClient.invalidateQueries({ queryKey: ['tenant_settings'] });
       toast.success('Parâmetros oficiais da empresa atualizados e sincronizados nos documentos!');
     } catch (err: any) {
+      const details =
+        err.response?.data?.detail || err.response?.data?.error || err.message;
       toast.error(
-        err.response?.data?.detail ||
-          err.response?.data?.error ||
-          'Falha ao guardar configurações da empresa.'
+        tenantSettingsSaved
+          ? `Os dados foram guardados, mas falhou a sincronização com a faturação${details ? `: ${details}` : '.'} Tente guardar novamente.`
+          : details || 'Falha ao guardar configurações da empresa.'
       );
     } finally {
       setSavingCompany(false);

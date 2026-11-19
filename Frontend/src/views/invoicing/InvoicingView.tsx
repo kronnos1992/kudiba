@@ -50,6 +50,12 @@ const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', '
 export const InvoicingView: React.FC = () => {
   const { activeTenant } = useAuthStore();
   const queryClient = useQueryClient();
+  const bankAccounts = activeTenant?.bank_accounts?.filter(
+    (account) =>
+      account.bank_name.trim() &&
+      account.account_number?.trim() &&
+      account.iban.trim()
+  ) || [];
 
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
@@ -2713,16 +2719,17 @@ export const InvoicingView: React.FC = () => {
                 </form>
               )}
 
-              {activeTenant?.bank_accounts && activeTenant.bank_accounts.length > 0 && (
+              {['FT', 'FR', 'ND'].includes(selectedInvoice.documentType.toUpperCase()) &&
+                bankAccounts.length > 0 && (
                 <div className="border-t border-slate-200 pt-3 mb-3 text-[11px] text-slate-600">
                   <p className="font-bold uppercase tracking-wider text-[10px] text-slate-400 mb-1">
                     Coordenadas Bancárias para Pagamento
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {activeTenant.bank_accounts.map((acc, idx) => (
+                    {bankAccounts.map((acc, idx) => (
                       <div key={idx} className="font-mono text-[11px] break-all">
                         <span className="font-bold text-slate-700">Banco:</span> {acc.bank_name}<br />
-                        <span className="font-bold text-slate-700">N.º Conta:</span> {acc.account_number || '-'}<br />
+                        <span className="font-bold text-slate-700">N.º Conta:</span> {acc.account_number}<br />
                         <span className="font-bold text-slate-700">IBAN:</span> {acc.iban} ({acc.currency || 'AOA'})
                       </div>
                     ))}
@@ -3471,16 +3478,16 @@ export const InvoicingView: React.FC = () => {
               </div>
 
               {/* Coordenadas Bancárias */}
-              {activeTenant?.bank_accounts && activeTenant.bank_accounts.length > 0 && (
+              {bankAccounts.length > 0 && (
                 <div className="border-t border-slate-200 pt-3 mb-4 text-[11px] text-slate-600">
                   <p className="font-bold uppercase tracking-wider text-[10px] text-slate-400 mb-1">
                     Coordenadas Bancárias para Pagamento / Adjudicação
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {activeTenant.bank_accounts.map((acc, idx) => (
+                    {bankAccounts.map((acc, idx) => (
                       <div key={idx} className="font-mono text-[11px] break-all bg-slate-50 p-1.5 rounded border border-slate-100">
                         <span className="font-bold text-slate-700">Banco:</span> {acc.bank_name}<br />
-                        <span className="font-bold text-slate-700">N.º Conta:</span> {acc.account_number || '-'}<br />
+                        <span className="font-bold text-slate-700">N.º Conta:</span> {acc.account_number}<br />
                         <span className="font-bold text-slate-700">IBAN:</span> {acc.iban} ({acc.currency || 'AOA'})
                       </div>
                     ))}

@@ -150,9 +150,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
       activeTenant.invoice_footer_notes ||
         'Os bens ou serviços foram colocados à disposição do adquirente na data e local do presente documento.'
     );
-    if (activeTenant.bank_accounts && activeTenant.bank_accounts.length > 0) {
-      setBankAccounts(activeTenant.bank_accounts);
-    }
+    setBankAccounts(activeTenant.bank_accounts || []);
   }, [isOpen, activeTenant]);
 
   if (!isOpen || !activeTenant) return null;
@@ -238,9 +236,29 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
       return;
     }
     setSaving(true);
+    let tenantSettingsSaved = false;
     try {
+      const hasIncompleteBankAccount = bankAccounts.some((account) => {
+        const hasAnyDetails =
+          account.bank_name.trim() ||
+          account.account_number?.trim() ||
+          account.iban.trim();
+        return Boolean(
+          hasAnyDetails &&
+            (!account.bank_name.trim() ||
+              !account.account_number?.trim() ||
+              !account.iban.trim())
+        );
+      });
+      if (hasIncompleteBankAccount) {
+        toast.warning('Complete Banco, Número da Conta e IBAN em cada conta bancária ou remova a conta incompleta.');
+        return;
+      }
       const cleanedBanks = bankAccounts.filter(
-        (b) => b.bank_name.trim() !== '' && b.iban.trim() !== ''
+        (b) =>
+          b.bank_name.trim() !== '' &&
+          Boolean(b.account_number?.trim()) &&
+          b.iban.trim() !== ''
       );
       const payload = {
         company_name: companyName.trim(),
@@ -271,15 +289,11 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
       };
 
       const saved = await authApi.updateTenantSettings(payload);
-
-      try {
-        await invoicingApi.syncFiscalTenant({
-          ...payload,
-          slug: activeTenant.slug || saved.slug,
-        });
-      } catch {
-        // Sincronização secundária silenciosa caso o motor fiscal esteja em arranque
-      }
+      tenantSettingsSaved = true;
+      await invoicingApi.syncFiscalTenant({
+        ...payload,
+        slug: activeTenant.slug || saved.slug,
+      });
 
       updateActiveTenantSettings({
         ...saved,
@@ -289,10 +303,12 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
       toast.success('Parametrização oficial da empresa concluída com sucesso!');
       onClose();
     } catch (err: any) {
+      const details =
+        err.response?.data?.detail || err.response?.data?.error || err.message;
       toast.error(
-        err.response?.data?.detail ||
-          err.response?.data?.error ||
-          'Erro ao guardar a parametrização da empresa.'
+        tenantSettingsSaved
+          ? `Os dados foram guardados, mas falhou a sincronização com a faturação${details ? `: ${details}` : '.'} Tente guardar novamente.`
+          : details || 'Erro ao guardar a parametrização da empresa.'
       );
     } finally {
       setSaving(false);
