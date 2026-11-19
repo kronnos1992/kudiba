@@ -45,11 +45,52 @@ export interface BridgeSkipped {
   reason: string;
 }
 
+export interface BridgeCapabilities {
+  printer: boolean;
+  drawer: boolean;
+  scanner: boolean;
+  qr: boolean;
+}
+
+export interface BridgeProfile {
+  model: string;
+  connectionMode: string;
+  columns: number;
+}
+
 export interface BridgeStatus {
   paired: boolean;
   awaitingCode: boolean;
   locked?: boolean;
   lockoutUntil?: string | null;
+  credentialEpoch?: number;
+  seedVersion?: number | null;
+  capabilities?: BridgeCapabilities;
+  profile?: BridgeProfile;
+}
+
+export interface BridgeCloudPairResult {
+  paired: true;
+  token?: string;
+  tenantId?: string;
+  terminalId: string;
+  credentialEpoch: number;
+  seedVersion: number | null;
+}
+
+export interface BridgeCatalogProduct {
+  barcode: string;
+  code: string;
+  description: string;
+  price: number;
+  taxRate: number;
+}
+
+export interface BridgeCatalog {
+  version: number;
+  expiresAt: string;
+  products: BridgeCatalogProduct[];
+  series: string[];
 }
 
 const DEFAULT_BRIDGE_URL = 'http://127.0.0.1:17842';
@@ -86,13 +127,49 @@ async function bridgeFetch<T>(path: string, body: unknown, token?: string | null
   return (await response.json()) as T;
 }
 
+async function bridgeGet<T>(path: string, token: string): Promise<T> {
+  const { url } = bridgeConfig();
+  const response = await fetch(`${url}${path}`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(detail || `Agente local devolveu ${response.status}.`);
+  }
+  return (await response.json()) as T;
+}
+
 export async function bridgeStatus(): Promise<BridgeStatus> {
   const { url } = bridgeConfig();
-  const response = await fetch(`${url}/pair/status`, {
+  const response = await fetch(`${url}/device/status`, {
     headers: { Accept: 'application/json' },
   });
+  if (response.status === 404) {
+    const legacyResponse = await fetch(`${url}/pair/status`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!legacyResponse.ok) {
+      throw new Error(`Agente local indisponível (${legacyResponse.status}).`);
+    }
+    return (await legacyResponse.json()) as BridgeStatus;
+  }
   if (!response.ok) throw new Error(`Agente local indisponível (${response.status}).`);
   return (await response.json()) as BridgeStatus;
+}
+
+export async function pairBridgeCloud(
+  activationToken: string,
+  label: string
+): Promise<BridgeCloudPairResult> {
+  const result = await bridgeFetch<BridgeCloudPairResult>(
+    '/pair/cloud',
+    { activationToken, label },
+    null
+  );
+  if (result.token && result.tenantId) {
+    storeToken(result.token, result.tenantId);
+  }
+  return result;
 }
 
 export async function requestBridgeChallenge(): Promise<void> {
@@ -151,6 +228,68 @@ export async function submitPrintJob(
   }
 
   return bridgeFetch<BridgePrintResult>('/device/print', { ...job, tenantId }, token);
+}
+
+export async function printText(
+  jobId: string,
+  title: string,
+  lines: string[],
+  reason: string
+): Promise<BridgePrintResult | BridgeSkipped> {
+  const { token } = bridgeConfig();
+  if (!token) {
+    return { skipped: true, reason: 'Agente local ainda não emparelhado.' };
+  }
+  const printableLines = lines.filter((line) => line.trim().length > 0);
+  if (!printableLines.length) {
+    return { skipped: true, reason: 'O documento não contém linhas para imprimir.' };
+  }
+  return bridgeFetch<BridgePrintResult>(
+    '/device/print/text',
+    { jobId, title, lines: printableLines, reason },
+    token
+  );
+}
+
+interface RawBridgeCatalogProduct {
+  barcode: string;
+  code: string;
+  description: string;
+  price: number | string;
+  taxRate: number | string;
+}
+
+interface RawBridgeCatalog {
+  version: number;
+  expiresAt: string;
+  products: RawBridgeCatalogProduct[];
+  series: unknown[];
+}
+
+export async function bridgeCatalog(): Promise<BridgeCatalog> {
+  const { token } = bridgeConfig();
+  if (!token) throw new Error('Agente local ainda não emparelhado.');
+  const result = await bridgeGet<RawBridgeCatalog>('/device/catalog', token);
+  return {
+    version: result.version,
+    expiresAt: result.expiresAt,
+    products: result.products.map((product) => ({
+      barcode: product.barcode,
+      code: product.code,
+      description: product.description,
+      price: Number(product.price) || 0,
+      taxRate: Number(product.taxRate) || 0,
+    })),
+    series: (result.series ?? []).map((item) =>
+      typeof item === 'string' ? item : JSON.stringify(item)
+    ),
+  };
+}
+
+export async function submitBridgeBarcode(barcode: string): Promise<void> {
+  const { token } = bridgeConfig();
+  if (!token) return;
+  await bridgeFetch('/device/scanner', { barcode }, token);
 }
 
 export async function openCashDrawer(

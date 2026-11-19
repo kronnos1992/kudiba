@@ -100,6 +100,9 @@ fi
 if [ -f "$SQL_DIR/33-treasury-cash-movement-idempotency.sql" ]; then
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_treasury" -f "$SQL_DIR/33-treasury-cash-movement-idempotency.sql"
 fi
+if [ -f "$SQL_DIR/34-pos-hardware.sql" ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_treasury" -f "$SQL_DIR/34-pos-hardware.sql"
+fi
 
 # 6. Inicialização do schema de contabilidade no banco 'kudiba_accounting'
 echo "Aplicando schema de contabilidade no banco 'kudiba_accounting'..."
@@ -246,6 +249,13 @@ kudiba_inventory kudiba_inventory_app
 kudiba_treasury kudiba_treasury_app
 kudiba_accounting kudiba_accounting_app
 ROLES
+
+if [ -f "$SQL_DIR/34-pos-hardware.sql" ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_treasury" <<-EOSQL
+        GRANT EXECUTE ON FUNCTION public.kudiba_resolve_pos_pairing_token(BYTEA) TO kudiba_treasury_app;
+        GRANT EXECUTE ON FUNCTION public.kudiba_resolve_pos_terminal(UUID) TO kudiba_treasury_app;
+EOSQL
+fi
 
 echo "Carregando dados de demonstração de tesouraria no tenant demo..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "kudiba_treasury" -f $SQL_DIR/19-seed-treasury-cashflow.sql

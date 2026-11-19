@@ -5,7 +5,7 @@ use axum::{
     extract::{Request, State},
     http::{
         header::{self, AUTHORIZATION},
-        HeaderValue, Method, StatusCode,
+        HeaderName, HeaderValue, Method, StatusCode,
     },
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -21,11 +21,16 @@ use uuid::Uuid;
 
 use crate::domain::error::DeviceError;
 use crate::domain::job::{CopyType, JobClass, PrintJob, PrintState};
-use crate::domain::port::{DrawerPort, JobRepository, PrinterPort, TransportOutcome};
+use crate::domain::port::{
+    CloudBootstrapPort, DrawerPort, JobRepository, PrinterPort, ScannerPort, SeedRepository,
+    TransportOutcome,
+};
 use crate::infrastructure::credential::CredentialStore;
 use crate::infrastructure::escp::{self, EscPosProfile};
 
 const DEFAULT_ALLOWED_ORIGINS: &str = "http://localhost:5173,http://127.0.0.1:5173";
+const PRIVATE_NETWORK_HEADER: HeaderName =
+    HeaderName::from_static("access-control-allow-private-network");
 const DEVELOPMENT_INTERNAL_GATEWAY_SECRET: &str =
     "kudiba_internal_gateway_secret_development_key_change_in_production_2026";
 
@@ -36,6 +41,11 @@ pub struct BridgeState {
     pub repository: Arc<dyn JobRepository>,
     pub credentials: Arc<CredentialStore>,
     pub profile: EscPosProfile,
+    pub cloud: Arc<dyn CloudBootstrapPort>,
+    pub seed: Arc<dyn SeedRepository>,
+    pub scanner: Arc<dyn ScannerPort>,
+    pub model: String,
+    pub connection_mode: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -132,6 +142,31 @@ pub struct TenantRequest {
     pub tenant_id: Uuid,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudPairRequest {
+    pub activation_token: String,
+    #[serde(default)]
+    pub label: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrintTextRequest {
+    #[serde(default)]
+    pub lines: Vec<String>,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub cut: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScannerRequest {
+    pub barcode: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrintResponse {
@@ -154,6 +189,14 @@ fn state_name(state: PrintState) -> &'static str {
         PrintState::Unknown => "UNKNOWN",
         PrintState::PhysicalOutputConfirmed => "PHYSICAL_OUTPUT_CONFIRMED",
         PrintState::ResolvedByOperator => "RESOLVED_BY_OPERATOR",
+    }
+}
+
+fn outcome_to_state(outcome: TransportOutcome) -> PrintState {
+    match outcome {
+        TransportOutcome::TransportAccepted => PrintState::TransportAccepted,
+        TransportOutcome::Failed => PrintState::Failed,
+        TransportOutcome::Unknown => PrintState::Unknown,
     }
 }
 
@@ -239,16 +282,36 @@ fn cors_layer() -> CorsLayer {
         .collect::<Vec<_>>();
     CorsLayer::new()
         .allow_origin(AllowOrigin::list(origins))
-        .allow_methods([Method::GET, Method::POST])
-        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            HeaderName::from_static("x-requested-with"),
+        ])
+        .expose_headers([PRIVATE_NETWORK_HEADER.clone()])
+        .allow_private_network(true)
         .max_age(std::time::Duration::from_secs(600))
 }
 
 fn is_public_path(path: &str) -> bool {
     matches!(
         path,
-        "/health" | "/pair" | "/pair/status" | "/pair/challenge"
+        "/health" | "/pair" | "/pair/status" | "/pair/challenge" | "/pair/cloud" | "/device/status"
     )
+}
+
+async fn security_headers(request: Request, next: Next) -> Response {
+    let private_network = request
+        .headers()
+        .contains_key("access-control-request-private-network");
+    let mut response = next.run(request).await;
+    if private_network {
+        response.headers_mut().insert(
+            PRIVATE_NETWORK_HEADER.clone(),
+            HeaderValue::from_static("true"),
+        );
+    }
+    response
 }
 
 async fn authorize(State(state): State<BridgeState>, request: Request, next: Next) -> Response {
@@ -434,6 +497,188 @@ async fn pair(State(state): State<BridgeState>, Json(request): Json<PairRequest>
     }
 }
 
+async fn pair_cloud(
+    State(state): State<BridgeState>,
+    Json(request): Json<CloudPairRequest>,
+) -> Response {
+    if request.activation_token.trim().is_empty() {
+        return error_response(DeviceError::EmptyField("activationToken"));
+    }
+    let label = if request.label.trim().is_empty() {
+        "Terminal POS".to_string()
+    } else {
+        request.label.trim().to_string()
+    };
+    let bootstrap = match state
+        .cloud
+        .bootstrap(request.activation_token.trim(), &label)
+        .await
+    {
+        Ok(value) => value,
+        Err(error) => return error_response(error),
+    };
+    let token = match state.credentials.apply_cloud_bootstrap(
+        &bootstrap.token,
+        bootstrap.tenant_id,
+        bootstrap.terminal_id,
+        bootstrap.credential_epoch,
+        &label,
+    ) {
+        Ok(token) => token,
+        Err(error) => return error_response(error),
+    };
+
+    let mut seed_version = None;
+    match state.cloud.seed().await {
+        Ok(document) => match state
+            .seed
+            .apply(&document.seed, &document.signature, print_signing_secret())
+            .await
+        {
+            Ok(()) => {
+                if let Err(error) = state.credentials.set_seed_version(document.seed.version) {
+                    return error_response(error);
+                }
+                seed_version = Some(document.seed.version);
+            }
+            Err(error) => {
+                tracing::warn!(error = %error, "seed não aplicado durante o emparelhamento cloud");
+            }
+        },
+        Err(error) => {
+            tracing::warn!(error = %error, "seed não obtido durante o emparelhamento cloud");
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "paired": true,
+            "token": token,
+            "tenantId": bootstrap.tenant_id,
+            "terminalId": bootstrap.terminal_id,
+            "credentialEpoch": bootstrap.credential_epoch,
+            "seedVersion": seed_version,
+        })),
+    )
+        .into_response()
+}
+
+async fn device_status(State(state): State<BridgeState>) -> Response {
+    let status = state.credentials.status();
+    Json(json!({
+        "paired": status.paired,
+        "awaitingCode": status.awaiting_code,
+        "locked": status.locked,
+        "lockoutUntil": status.lockout_until,
+        "terminalId": status.terminal_id,
+        "credentialEpoch": status.credential_epoch,
+        "seedVersion": status.seed_version,
+        "capabilities": {
+            "printer": true,
+            "drawer": true,
+            "scanner": true,
+            "qr": true,
+        },
+        "profile": {
+            "model": state.model,
+            "connectionMode": state.connection_mode,
+            "columns": state.profile.columns,
+        },
+    }))
+    .into_response()
+}
+
+async fn print_text(
+    State(state): State<BridgeState>,
+    Json(request): Json<PrintTextRequest>,
+) -> Response {
+    let mut lines: Vec<String> = request
+        .lines
+        .into_iter()
+        .map(|line| line.trim_end().to_string())
+        .filter(|line| !line.is_empty())
+        .collect();
+    if !request.text.trim().is_empty() {
+        lines.extend(
+            request
+                .text
+                .lines()
+                .map(|line| line.trim_end().to_string())
+                .filter(|line| !line.is_empty()),
+        );
+    }
+    if lines.is_empty() {
+        return error_response(DeviceError::EmptyField("lines"));
+    }
+    let mut profile = state.profile.clone();
+    if !request.cut {
+        profile.has_cutter = false;
+    }
+    let bytes = escp::build_receipt(&lines, &profile);
+    match state.printer.print_bytes(&bytes).await {
+        Ok(outcome) => {
+            tracing::info!(lines = lines.len(), outcome = ?outcome, "impressão local de texto");
+            Json(json!({ "state": state_name(outcome_to_state(outcome)) })).into_response()
+        }
+        Err(error) => error_response(error),
+    }
+}
+
+async fn refresh_seed(State(state): State<BridgeState>) -> Response {
+    let document = match state.cloud.seed().await {
+        Ok(document) => document,
+        Err(error) => return error_response(error),
+    };
+    let version = document.seed.version;
+    if let Err(error) = state
+        .seed
+        .apply(&document.seed, &document.signature, print_signing_secret())
+        .await
+    {
+        return error_response(error);
+    }
+    if let Err(error) = state.credentials.set_seed_version(version) {
+        return error_response(error);
+    }
+    Json(json!({ "version": version, "applied": true })).into_response()
+}
+
+async fn catalog(State(state): State<BridgeState>) -> Response {
+    let seed = match state.seed.current().await {
+        Ok(Some(seed)) => seed,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Seed de catálogo ainda não sincronizado." })),
+            )
+                .into_response()
+        }
+        Err(error) => return error_response(error),
+    };
+    let products = match state.seed.catalog().await {
+        Ok(products) => products,
+        Err(error) => return error_response(error),
+    };
+    Json(json!({
+        "version": seed.version,
+        "expiresAt": seed.expires_at,
+        "products": products,
+        "series": seed.series,
+    }))
+    .into_response()
+}
+
+async fn submit_scanner(
+    State(state): State<BridgeState>,
+    Json(request): Json<ScannerRequest>,
+) -> Response {
+    match state.scanner.submit(&request.barcode).await {
+        Ok(()) => Json(json!({ "accepted": true })).into_response(),
+        Err(error) => error_response(error),
+    }
+}
+
 async fn rotate_token(
     State(state): State<BridgeState>,
     Json(_request): Json<TenantRequest>,
@@ -605,7 +850,15 @@ async fn print(State(state): State<BridgeState>, Json(request): Json<PrintReques
         return error_response(error);
     }
 
-    let bytes = escp::build_receipt(&receipt_lines(&request.envelope), &state.profile);
+    let qr_payload = format!(
+        "{}|{}|{}",
+        request.envelope.hash, request.envelope.validation_chars, request.document_number
+    );
+    let bytes = escp::build_fiscal_receipt(
+        &receipt_lines(&request.envelope),
+        Some(&qr_payload),
+        &state.profile,
+    );
     match state.printer.print_bytes(&bytes).await {
         Ok(TransportOutcome::TransportAccepted) => {
             if let Err(error) = job.mark_transport_accepted() {
@@ -746,11 +999,18 @@ pub fn router(state: BridgeState) -> Router {
         .route("/pair/status", get(pair_status))
         .route("/pair/challenge", post(regenerate_challenge))
         .route("/pair", post(pair))
+        .route("/pair/cloud", post(pair_cloud))
+        .route("/device/status", get(device_status))
         .route("/device/token/rotate", post(rotate_token))
         .route("/device/token/revoke", post(revoke_token))
         .route("/device/print", post(print))
+        .route("/device/print/text", post(print_text))
         .route("/device/drawer/open", post(open_drawer))
+        .route("/device/catalog", get(catalog))
+        .route("/device/seed", post(refresh_seed))
+        .route("/device/scanner", post(submit_scanner))
         .layer(middleware::from_fn_with_state(state.clone(), authorize))
+        .layer(middleware::from_fn(security_headers))
         .layer(cors_layer())
         .with_state(state)
 }
@@ -765,8 +1025,13 @@ pub async fn body_string(response: Response) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::port::{CloudBootstrap, SeedDocument};
+    use crate::domain::seed::{CatalogItem, SeedPayload};
     use crate::infrastructure::credential::CredentialStore;
-    use crate::infrastructure::memory::{InMemoryJobRepository, RecordingDrawer, RecordingPrinter};
+    use crate::infrastructure::memory::{
+        InMemoryJobRepository, InMemorySeedRepository, RecordingDrawer, RecordingPrinter,
+        RecordingScanner, StaticCloudBootstrap,
+    };
     use axum::body::Body;
     use axum::http::{
         header::{
@@ -774,14 +1039,45 @@ mod tests {
         },
         Method, Request,
     };
+    use chrono::{Duration, Utc};
     use kudiba_gateway_signature::compute_payload_signature;
+    use rust_decimal::Decimal;
     use tower::ServiceExt;
+
+    fn test_seed() -> SeedPayload {
+        SeedPayload {
+            version: 1,
+            expires_at: Utc::now() + Duration::hours(1),
+            catalog: vec![CatalogItem {
+                barcode: "5601234567890".to_string(),
+                code: "CAF001".to_string(),
+                description: "Café".to_string(),
+                price: Decimal::new(450, 0),
+                tax_rate: Decimal::new(14, 0),
+            }],
+            series: Vec::new(),
+        }
+    }
 
     fn state(
         printer_outcome: TransportOutcome,
     ) -> (BridgeState, Arc<RecordingPrinter>, Arc<RecordingDrawer>) {
         let printer = Arc::new(RecordingPrinter::new(printer_outcome));
         let drawer = Arc::new(RecordingDrawer::default());
+        let seed = test_seed();
+        let cloud = StaticCloudBootstrap::new(
+            CloudBootstrap {
+                token: "a".repeat(64),
+                tenant_id: Uuid::from_u128(1),
+                terminal_id: Uuid::from_u128(2),
+                credential_epoch: 7,
+                seed: seed.clone(),
+            },
+            SeedDocument {
+                seed,
+                signature: "test-signature".to_string(),
+            },
+        );
         (
             BridgeState {
                 printer: printer.clone(),
@@ -789,6 +1085,11 @@ mod tests {
                 repository: Arc::new(InMemoryJobRepository::default()),
                 credentials: Arc::new(CredentialStore::with_fixed_token("token-local")),
                 profile: EscPosProfile::default(),
+                cloud: Arc::new(cloud),
+                seed: Arc::new(InMemorySeedRepository::default()),
+                scanner: Arc::new(RecordingScanner::default()),
+                model: "POS-80".to_string(),
+                connection_mode: "RAW_TCP".to_string(),
             },
             printer,
             drawer,
@@ -801,6 +1102,14 @@ mod tests {
             builder = builder.header(AUTHORIZATION, "Bearer token-local");
         }
         builder.body(Body::from(body.to_string())).unwrap()
+    }
+
+    fn state_with_credentials(credentials: Arc<CredentialStore>) -> BridgeState {
+        let (base, _, _) = state(TransportOutcome::TransportAccepted);
+        BridgeState {
+            credentials,
+            ..base
+        }
     }
 
     fn post_json(path: &str, body: serde_json::Value, token: Option<&str>) -> Request<Body> {
@@ -1025,13 +1334,7 @@ mod tests {
         let credentials = Arc::new(CredentialStore::new(None, None).unwrap());
         let code = credentials.pending_code().unwrap();
         let tenant = Uuid::from_u128(1);
-        let state = BridgeState {
-            printer: Arc::new(RecordingPrinter::new(TransportOutcome::TransportAccepted)),
-            drawer: Arc::new(RecordingDrawer::default()),
-            repository: Arc::new(InMemoryJobRepository::default()),
-            credentials: credentials.clone(),
-            profile: EscPosProfile::default(),
-        };
+        let state = state_with_credentials(credentials.clone());
         let app = router(state);
 
         let status = app
@@ -1083,13 +1386,7 @@ mod tests {
     async fn challenge_can_be_reissued_without_leaking_the_code() {
         let credentials = Arc::new(CredentialStore::new(None, None).unwrap());
         let old_code = credentials.pending_code().unwrap();
-        let state = BridgeState {
-            printer: Arc::new(RecordingPrinter::new(TransportOutcome::TransportAccepted)),
-            drawer: Arc::new(RecordingDrawer::default()),
-            repository: Arc::new(InMemoryJobRepository::default()),
-            credentials: credentials.clone(),
-            profile: EscPosProfile::default(),
-        };
+        let state = state_with_credentials(credentials.clone());
         let app = router(state);
 
         let reissued = app
@@ -1125,13 +1422,7 @@ mod tests {
     #[tokio::test]
     async fn fifth_wrong_code_locks_pairing_and_exposes_it_in_status() {
         let credentials = Arc::new(CredentialStore::new(None, None).unwrap());
-        let state = BridgeState {
-            printer: Arc::new(RecordingPrinter::new(TransportOutcome::TransportAccepted)),
-            drawer: Arc::new(RecordingDrawer::default()),
-            repository: Arc::new(InMemoryJobRepository::default()),
-            credentials: credentials.clone(),
-            profile: EscPosProfile::default(),
-        };
+        let state = state_with_credentials(credentials.clone());
         let app = router(state);
         for _ in 0..4 {
             let response = app
@@ -1172,13 +1463,7 @@ mod tests {
         let code = credentials.pending_code().unwrap();
         let tenant = Uuid::from_u128(1);
         let old_token = credentials.pair(&code, tenant, "Caixa 1").unwrap();
-        let state = BridgeState {
-            printer: Arc::new(RecordingPrinter::new(TransportOutcome::TransportAccepted)),
-            drawer: Arc::new(RecordingDrawer::default()),
-            repository: Arc::new(InMemoryJobRepository::default()),
-            credentials,
-            profile: EscPosProfile::default(),
-        };
+        let state = state_with_credentials(credentials);
         let response = router(state)
             .oneshot(post_json(
                 "/device/token/rotate",
@@ -1280,12 +1565,12 @@ mod tests {
 
     #[tokio::test]
     async fn drawer_outcome_is_reported_honestly() {
-        let unknown = BridgeState {
-            printer: Arc::new(RecordingPrinter::new(TransportOutcome::TransportAccepted)),
-            drawer: Arc::new(RecordingDrawer::new(TransportOutcome::Unknown)),
-            repository: Arc::new(InMemoryJobRepository::default()),
-            credentials: Arc::new(CredentialStore::with_fixed_token("token-local")),
-            profile: EscPosProfile::default(),
+        let unknown = {
+            let (base, _, _) = state(TransportOutcome::TransportAccepted);
+            BridgeState {
+                drawer: Arc::new(RecordingDrawer::new(TransportOutcome::Unknown)),
+                ..base
+            }
         };
         let app = router(unknown);
         print_one(&app).await;
@@ -1296,12 +1581,12 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert!(body_string(response).await.contains("UNKNOWN"));
 
-        let failed = BridgeState {
-            printer: Arc::new(RecordingPrinter::new(TransportOutcome::TransportAccepted)),
-            drawer: Arc::new(RecordingDrawer::new(TransportOutcome::Failed)),
-            repository: Arc::new(InMemoryJobRepository::default()),
-            credentials: Arc::new(CredentialStore::with_fixed_token("token-local")),
-            profile: EscPosProfile::default(),
+        let failed = {
+            let (base, _, _) = state(TransportOutcome::TransportAccepted);
+            BridgeState {
+                drawer: Arc::new(RecordingDrawer::new(TransportOutcome::Failed)),
+                ..base
+            }
         };
         let failed_app = router(failed);
         print_one(&failed_app).await;
@@ -1365,5 +1650,107 @@ mod tests {
         let copy = original.new_copy("sale-1:copy").unwrap();
         assert!(!original.allows_drawer());
         assert!(!copy.allows_drawer());
+    }
+
+    #[tokio::test]
+    async fn cloud_pairing_returns_the_local_token_and_applies_the_seed() {
+        let (state, _, _) = state(TransportOutcome::TransportAccepted);
+        let app = router(state);
+        let response = app
+            .clone()
+            .oneshot(post_json(
+                "/pair/cloud",
+                json!({ "activationToken": "ABCD-1234", "label": "Caixa 2" }),
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+        assert_eq!(body["paired"], true);
+        assert_eq!(body["terminalId"], Uuid::from_u128(2).to_string());
+        assert_eq!(body["credentialEpoch"], 7);
+        assert_eq!(body["seedVersion"], 1);
+        let token = body["token"].as_str().unwrap();
+        assert_eq!(token.len(), 64);
+
+        let catalog = app
+            .oneshot(
+                Request::get("/device/catalog")
+                    .header(AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(catalog.status(), StatusCode::OK);
+        let body = body_string(catalog).await;
+        assert!(body.contains("Café"));
+        assert!(body.contains("5601234567890"));
+    }
+
+    #[tokio::test]
+    async fn device_status_is_public_and_reports_capabilities() {
+        let (state, _, _) = state(TransportOutcome::TransportAccepted);
+        let response = router(state)
+            .oneshot(Request::get("/device/status").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("\"scanner\":true"));
+        assert!(body.contains("\"qr\":true"));
+        assert!(body.contains("RAW_TCP"));
+    }
+
+    #[tokio::test]
+    async fn print_text_and_scanner_use_the_local_ports() {
+        let (state, printer, _) = state(TransportOutcome::TransportAccepted);
+        let app = router(state);
+        let printed = app
+            .clone()
+            .oneshot(post_json(
+                "/device/print/text",
+                json!({ "lines": ["Leitura X", "Total: 100,00 AOA"] }),
+                Some("token-local"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(printed.status(), StatusCode::OK);
+        assert_eq!(printer.received.lock().unwrap().len(), 1);
+
+        let scanned = app
+            .oneshot(post_json(
+                "/device/scanner",
+                json!({ "barcode": "5601234567890" }),
+                Some("token-local"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(scanned.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn private_network_preflight_is_answered() {
+        let (state, _, _) = state(TransportOutcome::TransportAccepted);
+        let response = router(state)
+            .oneshot(
+                Request::builder()
+                    .method(Method::OPTIONS)
+                    .uri("/device/status")
+                    .header(ORIGIN, "http://localhost:5173")
+                    .header(ACCESS_CONTROL_REQUEST_METHOD, "GET")
+                    .header("access-control-request-private-network", "true")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response
+                .headers()
+                .get("access-control-allow-private-network"),
+            Some(&HeaderValue::from_static("true"))
+        );
     }
 }

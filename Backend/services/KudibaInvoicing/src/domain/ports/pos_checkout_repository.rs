@@ -24,6 +24,12 @@ pub trait PosCheckoutRepository: Send + Sync {
         idempotency_key: &str,
     ) -> Result<Option<PosCheckoutIntent>, DomainError>;
 
+    async fn find_print_job(
+        &self,
+        tenant_id: Uuid,
+        print_job_id: &str,
+    ) -> Result<Option<Value>, DomainError>;
+
     async fn mark_fiscal_issued(
         &self,
         tenant_id: Uuid,

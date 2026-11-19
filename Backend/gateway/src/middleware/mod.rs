@@ -82,6 +82,15 @@ pub fn is_public_path(path: &str) -> bool {
         return true;
     }
 
+    // Emparelhamento do agente POS: protegido por token de ativação de uso único
+    // ou por identificador de terminal; não expõe dados de outras empresas.
+    if clean == "/api/v1/treasury/pos/pairing/bootstrap"
+        || clean == "/api/v1/treasury/pos/pairing/status"
+        || clean == "/api/v1/treasury/pos/seed"
+    {
+        return true;
+    }
+
     // Autenticação Pública e JWKS
     if clean == "/auth/login"
         || clean == "/auth/refresh"
@@ -146,6 +155,18 @@ mod tests {
         for path in ["/health", "/ready", "/metrics"] {
             assert!(is_public_path(path), "{path} deve ser pública");
         }
+    }
+
+    #[test]
+    fn emparelhamento_pos_fica_publico_no_gateway() {
+        for path in [
+            "/api/v1/treasury/pos/pairing/bootstrap",
+            "/api/v1/treasury/pos/pairing/status",
+            "/api/v1/treasury/pos/seed",
+        ] {
+            assert!(is_public_path(path), "{path} deve ser pública");
+        }
+        assert!(!is_public_path("/api/v1/treasury/pos/terminals"));
     }
 
     #[test]

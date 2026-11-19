@@ -6,7 +6,11 @@ use uuid::Uuid;
 
 use crate::domain::error::DeviceError;
 use crate::domain::job::PrintJob;
-use crate::domain::port::{DrawerPort, JobRepository, PrinterPort, TransportOutcome};
+use crate::domain::port::{
+    CloudBootstrap, CloudBootstrapPort, CloudTerminalStatus, DrawerPort, JobRepository,
+    PrinterPort, ScannerPort, SeedDocument, SeedRepository, TransportOutcome,
+};
+use crate::domain::seed::{CatalogItem, SeedPayload};
 
 #[derive(Default)]
 pub struct InMemoryJobRepository {
@@ -105,6 +109,107 @@ impl DrawerPort for RecordingDrawer {
             .map_err(|_| DeviceError::Busy("gaveta".into()))?;
         *calls += 1;
         Ok(self.outcome)
+    }
+}
+
+pub struct StaticCloudBootstrap {
+    bootstrap: CloudBootstrap,
+    document: SeedDocument,
+}
+
+impl StaticCloudBootstrap {
+    pub fn new(bootstrap: CloudBootstrap, document: SeedDocument) -> Self {
+        Self {
+            bootstrap,
+            document,
+        }
+    }
+}
+
+#[async_trait]
+impl CloudBootstrapPort for StaticCloudBootstrap {
+    async fn bootstrap(
+        &self,
+        _activation_token: &str,
+        _label: &str,
+    ) -> Result<CloudBootstrap, DeviceError> {
+        Ok(self.bootstrap.clone())
+    }
+
+    async fn terminal_status(
+        &self,
+        _terminal_id: Uuid,
+    ) -> Result<CloudTerminalStatus, DeviceError> {
+        Ok(CloudTerminalStatus {
+            status: "ACTIVE".to_string(),
+            credential_epoch: self.bootstrap.credential_epoch,
+        })
+    }
+
+    async fn seed(&self) -> Result<SeedDocument, DeviceError> {
+        Ok(self.document.clone())
+    }
+}
+
+#[derive(Default)]
+pub struct InMemorySeedRepository {
+    seed: Mutex<Option<SeedPayload>>,
+}
+
+#[async_trait]
+impl SeedRepository for InMemorySeedRepository {
+    async fn apply(
+        &self,
+        seed: &SeedPayload,
+        _signature: &str,
+        _secret: &str,
+    ) -> Result<(), DeviceError> {
+        *self
+            .seed
+            .lock()
+            .map_err(|_| DeviceError::Busy("seed".into()))? = Some(seed.clone());
+        Ok(())
+    }
+
+    async fn current(&self) -> Result<Option<SeedPayload>, DeviceError> {
+        Ok(self
+            .seed
+            .lock()
+            .map_err(|_| DeviceError::Busy("seed".into()))?
+            .clone())
+    }
+
+    async fn catalog(&self) -> Result<Vec<CatalogItem>, DeviceError> {
+        Ok(self
+            .seed
+            .lock()
+            .map_err(|_| DeviceError::Busy("seed".into()))?
+            .as_ref()
+            .map(|seed| seed.catalog.clone())
+            .unwrap_or_default())
+    }
+}
+
+#[derive(Default)]
+pub struct RecordingScanner {
+    pub codes: Mutex<Vec<String>>,
+}
+
+#[async_trait]
+impl ScannerPort for RecordingScanner {
+    async fn submit(&self, code: &str) -> Result<(), DeviceError> {
+        self.codes
+            .lock()
+            .map_err(|_| DeviceError::Busy("leitor".into()))?
+            .push(code.trim().to_string());
+        Ok(())
+    }
+
+    async fn last_code(&self) -> Option<String> {
+        self.codes
+            .lock()
+            .ok()
+            .and_then(|codes| codes.last().cloned())
     }
 }
 

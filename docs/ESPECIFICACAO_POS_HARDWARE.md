@@ -1,8 +1,8 @@
 # Especificação de Integração POS — Impressora Térmica, Gaveta e Terminal de Caixa
 
-**Versão do Documento:** 0.3.2  
-**Data:** 18 de Novembro de 2026  
-**Estado:** Especificação técnica aprofundada (v0.3.2) — inclui ciclo de vida de provisionamento assistido, emparelhamento, sincronização inicial de catálogo, recuperação de desastre, transporte local seguro, spooler Windows, coordenação durável de checkout e conformidade fiscal AGT. Requer validação jurídica AGT antes da entrada em produção.  
+**Versão do Documento:** 0.4.0  
+**Data:** 19 de Novembro de 2026  
+**Estado:** Especificação técnica com implementação de referência (v0.4.0) — inclui ciclo de vida de provisionamento assistido, emparelhamento cloud, sincronização inicial de catálogo, recuperação de desastre, transporte local seguro, spooler Windows, coordenação durável de checkout e conformidade fiscal AGT. Requer validação jurídica AGT e certificação de hardware antes da entrada em produção.  
 **Escopo:** `Kudiba POS` (browser/SPA), `kudiba-hardware-bridge` (agente local), `KudibaInvoicing`, `KudibaTreasury` e `KudibaInventory`.
 
 **Histórico de versões:**
@@ -10,6 +10,7 @@
 - `0.3.0` — emparelhamento, seed inicial, recuperação de desastre, transporte local, spooler Windows e coordenação durável de checkout.
 - `0.3.1` — revisão da terminologia fiscal e do transporte; pendência AGT explícita.
 - `0.3.2` — separação `FISCAL_ENVELOPE` / `CONTINGENCY_LOCAL`, unificação de estados, chaves de terminal no modelo de dados e regras de reimpressão.
+- `0.4.0` — registo da implementação de referência: emparelhamento cloud no agente, migração 34, endpoint de recuperação de `print_job`, fim do `window.print()`, QR ESC/POS, páginas de código, `ScannerPort`, seed local, empacotamento e pendências de produção.
 
 ---
 
@@ -511,3 +512,40 @@ Reimpressão: cria um novo registo com `copy_type = 'COPY'`, **nova** `idempoten
 | Definição e ativação da classe `CONTINGENCY_LOCAL` (chave, faixa reservada, parecer AGT) | Arquitetura / Jurídico | Antes do P1 |
 | Validação de enquadramento de contingência do RJFDE | Jurídico / AGT | Antes do P1 |
 | Protocolo de integração com TPA Multicaixa (EMV / GPO) | Produto | P2 |
+
+---
+
+## 15. Estado da implementação de referência (v0.4.0)
+
+### 15.1 Concluído
+
+| Item | O que existe agora | Onde validar |
+| :--- | :--- | :--- |
+| Emparelhamento cloud (servidor) | `POST /api/v1/treasury/pos/pairing/bootstrap`, `GET /api/v1/treasury/pos/pairing/status` e `GET /api/v1/treasury/pos/seed`, com token de ativação de uso único, hash SHA-256, TTL de 5 minutos, bloqueio após 5 tentativas e token local de 64 hex | `Backend/services/KudibaTreasury/src/pos_hardware/handler.rs` |
+| Terminal e revogação | `POST/GET /api/v1/treasury/pos/terminals`, emissão de token e revogação com incremento de `credential_epoch` | `Backend/services/KudibaTreasury/src/pos_hardware/handler.rs` |
+| Esquema POS hardware | `pos_terminals`, `pos_pairing_tokens`, `pos_devices`, `pos_print_jobs`, `pos_drawer_events`, RLS por tenant | `Backend/deploy/34-pos-hardware.sql` |
+| Recuperação de envelope fiscal | `GET /api/v1/fiscal/pos/print-jobs/{id}` reconstrói o envelope a partir de `pos_checkout_events` sem recalcular assinatura | `Backend/services/KudibaInvoicing/src/presentation/http/routes.rs` |
+| Agente — emparelhamento | `POST /pair/cloud` consome o token de ativação, guarda token/tenant/terminal/epoch e sincroniza o seed; fluxo de 6 dígitos mantido para compatibilidade | `Backend/services/KudibaHardwareBridge/src/infrastructure/api.rs` |
+| Agente — diagnose | `GET /device/status` devolve `paired`, `awaitingCode`, epoch, versão do seed, capacidades e perfil, sem exigir token | `Backend/services/KudibaHardwareBridge/src/infrastructure/api.rs` |
+| Agente — impressão fiscal | `POST /device/print` valida assinatura, persiste o job, envia ESC/POS com QR nativo `GS ( k` e distingue `TRANSPORT_ACCEPTED`/`FAILED`/`UNKNOWN` | `Backend/services/KudibaHardwareBridge/src/infrastructure/escp.rs` |
+| Agente — impressão auxiliar | `POST /device/print/text` substitui `window.print()` em Leitura X, Fecho Z e contingência, sem prometer confirmação física | `Frontend/src/views/pos/PosView.tsx` |
+| Drivers | `RAW_TCP`, `RAW_SERIAL`, `RAW_USB_DIRECT` e `WIN_SPOOL`, selecionáveis por `KUDIBA_PRINTER_CONNECTION` | `Backend/services/KudibaHardwareBridge/src/infrastructure/transport.rs` |
+| Páginas de código | ASCII transliterado, CP850, CP1252 e UTF-8 por perfil, com `ESC t n` configurável | `Backend/services/KudibaHardwareBridge/src/infrastructure/escp.rs` |
+| Leitor | `ScannerPort` + `POST /device/scanner`; campo dedicado no POS com foco recuperável e Aceitação de Enter/Tab/sufixo | `Backend/services/KudibaHardwareBridge/src/infrastructure/scanner.rs` |
+| Seed local | Assinatura verificada com `canonical_json_bytes`, expiração validada e catálogo/series persistidos em SQLite | `Backend/services/KudibaHardwareBridge/src/infrastructure/seed.rs` |
+| Segurança local | Bind em loopback, `Origin` configurável, token local, rotação/revogação, CORS com PNA e TLS opcional em loopback | `Backend/services/KudibaHardwareBridge/src/infrastructure/api.rs`, `src/main.rs` |
+| Gateway | Paths de bootstrap/status/seed do agente marcados como públicos; os demais endpoints POS continuam protegidos por JWT/tenant | `Backend/gateway/src/middleware/mod.rs` |
+| Distribuição | Build release, instalação e atualização por artefacto com verificação opcional de SHA-256 | `Makefile`, `scripts/install-hardware-bridge.sh`, `scripts/update-hardware-bridge.sh` |
+| Testes | 58 testes do agente, 28 do Treasury, 138 do Invoicing e build do frontend a passar | `make test-bridge`, `make test-treasury`, `make test-invoicing`, `cd Frontend && npm run build` |
+
+### 15.2 Pendente antes de produção
+
+1. **Certificação de hardware:** validar modelos/firmwares reais e congelar perfis (`columns`, página de código, `ESC t n`, guilhotina, tempos de gaveta). Os bytes atuais são genéricos; "funciona com qualquer impressora" continua proibido.
+2. **Confirmação física:** o agente reporta aceitação pelo transporte; sensor de papel/gaveta e `PHYSICAL_OUTPUT_CONFIRMED` dependem de hardware e telemetria ainda por implementar.
+3. **AGT/Jurídico:** homologação da contingência, do QR fiscal e dos relatórios X/Z; `CONTINGENCY_LOCAL` não deve ser ativada sem parecer e faixa reservada.
+4. **Transporte local em browsers-alvo:** validar HTTPS loopback/PNA e emissão de certificado confiável nos browsers suportados; CORS/PNA responde corretamente em testes, mas não substitui teste real de browser.
+5. **Distribuição Windows:** assinatura de código, SmartScreen, serviço/registo ao login gerido e canal de auto-update público. Os scripts atuais instalam/atualizam, mas não fornecem assinatura nem catálogo de releases.
+6. **Wizard de diagnóstico:** deteção automática de porta/perfil e assistente visual em loja; hoje existe configuração por variáveis de ambiente e `GET /device/status`.
+7. **TPA Multicaixa:** permanece fora de escopo até existir protocolo EMV/GPO próprio.
+8. **Disaster recovery automatizado:** substituição de terminal com transferência de epoch e reconciliação de credenciais ainda manual.
+9. **Documentação pública:** remover menções falsas a Tauri/ESC/POS em `README.md`, `Frontend/README.md`, `Backend/services/KudibaInvoicing/README.md` e regenerar `docs/ESPECIFICACAO_POS_HARDWARE.html` a partir desta versão.

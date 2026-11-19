@@ -18,6 +18,7 @@ use crate::infrastructure::persistence::{
     PostgresCashSessionRepository, PostgresInvoiceReceivableRepository,
     PostgresPosSessionRepository, PostgresTreasuryReceiptRepository,
 };
+use crate::pos_hardware::{PosHardwareHandler, PostgresPosHardwareRepository};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -37,6 +38,7 @@ pub struct AppState {
     pub payable_cmd: Arc<PayableCommands>,
     pub transfer_cmd: Arc<TransferCommands>,
     pub statement_cmd: Arc<StatementCommands>,
+    pub pos_hardware_cmd: Arc<PosHardwareHandler>,
     pub event_consumer: Arc<TreasuryEventConsumer>,
     pub event_publisher: Arc<dyn TreasuryEventPublisher>,
 }
@@ -94,6 +96,12 @@ impl AppState {
         let payable_cmd = Arc::new(PayableCommands::new(pool.clone()));
         let transfer_cmd = Arc::new(TransferCommands::new(pool.clone()));
         let statement_cmd = Arc::new(StatementCommands::new(pool.clone()));
+        let pos_hardware_repo: Arc<dyn crate::pos_hardware::PosHardwareRepository> =
+            Arc::new(PostgresPosHardwareRepository::new(pool.clone()));
+        let pos_hardware_cmd = Arc::new(PosHardwareHandler::new(
+            pos_hardware_repo,
+            config.internal_gateway_secret.clone(),
+        ));
 
         let queries = Arc::new(TreasuryQueries::new(
             register_repo,
@@ -125,6 +133,7 @@ impl AppState {
             payable_cmd,
             transfer_cmd,
             statement_cmd,
+            pos_hardware_cmd,
             event_consumer,
             event_publisher,
         }

@@ -9,8 +9,20 @@ use crate::domain::entities::pos_checkout::{
 use crate::domain::error::DomainError;
 use crate::domain::ports::pos_checkout_repository::{InsertCheckoutOutcome, PosCheckoutRepository};
 
+const PRINT_JOB_QUERY: &str = "SELECT payload FROM kudiba_core.pos_checkout_events \
+     WHERE tenant_id = $1 AND idempotency_key = $2 AND event_type = 'PRINT_JOB'";
+
 pub struct PgPosCheckoutRepository {
     pool: PgPool,
+}
+
+fn map_print_job_payload(print_job_id: &str, payload: Value) -> Result<Value, DomainError> {
+    if payload.get("printJobId").and_then(Value::as_str) != Some(print_job_id) {
+        return Err(DomainError::Persistence(
+            "PRINT_JOB com printJobId divergente".to_string(),
+        ));
+    }
+    Ok(payload)
 }
 
 impl PgPosCheckoutRepository {
@@ -124,6 +136,29 @@ impl PosCheckoutRepository for PgPosCheckoutRepository {
         }
     }
 
+    async fn find_print_job(
+        &self,
+        tenant_id: Uuid,
+        print_job_id: &str,
+    ) -> Result<Option<Value>, DomainError> {
+        let row = sqlx::query(PRINT_JOB_QUERY)
+            .bind(tenant_id)
+            .bind(print_job_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| DomainError::Persistence(e.to_string()))?;
+
+        match row {
+            Some(row) => {
+                let payload: Value = row
+                    .try_get("payload")
+                    .map_err(|e| DomainError::Persistence(e.to_string()))?;
+                map_print_job_payload(print_job_id, payload).map(Some)
+            }
+            None => Ok(None),
+        }
+    }
+
     async fn mark_fiscal_issued(
         &self,
         tenant_id: Uuid,
@@ -231,5 +266,44 @@ impl PosCheckoutRepository for PgPosCheckoutRepository {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn consulta_de_print_job_e_escopada_por_tenant_e_tipo() {
+        assert!(PRINT_JOB_QUERY.contains("SELECT payload FROM kudiba_core.pos_checkout_events"));
+        assert!(PRINT_JOB_QUERY.contains("tenant_id = $1"));
+        assert!(PRINT_JOB_QUERY.contains("idempotency_key = $2"));
+        assert!(PRINT_JOB_QUERY.contains("event_type = 'PRINT_JOB'"));
+    }
+
+    #[test]
+    fn mapeamento_devolve_o_envelope_gravado_sem_recalcular_assinatura() {
+        let print_job_id = "pos-checkout:sale-1:print";
+        let stored = json!({
+            "printJobId": print_job_id,
+            "tenantId": "a0000000-0000-0000-0000-000000000001",
+            "jobClass": "FISCAL_ENVELOPE",
+            "copyType": "ORIGINAL",
+            "payloadHash": "hash-abc",
+            "printAuthorization": "authorization-abc",
+            "envelope": { "hash": "hash-abc", "totalAmount": "116.00" },
+        });
+
+        let mapped = map_print_job_payload(print_job_id, stored.clone()).unwrap();
+
+        assert_eq!(mapped, stored);
+        assert_eq!(mapped["printAuthorization"], "authorization-abc");
+        assert_eq!(mapped["envelope"]["totalAmount"], "116.00");
+    }
+
+    #[test]
+    fn mapeamento_rejeita_print_job_divergente() {
+        let payload = json!({ "printJobId": "pos-checkout:outro:print" });
+        assert!(map_print_job_payload("pos-checkout:sale-1:print", payload).is_err());
     }
 }

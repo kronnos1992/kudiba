@@ -22,6 +22,11 @@ use crate::application::dto::{
     SessionReportResponse, SettlePayableRequest, TreasuryReceiptResponse,
 };
 use crate::domain::error::DomainError;
+use crate::pos_hardware::{
+    BootstrapRequest, BootstrapResponse, CreateTerminalRequest, PairingStatusResponse,
+    PairingTokenResponse, PosHardwareError, PosTerminalListResponse, PosTerminalResponse,
+    RevokeTerminalResponse, SeedResponse,
+};
 use crate::state::AppState;
 
 #[derive(Debug, Serialize)]
@@ -147,6 +152,39 @@ pub fn map_domain_error(err: DomainError) -> (StatusCode, Json<ProblemDetail>) {
                 "Erro de Base de Dados",
                 &err,
                 "DATABASE_ERROR",
+            )),
+        ),
+    }
+}
+
+fn map_pos_hardware_error(err: PosHardwareError) -> (StatusCode, Json<ProblemDetail>) {
+    match err {
+        PosHardwareError::Domain(err) => map_domain_error(err),
+        PosHardwareError::InvalidToken | PosHardwareError::ExpiredToken => (
+            StatusCode::UNAUTHORIZED,
+            Json(ProblemDetail::new(
+                StatusCode::UNAUTHORIZED,
+                "Token de Emparelhamento Inválido",
+                "O token de emparelhamento é inválido ou expirou.",
+                "POS_PAIRING_TOKEN_INVALID",
+            )),
+        ),
+        PosHardwareError::Locked => (
+            StatusCode::LOCKED,
+            Json(ProblemDetail::new(
+                StatusCode::LOCKED,
+                "Emparelhamento Bloqueado",
+                "O token de emparelhamento atingiu o limite de tentativas.",
+                "POS_PAIRING_LOCKED",
+            )),
+        ),
+        PosHardwareError::AlreadyConsumed => (
+            StatusCode::CONFLICT,
+            Json(ProblemDetail::new(
+                StatusCode::CONFLICT,
+                "Token Já Consumido",
+                "O token de emparelhamento já foi utilizado.",
+                "POS_PAIRING_TOKEN_CONSUMED",
             )),
         ),
     }
@@ -320,6 +358,36 @@ pub fn require_roles(
             "FORBIDDEN",
         )),
     ))
+}
+
+fn require_pos_admin(
+    headers: &HeaderMap,
+) -> Result<(Uuid, String), (StatusCode, Json<ProblemDetail>)> {
+    let tenant_id = extract_tenant_id(headers)?;
+    let user_id = extract_user_id(headers)?;
+    let has_role = headers
+        .get("X-Resolved-Roles")
+        .and_then(|value| value.to_str().ok())
+        .map(|raw| {
+            raw.split(',')
+                .map(|role| role.trim().to_uppercase())
+                .any(|role| matches!(role.as_str(), "ADMIN" | "GESTOR"))
+        })
+        .unwrap_or(false);
+
+    if has_role {
+        Ok((tenant_id, user_id))
+    } else {
+        Err((
+            StatusCode::FORBIDDEN,
+            Json(ProblemDetail::new(
+                StatusCode::FORBIDDEN,
+                "Acesso Negado",
+                "A gestão de terminais POS exige o perfil ADMIN ou GESTOR.",
+                "POS_ADMIN_REQUIRED",
+            )),
+        ))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -606,6 +674,101 @@ pub async fn pos_panel_handler(
     .map_err(map_domain_error)?;
 
     Ok(Json(panel))
+}
+
+pub async fn pos_create_terminal_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateTerminalRequest>,
+) -> Result<(StatusCode, Json<PosTerminalResponse>), (StatusCode, Json<ProblemDetail>)> {
+    let (tenant_id, _) = require_pos_admin(&headers)?;
+    let terminal = state
+        .pos_hardware_cmd
+        .create_terminal(tenant_id, payload)
+        .await
+        .map_err(map_pos_hardware_error)?;
+    Ok((StatusCode::CREATED, Json(terminal)))
+}
+
+pub async fn pos_list_terminals_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<PosTerminalListResponse>, (StatusCode, Json<ProblemDetail>)> {
+    let (tenant_id, _) = require_pos_admin(&headers)?;
+    let terminals = state
+        .pos_hardware_cmd
+        .list_terminals(tenant_id)
+        .await
+        .map_err(map_pos_hardware_error)?;
+    Ok(Json(terminals))
+}
+
+pub async fn pos_create_pairing_token_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(terminal_id): Path<Uuid>,
+) -> Result<(StatusCode, Json<PairingTokenResponse>), (StatusCode, Json<ProblemDetail>)> {
+    let (tenant_id, user_id) = require_pos_admin(&headers)?;
+    let response = state
+        .pos_hardware_cmd
+        .create_pairing_token(tenant_id, terminal_id, &user_id)
+        .await
+        .map_err(map_pos_hardware_error)?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+pub async fn pos_revoke_terminal_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(terminal_id): Path<Uuid>,
+) -> Result<Json<RevokeTerminalResponse>, (StatusCode, Json<ProblemDetail>)> {
+    let (tenant_id, _) = require_pos_admin(&headers)?;
+    let response = state
+        .pos_hardware_cmd
+        .revoke_terminal(tenant_id, terminal_id)
+        .await
+        .map_err(map_pos_hardware_error)?;
+    Ok(Json(response))
+}
+
+pub async fn pos_pairing_bootstrap_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<BootstrapRequest>,
+) -> Result<Json<BootstrapResponse>, (StatusCode, Json<ProblemDetail>)> {
+    let response = state
+        .pos_hardware_cmd
+        .bootstrap(payload)
+        .await
+        .map_err(map_pos_hardware_error)?;
+    Ok(Json(response))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PosPairingStatusQuery {
+    #[serde(rename = "terminalId")]
+    pub terminal_id: Uuid,
+}
+
+pub async fn pos_pairing_status_handler(
+    State(state): State<AppState>,
+    Query(query): Query<PosPairingStatusQuery>,
+) -> Result<Json<PairingStatusResponse>, (StatusCode, Json<ProblemDetail>)> {
+    let status = state
+        .pos_hardware_cmd
+        .pairing_status(query.terminal_id)
+        .await
+        .map_err(map_pos_hardware_error)?;
+    Ok(Json(status))
+}
+
+pub async fn pos_seed_handler(
+    State(state): State<AppState>,
+) -> Result<Json<SeedResponse>, (StatusCode, Json<ProblemDetail>)> {
+    let seed = state
+        .pos_hardware_cmd
+        .seed()
+        .map_err(map_pos_hardware_error)?;
+    Ok(Json(seed))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1388,6 +1551,27 @@ pub fn create_router(state: AppState) -> Router {
             get(get_current_pos_session_handler),
         )
         .route("/api/v1/treasury/pos/panel", get(pos_panel_handler))
+        .route(
+            "/api/v1/treasury/pos/terminals",
+            post(pos_create_terminal_handler).get(pos_list_terminals_handler),
+        )
+        .route(
+            "/api/v1/treasury/pos/terminals/{id}/pairing-token",
+            post(pos_create_pairing_token_handler),
+        )
+        .route(
+            "/api/v1/treasury/pos/terminals/{id}/revoke",
+            post(pos_revoke_terminal_handler),
+        )
+        .route(
+            "/api/v1/treasury/pos/pairing/bootstrap",
+            post(pos_pairing_bootstrap_handler),
+        )
+        .route(
+            "/api/v1/treasury/pos/pairing/status",
+            get(pos_pairing_status_handler),
+        )
+        .route("/api/v1/treasury/pos/seed", get(pos_seed_handler))
         // Cash Sessions
         .route("/api/v1/treasury/sessions/open", post(open_session_handler))
         .route(

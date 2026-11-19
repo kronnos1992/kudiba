@@ -22,6 +22,7 @@ use crate::domain::error::DomainError;
 use crate::domain::ports::crypto_signer::CryptoSigner;
 use crate::domain::ports::db_session::DbSessionFactory;
 use crate::domain::ports::invoice_repository::InvoiceRepository;
+use crate::domain::ports::pos_checkout_repository::PosCheckoutRepository;
 use crate::domain::ports::series_repository::FiscalSeriesRepository;
 use crate::domain::ports::tax_regime_repository::TaxRegimeRepository;
 use crate::domain::ports::tenant_repository::TenantRepository;
@@ -43,6 +44,7 @@ pub struct AppState {
     pub agt_client: Arc<AgtClient>,
     pub issue_invoice: Arc<IssueInvoiceUseCase>,
     pub coordinate_checkout: Arc<CoordinateCheckoutUseCase>,
+    pub pos_checkout_repository: Arc<dyn PosCheckoutRepository>,
     pub cancel_invoice:
         Arc<crate::application::commands::cancel_invoice::CancelInvoiceWithCreditNoteUseCase>,
     pub create_series: Arc<CreateFiscalSeriesUseCase>,
@@ -113,12 +115,13 @@ impl AppState {
             crypto_signer.clone(),
             config.allow_local_contingency,
         ));
-        let coordinate_checkout = Arc::new(CoordinateCheckoutUseCase::new(
-            Arc::new(
-                crate::infrastructure::persistence::pos_checkout_repository::PgPosCheckoutRepository::new(
-                    pool.clone(),
-                ),
+        let pos_checkout_repository: Arc<dyn PosCheckoutRepository> = Arc::new(
+            crate::infrastructure::persistence::pos_checkout_repository::PgPosCheckoutRepository::new(
+                pool.clone(),
             ),
+        );
+        let coordinate_checkout = Arc::new(CoordinateCheckoutUseCase::new(
+            pos_checkout_repository.clone(),
             issue_invoice.clone(),
             config.internal_gateway_secret.clone(),
         ));
@@ -134,6 +137,7 @@ impl AppState {
             pool: pool.clone(),
             issue_invoice,
             coordinate_checkout,
+            pos_checkout_repository,
             cancel_invoice,
             create_series: Arc::new(CreateFiscalSeriesUseCase::new(
                 session_factory.clone(),

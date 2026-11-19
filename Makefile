@@ -11,6 +11,8 @@ CARGO_MANIFEST     := Backend/Cargo.toml
 GATEWAY_MANIFEST   := Backend/gateway/Cargo.toml
 INVOICING_MANIFEST := Backend/services/KudibaInvoicing/Cargo.toml
 INVENTORY_MANIFEST := Backend/services/KudibaInventory/Cargo.toml
+TREASURY_MANIFEST  := Backend/services/KudibaTreasury/Cargo.toml
+BRIDGE_MANIFEST    := Backend/services/KudibaHardwareBridge/Cargo.toml
 AUTH_DIR           := Backend/services/KudibaAuth
 PAYROLL_DIR        := Backend/services/KudibaPayroll
 INTEGRATIONS_DIR   := Backend/services/KudibaIntegrations
@@ -63,7 +65,7 @@ check: lint test ## Lint + todos os testes
 # -----------------------------------------------------------------------------
 # Testes
 # -----------------------------------------------------------------------------
-.PHONY: test test-rust test-gateway test-invoicing test-inventory test-auth test-payroll test-integrations test-backoffice test-e2e apply-rls apply-application-roles
+.PHONY: test test-rust test-gateway test-invoicing test-inventory test-treasury test-bridge test-auth test-payroll test-integrations test-backoffice test-e2e apply-rls apply-application-roles
 test: test-rust test-auth test-payroll test-integrations test-backoffice ## Corre todos os testes (Rust + Python)
 
 test-rust: ## Testes do workspace Rust (Gateway + Invoicing + Inventory)
@@ -77,6 +79,12 @@ test-invoicing: ## Testes do KudibaInvoicing
 
 test-inventory: ## Testes do KudibaInventory
 	cargo test --manifest-path $(INVENTORY_MANIFEST)
+
+test-treasury: ## Testes do KudibaTreasury
+	cargo test --manifest-path $(TREASURY_MANIFEST)
+
+test-bridge: ## Testes do agente local KudibaHardwareBridge
+	cargo test --manifest-path $(BRIDGE_MANIFEST)
 
 test-auth: ## Testes do KudibaAuth (pytest)
 	cd $(AUTH_DIR) && PYTHONPATH=. python3 -m pytest tests/ -q
@@ -104,6 +112,21 @@ apply-pos-migrations: ## Aplica as migrações 32 e 33 do checkout POS em bases 
 
 apply-pos-migrations-remote: ## Aplica as migrações 32/33 no Postgres remoto via SSH+Docker
 	PG_SSH_HOST=$${PG_SSH_HOST:-kudiba@192.168.32.62} PG_CONTAINER=$${PG_CONTAINER:-demo-postgres} bash Backend/deploy/apply-pos-migrations.sh
+
+apply-pos-hardware-migrations: ## Aplica as migrações POS, incluindo a 34 de hardware, na base kudiba_treasury
+	bash Backend/deploy/apply-pos-migrations.sh
+
+bridge-build: ## Compila o agente local de hardware em release
+	cargo build --release --manifest-path $(BRIDGE_MANIFEST)
+
+bridge-dev: ## Corre o agente local em desenvolvimento
+	cargo run --manifest-path $(BRIDGE_MANIFEST)
+
+bridge-install: bridge-build ## Instala o agente a partir do build release
+	bash scripts/install-hardware-bridge.sh
+
+bridge-update: ## Atualiza o agente a partir de KUDIBA_BRIDGE_RELEASE_URL
+	bash scripts/update-hardware-bridge.sh
 
 # -----------------------------------------------------------------------------
 # KudibaAuth (Python)

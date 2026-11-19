@@ -7,7 +7,7 @@ PG_SSH_HOST="${PG_SSH_HOST:-}"
 PG_RUNTIME="${PG_RUNTIME:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-for sql in 30-invoicing-proformas-and-payments.sql 32-pos-checkout-schema.sql 33-treasury-cash-movement-idempotency.sql; do
+for sql in 30-invoicing-proformas-and-payments.sql 32-pos-checkout-schema.sql 33-treasury-cash-movement-idempotency.sql 34-pos-hardware.sql; do
   if [[ ! -f "${SCRIPT_DIR}/${sql}" ]]; then
     echo "Ficheiro SQL não encontrado: ${SCRIPT_DIR}/${sql}" >&2
     exit 1
@@ -43,4 +43,5 @@ echo "=== Aplicando migrações POS em bases existentes ==="
 apply_migration "kudiba_invoicing" "${SCRIPT_DIR}/30-invoicing-proformas-and-payments.sql"
 apply_migration "kudiba_invoicing" "${SCRIPT_DIR}/32-pos-checkout-schema.sql"
 apply_migration "kudiba_treasury" "${SCRIPT_DIR}/33-treasury-cash-movement-idempotency.sql"
+apply_migration "kudiba_treasury" "${SCRIPT_DIR}/34-pos-hardware.sql"
 echo "[✓] Migrações POS aplicadas."

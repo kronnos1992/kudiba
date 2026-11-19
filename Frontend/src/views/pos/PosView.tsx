@@ -43,14 +43,21 @@ import { authApi, TenantMember } from '../../api/auth';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { validateInvoiceCustomerNif } from '../../utils/validators';
 import {
+  bridgeCatalog,
   bridgeStatus,
   openCashDrawer,
   pairBridge,
+  pairBridgeCloud,
+  printText,
   requestBridgeChallenge,
   revokeBridgeToken,
   rotateBridgeToken,
+  submitBridgeBarcode,
   submitPrintJob,
+  type BridgeCatalog,
   type BridgePrintJob,
+  type BridgePrintResult,
+  type BridgeSkipped,
 } from '../../services/hardwareBridge';
 import {
   cachePosProducts,
@@ -90,6 +97,8 @@ export const PosView: React.FC = () => {
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [productSearch, setProductSearch] = useState('');
+  const [scannerInput, setScannerInput] = useState('');
+  const scannerInputRef = React.useRef<HTMLInputElement | null>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('NUMERARIO');
   const [amountTendered, setAmountTendered] = useState<string>('');
   const [extraPayments, setExtraPayments] = useState<
@@ -139,19 +148,27 @@ export const PosView: React.FC = () => {
   const zReportDateRange = resolveReportDateRange(zReportStartDate, zReportEndDate);
 
   const [bridgeCode, setBridgeCode] = useState('');
+  const [activationToken, setActivationToken] = useState('');
   const [bridgePaired, setBridgePaired] = useState<boolean | null>(null);
   const [bridgeAwaitingCode, setBridgeAwaitingCode] = useState(false);
   const [bridgeBusy, setBridgeBusy] = useState(false);
   const [bridgeMessage, setBridgeMessage] = useState<string | null>(null);
+  const [bridgeSeedVersion, setBridgeSeedVersion] = useState<number | null>(null);
+  const [bridgeCatalogData, setBridgeCatalogData] = useState<BridgeCatalog | null>(null);
 
   const roles = (user?.roles ?? []).map((r) => r.toUpperCase());
   const isManager = roles.some((r) => ['ADMIN', 'SYSADMIN', 'SUPER_ADMIN'].includes(r));
+
+  const focusScanner = React.useCallback(() => {
+    window.setTimeout(() => scannerInputRef.current?.focus(), 0);
+  }, []);
 
   const refreshBridgeStatus = React.useCallback(async () => {
     try {
       const status = await bridgeStatus();
       setBridgePaired(status.paired);
       setBridgeAwaitingCode(status.awaitingCode);
+      setBridgeSeedVersion(status.seedVersion ?? null);
       setBridgeMessage(
         status.locked
           ? 'Emparelhamento temporariamente bloqueado; aguarde a expiração ou peça um novo código.'
@@ -160,6 +177,7 @@ export const PosView: React.FC = () => {
     } catch {
       setBridgePaired(null);
       setBridgeAwaitingCode(false);
+      setBridgeSeedVersion(null);
       setBridgeMessage('Agente local indisponível. Confirme que o serviço está a correr neste posto.');
     }
   }, []);
@@ -167,6 +185,24 @@ export const PosView: React.FC = () => {
   React.useEffect(() => {
     void refreshBridgeStatus();
   }, [activeTenant?.id, refreshBridgeStatus]);
+
+  React.useEffect(() => {
+    if (bridgePaired !== true) {
+      setBridgeCatalogData(null);
+      return;
+    }
+    let active = true;
+    bridgeCatalog()
+      .then((catalog) => {
+        if (active) setBridgeCatalogData(catalog);
+      })
+      .catch(() => {
+        if (active) setBridgeCatalogData(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridgePaired, activeTenant?.id]);
 
   // Queries
   const {
@@ -245,9 +281,45 @@ export const PosView: React.FC = () => {
     previousBackendReachable.current = isBackendReachable;
   }, [activeTenant?.id, isBackendReachable, refetchProducts]);
 
-  const catalogProducts: Product[] =
-    productsQueryFailed ? (offlineCatalog as unknown as Product[]) : products;
-  const isCatalogLoading = isLoadingProducts && catalogProducts.length === 0;
+  const bridgeProducts: Product[] = React.useMemo(
+    () =>
+      (bridgeCatalogData?.products ?? []).map((product, index) => ({
+        id: `bridge:${product.code}:${index}`,
+        tenant_id: activeTenant?.id ?? '',
+        code: product.code,
+        ref_id: null,
+        barcode: product.barcode || null,
+        name: product.description,
+        description: null,
+        product_type: 'P',
+        is_stockable: true,
+        track_lots: false,
+        unit_of_measure: 'UN',
+        sale_price: product.price,
+        cost_price: 0,
+        current_cmp: 0,
+        tax_type: 'IVA',
+        tax_code: 'IVA',
+        tax_percentage: product.taxRate,
+        exemption_reason_code: null,
+        exemption_reason_text: null,
+        has_withholding_tax: false,
+        is_active: true,
+        created_at: bridgeCatalogData?.expiresAt ?? '',
+        updated_at: bridgeCatalogData?.expiresAt ?? '',
+      })),
+    [bridgeCatalogData, activeTenant?.id]
+  );
+
+  const usingBridgeCatalog = bridgeCatalogData !== null && bridgeProducts.length > 0;
+
+  const catalogProducts: Product[] = usingBridgeCatalog
+    ? bridgeProducts
+    : productsQueryFailed
+      ? (offlineCatalog as unknown as Product[])
+      : products;
+  const isCatalogLoading =
+    !usingBridgeCatalog && isLoadingProducts && catalogProducts.length === 0;
 
   const { data: stockBalances = [] } = useQuery({
     queryKey: ['pos_stock_balances', activeTenant?.id],
@@ -381,7 +453,7 @@ export const PosView: React.FC = () => {
     Math.abs(paymentAllocations.reduce((sum, payment) => sum + payment.amount, 0) - totalGross) < 0.01;
 
   const cartStockErrors = React.useMemo(() => {
-    if (isContingencyMode) return [];
+    if (isContingencyMode || usingBridgeCatalog) return [];
     const errors: string[] = [];
     for (const item of cart) {
       if (!item.isService) {
@@ -394,7 +466,7 @@ export const PosView: React.FC = () => {
       }
     }
     return errors;
-  }, [cart, productStockMap, isContingencyMode]);
+  }, [cart, productStockMap, isContingencyMode, usingBridgeCatalog]);
 
   // Filtragem de catálogo
   const filteredProducts = catalogProducts.filter(
@@ -405,23 +477,53 @@ export const PosView: React.FC = () => {
       (p.barcode && p.barcode.includes(productSearch))
   );
 
+  const findExactProduct = (query: string): Product | null => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return null;
+    return (
+      catalogProducts.find(
+        (p) =>
+          (p.barcode && p.barcode.toLowerCase() === normalized) ||
+          p.code.toLowerCase() === normalized ||
+          (p.ref_id && p.ref_id.toLowerCase() === normalized)
+      ) ?? null
+    );
+  };
+
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       const query = productSearch.trim().toLowerCase();
       if (!query) return;
 
       const exactMatch =
-        catalogProducts.find(
-          (p) =>
-            (p.barcode && p.barcode.toLowerCase() === query) ||
-            p.code.toLowerCase() === query ||
-            (p.ref_id && p.ref_id.toLowerCase() === query)
-        ) || (filteredProducts.length === 1 ? filteredProducts[0] : null);
+        findExactProduct(query) || (filteredProducts.length === 1 ? filteredProducts[0] : null);
 
       if (exactMatch) {
         handleAddToCart(exactMatch);
         setProductSearch('');
       }
+    }
+  };
+
+  const addScannedProduct = (rawValue: string) => {
+    const value = rawValue.split(/[\r\n\t]/)[0].trim();
+    if (!value) return;
+    void submitBridgeBarcode(value).catch(() => undefined);
+    const exactMatch =
+      findExactProduct(value) || (filteredProducts.length === 1 ? filteredProducts[0] : null);
+    if (exactMatch) {
+      handleAddToCart(exactMatch);
+      setScannerInput('');
+    } else {
+      toast.warning(`Artigo não encontrado para o código lido: ${value}`);
+    }
+    focusScanner();
+  };
+
+  const handleScannerKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      addScannedProduct(scannerInput);
     }
   };
 
@@ -431,7 +533,7 @@ export const PosView: React.FC = () => {
     const existing = cart.find((item) => item.productId === product.id);
     const requested = (existing?.qty || 0) + 1;
 
-    if (!isService && !isContingencyMode && requested > available) {
+    if (!isService && !isContingencyMode && !usingBridgeCatalog && requested > available) {
       toast.error(
         available <= 0
           ? `Artigo "${product.name}" sem stock em armazém (0 un. disponível).`
@@ -473,7 +575,13 @@ export const PosView: React.FC = () => {
     if (!item) return;
     const isService = item.isService;
     const available = getProductStock(productId);
-    if (delta > 0 && !isService && !isContingencyMode && item.qty + delta > available) {
+    if (
+      delta > 0 &&
+      !isService &&
+      !isContingencyMode &&
+      !usingBridgeCatalog &&
+      item.qty + delta > available
+    ) {
       toast.error(`Stock máximo disponível para "${item.name}": ${available} un.`);
       return;
     }
@@ -872,9 +980,11 @@ export const PosView: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['pos_session_current'] });
       setPosOpenModal(false);
       setPosNotesInput('');
+      focusScanner();
     },
     onError: (err: any) => {
       setPosOpenModal(false);
+      focusScanner();
       setErrorMessage(
         err?.response?.data?.error ||
           err?.response?.data?.detail ||
@@ -896,9 +1006,11 @@ export const PosView: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['pos_session_current'] });
       setPosCloseModal(false);
       setPosNotesInput('');
+      focusScanner();
     },
     onError: (err: any) => {
       setPosCloseModal(false);
+      focusScanner();
       setErrorMessage(
         err?.response?.data?.error ||
           err?.response?.data?.detail ||
@@ -995,6 +1107,37 @@ export const PosView: React.FC = () => {
     }
   };
 
+  const handlePairBridgeCloud = async () => {
+    if (!activeTenant?.id) {
+      toast.error('Selecione uma empresa antes de emparelhar o agente local.');
+      return;
+    }
+    const token = activationToken.trim();
+    if (!token) {
+      toast.error('Introduza o token de ativação gerado no backend.');
+      return;
+    }
+    setBridgeBusy(true);
+    setBridgeMessage(null);
+    try {
+      const result = await pairBridgeCloud(token, `POS ${activeRegister?.code || '01'}`);
+      setBridgePaired(result.paired);
+      setBridgeAwaitingCode(false);
+      setActivationToken('');
+      await refreshBridgeStatus();
+      toast.success(
+        `Agente emparelhado com a cloud no terminal ${result.terminalId} (credencial ${result.credentialEpoch}).`
+      );
+    } catch (error: any) {
+      const detail = error?.message || 'Não foi possível emparelhar o agente com a cloud.';
+      await refreshBridgeStatus();
+      setBridgeMessage(detail);
+      toast.error(detail);
+    } finally {
+      setBridgeBusy(false);
+    }
+  };
+
   const handleRequestBridgeChallenge = async () => {
     setBridgeBusy(true);
     setBridgeMessage(null);
@@ -1045,6 +1188,22 @@ export const PosView: React.FC = () => {
     }
   };
 
+  const formatBridgeAmount = (value: number | string | null | undefined) =>
+    Number(value || 0).toLocaleString('pt-AO', { minimumFractionDigits: 2 });
+
+  const reportBridgePrintResult = (
+    result: BridgePrintResult | BridgeSkipped,
+    label: string
+  ) => {
+    if ('skipped' in result) {
+      toast.warning(`${label} não enviado: ${result.reason}`);
+    } else {
+      toast.success(
+        `${label} entregue ao agente local (${result.state}, tentativa ${result.attempts}${result.replay ? ', replay' : ''}).`
+      );
+    }
+  };
+
   const handleOpenDrawer = async () => {
     if (!activeTenant?.id || !issuedPrintJob) return;
     if (
@@ -1052,6 +1211,7 @@ export const PosView: React.FC = () => {
         'Confirmar a abertura da gaveta? Esta ação fica registada na auditoria do agente local.'
       )
     ) {
+      focusScanner();
       return;
     }
     setBridgeActionBusy(true);
@@ -1066,14 +1226,12 @@ export const PosView: React.FC = () => {
       toast.warning(error?.message || 'Não foi possível abrir a gaveta.');
     } finally {
       setBridgeActionBusy(false);
+      focusScanner();
     }
   };
 
-  const handleCopyReprint = async () => {
+  const sendAuditedCopy = async () => {
     if (!activeTenant?.id || !issuedPrintJob) return;
-    if (!window.confirm('Emitir uma cópia auditada deste talão? A gaveta não será aberta.')) {
-      return;
-    }
     setBridgeActionBusy(true);
     try {
       const copyJob: BridgePrintJob = {
@@ -1082,16 +1240,135 @@ export const PosView: React.FC = () => {
         copyId: crypto.randomUUID(),
       };
       const result = await submitPrintJob(copyJob, activeTenant.id);
-      if ('skipped' in result) {
-        toast.warning(`Cópia não enviada: ${result.reason}`);
-      } else {
-        toast.success(`Cópia entregue ao agente local (${result.state}).`);
-      }
+      reportBridgePrintResult(result, 'Cópia auditada');
     } catch (error: any) {
       toast.warning(error?.message || 'Não foi possível reimprimir a cópia.');
     } finally {
       setBridgeActionBusy(false);
+      focusScanner();
     }
+  };
+
+  const handleCopyReprint = async () => {
+    if (!window.confirm('Emitir uma cópia auditada deste talão? A gaveta não será aberta.')) {
+      focusScanner();
+      return;
+    }
+    await sendAuditedCopy();
+  };
+
+  const handleReprintFiscalReceipt = async () => {
+    await sendAuditedCopy();
+  };
+
+  const handlePrintOfflineReceipt = async () => {
+    if (!offlineReceipt) return;
+    const lines = [
+      `Comprovativo: ${offlineReceipt.offlineDocumentNumber}`,
+      `Data: ${new Date(offlineReceipt.createdAt).toLocaleString()}`,
+      `Cliente: ${offlineReceipt.customerName}`,
+      `NIF: ${offlineReceipt.customerNif || '999999999'}`,
+      `Operador: ${offlineReceipt.cashierName}`,
+      '---',
+      ...offlineReceipt.lines.map(
+        (line) =>
+          `${line.quantity}x ${line.description} — ${formatBridgeAmount(Number(line.unitPrice) * Number(line.quantity))} Kz`
+      ),
+      '---',
+      `Total Líquido: ${formatBridgeAmount(offlineReceipt.netTotal)} Kz`,
+      `IVA Total: ${formatBridgeAmount(offlineReceipt.taxTotal)} Kz`,
+      `TOTAL AOA: ${formatBridgeAmount(offlineReceipt.grossTotal)} Kz`,
+      `Meio Pagamento: ${offlineReceipt.paymentMethod}`,
+      `Valor Entregue: ${formatBridgeAmount(offlineReceipt.amountTendered)} Kz`,
+      `Troco Devolvido: ${formatBridgeAmount(offlineReceipt.changeDue)} Kz`,
+      'COMPROVATIVO PROVISÓRIO — NÃO É DOCUMENTO FISCAL',
+      `Ref. local: ${offlineReceipt.id.substring(0, 18)}...`,
+    ];
+    setBridgeActionBusy(true);
+    try {
+      const result = await printText(
+        `offline-receipt:${offlineReceipt.id}`,
+        'COMPROVATIVO PROVISÓRIO — NÃO É DOCUMENTO FISCAL',
+        lines,
+        'CONTINGENCY'
+      );
+      reportBridgePrintResult(result, 'Comprovativo');
+    } catch (error: any) {
+      toast.error(error?.message || 'Não foi possível imprimir o comprovativo provisório.');
+    } finally {
+      setBridgeActionBusy(false);
+    }
+  };
+
+  const handlePrintLeituraX = async () => {
+    if (!leituraXText) return;
+    const terminalId = activeRegister?.code || seriesCode || 'POS-01';
+    setBridgeActionBusy(true);
+    try {
+      const result = await printText(
+        `leitura-x:${terminalId}:${Date.now()}`,
+        'LEITURA X',
+        leituraXText.split('\n'),
+        'REPORT'
+      );
+      reportBridgePrintResult(result, 'Leitura X');
+    } catch (error: any) {
+      toast.error(error?.message || 'Não foi possível imprimir a Leitura X.');
+    } finally {
+      setBridgeActionBusy(false);
+    }
+  };
+
+  const handlePrintFechoZ = async () => {
+    if (!fechoZResult) return;
+    const terminalId = activeRegister?.code || seriesCode || 'POS-01';
+    const reportNumber =
+      fechoZResult.zReportNumber ||
+      `Z ${new Date().getFullYear()}/${String(fechoZResult.zReportSequence || 1).padStart(6, '0')}`;
+    const lines = [
+      `Fecho Z Nº: ${reportNumber}`,
+      `Data Fiscal: ${fechoZResult.date}`,
+      `Terminal / Série: ${fechoZResult.posTerminalId || seriesCode}`,
+      `Documentos Emitidos: ${fechoZResult.invoicesCount} Faturas | ${fechoZResult.creditNotesCount} NCs`,
+      `Vendas Brutas: ${formatBridgeAmount(fechoZResult.grossSalesTotal)} Kz`,
+      `Total IVA Liquidado: ${formatBridgeAmount(fechoZResult.vatTotal)} Kz`,
+      `Total Líquido Encerrado: ${formatBridgeAmount(fechoZResult.finalTotal)} Kz`,
+    ];
+    setBridgeActionBusy(true);
+    try {
+      const result = await printText(
+        `fecho-z:${terminalId}:${Date.now()}`,
+        'FECHO Z',
+        lines,
+        'REPORT'
+      );
+      reportBridgePrintResult(result, 'Fecho Z');
+    } catch (error: any) {
+      toast.error(error?.message || 'Não foi possível imprimir o Fecho Z.');
+    } finally {
+      setBridgeActionBusy(false);
+    }
+  };
+
+  const closeTicketModal = () => {
+    setTicketModalOpen(false);
+    setIssuedPrintJob(null);
+    focusScanner();
+  };
+
+  const closeOfflineTicketModal = () => {
+    setOfflineTicketModalOpen(false);
+    focusScanner();
+  };
+
+  const closeLeituraXModal = () => {
+    setLeituraXText(null);
+    focusScanner();
+  };
+
+  const closeFechoZModal = () => {
+    setFechoZResult(null);
+    focusScanner();
   };
 
   return (
@@ -1246,7 +1523,10 @@ export const PosView: React.FC = () => {
           return (
             <button
               key={tab.id}
-              onClick={() => setPosTab(tab.id)}
+              onClick={() => {
+                setPosTab(tab.id);
+                focusScanner();
+              }}
               className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex-1 sm:flex-none ${
                 active
                   ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-xs'
@@ -1322,6 +1602,26 @@ export const PosView: React.FC = () => {
                 [Enter] Leitor Barcode
               </span>
             </div>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase text-slate-500 shrink-0">
+                Leitor
+              </span>
+              <input
+                ref={scannerInputRef}
+                type="text"
+                autoComplete="off"
+                autoFocus
+                placeholder="Bipar código (Enter ou sufixo do leitor)"
+                value={scannerInput}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (/[\r\n\t]/.test(value)) addScannedProduct(value);
+                  else setScannerInput(value);
+                }}
+                onKeyDown={handleScannerKeyDown}
+                className="min-w-0 flex-1 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
           </GlassCard>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3 max-h-[380px] sm:max-h-[480px] lg:max-h-[580px] overflow-y-auto pr-1">
@@ -1338,7 +1638,7 @@ export const PosView: React.FC = () => {
               filteredProducts.map((prod) => {
                 const isSrv = prod.product_type === 'S' || !prod.is_stockable;
                 const avail = getProductStock(prod.id);
-                const isOutOfStock = !isSrv && avail <= 0;
+                const isOutOfStock = !usingBridgeCatalog && !isSrv && avail <= 0;
 
                 return (
                   <button
@@ -1361,7 +1661,11 @@ export const PosView: React.FC = () => {
                         {prod.name}
                       </h4>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                        {isSrv ? (
+                        {usingBridgeCatalog ? (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-500/20">
+                            Catálogo agente
+                          </span>
+                        ) : isSrv ? (
                           <span className="text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-500/20">
                             Serviço
                           </span>
@@ -1738,8 +2042,32 @@ export const PosView: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                  Código de 6 dígitos gerado no arranque do agente, válido 5 minutos. Nunca o partilhe.
+                  Token de ativação gerado no backend, ou código de 6 dígitos do arranque do agente
+                  (válido 5 minutos, apenas para desenvolvimento). Nunca os partilhe.
                 </p>
+                {bridgeSeedVersion !== null && (
+                  <p className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-1">
+                    Seed do catálogo no agente: v{bridgeSeedVersion}
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={activationToken}
+                    onChange={(event) => setActivationToken(event.target.value)}
+                    placeholder="Token de ativação (cloud)"
+                    className="min-w-0 flex-1 px-2 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white"
+                  />
+                  <button
+                    type="button"
+                    disabled={bridgeBusy || bridgePaired === true}
+                    onClick={handlePairBridgeCloud}
+                    className="px-3 py-1.5 rounded-lg bg-sky-700 hover:bg-sky-800 text-white text-[11px] font-bold disabled:opacity-50 cursor-pointer"
+                  >
+                    Emparelhar com a cloud
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   <input
                     inputMode="numeric"
@@ -2408,7 +2736,10 @@ export const PosView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full p-6 text-slate-900 dark:text-white relative">
             <button
-              onClick={() => setPosOpenModal(false)}
+              onClick={() => {
+                setPosOpenModal(false);
+                focusScanner();
+              }}
               className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600"
             >
               <X className="w-4 h-4" />
@@ -2432,7 +2763,10 @@ export const PosView: React.FC = () => {
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button
-                  onClick={() => setPosOpenModal(false)}
+                  onClick={() => {
+                    setPosOpenModal(false);
+                    focusScanner();
+                  }}
                   className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
                 >
                   Cancelar
@@ -2455,7 +2789,10 @@ export const PosView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full p-6 text-slate-900 dark:text-white relative">
             <button
-              onClick={() => setPosCloseModal(false)}
+              onClick={() => {
+                setPosCloseModal(false);
+                focusScanner();
+              }}
               className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600"
             >
               <X className="w-4 h-4" />
@@ -2479,7 +2816,10 @@ export const PosView: React.FC = () => {
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button
-                  onClick={() => setPosCloseModal(false)}
+                  onClick={() => {
+                    setPosCloseModal(false);
+                    focusScanner();
+                  }}
                   className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
                 >
                   Cancelar
@@ -2502,11 +2842,9 @@ export const PosView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-slate-900 relative">
             <button
-              onClick={() => {
-                setTicketModalOpen(false);
-                setIssuedPrintJob(null);
-              }}
-              className="no-print absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              onClick={closeTicketModal}
+              disabled={bridgeActionBusy}
+              className="no-print absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
             >
               <X className="w-4 h-4" />
             </button>
@@ -2616,11 +2954,9 @@ export const PosView: React.FC = () => {
 
             <div className="no-print flex flex-wrap items-center justify-end gap-2 mt-4">
               <button
-                onClick={() => {
-                  setTicketModalOpen(false);
-                  setIssuedPrintJob(null);
-                }}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                onClick={closeTicketModal}
+                disabled={bridgeActionBusy}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
               >
                 Fechar
               </button>
@@ -2643,11 +2979,12 @@ export const PosView: React.FC = () => {
                 <span>Abrir Gaveta</span>
               </button>
               <button
-                onClick={() => window.print()}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-xs cursor-pointer"
+                onClick={handleReprintFiscalReceipt}
+                disabled={!issuedPrintJob || bridgePaired !== true || bridgeActionBusy}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Printer className="w-4 h-4" />
-                <span>Imprimir Talão Fiscal</span>
+                <span>Reimprimir Talão (Cópia Auditada)</span>
               </button>
             </div>
           </div>
@@ -2659,8 +2996,9 @@ export const PosView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-slate-900 relative">
             <button
-              onClick={() => setOfflineTicketModalOpen(false)}
-              className="no-print absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              onClick={closeOfflineTicketModal}
+              disabled={bridgeActionBusy}
+              className="no-print absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
             >
               <X className="w-4 h-4" />
             </button>
@@ -2748,14 +3086,16 @@ export const PosView: React.FC = () => {
 
             <div className="no-print flex items-center justify-end gap-2 mt-4">
               <button
-                onClick={() => setOfflineTicketModalOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                onClick={closeOfflineTicketModal}
+                disabled={bridgeActionBusy}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
               >
                 Fechar
               </button>
               <button
-                onClick={() => window.print()}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+                onClick={handlePrintOfflineReceipt}
+                disabled={bridgePaired !== true || bridgeActionBusy}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Printer className="w-4 h-4" />
                 <span>Imprimir Comprovativo</span>
@@ -2770,8 +3110,9 @@ export const PosView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 text-slate-900 relative">
             <button
-              onClick={() => setLeituraXText(null)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600"
+              onClick={closeLeituraXModal}
+              disabled={bridgeActionBusy}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 disabled:opacity-50"
             >
               <X className="w-4 h-4" />
             </button>
@@ -2781,14 +3122,16 @@ export const PosView: React.FC = () => {
             </pre>
             <div className="flex justify-end gap-2 mt-4">
               <button
-                onClick={() => setLeituraXText(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                onClick={closeLeituraXModal}
+                disabled={bridgeActionBusy}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
               >
                 Fechar
               </button>
               <button
-                onClick={() => window.print()}
-                className="px-4 py-2 rounded-xl bg-emerald-700 text-white text-xs font-bold"
+                onClick={handlePrintLeituraX}
+                disabled={bridgePaired !== true || bridgeActionBusy}
+                className="px-4 py-2 rounded-xl bg-emerald-700 text-white text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Imprimir
               </button>
@@ -2802,8 +3145,9 @@ export const PosView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 text-slate-900 relative">
             <button
-              onClick={() => setFechoZResult(null)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600"
+              onClick={closeFechoZModal}
+              disabled={bridgeActionBusy}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 disabled:opacity-50"
             >
               <X className="w-4 h-4" />
             </button>
@@ -2845,14 +3189,16 @@ export const PosView: React.FC = () => {
             </div>
             <div className="flex justify-end gap-2 mt-4">
               <button
-                onClick={() => window.print()}
-                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold"
+                onClick={handlePrintFechoZ}
+                disabled={bridgePaired !== true || bridgeActionBusy}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Imprimir
               </button>
               <button
-                onClick={() => setFechoZResult(null)}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold"
+                onClick={closeFechoZModal}
+                disabled={bridgeActionBusy}
+                className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold disabled:opacity-50"
               >
                 Concluir
               </button>

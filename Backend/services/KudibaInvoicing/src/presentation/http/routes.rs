@@ -45,6 +45,16 @@ async fn tenant_scope_middleware(
 
 const MAX_SIGNATURE_BODY_BYTES: usize = 10 * 1024 * 1024;
 
+const POS_CHECKOUT_ROLES: &[&str] = &[
+    "ADMIN",
+    "ADMINISTRADOR",
+    "GESTOR",
+    "OPERADOR_FACTURACAO",
+    "BILLING_OPERATOR",
+    "OPERADOR_CAIXA",
+    "CASHIER",
+];
+
 pub async fn gateway_signature_middleware(
     State(state): State<AppState>,
     request: Request,
@@ -108,6 +118,10 @@ pub fn router(state: AppState) -> Router {
             post(issue_invoice_handler).get(list_invoices_handler),
         )
         .route("/api/v1/fiscal/pos/checkout", post(pos_checkout_handler))
+        .route(
+            "/api/v1/fiscal/pos/print-jobs/{id}",
+            get(get_pos_print_job_handler),
+        )
         // REST: consulta de documento fiscal
         .route("/api/v1/invoices/{id}", get(get_invoice_handler))
         .route("/api/v1/fiscal/invoices/{id}", get(get_invoice_handler))
@@ -414,19 +428,7 @@ async fn pos_checkout_handler(
         }
     }
 
-    let actor = match authorize_tenant(
-        &headers,
-        request.invoice.tenant_id,
-        &[
-            "ADMIN",
-            "ADMINISTRADOR",
-            "GESTOR",
-            "OPERADOR_FACTURACAO",
-            "BILLING_OPERATOR",
-            "OPERADOR_CAIXA",
-            "CASHIER",
-        ],
-    ) {
+    let actor = match authorize_tenant(&headers, request.invoice.tenant_id, POS_CHECKOUT_ROLES) {
         Ok(actor) => actor,
         Err(response) => return response.into_response(),
     };
@@ -474,6 +476,48 @@ async fn pos_checkout_handler(
             (StatusCode::CONFLICT, Json(json!({ "error": message }))).into_response()
         }
         Err(err) => domain_error(err),
+    }
+}
+
+async fn get_pos_print_job_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(print_job_id): Path<String>,
+) -> Response {
+    let tenant_id = match authorized_tenant_id(&headers, POS_CHECKOUT_ROLES) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response.into_response(),
+    };
+    let actor = match authorize_tenant(&headers, tenant_id, POS_CHECKOUT_ROLES) {
+        Ok(actor) => actor,
+        Err(response) => return response.into_response(),
+    };
+
+    match state
+        .pos_checkout_repository
+        .find_print_job(tenant_id, print_job_id.trim())
+        .await
+    {
+        Ok(Some(payload)) => Json(payload).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Trabalho de impressão não encontrado." })),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(
+                actor = %actor,
+                tenant_id = %tenant_id,
+                print_job_id = %print_job_id,
+                error = %err,
+                "Falha ao recuperar trabalho de impressão POS"
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Não foi possível consultar o trabalho de impressão." })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -4275,6 +4319,57 @@ mod authorization_tests {
         )
         .unwrap_err();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn nega_recuperacao_de_print_job_de_outra_empresa() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Resolved-Tenant-ID",
+            "a0000000-0000-0000-0000-000000000001".parse().unwrap(),
+        );
+        headers.insert("X-Resolved-User-ID", "cashier-1".parse().unwrap());
+        headers.insert("X-Resolved-Roles", "OPERADOR_CAIXA".parse().unwrap());
+
+        let header_tenant = authorized_tenant_id(&headers, POS_CHECKOUT_ROLES).unwrap();
+        let stored_tenant = Uuid::parse_str("a0000000-0000-0000-0000-000000000002").unwrap();
+
+        assert_eq!(
+            header_tenant,
+            Uuid::parse_str("a0000000-0000-0000-0000-000000000001").unwrap()
+        );
+        assert_eq!(
+            authorize_tenant(&headers, stored_tenant, POS_CHECKOUT_ROLES)
+                .unwrap_err()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert!(authorize_tenant(&headers, header_tenant, POS_CHECKOUT_ROLES).is_ok());
+    }
+
+    #[test]
+    fn exige_contexto_autenticado_para_recuperar_print_job() {
+        let headers = HeaderMap::new();
+        assert_eq!(
+            authorized_tenant_id(&headers, POS_CHECKOUT_ROLES)
+                .unwrap_err()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Resolved-Tenant-ID",
+            "a0000000-0000-0000-0000-000000000001".parse().unwrap(),
+        );
+        headers.insert("X-Resolved-User-ID", "user-1".parse().unwrap());
+        headers.insert("X-Resolved-Roles", "CONTABILISTA".parse().unwrap());
+        assert_eq!(
+            authorized_tenant_id(&headers, POS_CHECKOUT_ROLES)
+                .unwrap_err()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
     }
 
     #[test]

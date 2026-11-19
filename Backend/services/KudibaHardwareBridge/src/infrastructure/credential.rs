@@ -22,6 +22,12 @@ pub struct DeviceCredential {
     pub tenant_id: Uuid,
     pub label: String,
     pub paired_at: DateTime<Utc>,
+    #[serde(default)]
+    pub terminal_id: Option<Uuid>,
+    #[serde(default)]
+    pub credential_epoch: i64,
+    #[serde(default)]
+    pub seed_version: Option<i32>,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +51,9 @@ pub struct PairingStatus {
     pub awaiting_code: bool,
     pub locked: bool,
     pub lockout_until: Option<DateTime<Utc>>,
+    pub terminal_id: Option<Uuid>,
+    pub credential_epoch: Option<i64>,
+    pub seed_version: Option<i32>,
 }
 
 pub struct CredentialStore {
@@ -78,6 +87,9 @@ impl CredentialStore {
                     tenant_id,
                     label: "token estático por variável de ambiente".to_string(),
                     paired_at: Utc::now(),
+                    terminal_id: None,
+                    credential_epoch: 0,
+                    seed_version: None,
                 })),
                 pairing: RwLock::new(PairingState::Idle),
                 path,
@@ -122,6 +134,9 @@ impl CredentialStore {
                 tenant_id: Uuid::nil(),
                 label: "teste".to_string(),
                 paired_at: Utc::now(),
+                terminal_id: None,
+                credential_epoch: 0,
+                seed_version: None,
             })),
             pairing: RwLock::new(PairingState::Idle),
             path: None,
@@ -140,11 +155,15 @@ impl CredentialStore {
             PairingState::LockedUntil(until) => (false, Some(*until)),
             PairingState::Idle => (false, None),
         };
+        let credential = self.credential.read().unwrap().clone();
         PairingStatus {
-            paired: self.credential.read().unwrap().is_some(),
+            paired: credential.is_some(),
             awaiting_code,
             locked: lockout_until.is_some(),
             lockout_until,
+            terminal_id: credential.as_ref().and_then(|value| value.terminal_id),
+            credential_epoch: credential.as_ref().map(|value| value.credential_epoch),
+            seed_version: credential.as_ref().and_then(|value| value.seed_version),
         }
     }
 
@@ -170,6 +189,71 @@ impl CredentialStore {
 
     pub fn credential(&self) -> Option<DeviceCredential> {
         self.credential.read().unwrap().clone()
+    }
+
+    pub fn apply_cloud_bootstrap(
+        &self,
+        token: &str,
+        tenant_id: Uuid,
+        terminal_id: Uuid,
+        credential_epoch: i64,
+        label: &str,
+    ) -> Result<String, DeviceError> {
+        if !is_lowercase_hex_64(token) {
+            return Err(DeviceError::InvalidProfile(
+                "token local devolvido pelo cloud é inválido".to_string(),
+            ));
+        }
+        let credential = DeviceCredential {
+            token: token.to_string(),
+            tenant_id,
+            label: label.trim().to_string(),
+            paired_at: Utc::now(),
+            terminal_id: Some(terminal_id),
+            credential_epoch,
+            seed_version: None,
+        };
+        *self
+            .credential
+            .write()
+            .map_err(|_| DeviceError::Busy("credencial".to_string()))? = Some(credential.clone());
+        *self
+            .pairing
+            .write()
+            .map_err(|_| DeviceError::Busy("emparelhamento".to_string()))? = PairingState::Idle;
+        self.persist(Some(&credential))?;
+        Ok(credential.token)
+    }
+
+    pub fn sync_credential_epoch(&self, epoch: i64) -> Result<(), DeviceError> {
+        let mut guard = self
+            .credential
+            .write()
+            .map_err(|_| DeviceError::Busy("credencial".to_string()))?;
+        let Some(credential) = guard.as_mut() else {
+            return Ok(());
+        };
+        if epoch <= credential.credential_epoch {
+            return Ok(());
+        }
+        credential.credential_epoch = epoch;
+        *self
+            .pairing
+            .write()
+            .map_err(|_| DeviceError::Busy("emparelhamento".to_string()))? = PairingState::Idle;
+        self.persist(Some(credential))
+    }
+
+    pub fn set_seed_version(&self, version: i32) -> Result<(), DeviceError> {
+        let mut guard = self
+            .credential
+            .write()
+            .map_err(|_| DeviceError::Busy("credencial".to_string()))?;
+        let Some(credential) = guard.as_mut() else {
+            return Ok(());
+        };
+        credential.seed_version = Some(version);
+        self.persist(Some(credential))
     }
 
     pub fn pair(&self, code: &str, tenant_id: Uuid, label: &str) -> Result<String, DeviceError> {
@@ -213,6 +297,9 @@ impl CredentialStore {
             tenant_id,
             label: label.trim().to_string(),
             paired_at: Utc::now(),
+            terminal_id: None,
+            credential_epoch: 0,
+            seed_version: None,
         };
         *self
             .credential
