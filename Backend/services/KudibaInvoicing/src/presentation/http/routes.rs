@@ -3985,7 +3985,7 @@ async fn load_tenant_by_id(
 ) -> Option<crate::domain::entities::tenant::Tenant> {
     let sql = "SELECT id, slug, company_name, trade_name, nif, address_detail, city, province, postal_code, country, \
                phone, email, website, logo_data_url, alvara_number, commercial_registry, share_capital, currency, tax_office_code, \
-               agt_cert_number, invoice_footer_notes, bank_accounts, status, tax_regime_code, contingency_started_at \
+               agt_cert_number, invoice_footer_notes, bank_accounts::text AS bank_accounts, status, tax_regime_code, contingency_started_at \
                FROM kudiba_core.tenants WHERE id = $1";
     let row = sqlx::query(sql)
         .bind(tenant_id)

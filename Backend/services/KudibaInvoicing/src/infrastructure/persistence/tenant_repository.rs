@@ -30,10 +30,17 @@ impl PgTenantRepository {
     }
 
     pub fn map_row(row: &PgRow) -> Result<Tenant, RepositoryError> {
-        let bank_accounts_raw: Option<String> = row.try_get("bank_accounts").ok().flatten();
-        let bank_accounts: Vec<TenantBankAccount> = bank_accounts_raw
-            .and_then(|raw| serde_json::from_str(&raw).ok())
-            .unwrap_or_default();
+        let bank_accounts: Vec<TenantBankAccount> = if let Ok(Some(raw)) =
+            row.try_get::<Option<String>, _>("bank_accounts")
+        {
+            serde_json::from_str(&raw).unwrap_or_default()
+        } else if let Ok(Some(val)) =
+            row.try_get::<Option<serde_json::Value>, _>("bank_accounts")
+        {
+            serde_json::from_value(val).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
         Ok(Tenant {
             id: row.try_get("id")?,

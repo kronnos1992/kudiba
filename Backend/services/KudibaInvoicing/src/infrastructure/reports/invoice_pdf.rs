@@ -1051,11 +1051,18 @@ impl InvoicePdfGenerator {
                     );
                     let mut bank_y = 94.0;
                     for acc in bank_accounts {
-                        let account_number = acc.account_number.as_deref().unwrap_or_default();
-                        let bank_line = format!(
-                            "Banco: {} | Nº Conta: {} | IBAN: {}",
-                            acc.bank_name, account_number, acc.iban
-                        );
+                        let account_number = acc.resolved_account_number().unwrap_or_default();
+                        let bank_line = if !account_number.is_empty() {
+                            format!(
+                                "Banco: {} | Nº Conta: {} | IBAN: {}",
+                                acc.bank_name, account_number, acc.iban
+                            )
+                        } else {
+                            format!(
+                                "Banco: {} | IBAN: {}",
+                                acc.bank_name, acc.iban
+                            )
+                        };
                         Self::add_text(
                             &mut operations,
                             "F1",
@@ -1914,6 +1921,24 @@ mod tests {
             "999/AGT/2026",
         )
         .is_err());
+
+        let tenant_with_only_iban = Tenant {
+            bank_accounts: vec![crate::domain::entities::tenant::TenantBankAccount {
+                bank_name: "BIC - Banco BIC".to_string(),
+                account_number: None,
+                iban: "AO06.0051.0000.1757.0554.10137".to_string(),
+                ..Default::default()
+            }],
+            ..tenant.clone()
+        };
+        let pdf_monait = InvoicePdfGenerator::generate_pdf_with_tenant(
+            &invoice,
+            Some(&tenant_with_only_iban),
+            "MONAIT",
+            "FE/528/AGT/2026",
+        )
+        .expect("PDF da factura com coordenadas derivadas de IBAN deve ser gerado");
+        assert!(!pdf_monait.is_empty());
 
         let mut invoice_receipt = invoice.clone();
         invoice_receipt.document_type = "FR".to_string();

@@ -19,13 +19,33 @@ pub struct TenantBankAccount {
 }
 
 impl TenantBankAccount {
+    pub fn resolved_account_number(&self) -> Option<String> {
+        let trimmed_acc = self
+            .account_number
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        if let Some(acc) = trimmed_acc {
+            return Some(acc.to_string());
+        }
+        let clean_iban: String = self.iban.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+        if clean_iban.len() == 25 && clean_iban.starts_with("AO06") {
+            let account_part = &clean_iban[12..23];
+            if !account_part.is_empty() {
+                return Some(account_part.to_string());
+            }
+        }
+        None
+    }
+
     pub fn has_required_payment_details(&self) -> bool {
         !self.bank_name.trim().is_empty()
-            && self
+            && !self.iban.trim().is_empty()
+            && (self
                 .account_number
                 .as_deref()
                 .is_some_and(|value| !value.trim().is_empty())
-            && !self.iban.trim().is_empty()
+                || self.resolved_account_number().is_some())
     }
 }
 
@@ -76,9 +96,19 @@ mod tests {
 
         let missing_number = TenantBankAccount {
             account_number: None,
+            iban: "NOT_AN_IBAN".to_string(),
             ..account.clone()
         };
         assert!(!missing_number.has_required_payment_details());
+
+        let derived_from_iban = TenantBankAccount {
+            bank_name: "BIC".to_string(),
+            account_number: None,
+            iban: "AO06.0051.0000.1757.0554.10137".to_string(),
+            ..TenantBankAccount::default()
+        };
+        assert!(derived_from_iban.has_required_payment_details());
+        assert_eq!(derived_from_iban.resolved_account_number().as_deref(), Some("17570554101"));
 
         let blank_iban = TenantBankAccount {
             iban: "  ".to_string(),
