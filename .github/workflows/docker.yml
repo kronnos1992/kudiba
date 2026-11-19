@@ -2,7 +2,7 @@ name: Docker Build & Publish (Docker Hub)
 
 on:
   push:
-    branches: [ main, master, develop, 'gateway/**', 'auth/**', 'invoicing/**', 'inventory/**', 'treasury/**', 'accounting/**', 'payroll/**', 'frontend/**' ]
+    branches: [ main, master, develop, 'feature/**', 'gateway/**', 'auth/**', 'invoicing/**', 'inventory/**', 'treasury/**', 'accounting/**', 'payroll/**', 'frontend/**' ]
     paths:
       - 'docker-compose.yml'
       - 'Backend/**'
