@@ -13,6 +13,10 @@ pub enum DocumentType {
 }
 
 impl DocumentType {
+    pub fn requires_bank_coordinates(self) -> bool {
+        matches!(self, Self::Invoice | Self::DebitNote | Self::ProForma)
+    }
+
     pub fn parse(value: &str) -> Result<Self, DomainError> {
         match value.trim().to_ascii_uppercase().as_str() {
             "FT" => Ok(Self::Invoice),
@@ -40,5 +44,19 @@ mod tests {
             assert!(DocumentType::parse(kind).is_ok(), "{kind}");
         }
         assert!(DocumentType::parse("DOCUMENTO-FAKE").is_err());
+    }
+
+    #[test]
+    fn exige_coordenadas_bancarias_apenas_nos_documentos_de_liquidacao() {
+        for kind in ["FT", "ND", "FP"] {
+            assert!(DocumentType::parse(kind)
+                .unwrap()
+                .requires_bank_coordinates());
+        }
+        for kind in ["FR", "RC", "NC", "GR", "GT"] {
+            assert!(!DocumentType::parse(kind)
+                .unwrap()
+                .requires_bank_coordinates());
+        }
     }
 }

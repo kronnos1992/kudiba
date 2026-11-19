@@ -735,8 +735,12 @@ export const InvoicingView: React.FC = () => {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
-    } catch {
-      alert('Erro ao transferir PDF.');
+    } catch (error: any) {
+      alert(
+        error?.response?.data?.error ||
+          error?.response?.data?.detail ||
+          'Erro ao transferir PDF.'
+      );
     }
   };
 

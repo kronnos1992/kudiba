@@ -18,6 +18,17 @@ pub struct TenantBankAccount {
     pub is_primary: bool,
 }
 
+impl TenantBankAccount {
+    pub fn has_required_payment_details(&self) -> bool {
+        !self.bank_name.trim().is_empty()
+            && self
+                .account_number
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+            && !self.iban.trim().is_empty()
+    }
+}
+
 /// Dados cadastrais e fiscais da organização / sujeito passivo (Tenant)
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,4 +58,32 @@ pub struct Tenant {
     pub status: String,
     pub tax_regime_code: String,
     pub contingency_started_at: Option<DateTime<Utc>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exige_banco_numero_de_conta_e_iban() {
+        let account = TenantBankAccount {
+            bank_name: "BAI".to_string(),
+            account_number: Some("123456789".to_string()),
+            iban: "AO06004000001234567890123".to_string(),
+            ..TenantBankAccount::default()
+        };
+        assert!(account.has_required_payment_details());
+
+        let missing_number = TenantBankAccount {
+            account_number: None,
+            ..account.clone()
+        };
+        assert!(!missing_number.has_required_payment_details());
+
+        let blank_iban = TenantBankAccount {
+            iban: "  ".to_string(),
+            ..account
+        };
+        assert!(!blank_iban.has_required_payment_details());
+    }
 }

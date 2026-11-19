@@ -14,6 +14,19 @@ export const exportProformaPdf = (
   proforma: Proforma,
   tenant: Tenant | null | undefined
 ) => {
+  const bankAccounts = tenant?.bank_accounts?.filter(
+    (account) =>
+      account.bank_name.trim() &&
+      account.account_number?.trim() &&
+      account.iban.trim()
+  ) || [];
+  if (bankAccounts.length === 0) {
+    window.alert(
+      'Configure Banco, Número da Conta e IBAN nos dados da empresa antes de imprimir a proforma.'
+    );
+    return;
+  }
+
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
     window.print();
@@ -50,11 +63,6 @@ export const exportProformaPdf = (
     vatGroups[line.taxRate || 0].base += net;
     vatGroups[line.taxRate || 0].tax += tax;
   }
-
-  // Bank accounts
-  const bankAccounts = tenant?.bank_accounts && tenant.bank_accounts.length > 0
-    ? tenant.bank_accounts
-    : [];
 
   const html = `<!DOCTYPE html>
 <html lang="pt">

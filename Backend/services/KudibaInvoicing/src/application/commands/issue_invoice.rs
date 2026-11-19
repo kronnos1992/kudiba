@@ -11,6 +11,7 @@ use crate::application::dto::{
 use crate::domain::entities::fiscal_series::FiscalSeries;
 use crate::domain::entities::invoice::Invoice;
 use crate::domain::entities::invoice_line::InvoiceLine;
+use crate::domain::entities::tenant::TenantBankAccount;
 use crate::domain::error::DomainError;
 use crate::domain::ports::crypto_signer::CryptoSigner;
 use crate::domain::ports::db_session::{DbSession, RepositoryError};
@@ -137,7 +138,8 @@ impl IssueInvoiceUseCase {
         command: IssueInvoiceCommand,
     ) -> Result<IssueInvoiceResult, DomainError> {
         let issuer = sqlx::query(
-            "SELECT nif, address_detail, city, country FROM kudiba_core.tenants WHERE id = $1",
+            "SELECT nif, address_detail, city, country, bank_accounts \
+             FROM kudiba_core.tenants WHERE id = $1",
         )
         .bind(command.tenant_id)
         .fetch_optional(&mut *session.connection())
@@ -150,6 +152,22 @@ impl IssueInvoiceUseCase {
         let issuer_address = required_tenant_field(&issuer, "address_detail")?;
         let issuer_city = required_tenant_field(&issuer, "city")?;
         let issuer_country = required_tenant_field(&issuer, "country")?;
+        let document_type = DocumentType::parse(&command.document_type)?;
+        if document_type.requires_bank_coordinates() {
+            let accounts_value: serde_json::Value = issuer
+                .try_get("bank_accounts")
+                .map_err(|err| DomainError::Persistence(err.to_string()))?;
+            let accounts: Vec<TenantBankAccount> = serde_json::from_value(accounts_value)
+                .map_err(|err| DomainError::Persistence(err.to_string()))?;
+            if !accounts
+                .iter()
+                .any(TenantBankAccount::has_required_payment_details)
+            {
+                return Err(DomainError::invalid(
+                    "Configure pelo menos uma conta bancária completa (Banco, Número da Conta e IBAN) antes de emitir este documento.",
+                ));
+            }
+        }
 
         if matches!(command.document_type.as_str(), "NC" | "ND") {
             let reference = command

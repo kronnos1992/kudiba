@@ -24,6 +24,7 @@ use crate::application::dto::{
 };
 use crate::application::queries::export_saft::ExportSaftQuery;
 use crate::application::queries::fiscal_reports::FiscalReportQuery;
+use crate::domain::entities::tenant::TenantBankAccount;
 use crate::domain::error::DomainError;
 use crate::domain::ports::crypto_signer::CryptoSigner;
 use crate::infrastructure::crypto::rsa_signer::generate_agt_keypair;
@@ -684,6 +685,52 @@ async fn create_proforma_handler(
         Ok(actor) => actor,
         Err(response) => return response.into_response(),
     };
+
+    let bank_accounts_value = match sqlx::query_scalar::<_, serde_json::Value>(
+        "SELECT bank_accounts FROM kudiba_core.tenants WHERE id = $1",
+    )
+    .bind(command.tenant_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(accounts)) => accounts,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "Empresa emitente não encontrada."})),
+            )
+                .into_response()
+        }
+        Err(err) => {
+            tracing::error!(tenant_id = %command.tenant_id, error = %err, "Falha ao validar coordenadas bancárias da proforma");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Não foi possível validar as coordenadas bancárias da empresa."})),
+            )
+                .into_response();
+        }
+    };
+    let bank_accounts: Vec<TenantBankAccount> = match serde_json::from_value(bank_accounts_value) {
+        Ok(accounts) => accounts,
+        Err(err) => {
+            tracing::error!(tenant_id = %command.tenant_id, error = %err, "Coordenadas bancárias da empresa têm formato inválido");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "As coordenadas bancárias da empresa estão inválidas."})),
+            )
+                .into_response();
+        }
+    };
+    if !bank_accounts
+        .iter()
+        .any(TenantBankAccount::has_required_payment_details)
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Configure pelo menos uma conta bancária completa (Banco, Número da Conta e IBAN) antes de criar a proforma."})),
+        )
+            .into_response();
+    }
 
     if command.lines.is_empty() || command.lines.len() > 100 {
         return (

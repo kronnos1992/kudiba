@@ -22,6 +22,7 @@ use crate::domain::entities::invoice_line::InvoiceLine;
 use crate::domain::entities::tenant::Tenant;
 use crate::domain::error::DomainError;
 use crate::domain::services::fiscal_qr::AgtQrCodeService;
+use crate::domain::value_objects::document_type::DocumentType;
 
 pub struct InvoicePdfGenerator;
 
@@ -51,6 +52,19 @@ impl InvoicePdfGenerator {
         company_name: &str,
         software_cert: &str,
     ) -> Result<Vec<u8>, DomainError> {
+        if DocumentType::parse(&invoice.document_type)?.requires_bank_coordinates()
+            && !tenant.is_some_and(|tenant| {
+                tenant
+                    .bank_accounts
+                    .iter()
+                    .any(|account| account.has_required_payment_details())
+            })
+        {
+            return Err(DomainError::invalid(
+                "Este documento exige coordenadas bancárias completas (Banco, Número da Conta e IBAN).",
+            ));
+        }
+
         let mut doc = Document::with_version("1.5");
         let pages_id = doc.new_object_id();
 
@@ -1016,34 +1030,42 @@ impl InvoicePdfGenerator {
         // =====================================================================
         Self::draw_horizontal_line(&mut operations, 40.0, 555.0, 115.0, 0.8, (0.8, 0.8, 0.8));
 
-        if let Some(t) = tenant {
-            if !t.bank_accounts.is_empty() {
-                Self::add_text(
-                    &mut operations,
-                    "F2",
-                    7.5,
-                    120.0,
-                    104.0,
-                    "COORDENADAS BANCÁRIAS:",
-                    (0.12, 0.23, 0.54),
-                );
-                let mut bank_y = 94.0;
-                for acc in t.bank_accounts.iter().take(2) {
-                    let account_number = acc.account_number.as_deref().unwrap_or("-");
-                    let bank_line = format!(
-                        "Banco: {} | Nº Conta: {} | IBAN: {}",
-                        acc.bank_name, account_number, acc.iban
-                    );
+        if matches!(invoice.document_type.as_str(), "FT" | "ND") {
+            if let Some(t) = tenant {
+                let bank_accounts = t
+                    .bank_accounts
+                    .iter()
+                    .filter(|account| account.has_required_payment_details())
+                    .take(2)
+                    .collect::<Vec<_>>();
+                if !bank_accounts.is_empty() {
                     Self::add_text(
                         &mut operations,
-                        "F1",
-                        6.8,
+                        "F2",
+                        7.5,
                         120.0,
-                        bank_y,
-                        &bank_line,
-                        (0.25, 0.25, 0.25),
+                        104.0,
+                        "COORDENADAS BANCÁRIAS:",
+                        (0.12, 0.23, 0.54),
                     );
-                    bank_y -= 9.0;
+                    let mut bank_y = 94.0;
+                    for acc in bank_accounts {
+                        let account_number = acc.account_number.as_deref().unwrap_or_default();
+                        let bank_line = format!(
+                            "Banco: {} | Nº Conta: {} | IBAN: {}",
+                            acc.bank_name, account_number, acc.iban
+                        );
+                        Self::add_text(
+                            &mut operations,
+                            "F1",
+                            6.8,
+                            120.0,
+                            bank_y,
+                            &bank_line,
+                            (0.25, 0.25, 0.25),
+                        );
+                        bank_y -= 9.0;
+                    }
                 }
             }
         }
@@ -1832,12 +1854,6 @@ mod tests {
             cash_session_id: None,
         };
 
-        let pdf_bytes =
-            InvoicePdfGenerator::generate_pdf(&invoice, "Kudiba Tecnologia SA", "999/AGT/2026")
-                .expect("PDF da factura deve ser gerado");
-
-        assert!(!pdf_bytes.is_empty());
-        assert!(pdf_bytes.starts_with(b"%PDF-1.5"));
         let tenant = Tenant {
             id: Uuid::new_v4(),
             slug: "kudiba".to_string(),
@@ -1863,11 +1879,50 @@ mod tests {
             tax_office_code: None,
             agt_cert_number: Some("999/AGT/2026".to_string()),
             invoice_footer_notes: None,
-            bank_accounts: Vec::new(),
+            bank_accounts: vec![crate::domain::entities::tenant::TenantBankAccount {
+                bank_name: "BAI".to_string(),
+                account_number: Some("123456789".to_string()),
+                iban: "AO06004000001234567890123".to_string(),
+                ..Default::default()
+            }],
             status: "ACTIVE".to_string(),
             tax_regime_code: "GERAL".to_string(),
             contingency_started_at: None,
         };
+
+        let mut tenant_without_logo = tenant.clone();
+        tenant_without_logo.logo_data_url = None;
+        let pdf_bytes = InvoicePdfGenerator::generate_pdf_with_tenant(
+            &invoice,
+            Some(&tenant_without_logo),
+            "Kudiba Tecnologia SA",
+            "999/AGT/2026",
+        )
+        .expect("PDF da factura deve ser gerado");
+        assert!(!pdf_bytes.is_empty());
+        assert!(pdf_bytes.starts_with(b"%PDF-1.5"));
+
+        let tenant_without_banking = Tenant {
+            bank_accounts: Vec::new(),
+            ..tenant.clone()
+        };
+        assert!(InvoicePdfGenerator::generate_pdf_with_tenant(
+            &invoice,
+            Some(&tenant_without_banking),
+            "Kudiba Tecnologia SA",
+            "999/AGT/2026",
+        )
+        .is_err());
+
+        let mut invoice_receipt = invoice.clone();
+        invoice_receipt.document_type = "FR".to_string();
+        assert!(InvoicePdfGenerator::generate_pdf_with_tenant(
+            &invoice_receipt,
+            Some(&tenant_without_banking),
+            "Kudiba Tecnologia SA",
+            "999/AGT/2026",
+        )
+        .is_ok());
 
         let pdf_with_logo = InvoicePdfGenerator::generate_pdf_with_tenant(
             &invoice,
