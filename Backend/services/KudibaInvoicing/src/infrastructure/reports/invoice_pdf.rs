@@ -1058,10 +1058,7 @@ impl InvoicePdfGenerator {
                                 acc.bank_name, account_number, acc.iban
                             )
                         } else {
-                            format!(
-                                "Banco: {} | IBAN: {}",
-                                acc.bank_name, acc.iban
-                            )
+                            format!("Banco: {} | IBAN: {}", acc.bank_name, acc.iban)
                         };
                         Self::add_text(
                             &mut operations,

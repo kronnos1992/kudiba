@@ -34,9 +34,7 @@ impl PgTenantRepository {
             row.try_get::<Option<String>, _>("bank_accounts")
         {
             serde_json::from_str(&raw).unwrap_or_default()
-        } else if let Ok(Some(val)) =
-            row.try_get::<Option<serde_json::Value>, _>("bank_accounts")
-        {
+        } else if let Ok(Some(val)) = row.try_get::<Option<serde_json::Value>, _>("bank_accounts") {
             serde_json::from_value(val).unwrap_or_default()
         } else {
             Vec::new()

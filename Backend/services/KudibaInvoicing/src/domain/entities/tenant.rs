@@ -28,7 +28,11 @@ impl TenantBankAccount {
         if let Some(acc) = trimmed_acc {
             return Some(acc.to_string());
         }
-        let clean_iban: String = self.iban.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+        let clean_iban: String = self
+            .iban
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect();
         if clean_iban.len() == 25 && clean_iban.starts_with("AO06") {
             let account_part = &clean_iban[12..23];
             if !account_part.is_empty() {
@@ -108,7 +112,10 @@ mod tests {
             ..TenantBankAccount::default()
         };
         assert!(derived_from_iban.has_required_payment_details());
-        assert_eq!(derived_from_iban.resolved_account_number().as_deref(), Some("17570554101"));
+        assert_eq!(
+            derived_from_iban.resolved_account_number().as_deref(),
+            Some("17570554101")
+        );
 
         let blank_iban = TenantBankAccount {
             iban: "  ".to_string(),
