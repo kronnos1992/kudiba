@@ -111,7 +111,7 @@ jobs:
       - name: Check Docker Hub Credentials
         id: dockerhub_creds
         run: |
-          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] && [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ] && [ "${{ github.event_name }}" = "push" ] && ( [ "${{ github.ref_name }}" = "main" ] || [ "${{ github.ref_name }}" = "master" ] ); then
+          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] && [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ] && [ "${{ github.event_name }}" = "push" ] && ( [ "${{ github.ref_name }}" = "main" ] || [ "${{ github.ref_name }}" = "master" ] || [[ "${{ github.ref_name }}" == feature/* ]] ); then
             echo "can_push=true" >> "$GITHUB_OUTPUT"
             echo "namespace=${{ secrets.DOCKERHUB_USERNAME }}" >> "$GITHUB_OUTPUT"
           else
