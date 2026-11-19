@@ -78,10 +78,10 @@ const ANGOLA_PROVINCES = [
 const ANGOLA_BANKS_MAP: Record<string, { name: string; swift: string }> = {
   '0040': { name: 'BAI - Banco Angolano de Investimentos', swift: 'BAIPAOLU' },
   '0006': { name: 'BFA - Banco de Fomento Angola', swift: 'BFMAAOLU' },
-  '0055': { name: 'Banco BIC', swift: 'BICAALLU' },
+  '0051': { name: 'Banco BIC', swift: 'BICAALLU' },
   '0005': { name: 'BCI - Banco de Comércio e Indústria', swift: 'BCIAAOLU' },
   '0053': { name: 'Banco Millennium Atlântico', swift: 'BMAOAOLU' },
-  '0051': { name: 'Standard Bank Angola', swift: 'SBICAOLX' },
+  '0060': { name: 'Standard Bank Angola', swift: 'SBICAOLX' },
   '0044': { name: 'Banco Sol', swift: 'SOLBAOLU' },
   '0045': { name: 'Banco Keve', swift: 'BKEVAOLU' },
   '0059': { name: 'Banco Yetu', swift: 'YETUAOLU' },
