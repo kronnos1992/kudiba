@@ -236,32 +236,6 @@ impl InvoicePdfGenerator {
             &format!("Tel: {} | {} | {}", phone, email, website),
             (0.4, 0.4, 0.4),
         );
-        header_y -= 9.5;
-
-        let issuer_addr = invoice
-            .issuer_address
-            .as_deref()
-            .or_else(|| tenant.and_then(|t| t.address_detail.as_deref()))
-            .unwrap_or("Sede Comercial");
-        let issuer_city = invoice
-            .issuer_city
-            .as_deref()
-            .or_else(|| tenant.and_then(|t| t.city.as_deref()))
-            .unwrap_or("Luanda");
-        let issuer_country = invoice
-            .issuer_country
-            .as_deref()
-            .or_else(|| tenant.and_then(|t| t.country.as_deref()))
-            .unwrap_or("Angola");
-        Self::add_text(
-            &mut operations,
-            "F1",
-            7.2,
-            header_left_x,
-            header_y,
-            &format!("{}, {} - {}", issuer_addr, issuer_city, issuer_country),
-            (0.35, 0.35, 0.35),
-        );
 
         // Tipo e Identificação do Documento (Lado Direito - alinhado à direita para criar intervalo central)
         let doc_title = match invoice.document_type.as_str() {
@@ -1026,11 +1000,7 @@ impl InvoicePdfGenerator {
             (0.12, 0.23, 0.54),
         );
 
-        // =====================================================================
-        // 5. RODAPÉ LEGAL, QR CODE DA AGT E VALIDAÇÃO FISCAL
-        // =====================================================================
-        Self::draw_horizontal_line(&mut operations, 40.0, 555.0, 115.0, 0.8, (0.8, 0.8, 0.8));
-
+        // Coordenadas Bancárias (no corpo do documento, antes da linha divisória do rodapé)
         if document_type.requires_bank_coordinates_in_a4() {
             if let Some(t) = tenant {
                 let bank_accounts = t
@@ -1040,16 +1010,17 @@ impl InvoicePdfGenerator {
                     .take(2)
                     .collect::<Vec<_>>();
                 if !bank_accounts.is_empty() {
+                    let bank_title_y = 115.0 + 8.0 + (bank_accounts.len() as f64 * 10.0);
                     Self::add_text(
                         &mut operations,
                         "F2",
                         7.5,
-                        120.0,
-                        104.0,
+                        40.0,
+                        bank_title_y,
                         "COORDENADAS BANCÁRIAS:",
                         (0.12, 0.23, 0.54),
                     );
-                    let mut bank_y = 94.0;
+                    let mut bank_y = bank_title_y - 9.5;
                     for acc in bank_accounts {
                         let account_number = acc.resolved_account_number().unwrap_or_default();
                         let bank_line = if !account_number.is_empty() {
@@ -1063,17 +1034,22 @@ impl InvoicePdfGenerator {
                         Self::add_text(
                             &mut operations,
                             "F1",
-                            6.8,
-                            120.0,
+                            7.0,
+                            40.0,
                             bank_y,
                             &bank_line,
                             (0.25, 0.25, 0.25),
                         );
-                        bank_y -= 9.0;
+                        bank_y -= 9.5;
                     }
                 }
             }
         }
+
+        // =====================================================================
+        // 5. RODAPÉ LEGAL, QR CODE DA AGT E VALIDAÇÃO FISCAL
+        // =====================================================================
+        Self::draw_horizontal_line(&mut operations, 40.0, 555.0, 115.0, 0.8, (0.8, 0.8, 0.8));
 
         // 5.1 Geração e Desenho do QR Code AGT (Vetor Nativo no PDF)
         let qr_payload = AgtQrCodeService::build_payload(invoice, software_cert);
