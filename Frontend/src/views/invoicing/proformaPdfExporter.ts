@@ -54,13 +54,7 @@ export const exportProformaPdf = (
   // Bank accounts
   const bankAccounts = tenant?.bank_accounts && tenant.bank_accounts.length > 0
     ? tenant.bank_accounts
-    : [
-        {
-          bank_name: 'Banco BAI',
-          account_number: '123456789',
-          iban: 'AO06 0040 0000 1234 5678 9012 3',
-        },
-      ];
+    : [];
 
   const html = `<!DOCTYPE html>
 <html lang="pt">
@@ -395,12 +389,6 @@ export const exportProformaPdf = (
           </tbody>
         </table>
 
-        ${bankAccounts.length > 0 ? `
-          <div class="iban-box">
-            <strong>Coordenadas Bancárias para Liquidação (IBAN):</strong><br/>
-            ${bankAccounts.map((b) => `${b.bank_name}: ${b.iban} (${companyName})`).join('<br/>')}
-          </div>
-        ` : ''}
       </td>
       <td class="summary-right">
         <div class="totals-box">
@@ -424,6 +412,13 @@ export const exportProformaPdf = (
       </td>
     </tr>
   </table>
+
+  ${bankAccounts.length > 0 ? `
+    <div class="iban-box">
+      <strong>Coordenadas Bancárias para Liquidação:</strong><br/>
+      ${bankAccounts.map((b) => `Banco: ${b.bank_name} | Nº Conta: ${b.account_number || '-'} | IBAN: ${b.iban}`).join('<br/>')}
+    </div>
+  ` : ''}
 
   <div class="footer-legal">
     Os valores e disponibilidade de stock constantes desta Proforma estão sujeitos a confirmação no acto da emissão da respectiva Factura definitiva.<br/>

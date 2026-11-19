@@ -2717,8 +2717,9 @@ export const InvoicingView: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                     {activeTenant.bank_accounts.map((acc, idx) => (
                       <div key={idx} className="font-mono text-[11px] break-all">
-                        <span className="font-bold text-slate-700">{acc.bank_name}:</span>{' '}
-                        {acc.iban} ({acc.currency || 'AOA'})
+                        <span className="font-bold text-slate-700">Banco:</span> {acc.bank_name}<br />
+                        <span className="font-bold text-slate-700">N.º Conta:</span> {acc.account_number || '-'}<br />
+                        <span className="font-bold text-slate-700">IBAN:</span> {acc.iban} ({acc.currency || 'AOA'})
                       </div>
                     ))}
                   </div>
@@ -3474,8 +3475,9 @@ export const InvoicingView: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                     {activeTenant.bank_accounts.map((acc, idx) => (
                       <div key={idx} className="font-mono text-[11px] break-all bg-slate-50 p-1.5 rounded border border-slate-100">
-                        <span className="font-bold text-slate-700">{acc.bank_name}:</span>{' '}
-                        {acc.iban} ({acc.currency || 'AOA'})
+                        <span className="font-bold text-slate-700">Banco:</span> {acc.bank_name}<br />
+                        <span className="font-bold text-slate-700">N.º Conta:</span> {acc.account_number || '-'}<br />
+                        <span className="font-bold text-slate-700">IBAN:</span> {acc.iban} ({acc.currency || 'AOA'})
                       </div>
                     ))}
                   </div>

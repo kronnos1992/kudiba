@@ -869,40 +869,6 @@ impl InvoicePdfGenerator {
             vat_row_y -= 11.0;
         }
 
-        // 4.1b Coordenadas Bancárias (IBANs da Empresa)
-        if let Some(t) = tenant {
-            if !t.bank_accounts.is_empty() && vat_row_y > 145.0 {
-                let mut bank_y = vat_row_y - 6.0;
-                Self::add_text(
-                    &mut operations,
-                    "F2",
-                    8.0,
-                    40.0,
-                    bank_y,
-                    "COORDENADAS BANCÁRIAS PARA PAGAMENTO:",
-                    (0.12, 0.23, 0.54),
-                );
-                bank_y -= 11.0;
-                for acc in t.bank_accounts.iter().take(4) {
-                    if bank_y < 125.0 {
-                        break;
-                    }
-                    let curr = acc.currency.as_deref().unwrap_or("AOA");
-                    let bank_line = format!("• {} ({}): {}", acc.bank_name, curr, acc.iban);
-                    Self::add_text(
-                        &mut operations,
-                        "F1",
-                        7.5,
-                        42.0,
-                        bank_y,
-                        &bank_line,
-                        (0.25, 0.25, 0.25),
-                    );
-                    bank_y -= 10.0;
-                }
-            }
-        }
-
         // 4.2 Caixa de Totais Finais (Lado Direito: x=330 a x=555)
         let total_box_top = summary_y;
         let mut tot_y = total_box_top - 2.0;
@@ -1049,6 +1015,38 @@ impl InvoicePdfGenerator {
         // 5. RODAPÉ LEGAL, QR CODE DA AGT E VALIDAÇÃO FISCAL
         // =====================================================================
         Self::draw_horizontal_line(&mut operations, 40.0, 555.0, 115.0, 0.8, (0.8, 0.8, 0.8));
+
+        if let Some(t) = tenant {
+            if !t.bank_accounts.is_empty() {
+                Self::add_text(
+                    &mut operations,
+                    "F2",
+                    7.5,
+                    120.0,
+                    104.0,
+                    "COORDENADAS BANCÁRIAS:",
+                    (0.12, 0.23, 0.54),
+                );
+                let mut bank_y = 94.0;
+                for acc in t.bank_accounts.iter().take(2) {
+                    let account_number = acc.account_number.as_deref().unwrap_or("-");
+                    let bank_line = format!(
+                        "Banco: {} | Nº Conta: {} | IBAN: {}",
+                        acc.bank_name, account_number, acc.iban
+                    );
+                    Self::add_text(
+                        &mut operations,
+                        "F1",
+                        6.8,
+                        120.0,
+                        bank_y,
+                        &bank_line,
+                        (0.25, 0.25, 0.25),
+                    );
+                    bank_y -= 9.0;
+                }
+            }
+        }
 
         // 5.1 Geração e Desenho do QR Code AGT (Vetor Nativo no PDF)
         let qr_payload = AgtQrCodeService::build_payload(invoice, software_cert);
