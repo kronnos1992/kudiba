@@ -174,3 +174,13 @@ class PlatformCommercialSummaryDto:
     growth_rate: Optional[float]
     new_last_12m: int
     monthly: List[CommercialMonthBucket]
+
+
+@dataclass(frozen=True)
+class BridgeReleaseDto:
+    platform: str
+    version: str
+    filename: str
+    size_bytes: int
+    sha256: str
+    download_url: str

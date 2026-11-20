@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime
 from typing import Dict, List, Optional, Sequence
 
-from src.domain.entities import Client, License, TenantRecord
+from src.domain.entities import BridgeRelease, Client, License, TenantRecord
 
 
 class IClientRepository(ABC):
@@ -119,6 +119,20 @@ class ITenantProvisioner(ABC):
 class ITenantReader(ABC):
     @abstractmethod
     async def list_tenants(self) -> List[TenantRecord]:
+        pass
+
+
+class IBridgeReleaseRepository(ABC):
+    @abstractmethod
+    async def list_releases(self) -> List[BridgeRelease]:
+        pass
+
+    @abstractmethod
+    async def get_release(self, platform: str) -> Optional[BridgeRelease]:
+        pass
+
+    @abstractmethod
+    async def read_release(self, platform: str) -> Optional[bytes]:
         pass
 
 

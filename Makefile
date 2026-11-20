@@ -13,6 +13,7 @@ INVOICING_MANIFEST := Backend/services/KudibaInvoicing/Cargo.toml
 INVENTORY_MANIFEST := Backend/services/KudibaInventory/Cargo.toml
 TREASURY_MANIFEST  := Backend/services/KudibaTreasury/Cargo.toml
 BRIDGE_MANIFEST    := Backend/services/KudibaHardwareBridge/Cargo.toml
+BRIDGE_RELEASE_VERSION ?= 0.4.0
 AUTH_DIR           := Backend/services/KudibaAuth
 PAYROLL_DIR        := Backend/services/KudibaPayroll
 INTEGRATIONS_DIR   := Backend/services/KudibaIntegrations
@@ -127,6 +128,9 @@ bridge-install: bridge-build ## Instala o agente a partir do build release
 
 bridge-update: ## Atualiza o agente a partir de KUDIBA_BRIDGE_RELEASE_URL
 	bash scripts/update-hardware-bridge.sh
+
+bridge-release: ## Publica os binários do agente no catálogo do backoffice
+	bash scripts/package-hardware-bridge-releases.sh $(BRIDGE_RELEASE_VERSION)
 
 # -----------------------------------------------------------------------------
 # KudibaAuth (Python)

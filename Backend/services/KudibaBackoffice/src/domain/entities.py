@@ -65,3 +65,13 @@ class TenantRecord:
     license_valid_until: Optional[datetime] = None
     subscribed_modules: Optional[List[str]] = None
     created_at: Optional[datetime] = None
+
+
+@dataclass(frozen=True)
+class BridgeRelease:
+    platform: str
+    version: str
+    filename: str
+    size_bytes: int
+    sha256: str
+    path: str

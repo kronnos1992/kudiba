@@ -4,7 +4,7 @@ import uuid
 from datetime import date
 from typing import List, Optional, Tuple
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 
 from src.application.dto import (
@@ -14,7 +14,12 @@ from src.application.dto import (
     UpdateClientCommand,
 )
 from src.domain.modules import BILLABLE_MODULES
-from src.presentation.http.deps import SecurityContext, get_app_state, require_platform_admin
+from src.presentation.http.deps import (
+    SecurityContext,
+    get_app_state,
+    get_security_context,
+    require_platform_admin,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +171,57 @@ def create_backoffice_router() -> APIRouter:
             {"key": m.key, "name": m.name, "description": m.description}
             for m in BILLABLE_MODULES
         ]
+
+    @router.get(
+        "/bridge/releases",
+        summary="Agentes POS para Download",
+        description="Lista os binários do agente local publicados para Windows e Linux.",
+    )
+    async def list_bridge_releases(
+        request: Request,
+        _: SecurityContext = Depends(get_security_context),
+    ):
+        app_state = get_app_state(request)
+        return await app_state.list_bridge_releases.execute()
+
+    @router.get(
+        "/bridge/releases/{platform}/download",
+        summary="Descarregar Agente POS",
+        description="Devolve o binário do agente local para a plataforma pedida.",
+    )
+    async def download_bridge_release(
+        platform: str,
+        request: Request,
+        _: SecurityContext = Depends(get_security_context),
+    ):
+        app_state = get_app_state(request)
+        release_repo = app_state.bridge_release_repo
+        if release_repo is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Nenhum agente POS publicado neste ambiente.",
+            )
+        release = await release_repo.get_release(platform)
+        if release is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Plataforma de agente POS não encontrada.",
+            )
+        payload = await release_repo.read_release(platform)
+        if payload is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Artefacto do agente POS não encontrado.",
+            )
+        return Response(
+            content=payload,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{release.filename}"',
+                "X-Bridge-Version": release.version,
+                "X-Checksum-Sha256": release.sha256,
+            },
+        )
 
     @router.get(
         "/clients",

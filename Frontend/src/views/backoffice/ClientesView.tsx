@@ -22,6 +22,9 @@ import {
   CheckCircle2,
   Archive,
   HardDrive,
+  Download,
+  Monitor,
+  Terminal,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge, StatusType } from '../../components/common/StatusBadge';
@@ -35,6 +38,7 @@ import { validateCompanyNif } from '../../utils/validators';
 import {
   AlvaraVerificationResult,
   BackofficeClient,
+  BridgeRelease,
   CreateClientPayload,
   License,
   RenewLicensePayload,
@@ -236,6 +240,11 @@ export const ClientesView: React.FC = () => {
     queryFn: () => backofficeApi.getSummary(),
   });
 
+  const { data: bridgeReleases = [] } = useQuery({
+    queryKey: ['backoffice_bridge_releases'],
+    queryFn: () => backofficeApi.listBridgeReleases(),
+  });
+
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['backoffice_clients', search, statusFilter],
     queryFn: () =>
@@ -332,6 +341,23 @@ export const ClientesView: React.FC = () => {
       toast.error('Falha ao executar ciclo de backups agendados.');
     },
   });
+
+  const downloadBridge = async (release: BridgeRelease) => {
+    try {
+      const { blob, filename } = await backofficeApi.downloadBridgeRelease(release);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Agente ${release.platform} descarregado com sucesso.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Falha ao descarregar o agente local.');
+    }
+  };
 
   const toggleModule = (key: string) => {
     setForm((prev) => ({
@@ -485,6 +511,58 @@ export const ClientesView: React.FC = () => {
           <span className="text-xs text-amber-600 font-medium">Acesso bloqueado</span>
         </GlassCard>
       </div>
+
+      <GlassCard className="p-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 rounded-lg shrink-0">
+              <Terminal className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                Agente local de hardware (POS)
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Descarregue o executável para Windows ou Linux e instale-o no posto de venda.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {bridgeReleases.length === 0 ? (
+              <span className="text-xs text-slate-400">Nenhum agente publicado neste ambiente.</span>
+            ) : (
+              bridgeReleases.map((release) => (
+                <button
+                  key={release.platform}
+                  type="button"
+                  onClick={() => downloadBridge(release)}
+                  className="inline-flex items-center gap-2 px-3 py-2 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-indigo-600" />
+                  {release.platform === 'windows-x64' ? (
+                    <Monitor className="w-4 h-4 text-slate-500" />
+                  ) : (
+                    <Terminal className="w-4 h-4 text-slate-500" />
+                  )}
+                  {release.platform === 'windows-x64' ? 'Windows' : 'Linux'} · v{release.version} ·{' '}
+                  {(release.size_bytes / 1024 / 1024).toFixed(1)} MB
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        {bridgeReleases.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400">
+            {bridgeReleases.map((release) => (
+              <span key={release.platform} className="font-mono truncate max-w-full">
+                {release.platform}: sha256 {release.sha256.slice(0, 16)}…
+              </span>
+            ))}
+          </div>
+        )}
+      </GlassCard>
 
       <GlassCard className="overflow-hidden">
         <div className="p-4 flex flex-col md:flex-row gap-3 md:items-center md:justify-between border-b border-slate-200 dark:border-slate-800">

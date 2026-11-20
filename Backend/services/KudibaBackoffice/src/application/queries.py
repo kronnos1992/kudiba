@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 
 from src.application.commands import build_client_detail, derive_client_alvara_status, license_to_dto
 from src.application.dto import (
+    BridgeReleaseDto,
     ClientDetailDto,
     ClientDto,
     CommercialMonthBucket,
@@ -15,7 +16,7 @@ from src.application.dto import (
 )
 from src.domain.error import EntityNotFoundError
 from src.domain.modules import BILLABLE_MODULES
-from src.domain.ports import IClientRepository, ILicenseRepository
+from src.domain.ports import IBridgeReleaseRepository, IClientRepository, ILicenseRepository
 
 logger = logging.getLogger(__name__)
 
@@ -217,3 +218,24 @@ class GetPlatformCommercialSummaryUseCase:
             new_last_12m=sum(counts.values()),
             monthly=[CommercialMonthBucket(month=key, count=counts[key]) for key in months],
         )
+
+
+class ListBridgeReleasesUseCase:
+    def __init__(self, release_repo: Optional[IBridgeReleaseRepository]):
+        self.release_repo = release_repo
+
+    async def execute(self) -> List[BridgeReleaseDto]:
+        if self.release_repo is None:
+            return []
+        releases = await self.release_repo.list_releases()
+        return [
+            BridgeReleaseDto(
+                platform=release.platform,
+                version=release.version,
+                filename=release.filename,
+                size_bytes=release.size_bytes,
+                sha256=release.sha256,
+                download_url=f"/api/v1/backoffice/bridge/releases/{release.platform}/download",
+            )
+            for release in releases
+        ]

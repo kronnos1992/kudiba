@@ -10,7 +10,7 @@
 - `0.3.0` — emparelhamento, seed inicial, recuperação de desastre, transporte local, spooler Windows e coordenação durável de checkout.
 - `0.3.1` — revisão da terminologia fiscal e do transporte; pendência AGT explícita.
 - `0.3.2` — separação `FISCAL_ENVELOPE` / `CONTINGENCY_LOCAL`, unificação de estados, chaves de terminal no modelo de dados e regras de reimpressão.
-- `0.4.0` — registo da implementação de referência: emparelhamento cloud no agente, migração 34, endpoint de recuperação de `print_job`, fim do `window.print()`, QR ESC/POS, páginas de código, `ScannerPort`, seed local, empacotamento e pendências de produção.
+- `0.4.0` — registo da implementação de referência: emparelhamento cloud no agente, migração 34, endpoint de recuperação de `print_job`, fim do `window.print()`, QR ESC/POS, páginas de código, `ScannerPort`, seed local, empacotamento, catálogo de releases no backoffice e pendências de produção.
 
 ---
 
@@ -535,7 +535,7 @@ Reimpressão: cria um novo registo com `copy_type = 'COPY'`, **nova** `idempoten
 | Seed local | Assinatura verificada com `canonical_json_bytes`, expiração validada e catálogo/series persistidos em SQLite | `Backend/services/KudibaHardwareBridge/src/infrastructure/seed.rs` |
 | Segurança local | Bind em loopback, `Origin` configurável, token local, rotação/revogação, CORS com PNA e TLS opcional em loopback | `Backend/services/KudibaHardwareBridge/src/infrastructure/api.rs`, `src/main.rs` |
 | Gateway | Paths de bootstrap/status/seed do agente marcados como públicos; os demais endpoints POS continuam protegidos por JWT/tenant | `Backend/gateway/src/middleware/mod.rs` |
-| Distribuição | Build release, instalação e atualização por artefacto com verificação opcional de SHA-256 | `Makefile`, `scripts/install-hardware-bridge.sh`, `scripts/update-hardware-bridge.sh` |
+| Distribuição | Build release, empacotamento de artefactos Windows/Linux, catálogo e download autenticado no backoffice, instalação e atualização por artefacto com verificação opcional de SHA-256 | `Makefile`, `scripts/package-hardware-bridge-releases.sh`, `scripts/install-hardware-bridge.sh`, `scripts/update-hardware-bridge.sh`, `Backend/services/KudibaBackoffice/src/infrastructure/artifacts/release_repository.py`, `Frontend/src/views/backoffice/ClientesView.tsx` |
 | Testes | 58 testes do agente, 28 do Treasury, 138 do Invoicing e build do frontend a passar | `make test-bridge`, `make test-treasury`, `make test-invoicing`, `cd Frontend && npm run build` |
 
 ### 15.2 Pendente antes de produção
@@ -544,7 +544,7 @@ Reimpressão: cria um novo registo com `copy_type = 'COPY'`, **nova** `idempoten
 2. **Confirmação física:** o agente reporta aceitação pelo transporte; sensor de papel/gaveta e `PHYSICAL_OUTPUT_CONFIRMED` dependem de hardware e telemetria ainda por implementar.
 3. **AGT/Jurídico:** homologação da contingência, do QR fiscal e dos relatórios X/Z; `CONTINGENCY_LOCAL` não deve ser ativada sem parecer e faixa reservada.
 4. **Transporte local em browsers-alvo:** validar HTTPS loopback/PNA e emissão de certificado confiável nos browsers suportados; CORS/PNA responde corretamente em testes, mas não substitui teste real de browser.
-5. **Distribuição Windows:** assinatura de código, SmartScreen, serviço/registo ao login gerido e canal de auto-update público. Os scripts atuais instalam/atualizam, mas não fornecem assinatura nem catálogo de releases.
+5. **Distribuição Windows:** assinatura de código, SmartScreen, serviço/registo ao login gerido e canal de auto-update público. O catálogo autenticado já publica Windows/Linux com SHA-256, mas ainda não fornece assinatura de código nem auto-update automático.
 6. **Wizard de diagnóstico:** deteção automática de porta/perfil e assistente visual em loja; hoje existe configuração por variáveis de ambiente e `GET /device/status`.
 7. **TPA Multicaixa:** permanece fora de escopo até existir protocolo EMV/GPO próprio.
 8. **Disaster recovery automatizado:** substituição de terminal com transferência de epoch e reconciliação de credenciais ainda manual.

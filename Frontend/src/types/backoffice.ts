@@ -6,6 +6,15 @@ export interface BackofficeModule {
   description?: string | null;
 }
 
+export interface BridgeRelease {
+  platform: string;
+  version: string;
+  filename: string;
+  size_bytes: number;
+  sha256: string;
+  download_url: string;
+}
+
 export interface License {
   id: string;
   license_key: string;

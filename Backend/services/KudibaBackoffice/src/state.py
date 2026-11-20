@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,10 +16,12 @@ from src.application.queries import (
     GetClientUseCase,
     GetPlatformCommercialSummaryUseCase,
     GetPlatformSummaryUseCase,
+    ListBridgeReleasesUseCase,
     ListClientsUseCase,
 )
 from src.config import Settings
-from src.domain.ports import IChartProvisioner
+from src.domain.ports import IBridgeReleaseRepository, IChartProvisioner
+from src.infrastructure.artifacts.release_repository import FilesystemBridgeReleaseRepository
 from src.infrastructure.persistence.audit_repository import SqlAlchemyAuditRepository
 from src.infrastructure.persistence.chart_provisioner import SqlAlchemyChartProvisioner
 from src.infrastructure.persistence.client_repository import SqlAlchemyClientRepository
@@ -49,6 +52,8 @@ class AppState:
     tenant_reader: SqlAlchemyTenantReader
     audit_repo: SqlAlchemyAuditRepository
     chart_provisioner: Optional[IChartProvisioner] = None
+    bridge_release_repo: Optional[IBridgeReleaseRepository] = None
+    list_bridge_releases: Optional[ListBridgeReleasesUseCase] = None
 
 
 def create_app_state(
@@ -66,6 +71,11 @@ def create_app_state(
     chart_provisioner = (
         SqlAlchemyChartProvisioner(accounting_session_factory)
         if accounting_session_factory is not None
+        else None
+    )
+    bridge_release_repo = (
+        FilesystemBridgeReleaseRepository(Path(config.bridge_release_dir))
+        if config.bridge_release_dir
         else None
     )
     sync_tenants = SyncTenantsUseCase(client_repo, license_repo, tenant_reader)
@@ -97,4 +107,6 @@ def create_app_state(
         tenant_reader=tenant_reader,
         audit_repo=audit_repo,
         chart_provisioner=chart_provisioner,
+        bridge_release_repo=bridge_release_repo,
+        list_bridge_releases=ListBridgeReleasesUseCase(bridge_release_repo),
     )

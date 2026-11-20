@@ -307,6 +307,9 @@ services:
       - JWT_SECRET=${JWT_SECRET:-kudiba_jwt_secret_development_key_change_in_production_2026}
       - INTERNAL_GATEWAY_SECRET=${INTERNAL_GATEWAY_SECRET:?INTERNAL_GATEWAY_SECRET must be exported for gateway signature verification}
       - ENFORCE_GATEWAY_SIGNATURE=1
+      - KUDIBA_BRIDGE_RELEASE_DIR=/app/releases
+    volumes:
+      - ./release-artifacts:/app/releases:ro
     depends_on:
       postgres:
         condition: service_healthy

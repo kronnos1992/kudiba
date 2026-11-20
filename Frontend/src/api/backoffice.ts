@@ -3,6 +3,7 @@ import {
   AccountingTemplate,
   AlvaraVerificationResult,
   BackofficeClient,
+  BridgeRelease,
   BackofficeModule,
   CreateClientPayload,
   RenewLicensePayload,
@@ -91,5 +92,17 @@ export const backofficeApi = {
       { params: { probe_remote: probeRemote } }
     );
     return res.data;
+  },
+
+  listBridgeReleases: async (): Promise<BridgeRelease[]> => {
+    const res = await apiClient.get<BridgeRelease[]>('/api/v1/backoffice/bridge/releases');
+    return res.data;
+  },
+
+  downloadBridgeRelease: async (
+    release: BridgeRelease
+  ): Promise<{ blob: Blob; filename: string }> => {
+    const res = await apiClient.get<Blob>(release.download_url, { responseType: 'blob' });
+    return { blob: res.data, filename: release.filename };
   },
 };

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     auth_database_url: str = _DEVELOPMENT_AUTH_DATABASE_URL
     accounting_database_url: str = _DEVELOPMENT_ACCOUNTING_DATABASE_URL
     invoicing_database_url: Optional[str] = _DEVELOPMENT_INVOICING_DATABASE_URL
+    bridge_release_dir: Optional[str] = None
 
     jwt_secret: str = _DEVELOPMENT_JWT_SECRET
     jwt_algorithm: str = "HS256"
