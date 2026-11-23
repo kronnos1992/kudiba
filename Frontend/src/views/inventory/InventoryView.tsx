@@ -48,14 +48,29 @@ import { WarehousesTab } from './WarehousesTab';
 import { MovementsTab } from './MovementsTab';
 import { BatchesTab } from './BatchesTab';
 import { EntitiesTab } from './EntitiesTab';
+import { useUiStore } from '../../stores/uiStore';
 
 type InventoryTab = 'products' | 'warehouses' | 'movements' | 'batches' | 'entities';
 
 export const InventoryView: React.FC = () => {
   const { activeTenant, activeBranch } = useAuthStore();
   const queryClient = useQueryClient();
+  const { activeSubTabs } = useUiStore();
 
-  const [activeTab, setActiveTab] = useState<InventoryTab>('products');
+  const [activeTab, setActiveTab] = useState<InventoryTab>(
+    (activeSubTabs.inventory as InventoryTab) || 'products'
+  );
+
+  useEffect(() => {
+    if (
+      activeSubTabs.inventory &&
+      ['products', 'warehouses', 'movements', 'batches', 'entities'].includes(
+        activeSubTabs.inventory
+      )
+    ) {
+      setActiveTab(activeSubTabs.inventory as InventoryTab);
+    }
+  }, [activeSubTabs.inventory]);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
 

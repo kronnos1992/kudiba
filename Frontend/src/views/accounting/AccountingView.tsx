@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BookOpen,
@@ -52,6 +52,7 @@ import { VatSettlementTab } from './VatSettlementTab';
 import { TrialBalanceTab } from './TrialBalanceTab';
 import { GeneralLedgerTab } from './GeneralLedgerTab';
 import { CostCentersTab } from './CostCentersTab';
+import { useUiStore } from '../../stores/uiStore';
 import {
   exportFinancialStatementCsv,
   exportFinancialStatementExcel,
@@ -94,7 +95,29 @@ const PGC_CLASSES: { id: string; name: string; prefix: string; desc: string }[] 
 export const AccountingView: React.FC = () => {
   const { activeTenant, activeBranch } = useAuthStore();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<AccountingTab>('trial_balance');
+  const { activeSubTabs } = useUiStore();
+  const [activeTab, setActiveTab] = useState<AccountingTab>(
+    (activeSubTabs.accounting as AccountingTab) || 'trial_balance'
+  );
+
+  useEffect(() => {
+    if (
+      activeSubTabs.accounting &&
+      [
+        'trial_balance',
+        'entries',
+        'ledger',
+        'financial_statements',
+        'cost_centers',
+        'vat_settlement',
+        'chart',
+        'journals_years',
+        'revaluation',
+      ].includes(activeSubTabs.accounting)
+    ) {
+      setActiveTab(activeSubTabs.accounting as AccountingTab);
+    }
+  }, [activeSubTabs.accounting]);
   const [reportStartDate, setReportStartDate] = useState(getLocalDateString);
   const [reportEndDate, setReportEndDate] = useState(getLocalDateString);
   const reportDateRange = resolveReportDateRange(reportStartDate, reportEndDate);

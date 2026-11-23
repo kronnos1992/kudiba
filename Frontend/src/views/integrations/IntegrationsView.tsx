@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Network,
@@ -39,14 +39,27 @@ import {
   EndpointResponse,
   MappingField,
 } from '../../api/integrations';
+import { useUiStore } from '../../stores/uiStore';
 
 type ActiveTab = 'endpoints' | 'mappings' | 'runs' | 'templates' | 'docs';
 
 export const IntegrationsView: React.FC = () => {
   const { activeTenant } = useAuthStore();
   const queryClient = useQueryClient();
+  const { activeSubTabs } = useUiStore();
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('endpoints');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(
+    (activeSubTabs.integrations as ActiveTab) || 'endpoints'
+  );
+
+  useEffect(() => {
+    if (
+      activeSubTabs.integrations &&
+      ['endpoints', 'mappings', 'runs', 'templates', 'docs'].includes(activeSubTabs.integrations)
+    ) {
+      setActiveTab(activeSubTabs.integrations as ActiveTab);
+    }
+  }, [activeSubTabs.integrations]);
 
   const [endpointTypeFilter, setEndpointTypeFilter] = useState<string>('ALL');
   const [endpointSearch, setEndpointSearch] = useState<string>('');

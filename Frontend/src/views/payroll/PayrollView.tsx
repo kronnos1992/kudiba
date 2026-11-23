@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Users,
@@ -56,14 +56,29 @@ import {
 } from '../../api/payroll';
 import { PayrollOrganizationTab } from './PayrollOrganizationTab';
 import { ConflictManagementTab } from './ConflictManagementTab';
+import { useUiStore } from '../../stores/uiStore';
 
 type PayrollTab = 'periods' | 'employees' | 'contracts' | 'organization' | 'vacations' | 'absences' | 'conflicts';
 
 export const PayrollView: React.FC = () => {
   const { activeTenant, activeBranch } = useAuthStore();
   const queryClient = useQueryClient();
+  const { activeSubTabs } = useUiStore();
 
-  const [activeTab, setActiveTab] = useState<PayrollTab>('periods');
+  const [activeTab, setActiveTab] = useState<PayrollTab>(
+    (activeSubTabs.payroll as PayrollTab) || 'periods'
+  );
+
+  useEffect(() => {
+    if (
+      activeSubTabs.payroll &&
+      ['periods', 'employees', 'contracts', 'organization', 'vacations', 'absences', 'conflicts'].includes(
+        activeSubTabs.payroll
+      )
+    ) {
+      setActiveTab(activeSubTabs.payroll as PayrollTab);
+    }
+  }, [activeSubTabs.payroll]);
   const [searchTerm, setSearchTerm] = useState('');
 
   // Modais de Período

@@ -6,6 +6,8 @@ interface UiState {
   sidebarOpen: boolean;
   mobileSidebarOpen: boolean;
   sidebarCollapsed: boolean;
+  activeSubTabs: Record<string, string>;
+  openSidebarDropdowns: Record<string, boolean>;
   toggleTheme: () => void;
   setThemeMode: (mode: ThemeMode) => void;
   toggleSidebar: () => void;
@@ -14,6 +16,9 @@ interface UiState {
   setMobileSidebarOpen: (open: boolean) => void;
   toggleSidebarCollapsed: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
+  setActiveSubTab: (module: string, tab: string) => void;
+  toggleSidebarDropdown: (module: string) => void;
+  setSidebarDropdownOpen: (module: string, open: boolean) => void;
 }
 
 const getInitialTheme = (): ThemeMode => {
@@ -27,6 +32,16 @@ export const useUiStore = create<UiState>((set) => ({
   sidebarOpen: true,
   mobileSidebarOpen: false,
   sidebarCollapsed: false,
+  activeSubTabs: {
+    invoicing: 'invoices',
+    inventory: 'products',
+    treasury: 'cash_flow',
+    payroll: 'periods',
+    accounting: 'trial_balance',
+    integrations: 'endpoints',
+    settings: 'organization',
+  },
+  openSidebarDropdowns: {},
 
   toggleTheme: () =>
     set((state) => {
@@ -48,4 +63,25 @@ export const useUiStore = create<UiState>((set) => ({
   toggleSidebarCollapsed: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+
+  setActiveSubTab: (module: string, tab: string) =>
+    set((state) => ({
+      activeSubTabs: { ...state.activeSubTabs, [module]: tab },
+    })),
+
+  toggleSidebarDropdown: (module: string) =>
+    set((state) => ({
+      openSidebarDropdowns: {
+        ...state.openSidebarDropdowns,
+        [module]: !state.openSidebarDropdowns[module],
+      },
+    })),
+
+  setSidebarDropdownOpen: (module: string, open: boolean) =>
+    set((state) => ({
+      openSidebarDropdowns: {
+        ...state.openSidebarDropdowns,
+        [module]: open,
+      },
+    })),
 }));

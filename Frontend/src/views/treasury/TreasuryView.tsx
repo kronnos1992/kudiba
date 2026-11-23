@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Landmark,
@@ -63,6 +63,7 @@ import {
   downloadReceiptPdfFile,
   ReceiptCompanyMeta,
 } from './receiptPdfExporter';
+import { useUiStore } from '../../stores/uiStore';
 
 type TreasuryTab =
   | 'cash_flow'
@@ -80,8 +81,22 @@ interface TreasuryViewProps {
 export const TreasuryView: React.FC<TreasuryViewProps> = ({ onNavigate }) => {
   const { activeTenant, activeBranch, user } = useAuthStore();
   const queryClient = useQueryClient();
+  const { activeSubTabs } = useUiStore();
 
-  const [activeTab, setActiveTab] = useState<TreasuryTab>('cash_flow');
+  const [activeTab, setActiveTab] = useState<TreasuryTab>(
+    (activeSubTabs.treasury as TreasuryTab) || 'cash_flow'
+  );
+
+  useEffect(() => {
+    if (
+      activeSubTabs.treasury &&
+      ['cash_flow', 'payables', 'receivables', 'transfers', 'bank_accounts', 'registers', 'receipts'].includes(
+        activeSubTabs.treasury
+      )
+    ) {
+      setActiveTab(activeSubTabs.treasury as TreasuryTab);
+    }
+  }, [activeSubTabs.treasury]);
   const [searchTerm, setSearchTerm] = useState('');
 
   // Modais de Caixa

@@ -40,6 +40,7 @@ import { authApi, TenantMember, InviteMemberPayload, RoleCatalogItem } from '../
 import { TenantBankAccount } from '../../types/auth';
 import { invoicingApi } from '../../api/invoicing';
 import { toast } from '../../stores/toastStore';
+import { useUiStore } from '../../stores/uiStore';
 import { RolesManager } from './RolesManager';
 import { BackupManager } from './BackupManager';
 import { AuditAndActivitiesTab } from './AuditAndActivitiesTab';
@@ -126,7 +127,22 @@ const getIbanValidation = (iban: string) => {
 export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) => {
   const queryClient = useQueryClient();
   const { activeTenant, activeBranch, user, updateActiveTenantSettings } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<SettingsTab>('organization');
+  const { activeSubTabs } = useUiStore();
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    (activeSubTabs.settings as SettingsTab) || 'organization'
+  );
+
+  useEffect(() => {
+    if (
+      activeSubTabs.settings &&
+      ['organization', 'users', 'certification', 'series', 'saft', 'backups'].includes(
+        activeSubTabs.settings
+      )
+    ) {
+      setActiveTab(activeSubTabs.settings as SettingsTab);
+    }
+  }, [activeSubTabs.settings]);
+
   const [previewMode, setPreviewMode] = useState<'a4' | 'thermal'>('a4');
   const logoInputRef = useRef<HTMLInputElement>(null);
 

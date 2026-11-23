@@ -42,6 +42,7 @@ import {
 } from '../../api/invoicing';
 import { inventoryApi, StockBalance } from '../../api/inventory';
 import { exportProformaPdf } from './proformaPdfExporter';
+import { useUiStore } from '../../stores/uiStore';
 
 type ActiveTab = 'invoices' | 'proformas' | 'new_invoice' | 'series' | 'saft';
 
@@ -50,6 +51,7 @@ const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', '
 export const InvoicingView: React.FC = () => {
   const { activeTenant } = useAuthStore();
   const queryClient = useQueryClient();
+  const { activeSubTabs } = useUiStore();
   const bankAccounts = activeTenant?.bank_accounts?.filter(
     (account) =>
       account.bank_name.trim() &&
@@ -59,7 +61,18 @@ export const InvoicingView: React.FC = () => {
 
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('invoices');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(
+    (activeSubTabs.invoicing as ActiveTab) || 'invoices'
+  );
+
+  useEffect(() => {
+    if (
+      activeSubTabs.invoicing &&
+      ['invoices', 'proformas', 'new_invoice', 'series', 'saft'].includes(activeSubTabs.invoicing)
+    ) {
+      setActiveTab(activeSubTabs.invoicing as ActiveTab);
+    }
+  }, [activeSubTabs.invoicing]);
   const [filterType, setFilterType] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
