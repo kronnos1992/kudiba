@@ -101,6 +101,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Migração automática de kudiba_core.tenant_backups ignorada: %s", e)
 
+    # Auto-bootstrap do catálogo canónico de permissões RBAC
+    try:
+        from src.infrastructure.bootstrap import ensure_rbac_catalog_bootstrapped
+        await ensure_rbac_catalog_bootstrapped(session_factory=session_factory)
+    except Exception as e:
+        logger.warning("Falha não-bloqueante no bootstrap do catálogo de permissões RBAC: %s", e)
+
     # Auto-bootstrap do utilizador SYSADMIN se ativado no deploy
     if settings.bootstrap_sysadmin_enabled:
         try:

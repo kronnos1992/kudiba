@@ -1066,7 +1066,7 @@ def create_auth_router() -> APIRouter:
     )
     async def list_permissions(
         request: Request,
-        ctx: SecurityContext = Depends(require_permission("users:read")),
+        ctx: SecurityContext = Depends(get_security_context),
     ):
         app_state = get_app_state(request)
         return await app_state.list_permissions.execute()
