@@ -142,6 +142,7 @@ const NAV_ITEMS: NavItem[] = [
       { tab: 'organization', label: 'Organização & Filiais' },
       { tab: 'users', label: 'Utilizadores, Perfis & RBAC' },
       { tab: 'certification', label: 'Certificação AGT & RSA' },
+      { tab: 'hardware', label: 'Agente POS & Periféricos' },
       { tab: 'series', label: 'Séries Fiscais' },
       { tab: 'saft', label: 'Ficheiro SAF-T (AO)' },
       { tab: 'backups', label: 'Cópias de Segurança' },

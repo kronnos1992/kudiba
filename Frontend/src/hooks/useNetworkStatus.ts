@@ -52,7 +52,7 @@ export function useNetworkStatus(): UseNetworkStatusReturn {
     }
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const timeoutId = setTimeout(() => controller.abort(), 6500);
       const rawBase = import.meta.env.VITE_API_BASE_URL;
       const baseUrl = (rawBase !== undefined ? rawBase : '').replace(/\/$/, '');
       try {

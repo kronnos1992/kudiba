@@ -30,6 +30,7 @@ import {
   Scale,
   Archive,
   FolderOpen,
+  Printer,
 } from 'lucide-react';
 import { GlassCard } from '../../components/common/GlassCard';
 import { StatusBadge } from '../../components/common/StatusBadge';
@@ -45,8 +46,9 @@ import { RolesManager } from './RolesManager';
 import { BackupManager } from './BackupManager';
 import { AuditAndActivitiesTab } from './AuditAndActivitiesTab';
 import { TermsAndPoliciesModal } from '../../components/legal/TermsAndPoliciesModal';
+import { HardwareBridgeDownloadCard } from '../../components/pos/HardwareBridgeDownloadCard';
 
-type SettingsTab = 'organization' | 'users' | 'certification' | 'series' | 'saft' | 'backups';
+type SettingsTab = 'organization' | 'users' | 'certification' | 'hardware' | 'series' | 'saft' | 'backups';
 
 interface SettingsViewProps {
   onOpenOnboarding?: () => void;
@@ -135,7 +137,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
   useEffect(() => {
     if (
       activeSubTabs.settings &&
-      ['organization', 'users', 'certification', 'series', 'saft', 'backups'].includes(
+      ['organization', 'users', 'certification', 'hardware', 'series', 'saft', 'backups'].includes(
         activeSubTabs.settings
       )
     ) {
@@ -713,6 +715,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
           >
             <Key className="w-4 h-4" />
             Certificação &amp; Chaves RSA
+          </button>
+
+          <button
+            onClick={() => setActiveTab('hardware')}
+            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
+              activeTab === 'hardware'
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'
+            }`}
+          >
+            <Printer className="w-4 h-4" />
+            Agente POS &amp; Periféricos
           </button>
 
           <button
@@ -2258,6 +2272,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
               </div>
             </div>
           </GlassCard>
+        </div>
+      )}
+
+      {/* TAB: AGENTE POS & PERIFÉRICOS (HARDWARE BRIDGE) */}
+      {activeTab === 'hardware' && (
+        <div className="space-y-4">
+          <HardwareBridgeDownloadCard />
         </div>
       )}
 

@@ -26,6 +26,7 @@ import {
   WifiOff,
   CloudUpload,
   Sparkles,
+  Download,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { toast } from '../../stores/toastStore';
@@ -42,6 +43,7 @@ import { treasuryApi, MovementType, PosPanelResponse } from '../../api/treasury'
 import { authApi, TenantMember } from '../../api/auth';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { validateInvoiceCustomerNif } from '../../utils/validators';
+import { HardwareBridgeDownloadCard } from '../../components/pos/HardwareBridgeDownloadCard';
 import {
   bridgeStatus,
   openCashDrawer,
@@ -143,6 +145,7 @@ export const PosView: React.FC = () => {
   const [bridgeAwaitingCode, setBridgeAwaitingCode] = useState(false);
   const [bridgeBusy, setBridgeBusy] = useState(false);
   const [bridgeMessage, setBridgeMessage] = useState<string | null>(null);
+  const [downloadBridgeModalOpen, setDownloadBridgeModalOpen] = useState(false);
 
   const roles = (user?.roles ?? []).map((r) => r.toUpperCase());
   const isManager = roles.some((r) => ['ADMIN', 'SYSADMIN', 'SUPER_ADMIN'].includes(r));
@@ -1790,10 +1793,20 @@ export const PosView: React.FC = () => {
                   )}
                 </div>
                 {bridgeMessage && (
-                  <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-1.5 flex items-start gap-1">
-                    <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
-                    {bridgeMessage}
-                  </p>
+                  <div className="mt-2 space-y-1.5">
+                    <p className="text-[10px] text-rose-600 dark:text-rose-400 flex items-start gap-1">
+                      <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                      <span>{bridgeMessage}</span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setDownloadBridgeModalOpen(true)}
+                      className="w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 text-[11px] font-bold cursor-pointer transition-colors shadow-2xs"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Descarregar Agente (Windows / Linux / Mac)</span>
+                    </button>
+                  </div>
                 )}
               </GlassCard>
             </div>
@@ -2857,6 +2870,20 @@ export const PosView: React.FC = () => {
                 Concluir
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {downloadBridgeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-4xl w-full p-5 sm:p-6 text-slate-900 dark:text-white relative max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setDownloadBridgeModalOpen(false)}
+              className="absolute top-5 right-5 p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <HardwareBridgeDownloadCard />
           </div>
         </div>
       )}
