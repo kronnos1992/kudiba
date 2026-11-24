@@ -232,7 +232,7 @@ fn is_allowed_origin(origin: &str) -> bool {
         }
     }
     // Suporte para desenvolvimento local, ngrok e domínios Kudiba
-    if raw.starts_with("http://localhost:")
+    raw.starts_with("http://localhost:")
         || raw == "http://localhost"
         || raw.starts_with("https://localhost:")
         || raw == "https://localhost"
@@ -244,10 +244,6 @@ fn is_allowed_origin(origin: &str) -> bool {
         || raw.ends_with(".ngrok-free.app")
         || raw.ends_with(".ngrok.io")
         || raw.ends_with(".kudiba.ao")
-    {
-        return true;
-    }
-    false
 }
 
 async fn private_network_access_middleware(request: Request, next: Next) -> Response {
