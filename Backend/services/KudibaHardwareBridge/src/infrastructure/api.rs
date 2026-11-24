@@ -292,10 +292,7 @@ fn is_public_path(path: &str) -> bool {
 
 async fn authorize(State(state): State<BridgeState>, request: Request, next: Next) -> Response {
     if let Some(origin) = request.headers().get(header::ORIGIN) {
-        let allowed = origin
-            .to_str()
-            .map(is_allowed_origin)
-            .unwrap_or(false);
+        let allowed = origin.to_str().map(is_allowed_origin).unwrap_or(false);
         if !allowed {
             return (
                 StatusCode::FORBIDDEN,
