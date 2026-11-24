@@ -47,6 +47,7 @@ import { BackupManager } from './BackupManager';
 import { AuditAndActivitiesTab } from './AuditAndActivitiesTab';
 import { TermsAndPoliciesModal } from '../../components/legal/TermsAndPoliciesModal';
 import { HardwareBridgeDownloadCard } from '../../components/pos/HardwareBridgeDownloadCard';
+import { HardwareBridgeTerminalPanel } from '../../components/pos/HardwareBridgeTerminalPanel';
 
 type SettingsTab = 'organization' | 'users' | 'certification' | 'hardware' | 'series' | 'saft' | 'backups';
 
@@ -146,6 +147,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
   }, [activeSubTabs.settings]);
 
   const [previewMode, setPreviewMode] = useState<'a4' | 'thermal'>('a4');
+  const [hardwareSubTab, setHardwareSubTab] = useState<'terminal' | 'download'>('terminal');
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   // Company Parameterization Form State
@@ -2278,7 +2280,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
       {/* TAB: AGENTE POS & PERIFÉRICOS (HARDWARE BRIDGE) */}
       {activeTab === 'hardware' && (
         <div className="space-y-4">
-          <HardwareBridgeDownloadCard />
+          {/* Sub-navegação interna */}
+          <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHardwareSubTab('terminal')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  hardwareSubTab === 'terminal'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Consola Always-On (Terminal em Tempo Real)
+              </button>
+              <button
+                type="button"
+                onClick={() => setHardwareSubTab('download')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  hardwareSubTab === 'download'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Downloads do Agente (Windows / Linux / Mac)
+              </button>
+            </div>
+          </div>
+
+          {hardwareSubTab === 'terminal' ? (
+            <HardwareBridgeTerminalPanel />
+          ) : (
+            <HardwareBridgeDownloadCard />
+          )}
         </div>
       )}
 

@@ -4,7 +4,7 @@ use std::sync::{Arc, OnceLock};
 use axum::{
     extract::{Request, State},
     http::{
-        header::{self, AUTHORIZATION},
+        header::{self, HeaderName, AUTHORIZATION},
         HeaderValue, Method, StatusCode,
     },
     middleware::{self, Next},
@@ -25,7 +25,6 @@ use crate::domain::port::{DrawerPort, JobRepository, PrinterPort, TransportOutco
 use crate::infrastructure::credential::CredentialStore;
 use crate::infrastructure::escp::{self, EscPosProfile};
 
-const DEFAULT_ALLOWED_ORIGINS: &str = "http://localhost:5173,http://127.0.0.1:5173";
 const DEVELOPMENT_INTERNAL_GATEWAY_SECRET: &str =
     "kudiba_internal_gateway_secret_development_key_change_in_production_2026";
 
@@ -222,32 +221,72 @@ fn receipt_lines(envelope: &PrintEnvelope) -> Vec<String> {
     lines
 }
 
-fn allowed_origins() -> Vec<String> {
-    env::var("KUDIBA_BRIDGE_ALLOWED_ORIGINS")
-        .unwrap_or_else(|_| DEFAULT_ALLOWED_ORIGINS.to_string())
-        .split(',')
-        .map(str::trim)
-        .filter(|origin| !origin.is_empty() && *origin != "*")
-        .map(str::to_string)
-        .collect()
+fn is_allowed_origin(origin: &str) -> bool {
+    let raw = origin.trim().trim_end_matches('/');
+    if let Ok(configured) = env::var("KUDIBA_BRIDGE_ALLOWED_ORIGINS") {
+        for entry in configured.split(',') {
+            let item = entry.trim().trim_end_matches('/');
+            if item == "*" || item.eq_ignore_ascii_case(raw) {
+                return true;
+            }
+        }
+    }
+    // Suporte para desenvolvimento local, ngrok e domínios Kudiba
+    if raw.starts_with("http://localhost:")
+        || raw == "http://localhost"
+        || raw.starts_with("https://localhost:")
+        || raw == "https://localhost"
+        || raw.starts_with("http://127.0.0.1:")
+        || raw == "http://127.0.0.1"
+        || raw.starts_with("https://127.0.0.1:")
+        || raw == "https://127.0.0.1"
+        || raw.ends_with(".ngrok-free.dev")
+        || raw.ends_with(".ngrok-free.app")
+        || raw.ends_with(".ngrok.io")
+        || raw.ends_with(".kudiba.ao")
+    {
+        return true;
+    }
+    false
+}
+
+async fn private_network_access_middleware(request: Request, next: Next) -> Response {
+    let is_pna_requested = request
+        .headers()
+        .get("access-control-request-private-network")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    let mut response = next.run(request).await;
+
+    if is_pna_requested {
+        response.headers_mut().insert(
+            HeaderName::from_static("access-control-allow-private-network"),
+            HeaderValue::from_static("true"),
+        );
+    }
+    response
 }
 
 fn cors_layer() -> CorsLayer {
-    let origins = allowed_origins()
-        .into_iter()
-        .filter_map(|origin| HeaderValue::from_str(&origin).ok())
-        .collect::<Vec<_>>();
     CorsLayer::new()
-        .allow_origin(AllowOrigin::list(origins))
-        .allow_methods([Method::GET, Method::POST])
-        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        .allow_origin(AllowOrigin::predicate(|origin, _| {
+            origin.to_str().map(is_allowed_origin).unwrap_or(false)
+        }))
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            HeaderName::from_static("access-control-request-private-network"),
+        ])
         .max_age(std::time::Duration::from_secs(600))
 }
 
 fn is_public_path(path: &str) -> bool {
     matches!(
         path,
-        "/health" | "/pair" | "/pair/status" | "/pair/challenge"
+        "/health" | "/pair" | "/pair/status" | "/pair/challenge" | "/diag"
     )
 }
 
@@ -255,11 +294,7 @@ async fn authorize(State(state): State<BridgeState>, request: Request, next: Nex
     if let Some(origin) = request.headers().get(header::ORIGIN) {
         let allowed = origin
             .to_str()
-            .map(|value| {
-                allowed_origins()
-                    .iter()
-                    .any(|allowed| allowed == value.trim())
-            })
+            .map(is_allowed_origin)
             .unwrap_or(false);
         if !allowed {
             return (
@@ -404,6 +439,25 @@ async fn authorized_copy_reprint(state: &BridgeState, request: &PrintRequest) ->
 
 async fn health() -> Response {
     (StatusCode::OK, Json(json!({ "status": "ok" }))).into_response()
+}
+
+async fn diag(State(state): State<BridgeState>) -> Response {
+    let status = state.credentials.status();
+    Json(json!({
+        "status": "ok",
+        "service": "kudiba-hardware-bridge",
+        "version": "0.1.0",
+        "port": 17842,
+        "paired": status.paired,
+        "awaitingCode": status.awaiting_code,
+        "locked": status.locked,
+        "profile": {
+            "columns": state.profile.columns,
+            "has_cutter": state.profile.has_cutter,
+            "ascii_only": state.profile.ascii_only,
+        }
+    }))
+    .into_response()
 }
 
 async fn pair_status(State(state): State<BridgeState>) -> Response {
@@ -743,6 +797,7 @@ async fn open_drawer(
 pub fn router(state: BridgeState) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/diag", get(diag))
         .route("/pair/status", get(pair_status))
         .route("/pair/challenge", post(regenerate_challenge))
         .route("/pair", post(pair))
@@ -751,6 +806,7 @@ pub fn router(state: BridgeState) -> Router {
         .route("/device/print", post(print))
         .route("/device/drawer/open", post(open_drawer))
         .layer(middleware::from_fn_with_state(state.clone(), authorize))
+        .layer(middleware::from_fn(private_network_access_middleware))
         .layer(cors_layer())
         .with_state(state)
 }
