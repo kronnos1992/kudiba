@@ -17,12 +17,11 @@ export const exportProformaPdf = (
   const bankAccounts = tenant?.bank_accounts?.filter(
     (account) =>
       account.bank_name.trim() &&
-      account.account_number?.trim() &&
       account.iban.trim()
   ) || [];
   if (bankAccounts.length === 0) {
     window.alert(
-      'Configure Banco, Número da Conta e IBAN nos dados da empresa antes de imprimir a proforma.'
+      'Configure Banco e IBAN nos dados da empresa antes de imprimir a proforma.'
     );
     return;
   }
@@ -424,7 +423,7 @@ export const exportProformaPdf = (
   ${bankAccounts.length > 0 ? `
     <div class="iban-box">
       <strong>Coordenadas Bancárias para Liquidação:</strong><br/>
-      ${bankAccounts.map((b) => `Banco: ${b.bank_name} | Nº Conta: ${b.account_number || '-'} | IBAN: ${b.iban}`).join('<br/>')}
+      ${bankAccounts.map((b) => `Banco: ${b.bank_name}${b.account_number?.trim() ? ` | Nº Conta: ${b.account_number.trim()}` : ''} | IBAN: ${b.iban} (${b.currency || 'AOA'})`).join('<br/>')}
     </div>
   ` : ''}
 

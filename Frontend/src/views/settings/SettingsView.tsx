@@ -432,25 +432,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
         account.iban.trim();
       return Boolean(
         hasAnyDetails &&
-          (!account.bank_name.trim() ||
-            !account.account_number?.trim() ||
-            !account.iban.trim())
+          (!account.bank_name.trim() || !account.iban.trim())
       );
     });
     if (hasIncompleteBankAccount) {
-      toast.warning('Complete Banco, Número da Conta e IBAN em cada conta bancária ou remova a conta incompleta.');
+      toast.warning('Indique a Instituição Bancária e o IBAN em cada conta configurada, ou remova a conta incompleta.');
       return;
     }
 
     setSavingCompany(true);
     let tenantSettingsSaved = false;
     try {
-      const cleanedBanks = companyForm.bank_accounts.filter(
-        (b) =>
-          b.bank_name.trim() !== '' &&
-          Boolean(b.account_number?.trim()) &&
-          b.iban.trim() !== ''
-      );
+      const cleanedBanks = companyForm.bank_accounts
+        .filter(
+          (b) => b.bank_name.trim() !== '' && b.iban.trim() !== ''
+        )
+        .map((b) => ({
+          ...b,
+          bank_name: b.bank_name.trim(),
+          iban: b.iban.trim(),
+          account_number: b.account_number?.trim() || '',
+          currency: b.currency || 'AOA',
+        }));
       const payload = {
         company_name: companyForm.company_name.trim(),
         trade_name: companyForm.trade_name.trim() || companyForm.company_name.trim(),
@@ -1288,7 +1291,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                             : 'border-white/15 bg-white/5'
                         }`}
                       >
-                        <div className="sm:col-span-4">
+                        <div className="sm:col-span-3">
                           <div className="flex items-center justify-between mb-0.5">
                             <label className="block text-[10px] font-bold text-white/60 uppercase">
                               Banco
@@ -1308,7 +1311,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                           />
                         </div>
 
-                        <div className="sm:col-span-5">
+                        <div className="sm:col-span-4">
                           <div className="flex items-center justify-between mb-0.5">
                             <label className="block text-[10px] font-bold text-white/60 uppercase">
                               IBAN (AO06)
@@ -1334,18 +1337,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                           />
                         </div>
 
-                        <div className="sm:col-span-2">
+                        <div className="sm:col-span-3">
+                          <label className="block text-[10px] font-bold text-white/60 uppercase mb-0.5">
+                            N.º de Conta <span className="font-normal text-white/40 lowercase">(opcional)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={acc.account_number || ''}
+                            onChange={(e) => handleUpdateBank(idx, 'account_number', e.target.value)}
+                            placeholder="Ex: 123456789.10.001"
+                            className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white font-mono text-xs placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent transition-all"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-1">
                           <label className="block text-[10px] font-bold text-white/60 uppercase mb-0.5">
                             Moeda
                           </label>
                           <select
                             value={acc.currency || 'AOA'}
                             onChange={(e) => handleUpdateBank(idx, 'currency', e.target.value)}
-                            className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent transition-all"
+                            className="w-full px-2 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent transition-all"
                           >
-                            <option value="AOA" className="text-slate-900">AOA (Kz)</option>
-                            <option value="USD" className="text-slate-900">USD ($)</option>
-                            <option value="EUR" className="text-slate-900">EUR (€)</option>
+                            <option value="AOA" className="text-slate-900">AOA</option>
+                            <option value="USD" className="text-slate-900">USD</option>
+                            <option value="EUR" className="text-slate-900">EUR</option>
                           </select>
                         </div>
 
@@ -1827,6 +1843,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenOnboarding }) 
                           <p key={i} className="text-[10px] font-mono text-white/80 truncate flex items-center justify-between">
                             <span>
                               <span className="font-bold text-white">{b.bank_name}:</span> {b.iban}
+                              {b.account_number?.trim() ? ` • Conta: ${b.account_number.trim()}` : ''}
                             </span>
                             {b.is_primary && (
                               <span className="text-[9px] text-amber-300 font-bold ml-1">★ Principal</span>

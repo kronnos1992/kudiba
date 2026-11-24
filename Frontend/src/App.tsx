@@ -7,6 +7,7 @@ import { AppLayout } from './components/layout/AppLayout';
 import { SessionIdleWatcher } from './components/session/SessionIdleWatcher';
 import { ModuleKey } from './components/layout/Sidebar';
 import { CompanyOnboardingModal } from './components/onboarding/CompanyOnboardingModal';
+import { ToastContainer } from './components/common/ToastContainer';
 
 const LoginView = lazy(() => import('./views/auth/LoginView').then((module) => ({ default: module.LoginView })));
 const DashboardView = lazy(() => import('./views/dashboard/DashboardView').then((module) => ({ default: module.DashboardView })));
@@ -91,6 +92,7 @@ export const App: React.FC = () => {
     return (
       <Suspense fallback={<ModuleLoading />}>
         <LoginView />
+        <ToastContainer />
       </Suspense>
     );
   }
@@ -169,6 +171,8 @@ export const App: React.FC = () => {
         }}
         forceAllowClose={true}
       />
+
+      <ToastContainer />
     </AppLayout>
   );
 };

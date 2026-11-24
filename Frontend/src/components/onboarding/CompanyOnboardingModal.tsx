@@ -224,42 +224,69 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
     return true;
   };
 
+  const validateAllRequired = (): boolean => {
+    if (!companyName.trim() || companyName.trim().length < 2) {
+      setStep(1);
+      toast.warning('Indique a Denominação Social (Razão Social) da empresa (Passo 1).');
+      return false;
+    }
+    if (!nif.trim() || nif.trim().length < 5) {
+      setStep(1);
+      toast.warning('Indique um NIF válido da empresa (Passo 1).');
+      return false;
+    }
+    if (!addressDetail.trim()) {
+      setStep(2);
+      toast.warning('O endereço completo da sede é obrigatório para documentos fiscais (Passo 2).');
+      return false;
+    }
+    if (!city.trim()) {
+      setStep(2);
+      toast.warning('Indique a cidade / município da sede (Passo 2).');
+      return false;
+    }
+    return true;
+  };
+
   const handleNext = () => {
     if (!validateCurrentStep()) return;
     if (step < 4) setStep((s) => (s + 1) as 1 | 2 | 3 | 4);
   };
 
   const handleFinish = async () => {
-    if (!validateCurrentStep()) return;
+    if (!validateAllRequired()) return;
     if (!termsAccepted) {
       toast.warning('É necessário aceitar os Termos de Uso e Políticas de Privacidade para concluir a parametrização.');
+      return;
+    }
+    const hasIncompleteBankAccount = bankAccounts.some((account) => {
+      const hasAnyDetails =
+        account.bank_name.trim() ||
+        account.account_number?.trim() ||
+        account.iban.trim();
+      return Boolean(
+        hasAnyDetails &&
+          (!account.bank_name.trim() || !account.iban.trim())
+      );
+    });
+    if (hasIncompleteBankAccount) {
+      toast.warning('Indique a Instituição Bancária e o IBAN em cada conta configurada, ou remova a linha incompleta.');
       return;
     }
     setSaving(true);
     let tenantSettingsSaved = false;
     try {
-      const hasIncompleteBankAccount = bankAccounts.some((account) => {
-        const hasAnyDetails =
-          account.bank_name.trim() ||
-          account.account_number?.trim() ||
-          account.iban.trim();
-        return Boolean(
-          hasAnyDetails &&
-            (!account.bank_name.trim() ||
-              !account.account_number?.trim() ||
-              !account.iban.trim())
-        );
-      });
-      if (hasIncompleteBankAccount) {
-        toast.warning('Complete Banco, Número da Conta e IBAN em cada conta bancária ou remova a conta incompleta.');
-        return;
-      }
-      const cleanedBanks = bankAccounts.filter(
-        (b) =>
-          b.bank_name.trim() !== '' &&
-          Boolean(b.account_number?.trim()) &&
-          b.iban.trim() !== ''
-      );
+      const cleanedBanks = bankAccounts
+        .filter(
+          (b) => b.bank_name.trim() !== '' && b.iban.trim() !== ''
+        )
+        .map((b) => ({
+          ...b,
+          bank_name: b.bank_name.trim(),
+          iban: b.iban.trim(),
+          account_number: b.account_number?.trim() || '',
+          currency: b.currency || 'AOA',
+        }));
       const payload = {
         company_name: companyName.trim(),
         trade_name: tradeName.trim() || companyName.trim(),
@@ -872,7 +899,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
                     key={idx}
                     className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50"
                   >
-                    <div className="md:col-span-4">
+                    <div className="md:col-span-3">
                       <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase mb-0.5">
                         Instituição Bancária
                       </label>
@@ -885,7 +912,7 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
                         className="input-field text-xs py-1.5"
                       />
                     </div>
-                    <div className="md:col-span-5">
+                    <div className="md:col-span-4">
                       <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase mb-0.5">
                         IBAN Oficial
                       </label>
@@ -897,7 +924,19 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
                         className="input-field font-mono text-xs py-1.5"
                       />
                     </div>
-                    <div className="md:col-span-2">
+                    <div className="md:col-span-3">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase mb-0.5">
+                        N.º de Conta <span className="font-normal text-slate-400 lowercase">(opcional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={acc.account_number || ''}
+                        onChange={(e) => updateBankAccount(idx, 'account_number', e.target.value)}
+                        placeholder="Ex: 123456789.10.001"
+                        className="input-field font-mono text-xs py-1.5"
+                      />
+                    </div>
+                    <div className="md:col-span-1">
                       <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase mb-0.5">
                         Moeda
                       </label>
@@ -1001,8 +1040,8 @@ export const CompanyOnboardingModal: React.FC<CompanyOnboardingModalProps> = ({
                           .filter((b) => b.iban.trim())
                           .map((b, i) => (
                             <p key={i} className="text-slate-700 font-mono text-[11px]">
-                              <strong className="font-sans">{b.bank_name}:</strong> {b.iban} (
-                              {b.currency || 'AOA'})
+                              <strong className="font-sans">{b.bank_name}:</strong> {b.iban}
+                              {b.account_number?.trim() ? ` • Conta: ${b.account_number.trim()}` : ''} ({b.currency || 'AOA'})
                             </p>
                           ))}
                       </div>

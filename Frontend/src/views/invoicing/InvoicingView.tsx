@@ -55,7 +55,6 @@ export const InvoicingView: React.FC = () => {
   const bankAccounts = activeTenant?.bank_accounts?.filter(
     (account) =>
       account.bank_name.trim() &&
-      account.account_number?.trim() &&
       account.iban.trim()
   ) || [];
 
@@ -2742,7 +2741,11 @@ export const InvoicingView: React.FC = () => {
                     {bankAccounts.map((acc, idx) => (
                       <div key={idx} className="font-mono text-[11px] break-all">
                         <span className="font-bold text-slate-700">Banco:</span> {acc.bank_name}<br />
-                        <span className="font-bold text-slate-700">N.º Conta:</span> {acc.account_number}<br />
+                        {acc.account_number?.trim() && (
+                          <>
+                            <span className="font-bold text-slate-700">N.º Conta:</span> {acc.account_number}<br />
+                          </>
+                        )}
                         <span className="font-bold text-slate-700">IBAN:</span> {acc.iban} ({acc.currency || 'AOA'})
                       </div>
                     ))}
@@ -3500,7 +3503,11 @@ export const InvoicingView: React.FC = () => {
                     {bankAccounts.map((acc, idx) => (
                       <div key={idx} className="font-mono text-[11px] break-all bg-slate-50 p-1.5 rounded border border-slate-100">
                         <span className="font-bold text-slate-700">Banco:</span> {acc.bank_name}<br />
-                        <span className="font-bold text-slate-700">N.º Conta:</span> {acc.account_number}<br />
+                        {acc.account_number?.trim() && (
+                          <>
+                            <span className="font-bold text-slate-700">N.º Conta:</span> {acc.account_number}<br />
+                          </>
+                        )}
                         <span className="font-bold text-slate-700">IBAN:</span> {acc.iban} ({acc.currency || 'AOA'})
                       </div>
                     ))}
