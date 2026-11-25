@@ -9,6 +9,7 @@ import { ModuleKey } from './components/layout/Sidebar';
 import { CompanyOnboardingModal } from './components/onboarding/CompanyOnboardingModal';
 import { ToastContainer } from './components/common/ToastContainer';
 
+const LandingPageView = lazy(() => import('./views/landing/LandingPageView').then((module) => ({ default: module.LandingPageView })));
 const LoginView = lazy(() => import('./views/auth/LoginView').then((module) => ({ default: module.LoginView })));
 const DashboardView = lazy(() => import('./views/dashboard/DashboardView').then((module) => ({ default: module.DashboardView })));
 const PosView = lazy(() => import('./views/pos/PosView').then((module) => ({ default: module.PosView })));
@@ -42,6 +43,27 @@ export const App: React.FC = () => {
   );
   const [onboardingModalOpen, setOnboardingModalOpen] = useState(false);
   const [dismissedOnboardingForTenant, setDismissedOnboardingForTenant] = useState<string | null>(null);
+
+  const [publicViewMode, setPublicViewMode] = useState<'landing' | 'login'>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      const path = window.location.pathname;
+      if (hash === '#login' || path === '/login') return 'login';
+    }
+    return 'landing';
+  });
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      if (window.location.hash === '#login') {
+        setPublicViewMode('login');
+      } else if (!window.location.hash || window.location.hash === '#') {
+        setPublicViewMode('landing');
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   useEffect(() => {
     setActiveModule(isCashier ? 'pos' : 'dashboard');
@@ -91,7 +113,21 @@ export const App: React.FC = () => {
   if (!isAuthenticated) {
     return (
       <Suspense fallback={<ModuleLoading />}>
-        <LoginView />
+        {publicViewMode === 'landing' ? (
+          <LandingPageView
+            onOpenLogin={() => {
+              setPublicViewMode('login');
+              window.location.hash = '#login';
+            }}
+          />
+        ) : (
+          <LoginView
+            onBackToLanding={() => {
+              setPublicViewMode('landing');
+              window.location.hash = '';
+            }}
+          />
+        )}
         <ToastContainer />
       </Suspense>
     );

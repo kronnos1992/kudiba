@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  ArrowLeft,
   ArrowRight,
   BadgeCheck,
   Boxes,
@@ -35,7 +36,11 @@ const highlights = [
   { icon: Users, label: 'Recursos Humanos', detail: 'Equipas, salários e assiduidade' },
 ];
 
-export const LoginView: React.FC = () => {
+export interface LoginViewProps {
+  onBackToLanding?: () => void;
+}
+
+export const LoginView: React.FC<LoginViewProps> = ({ onBackToLanding }) => {
   const { setSession } = useAuthStore();
   const { themeMode, toggleTheme } = useUiStore();
 
@@ -181,9 +186,22 @@ export const LoginView: React.FC = () => {
 
         <section className="flex min-h-screen w-full flex-col px-6 py-6 dark:bg-slate-900 sm:px-10 lg:min-h-0 lg:w-[48%] lg:px-12 xl:px-20">
           <header className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Acesso seguro
+            <div className="flex items-center gap-3">
+              {onBackToLanding && (
+                <button
+                  type="button"
+                  onClick={onBackToLanding}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition"
+                  title="Voltar ao Website Oficial"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Website</span>
+                </button>
+              )}
+              <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Acesso seguro
+              </div>
             </div>
             <button
               onClick={toggleTheme}
