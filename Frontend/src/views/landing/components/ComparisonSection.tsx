@@ -21,7 +21,7 @@ export const ComparisonSection: React.FC = () => {
     {
       criteria: 'Apoio e Implementação em Angola',
       traditional: 'Atendimento demorado através de parceiros intermediários com fuso horário distante.',
-      kudiba: 'Apoio direto de proximidade com a equipa da MONAIT em Luanda e nas províncias.',
+      kudiba: 'Apoio direto de proximidade com equipa técnica local em Luanda e nas províncias.',
     },
     {
       criteria: 'Conformidade Fiscal e Regras da AGT',
@@ -41,7 +41,7 @@ export const ComparisonSection: React.FC = () => {
             Porquê escolher o Kudiba ERP para a sua empresa?
           </h2>
           <p className="mt-4 text-base text-slate-600 dark:text-slate-300">
-            Comparativo transparente entre o modelo convencional e a nova geração de gestão empresarial desenvolvida pela MONAIT.
+            Comparativo transparente entre o modelo convencional e a nova geração de gestão empresarial Kudiba.
           </p>
         </div>
 
@@ -53,7 +53,7 @@ export const ComparisonSection: React.FC = () => {
               Softwares Tradicionais
             </div>
             <div className="col-span-12 sm:col-span-4 mt-2 sm:mt-0 text-emerald-800 dark:text-emerald-400 font-extrabold">
-              Kudiba ERP (MONAIT)
+              Kudiba ERP
             </div>
           </div>
 

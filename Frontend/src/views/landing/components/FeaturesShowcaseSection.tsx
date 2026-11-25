@@ -122,7 +122,7 @@ export const FeaturesShowcaseSection: React.FC = () => {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl">
           <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
-            Soluções Integradas MONAIT
+            Soluções Integradas Kudiba
           </span>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
             Uma plataforma completa para gerir cada área da sua empresa
@@ -213,7 +213,7 @@ export const FeaturesShowcaseSection: React.FC = () => {
                   Implementação Rápida & Formação
                 </p>
                 <p>
-                  A equipa da MONAIT realiza a migração dos seus dados (artigos, clientes e saldos) e forma os seus operadores em 48 horas.
+                  A nossa equipa técnica realiza a migração dos seus dados (artigos, clientes e saldos) e forma os seus operadores em 48 horas.
                 </p>
               </div>
             </div>

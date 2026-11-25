@@ -11,7 +11,7 @@ export const FaqSection: React.FC = () => {
     },
     {
       q: 'Como é realizada a migração a partir do nosso sistema atual (Primavera, PHC, Sage ou Excel)?',
-      a: 'A transição é assistida diretamente pela equipa técnica da MONAIT. Importamos a lista de artigos, clientes, preços de venda e saldos de stock a partir de cópias de segurança, ficheiros SAF-T anteriores ou folhas de cálculo. A sua equipa fica operacional num prazo médio de 24 a 48 horas.',
+      a: 'A transição é assistida diretamente pela nossa equipa técnica especializada. Importamos a lista de artigos, clientes, preços de venda e saldos de stock a partir de cópias de segurança, ficheiros SAF-T anteriores ou folhas de cálculo. A sua equipa fica operacional num prazo médio de 24 a 48 horas.',
     },
     {
       q: 'O Kudiba ERP está homologado e certificado pela Administração Geral Tributária (AGT)?',
@@ -19,7 +19,7 @@ export const FaqSection: React.FC = () => {
     },
     {
       q: 'Os preços da subscrição são estáveis ou sofrem alterações cambiais ao longo do ano?',
-      a: 'Todos os planos do Kudiba ERP são fixados e faturados 100% em Kwanzas (AOA) pela MONAIT em Angola. A sua empresa tem total previsibilidade de custos operacionais, sem estar exposta à volatilidade do Dólar ou do Euro.',
+      a: 'Todos os planos do Kudiba ERP são fixados e faturados 100% em Kwanzas (AOA) em território angolano. A sua empresa tem total previsibilidade de custos operacionais, sem estar exposta à volatilidade do Dólar ou do Euro.',
     },
     {
       q: 'Como funciona a assistência técnica e formação nas diferentes províncias de Angola?',

@@ -25,11 +25,11 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ onOpenLogin, onOpe
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-800 text-white shadow-sm dark:bg-emerald-700">
             <span className="font-sans text-lg font-black tracking-tight text-amber-300">K</span>
           </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
+          <div className="flex flex-col">
+            <span className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white leading-none">
               Kudiba<span className="text-emerald-700 dark:text-emerald-400">ERP</span>
             </span>
-            <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+            <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 tracking-wide mt-0.5">
               por MONAIT
             </span>
           </div>

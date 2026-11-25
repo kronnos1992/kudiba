@@ -35,7 +35,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenDemo, onOpenLogi
         <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-12 lg:gap-12">
           {/* Left Column: Commercial & Humanized Presentation */}
           <div className="lg:col-span-7">
-            {/* AGT & MONAIT Badge */}
+            {/* AGT & Certification Badge */}
             <div className="inline-flex items-center gap-2.5 rounded-full border border-emerald-700/20 bg-emerald-50/80 px-4 py-1.5 text-xs font-bold text-emerald-900 backdrop-blur-sm dark:bg-emerald-950/60 dark:border-emerald-500/30 dark:text-emerald-300">
               <Award className="h-4 w-4 text-amber-600 dark:text-amber-400" />
               <span>Certificação AGT n.º FE/528/AGT/2026 • Decreto Presidencial 71/25</span>
@@ -48,7 +48,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenDemo, onOpenLogi
 
             {/* Description */}
             <p className="mt-6 text-base sm:text-lg text-slate-600 dark:text-slate-300 leading-relaxed">
-              O <strong>Kudiba ERP</strong> é a solução de gestão empresarial desenvolvida pela <strong>MONAIT</strong> para responder com exatidão às exigências da Administração Geral Tributária (AGT) e ao Plano Geral de Contabilidade (PGC) de Angola.
+              O <strong>Kudiba ERP</strong> é a solução de gestão empresarial desenvolvida para responder com exatidão às exigências da Administração Geral Tributária (AGT) e ao Plano Geral de Contabilidade (PGC) de Angola.
             </p>
             <p className="mt-2 text-sm sm:text-base font-medium text-slate-800 dark:text-slate-200">
               Vendas no balcão que não param sem internet, controlo rigoroso de stocks e salários com IRT e INSS — tudo faturado em Kwanzas com estabilidade total para o seu negócio.
@@ -61,7 +61,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenDemo, onOpenLogi
                 onClick={onOpenDemo}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-800 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-900/25 hover:bg-emerald-900 active:scale-[0.99] transition dark:bg-emerald-700 dark:hover:bg-emerald-600"
               >
-                <span>Falar com um Consultor MONAIT</span>
+                <span>Falar com um Consultor</span>
                 <ArrowRight className="h-4 w-4" />
               </button>
 
@@ -178,7 +178,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenDemo, onOpenLogi
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
                     <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
-                      Garantia de Continuidade MONAIT
+                      Garantia de Continuidade Kudiba
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">

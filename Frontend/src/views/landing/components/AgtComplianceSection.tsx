@@ -18,7 +18,7 @@ export const AgtComplianceSection: React.FC = () => {
             </h2>
 
             <p className="mt-4 text-base text-slate-600 dark:text-slate-300 leading-relaxed">
-              Desenvolvido pela <strong>MONAIT</strong> para assegurar conformidade estrita com o <strong>Decreto Presidencial n.º 71/25</strong> e o Decreto Executivo n.º 385/20 da Administração Geral Tributária. A sua empresa opera com segurança jurídica e auditoria transparente em todas as operações.
+              Desenvolvido de raiz para assegurar conformidade estrita com o <strong>Decreto Presidencial n.º 71/25</strong> e o Decreto Executivo n.º 385/20 da Administração Geral Tributária. A sua empresa opera com segurança jurídica e auditoria transparente em todas as operações.
             </p>
 
             <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -99,8 +99,8 @@ export const AgtComplianceSection: React.FC = () => {
                   <span className="font-bold text-slate-900 dark:text-white">Lei n.º 12/23 & IRT 28/20</span>
                 </div>
                 <div className="flex justify-between py-1.5">
-                  <span className="text-slate-500">Proprietário / Titular:</span>
-                  <span className="font-bold text-emerald-800 dark:text-emerald-400">MONAIT</span>
+                  <span className="text-slate-500">Sistema Homologado:</span>
+                  <span className="font-bold text-emerald-800 dark:text-emerald-400">Kudiba ERP</span>
                 </div>
               </div>
 

@@ -22,7 +22,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) 
         'Gestão de stocks essencial e inventário físico',
         'Abertura, conferência e fecho cego de caixas com TPA',
         'Exportação mensal de SAF-T (AO) v1.01 validado',
-        'Apoio técnico remoto assegurado pela MONAIT',
+        'Apoio técnico remoto assegurado pela equipa Kudiba',
       ],
       buttonText: 'Aderir ao Plano Comercial',
     },
@@ -62,7 +62,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) 
         'Consolidação multi-empresa e gestão centralizada de filiais',
         'Integrações com sistemas externos através de API corporativa',
         'Ambiente de alta disponibilidade e salvaguarda contínua de dados',
-        'Gestor de conta executivo da MONAIT com SLA prioritário',
+        'Gestor de conta executivo dedicado com SLA prioritário',
         'Implementação presencial e apoio de transição personalizado',
       ],
       buttonText: 'Solicitar Proposta Corporate',
@@ -80,7 +80,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) 
             Investimento 100% em Kwanzas, sem custos surpresa
           </h2>
           <p className="mt-4 text-base text-slate-600 dark:text-slate-300">
-            Escolha o plano ajustado à dimensão da sua empresa. Todas as subscrições incluem as atualizações legais da AGT e o suporte especializado da MONAIT.
+            Escolha o plano ajustado à dimensão da sua empresa. Todas as subscrições incluem as atualizações legais da AGT e o suporte técnico especializado.
           </p>
         </div>
 
@@ -164,7 +164,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) 
                 Precisa de um projeto à medida para grande porte ou rede de retalho?
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                A equipa de consultores da MONAIT desenha a arquitetura de implementação para a sua operação em qualquer província de Angola.
+                A nossa equipa de consultores desenha a arquitetura de implementação para a sua operação em qualquer província de Angola.
               </p>
             </div>
           </div>

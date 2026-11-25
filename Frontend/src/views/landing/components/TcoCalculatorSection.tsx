@@ -215,7 +215,7 @@ export const TcoCalculatorSection: React.FC<TcoCalculatorSectionProps> = ({ onOp
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                  <span>Apoio e migração direta com a equipa da MONAIT</span>
+                  <span>Apoio e migração direta com a equipa técnica Kudiba</span>
                 </div>
               </div>
 

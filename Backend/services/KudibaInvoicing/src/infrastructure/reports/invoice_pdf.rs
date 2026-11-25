@@ -1904,14 +1904,14 @@ mod tests {
             }],
             ..tenant.clone()
         };
-        let pdf_monait = InvoicePdfGenerator::generate_pdf_with_tenant(
+        let pdf_custom = InvoicePdfGenerator::generate_pdf_with_tenant(
             &invoice,
             Some(&tenant_with_only_iban),
-            "MONAIT",
+            "Kudiba ERP",
             "FE/528/AGT/2026",
         )
         .expect("PDF da factura com coordenadas derivadas de IBAN deve ser gerado");
-        assert!(!pdf_monait.is_empty());
+        assert!(!pdf_custom.is_empty());
 
         let mut invoice_receipt = invoice.clone();
         invoice_receipt.document_type = "FR".to_string();

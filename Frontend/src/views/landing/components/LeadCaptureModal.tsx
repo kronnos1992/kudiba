@@ -29,7 +29,7 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
 
   const handleOpenWhatsApp = () => {
     const text = encodeURIComponent(
-      `*Olá, equipa MONAIT!*\n\nGostaria de solicitar uma demonstração do Kudiba ERP.\n\n*Responsável:* ${name || 'Não informado'}\n*Empresa:* ${company || 'Não informada'}\n*NIF:* ${nif || 'Não informado'}\n*Telemóvel:* ${phone || 'Não informado'}\n*Província:* ${province}\n*Interesse / Plano:* ${interest}`
+      `*Olá, equipa Kudiba ERP!*\n\nGostaria de solicitar uma demonstração do Kudiba ERP.\n\n*Responsável:* ${name || 'Não informado'}\n*Empresa:* ${company || 'Não informada'}\n*NIF:* ${nif || 'Não informado'}\n*Telemóvel:* ${phone || 'Não informado'}\n*Província:* ${province}\n*Interesse / Plano:* ${interest}`
     );
     window.open(`https://wa.me/244923000000?text=${text}`, '_blank');
   };
@@ -47,7 +47,7 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-lg font-extrabold text-slate-900 dark:text-white">
-                {submitted ? 'Pedido Registado!' : 'Falar com um Consultor MONAIT'}
+                {submitted ? 'Pedido Registado!' : 'Falar com um Consultor Especializado'}
               </span>
               <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 Kudiba ERP
@@ -85,7 +85,7 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
                 className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-800 py-3 text-sm font-bold text-white shadow-md hover:bg-emerald-900 transition dark:bg-emerald-700 dark:hover:bg-emerald-600"
               >
                 <MessageCircle className="h-5 w-5" />
-                <span>Conversar com a MONAIT no WhatsApp</span>
+                <span>Conversar no WhatsApp</span>
               </button>
               <button
                 type="button"
@@ -208,7 +208,7 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
               </div>
 
               <p className="text-[11px] text-center text-slate-400 dark:text-slate-500 pt-1">
-                A MONAIT assegura a confidencialidade e proteção dos seus dados nos termos da legislação angolana (Lei 22/11).
+                O Kudiba ERP assegura a confidencialidade e proteção dos seus dados nos termos da legislação angolana (Lei 22/11).
               </p>
             </form>
           )}

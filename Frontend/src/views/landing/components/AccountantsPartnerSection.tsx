@@ -25,7 +25,7 @@ export const AccountantsPartnerSection: React.FC<AccountantsPartnerSectionProps>
               </h2>
 
               <p className="mt-4 text-sm sm:text-base text-slate-300 leading-relaxed">
-                A MONAIT disponibiliza uma área exclusiva para gabinetes de contabilidade. Simplifique o fecho mensal e a entrega das obrigações fiscais da AGT sem perdas de tempo.
+                O Kudiba ERP disponibiliza uma área exclusiva para gabinetes de contabilidade. Simplifique o fecho mensal e a entrega das obrigações fiscais da AGT sem perdas de tempo.
               </p>
 
               <div className="mt-6 space-y-3.5 text-xs sm:text-sm text-slate-200">
@@ -56,7 +56,7 @@ export const AccountantsPartnerSection: React.FC<AccountantsPartnerSectionProps>
                   className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3.5 text-xs sm:text-sm font-bold text-white hover:bg-emerald-500 active:scale-[0.99] transition shadow-md"
                 >
                   <Users2 className="h-4 w-4" />
-                  <span>Aderir ao Programa de Parceiros MONAIT</span>
+                  <span>Aderir ao Programa de Parceiros Kudiba</span>
                 </button>
               </div>
             </div>
