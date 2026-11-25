@@ -34,7 +34,7 @@ export const ComparisonSection: React.FC = () => {
     <section id="vantagens" className="py-16 sm:py-24 bg-slate-50/60 dark:bg-slate-900/40 border-b border-slate-200/90 dark:border-slate-800/90">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl">
-          <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+          <span className="landing-eyebrow">
             Decisão Estratégica
           </span>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
@@ -46,7 +46,7 @@ export const ComparisonSection: React.FC = () => {
         </div>
 
         {/* Corporate Comparison Matrix */}
-        <div className="mt-12 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+        <div className="mt-12 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
           <div className="grid grid-cols-12 bg-slate-100 p-4 sm:p-5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:bg-slate-900 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800">
             <div className="col-span-12 sm:col-span-4">Critério de Negócio</div>
             <div className="col-span-12 sm:col-span-4 mt-2 sm:mt-0 text-slate-500">

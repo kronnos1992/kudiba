@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
 import { LandingNavbar } from './components/LandingNavbar';
 import { HeroSection } from './components/HeroSection';
+import { QuickActionRail } from './components/QuickActionRail';
+import { SolutionsByAudienceSection } from './components/SolutionsByAudienceSection';
 import { ComparisonSection } from './components/ComparisonSection';
 import { TcoCalculatorSection } from './components/TcoCalculatorSection';
-import { FeaturesShowcaseSection } from './components/FeaturesShowcaseSection';
+import { FeaturesShowcaseSection, type LandingModuleId } from './components/FeaturesShowcaseSection';
 import { AgtComplianceSection } from './components/AgtComplianceSection';
 import { PricingSection } from './components/PricingSection';
 import { AccountantsPartnerSection } from './components/AccountantsPartnerSection';
+import { NewsSection } from './components/NewsSection';
+import { NewsletterSection } from './components/NewsletterSection';
 import { FaqSection } from './components/FaqSection';
 import { LeadCaptureModal } from './components/LeadCaptureModal';
 import { LandingFooter } from './components/LandingFooter';
@@ -15,9 +19,15 @@ interface LandingPageViewProps {
   onOpenLogin: () => void;
 }
 
+const scrollToSection = (id: string) => {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth' });
+};
+
 export const LandingPageView: React.FC<LandingPageViewProps> = ({ onOpenLogin }) => {
   const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
-  const [selectedPlanDetails, setSelectedPlanDetails] = useState<string>('');
+  const [selectedPlanDetails, setSelectedPlanDetails] = useState('');
+  const [activeModule, setActiveModule] = useState<LandingModuleId>('invoicing');
 
   const handleOpenDemoWithPlan = (plan: string) => {
     setSelectedPlanDetails(plan);
@@ -29,56 +39,55 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onOpenLogin })
     setIsDemoModalOpen(true);
   };
 
+  const handleSelectModule = (id: LandingModuleId) => {
+    setActiveModule(id);
+    window.setTimeout(() => scrollToSection('solucoes'), 0);
+  };
+
   return (
-    <div className="min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans selection:bg-emerald-500 selection:text-white transition-colors duration-200">
-      {/* Top Navbar */}
+    <div id="topo" className="min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans selection:bg-emerald-700 selection:text-white transition-colors duration-200">
       <LandingNavbar
         onOpenLogin={onOpenLogin}
         onOpenDemo={handleOpenGeneralDemo}
+        onSelectModule={handleSelectModule}
+      />
+
+      <QuickActionRail
+        onOpenDemo={handleOpenGeneralDemo}
+        onRequestCallback={handleOpenDemoWithPlan}
       />
 
       <main>
-        {/* 1. Hero Section */}
-        <HeroSection
+        <HeroSection onOpenDemo={handleOpenGeneralDemo} onOpenLogin={onOpenLogin} />
+
+        <SolutionsByAudienceSection
+          onSelectModule={handleSelectModule}
           onOpenDemo={handleOpenGeneralDemo}
-          onOpenLogin={onOpenLogin}
         />
 
-        {/* 2. Interactive TCO Calculator (Live Savings in Kwanzas) */}
-        <TcoCalculatorSection
-          onOpenDemoWithPlan={handleOpenDemoWithPlan}
-        />
+        <TcoCalculatorSection onOpenDemoWithPlan={handleOpenDemoWithPlan} />
 
-        {/* 3. Kudiba vs Legacy Systems Comparison */}
         <ComparisonSection />
 
-        {/* 4. Complete Features & Modules Deep Dive */}
-        <FeaturesShowcaseSection />
+        <FeaturesShowcaseSection activeTab={activeModule} onSelectTab={setActiveModule} />
 
-        {/* 5. AGT Compliance, Decree 71/25 & Security */}
         <AgtComplianceSection />
 
-        {/* 6. Transparent Pricing Plans in Kwanzas */}
-        <PricingSection
-          onSelectPlan={handleOpenDemoWithPlan}
-        />
+        <PricingSection onSelectPlan={handleOpenDemoWithPlan} />
 
-        {/* 7. Special Section for Accountants & Tax Consultants */}
         <AccountantsPartnerSection
           onJoinProgram={() => handleOpenDemoWithPlan('Programa de Parceria para Contabilistas (OPCA)')}
         />
 
-        {/* 8. Frequently Asked Questions (FAQ) */}
+        <NewsSection onNavigate={scrollToSection} />
+
+        <NewsletterSection />
+
         <FaqSection />
       </main>
 
-      {/* Footer */}
-      <LandingFooter
-        onOpenLogin={onOpenLogin}
-        onOpenDemo={handleOpenGeneralDemo}
-      />
+      <LandingFooter onOpenLogin={onOpenLogin} onOpenDemo={handleOpenGeneralDemo} />
 
-      {/* Lead Capture & WhatsApp Demo Modal */}
       <LeadCaptureModal
         isOpen={isDemoModalOpen}
         onClose={() => setIsDemoModalOpen(false)}

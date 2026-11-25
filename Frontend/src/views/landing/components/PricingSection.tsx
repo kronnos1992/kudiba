@@ -73,7 +73,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) 
     <section id="planos" className="py-16 sm:py-24 bg-slate-50/60 dark:bg-slate-900/40 border-b border-slate-200/90 dark:border-slate-800/90">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl">
-          <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+          <span className="landing-eyebrow">
             Planos Comerciais Transparentes
           </span>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
@@ -89,7 +89,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) 
           {plans.map((p, idx) => (
             <div
               key={idx}
-              className={`relative flex flex-col justify-between rounded-3xl border p-8 transition-all ${
+              className={`relative flex flex-col justify-between rounded-lg border p-8 transition-all ${
                 p.popular
                   ? 'border-2 border-emerald-800 bg-white shadow-xl shadow-slate-900/5 dark:bg-slate-900 dark:border-emerald-500'
                   : 'border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950'
@@ -154,7 +154,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) 
         </div>
 
         {/* Enterprise Assistance Notice */}
-        <div className="mt-12 rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 dark:border-slate-800 dark:bg-slate-900 flex flex-col sm:flex-row items-center justify-between gap-6">
+        <div className="mt-12 rounded-lg border border-slate-200 bg-white p-6 sm:p-8 dark:border-slate-800 dark:bg-slate-900 flex flex-col sm:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">
               <ShieldCheck className="h-6 w-6" />

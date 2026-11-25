@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Send, CheckCircle2, MessageCircle, Building2, Phone, User } from 'lucide-react';
 
 interface LeadCaptureModalProps {
@@ -19,6 +19,10 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
   const [province, setProvince] = useState('Luanda');
   const [interest, setInterest] = useState(initialPlan || 'Apresentação Comercial Kudiba ERP');
   const [submitted, setSubmitted] = useState(false);
+
+  useEffect(() => {
+    if (initialPlan) setInterest(initialPlan);
+  }, [initialPlan]);
 
   if (!isOpen) return null;
 

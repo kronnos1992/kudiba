@@ -9,7 +9,7 @@ export const AccountantsPartnerSection: React.FC<AccountantsPartnerSectionProps>
   return (
     <section id="contabilistas" className="py-16 sm:py-24 bg-white dark:bg-slate-950 border-b border-slate-200/90 dark:border-slate-800/90">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="rounded-3xl bg-slate-900 p-8 sm:p-12 lg:p-16 text-white border border-slate-800 shadow-xl">
+        <div className="rounded-lg bg-slate-900 p-8 sm:p-12 lg:p-16 text-white border border-slate-800 shadow-xl">
           <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12">
             <div className="lg:col-span-7">
               <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/20 px-3.5 py-1.5 text-xs font-bold text-emerald-300">

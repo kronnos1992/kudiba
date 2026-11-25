@@ -51,7 +51,7 @@ export const TcoCalculatorSection: React.FC<TcoCalculatorSectionProps> = ({ onOp
     <section id="calculadora" className="py-16 sm:py-24 bg-white dark:bg-slate-950 border-b border-slate-200/90 dark:border-slate-800/90">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl">
-          <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+          <span className="landing-eyebrow">
             Retorno do Investimento
           </span>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
@@ -65,7 +65,7 @@ export const TcoCalculatorSection: React.FC<TcoCalculatorSectionProps> = ({ onOp
         {/* Calculator Widget (Estilo Corporativo Limpo) */}
         <div className="mt-12 grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-center">
           {/* Controls */}
-          <div className="lg:col-span-7 rounded-3xl border border-slate-200 bg-slate-50 p-6 sm:p-8 dark:border-slate-800 dark:bg-slate-900">
+          <div className="lg:col-span-7 rounded-lg border border-slate-200 bg-slate-50 p-6 sm:p-8 dark:border-slate-800 dark:bg-slate-900">
             <div>
               <div className="flex items-center justify-between">
                 <label htmlFor="terminals-range" className="text-sm font-bold text-slate-900 dark:text-white">
@@ -158,7 +158,7 @@ export const TcoCalculatorSection: React.FC<TcoCalculatorSectionProps> = ({ onOp
 
           {/* Results Summary Box */}
           <div className="lg:col-span-5">
-            <div className="rounded-3xl border border-slate-200 bg-slate-900 p-8 text-white shadow-xl dark:border-slate-800">
+            <div className="rounded-lg border border-slate-200 bg-slate-900 p-8 text-white shadow-xl dark:border-slate-800">
               <div className="flex items-center justify-between">
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-bold text-emerald-300">
                   <TrendingDown className="h-3.5 w-3.5" />

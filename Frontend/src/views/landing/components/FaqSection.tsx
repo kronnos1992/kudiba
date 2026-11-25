@@ -31,7 +31,7 @@ export const FaqSection: React.FC = () => {
     <section id="faq" className="py-16 sm:py-24 bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-200/90 dark:border-slate-800/90">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
         <div className="text-center">
-          <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+          <span className="landing-eyebrow">
             Esclarecimentos Frequentes
           </span>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
@@ -48,7 +48,7 @@ export const FaqSection: React.FC = () => {
             return (
               <div
                 key={index}
-                className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950 transition"
+                className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950 transition"
               >
                 <button
                   type="button"

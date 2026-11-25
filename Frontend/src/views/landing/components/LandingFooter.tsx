@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Mail, Phone, MapPin, ArrowUp } from 'lucide-react';
+import { ArrowUp, Mail, MapPin, Phone, ShieldCheck } from 'lucide-react';
 import { TermsAndPoliciesModal } from '../../../components/legal/TermsAndPoliciesModal';
 
 interface LandingFooterProps {
@@ -7,218 +7,141 @@ interface LandingFooterProps {
   onOpenDemo: () => void;
 }
 
+type LegalTab = 'terms' | 'privacy' | 'data_processing' | 'subscription' | 'fiscal';
+
+const scrollTo = (id: string) => {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth' });
+};
+
 export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpenDemo }) => {
-  const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
-  const [legalModalTab, setLegalModalTab] = useState<
-    'terms' | 'privacy' | 'data_processing' | 'subscription' | 'fiscal'
-  >('terms');
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [legalTab, setLegalTab] = useState<LegalTab>('terms');
 
-  const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const openLegal = (tab: LegalTab) => {
+    setLegalTab(tab);
+    setLegalModalOpen(true);
   };
 
-  const openLegal = (
-    tab: 'terms' | 'privacy' | 'data_processing' | 'subscription' | 'fiscal'
-  ) => {
-    setLegalModalTab(tab);
-    setIsLegalModalOpen(true);
-  };
+  const link = (label: string, id: string) => (
+    <button type="button" onClick={() => scrollTo(id)} className="text-left transition hover:text-emerald-400">
+      {label}
+    </button>
+  );
 
   return (
-    <footer className="border-t border-slate-200 bg-slate-900 text-white dark:border-slate-800 dark:bg-black">
-      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-5">
-          {/* Brand info */}
-          <div className="lg:col-span-2">
+    <footer className="border-t border-slate-800 bg-slate-950 text-slate-400">
+      <div className="landing-container py-12 lg:py-16">
+        <div className="grid grid-cols-2 gap-8 lg:grid-cols-6">
+          <div className="col-span-2 lg:col-span-2">
             <div className="flex items-center gap-3">
-              <img
-                src="/favicon.svg"
-                alt="Kudiba"
-                className="h-10 w-10 rounded-xl shadow-md"
-              />
-              <div className="flex flex-col">
-                <span className="text-xl font-extrabold tracking-tight text-white leading-none">
+              <img src="/favicon.svg" alt="Kudiba" className="h-10 w-10 rounded-lg" />
+              <span className="flex flex-col">
+                <span className="text-xl font-extrabold leading-none tracking-tight text-white">
                   Kudiba<span className="text-emerald-400">ERP</span>
                 </span>
-                <span className="text-xs font-semibold text-slate-400 tracking-wide mt-1">
-                  por MONAIT
-                </span>
-              </div>
+                <span className="mt-1 text-[10px] font-semibold tracking-wide text-slate-500">por MONAIT</span>
+              </span>
             </div>
-
-            <p className="mt-4 text-xs sm:text-sm text-slate-400 max-w-sm leading-relaxed">
-              Solução Integrada de Gestão Empresarial para o mercado de Angola. Rigor fiscal, contabilidade PGC, recursos humanos e vendas em balcão com operação ininterrupta.
+            <p className="mt-4 max-w-sm text-xs leading-relaxed">
+              Solução integrada de gestão empresarial para Angola. Faturação certificada, contabilidade PGC, stocks, salários e vendas em balcão com operação ininterrupta.
             </p>
-
-            <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-950/40 px-3.5 py-1 text-xs font-semibold text-emerald-400">
-              <ShieldCheck className="h-4 w-4" />
-              <span>Certificação Oficial AGT n.º FE/528/AGT/2026</span>
+            <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-950/40 px-3 py-1 text-[11px] font-semibold text-emerald-400">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Certificação AGT n.º FE/528/AGT/2026
             </div>
           </div>
 
-          {/* Soluções Empresariais */}
           <div>
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-              Soluções
-            </h4>
-            <ul className="mt-4 space-y-2.5 text-xs text-slate-400">
-              <li>
-                <a href="#solucoes" className="hover:text-emerald-400 transition">
-                  Faturação & POS AGT
-                </a>
-              </li>
-              <li>
-                <a href="#solucoes" className="hover:text-emerald-400 transition">
-                  Contabilidade PGC Angola
-                </a>
-              </li>
-              <li>
-                <a href="#solucoes" className="hover:text-emerald-400 transition">
-                  Gestão de Stocks & CMP
-                </a>
-              </li>
-              <li>
-                <a href="#solucoes" className="hover:text-emerald-400 transition">
-                  Salários, IRT & INSS
-                </a>
-              </li>
-              <li>
-                <a href="#solucoes" className="hover:text-emerald-400 transition">
-                  Multi-Filial & Holding
-                </a>
-              </li>
+            <h4 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-200">Kudiba ERP</h4>
+            <ul className="mt-4 space-y-2.5 text-xs">
+              <li>{link('Sobre a Kudiba', 'topo')}</li>
+              <li>{link('Soluções', 'solucoes')}</li>
+              <li>{link('Vantagens', 'vantagens')}</li>
+              <li>{link('Conformidade AGT', 'conformidade-agt')}</li>
+              <li>{link('Planos e Preços', 'planos')}</li>
+              <li>{link('Contabilistas', 'contabilistas')}</li>
             </ul>
           </div>
 
-          {/* Decisão & Recursos */}
           <div>
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-              Recursos
-            </h4>
-            <ul className="mt-4 space-y-2.5 text-xs text-slate-400">
+            <h4 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-200">Suporte e Recursos</h4>
+            <ul className="mt-4 space-y-2.5 text-xs">
+              <li>{link('Apoio ao Cliente', 'faq')}</li>
+              <li>{link('Perguntas Frequentes', 'faq')}</li>
+              <li>{link('Simulador de Poupança', 'calculadora')}</li>
+              <li>{link('Notícias e Recursos', 'noticias')}</li>
               <li>
-                <a href="#vantagens" className="hover:text-emerald-400 transition">
-                  Porquê o Kudiba?
-                </a>
-              </li>
-              <li>
-                <a href="#conformidade-agt" className="hover:text-emerald-400 transition">
-                  Decreto Presidencial 71/25
-                </a>
-              </li>
-              <li>
-                <a href="#calculadora" className="hover:text-emerald-400 transition">
-                  Simulador de Poupança
-                </a>
-              </li>
-              <li>
-                <a href="#planos" className="hover:text-emerald-400 transition">
-                  Planos em Kwanzas (AOA)
-                </a>
-              </li>
-              <li>
-                <a href="#contabilistas" className="hover:text-emerald-400 transition">
-                  Programa para Contabilistas
-                </a>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={onOpenLogin}
-                  className="text-emerald-400 font-semibold hover:underline"
-                >
-                  Entrar no Kudiba ERP
+                <button type="button" onClick={onOpenLogin} className="transition hover:text-emerald-400">
+                  Portal do Cliente
                 </button>
               </li>
             </ul>
           </div>
 
-          {/* Contact & Support */}
           <div>
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-              Contactos em Angola
-            </h4>
-            <div className="mt-4 space-y-3 text-xs text-slate-400">
-              <div className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span>Luanda, República de Angola</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Mail className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span>comercial@kudiba.ao</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Phone className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span>+244 923 000 000 (Atendimento)</span>
-              </div>
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={onOpenDemo}
-                  className="rounded-xl bg-emerald-800 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition"
-                >
-                  Agendar Apresentação
-                </button>
-              </div>
+            <h4 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-200">Notícias e Eventos</h4>
+            <ul className="mt-4 space-y-2.5 text-xs">
+              <li>{link('Blog Kudiba', 'noticias')}</li>
+              <li>{link('Guias Práticos', 'noticias')}</li>
+              <li>{link('Atualizações Fiscais', 'noticias')}</li>
+              <li>{link('Newsletter', 'noticias')}</li>
+              <li>{link('Falar com um Consultor', 'planos')}</li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-200">Contactos</h4>
+            <div className="mt-4 space-y-3 text-xs">
+              <p className="flex items-start gap-2">
+                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                Luanda, República de Angola
+              </p>
+              <p className="flex items-start gap-2">
+                <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                comercial@kudiba.ao
+              </p>
+              <p className="flex items-start gap-2">
+                <Phone className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                <a href="tel:+244923000000" className="transition hover:text-emerald-400">
+                  +244 923 000 000
+                </a>
+              </p>
+              <button type="button" onClick={onOpenDemo} className="landing-btn-primary px-3 py-2 text-[11px]">
+                Contactar agora
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Legal & Bottom bar */}
-        <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-slate-800 pt-8 sm:flex-row text-xs text-slate-500">
-          <p>
-            © {new Date().getFullYear()} Kudiba ERP. Todos os direitos reservados. Faturado em Kwanzas na República de Angola.
-          </p>
-
-          <div className="flex flex-wrap items-center gap-4">
+        <div className="mt-12 flex flex-col gap-4 border-t border-slate-800 pt-6 text-[11px] sm:flex-row sm:items-center sm:justify-between">
+          <p>© {new Date().getFullYear()} Kudiba ERP. Todos os direitos reservados. Faturado em Kwanzas em Angola.</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button type="button" onClick={() => openLegal('terms')} className="transition hover:text-slate-200">Termos de Uso</button>
+            <span className="text-slate-700">•</span>
+            <button type="button" onClick={() => openLegal('privacy')} className="transition hover:text-slate-200">Privacidade (Lei 22/11)</button>
+            <span className="text-slate-700">•</span>
+            <button type="button" onClick={() => openLegal('data_processing')} className="transition hover:text-slate-200">Tratamento de Dados</button>
+            <span className="text-slate-700">•</span>
+            <button type="button" onClick={() => openLegal('subscription')} className="transition hover:text-slate-200">Subscrição</button>
+            <span className="text-slate-700">•</span>
+            <button type="button" onClick={() => openLegal('fiscal')} className="transition hover:text-slate-200">Certificação AGT</button>
             <button
               type="button"
-              onClick={() => openLegal('terms')}
-              className="hover:text-slate-300 transition"
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              aria-label="Voltar ao topo"
+              className="rounded-md border border-slate-800 p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
             >
-              Termos de Uso
-            </button>
-            <span>•</span>
-            <button
-              type="button"
-              onClick={() => openLegal('privacy')}
-              className="hover:text-slate-300 transition"
-            >
-              Privacidade (Lei 22/11)
-            </button>
-            <span>•</span>
-            <button
-              type="button"
-              onClick={() => openLegal('subscription')}
-              className="hover:text-slate-300 transition"
-            >
-              Subscrição
-            </button>
-            <span>•</span>
-            <button
-              type="button"
-              onClick={() => openLegal('fiscal')}
-              className="hover:text-slate-300 transition"
-            >
-              Certificação AGT
+              <ArrowUp className="h-3.5 w-3.5" />
             </button>
           </div>
-
-          <button
-            type="button"
-            onClick={scrollToTop}
-            aria-label="Voltar ao topo"
-            className="rounded-lg border border-slate-800 p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition"
-          >
-            <ArrowUp className="h-4 w-4" />
-          </button>
         </div>
       </div>
 
       <TermsAndPoliciesModal
-        isOpen={isLegalModalOpen}
-        onClose={() => setIsLegalModalOpen(false)}
-        defaultTab={legalModalTab}
+        isOpen={legalModalOpen}
+        onClose={() => setLegalModalOpen(false)}
+        defaultTab={legalTab}
       />
     </footer>
   );

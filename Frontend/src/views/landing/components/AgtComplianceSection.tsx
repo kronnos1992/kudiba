@@ -66,7 +66,7 @@ export const AgtComplianceSection: React.FC = () => {
 
           {/* Right: Institutional Seal Card */}
           <div className="lg:col-span-5">
-            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <div className="flex items-center justify-between border-b border-slate-200 pb-5 dark:border-slate-800">
                 <div>
                   <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">

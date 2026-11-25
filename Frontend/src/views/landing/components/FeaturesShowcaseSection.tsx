@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Receipt,
   Boxes,
@@ -9,9 +9,14 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 
-export const FeaturesShowcaseSection: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'invoicing' | 'accounting' | 'inventory' | 'payroll' | 'multi'>('invoicing');
+export type LandingModuleId = 'invoicing' | 'accounting' | 'inventory' | 'payroll' | 'multi';
 
+interface FeaturesShowcaseSectionProps {
+  activeTab: LandingModuleId;
+  onSelectTab: (id: LandingModuleId) => void;
+}
+
+export const FeaturesShowcaseSection: React.FC<FeaturesShowcaseSectionProps> = ({ activeTab, onSelectTab }) => {
   const modules = [
     {
       id: 'invoicing' as const,
@@ -121,7 +126,7 @@ export const FeaturesShowcaseSection: React.FC = () => {
     <section id="solucoes" className="py-16 sm:py-24 bg-white dark:bg-slate-950 border-b border-slate-200/90 dark:border-slate-800/90">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl">
-          <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+          <span className="landing-eyebrow">
             Soluções Integradas Kudiba
           </span>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
@@ -141,7 +146,7 @@ export const FeaturesShowcaseSection: React.FC = () => {
               <button
                 key={mod.id}
                 type="button"
-                onClick={() => setActiveTab(mod.id)}
+                onClick={() => onSelectTab(mod.id)}
                 className={`flex items-center gap-2.5 rounded-xl px-4 py-3 text-xs sm:text-sm font-bold transition ${
                   isSelected
                     ? 'bg-slate-900 text-white shadow-sm dark:bg-emerald-700'
@@ -156,11 +161,11 @@ export const FeaturesShowcaseSection: React.FC = () => {
         </div>
 
         {/* Tab Panel */}
-        <div className="mt-8 rounded-3xl border border-slate-200/90 bg-slate-50/50 p-6 sm:p-10 dark:border-slate-800 dark:bg-slate-900/50">
+        <div className="mt-8 rounded-lg border border-slate-200/90 bg-slate-50/50 p-6 sm:p-10 dark:border-slate-800 dark:bg-slate-900/50">
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-center">
             {/* Description */}
             <div className="lg:col-span-7">
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+              <span className="landing-eyebrow">
                 {current.category}
               </span>
               <h3 className="mt-2 text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
