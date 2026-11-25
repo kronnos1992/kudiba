@@ -9,7 +9,7 @@
 
 ## 1. Contexto e Ponto de Partida
 
-O projeto Kudiba foi concebido como um ERP de nova geração para Angola, desenhado para substituir sistemas legados (Primavera, PHC, Sage) com uma stack moderna, livre de licenças proprietárias caras (Linux, Rust, PostgreSQL, Redis, RabbitMQ/Kafka).
+O projeto Kudiba foi concebido como um ERP de nova geração para Angola, desenhado para substituir abordagens convencionais com uma stack moderna, livre de licenças proprietárias (Linux, Rust, PostgreSQL, Redis, RabbitMQ/Kafka).
 
 O repositório possuía inicialmente:
 1. O diploma legal em PDF: `03 Decreto Presidencial n.º 7125.pdf`.
@@ -100,7 +100,7 @@ O motor fiscal `KudibaInvoicing` atende plenamente ao **Decreto Presidencial n.�
 1. **Emissão e Bloqueio Pessimista de Séries**: Numeração rigorosamente sequencial (*zero gaps*) com `SELECT ... FOR UPDATE` por série, cálculo exato em decimal 128 bits e suporte a FT, FR, NC, ND, GT e GR.
 2. **Retenção na Fonte (6,5%) e Imposto de Selo (0,7% / 1%) Automáticos**: Cálculo em conformidade com o Artigo 12.º e 15.º do Decreto 71/25, com arredondamento afastando do zero e totalizadores segregados.
 3. **Validação XSD Oficial do SAF-T (AO 1.01_01)**: Validação estrutural e semântica do XML contra o schema oficial da AGT (`schemas/SAFTAO1.01_01.xsd`) via biblioteca nativa `libxml2`.
-4. **Exportação de Relatórios Fiscais em PDF e Excel**: Geração de mapas de IVA, Imposto de Selo e Retenções em folha de cálculo formatada Microsoft Excel (`.xlsx`) e documento formal PDF.
+4. **Exportação de Relatórios Fiscais em PDF e Excel**: Geração de mapas de IVA, Imposto de Selo e Retenções em folha de cálculo formatada (`.xlsx`) e documento formal PDF.
 5. **Transactional Outbox Pattern & Dispatcher Multicanal**: Persistência atómica de eventos fiscais na tabela `kudiba_core.accounting_outbox`, despachados assincronamente via RabbitMQ, Apache Kafka e broadcast in-memory.
 6. **Processamento Assíncrono por Jobs**: Enfileiramento e acompanhamento de extrações volumosas de SAF-T via REST (`/api/v1/fiscal/saft/jobs`) e gRPC (`TriggerSaftGeneration`).
 7. **Motor de Renderização de Faturas**:

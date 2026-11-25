@@ -10,7 +10,7 @@ export const AgtComplianceSection: React.FC = () => {
           <div className="lg:col-span-7">
             <div className="inline-flex items-center gap-2 rounded-full border border-emerald-700/20 bg-emerald-50 px-3.5 py-1.5 text-xs font-bold text-emerald-900 dark:bg-emerald-950/60 dark:border-emerald-500/30 dark:text-emerald-300">
               <Landmark className="h-4 w-4" />
-              <span>República de Angola · Ministério das Finanças / AGT</span>
+              <span>República de Angola · Ministério das Finanças</span>
             </div>
 
             <h2 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
@@ -18,7 +18,7 @@ export const AgtComplianceSection: React.FC = () => {
             </h2>
 
             <p className="mt-4 text-base text-slate-600 dark:text-slate-300 leading-relaxed">
-              Desenvolvido de raiz para assegurar conformidade estrita com o <strong>Decreto Presidencial n.º 71/25</strong> e o Decreto Executivo n.º 385/20 da Administração Geral Tributária. A sua empresa opera com segurança jurídica e auditoria transparente em todas as operações.
+              Desenvolvido de raiz para assegurar conformidade estrita com o <strong>Decreto Presidencial n.º 71/25</strong> e o Decreto Executivo n.º 385/20. A sua empresa opera com segurança jurídica e auditoria transparente em todas as operações.
             </p>
 
             <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -48,7 +48,7 @@ export const AgtComplianceSection: React.FC = () => {
                   <span>Exportação SAF-T (AO) v1.01</span>
                 </div>
                 <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
-                  Ficheiro mensal de auditoria tributária validado diretamente contra as regras técnicas da AGT, sem risco de rejeição.
+                  Ficheiro mensal de auditoria tributária validado contra as regras técnicas oficiais, sem risco de rejeição.
                 </p>
               </div>
 

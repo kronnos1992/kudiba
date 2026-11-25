@@ -44,11 +44,11 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
               </span>
             </div>
             <p className="mt-4 max-w-sm text-xs leading-relaxed">
-              Solução integrada de gestão empresarial para Angola. Faturação certificada, contabilidade PGC, stocks, salários e vendas em balcão com operação ininterrupta.
+              Solução integrada de gestão empresarial para Angola. Faturação certificada, contabilidade, stocks, salários e vendas em balcão com operação ininterrupta.
             </p>
             <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-950/40 px-3 py-1 text-[11px] font-semibold text-emerald-400">
               <ShieldCheck className="h-3.5 w-3.5" />
-              Certificação AGT n.º FE/528/AGT/2026
+              Certificação n.º FE/528/AGT/2026
             </div>
           </div>
 
@@ -58,7 +58,7 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
               <li>{link('Sobre a Kudiba', 'topo')}</li>
               <li>{link('Soluções', 'solucoes')}</li>
               <li>{link('Vantagens', 'vantagens')}</li>
-              <li>{link('Conformidade AGT', 'conformidade-agt')}</li>
+              <li>{link('Conformidade Fiscal', 'conformidade-agt')}</li>
               <li>{link('Planos e Preços', 'planos')}</li>
               <li>{link('Contabilistas', 'contabilistas')}</li>
             </ul>
@@ -125,7 +125,7 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
             <span className="text-slate-700">•</span>
             <button type="button" onClick={() => openLegal('subscription')} className="transition hover:text-slate-200">Subscrição</button>
             <span className="text-slate-700">•</span>
-            <button type="button" onClick={() => openLegal('fiscal')} className="transition hover:text-slate-200">Certificação AGT</button>
+            <button type="button" onClick={() => openLegal('fiscal')} className="transition hover:text-slate-200">Certificação</button>
             <button
               type="button"
               onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}

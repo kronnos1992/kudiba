@@ -10,7 +10,7 @@ export const FaqSection: React.FC = () => {
       a: 'Com o Kudiba POS, o atendimento ao público não pára. O ponto de venda foi concebido para continuar a emitir faturas e a imprimir talões térmicos com QR Code mesmo sem internet. Assim que a rede estabiliza, os dados de venda são sincronizados automaticamente com a nuvem central.',
     },
     {
-      q: 'Como é realizada a migração a partir do nosso sistema atual (Primavera, PHC, Sage ou Excel)?',
+      q: 'Como é realizada a migração a partir do sistema atual da empresa?',
       a: 'A transição é assistida diretamente pela nossa equipa técnica especializada. Importamos a lista de artigos, clientes, preços de venda e saldos de stock a partir de cópias de segurança, ficheiros SAF-T anteriores ou folhas de cálculo. A sua equipa fica operacional num prazo médio de 24 a 48 horas.',
     },
     {

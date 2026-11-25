@@ -23,11 +23,11 @@ A plataforma reúne de forma modular e integrada os seguintes pilares:
 
 ---
 
-### 1.2 O Diagnóstico do Mercado: Por que os Softwares Tradicionais Falham em Angola?
-Durante décadas, as empresas angolanas dependeram de plataformas concebidas nos anos 90 (como Primavera/Cegid, PHC ou Sage), construídas sobre o modelo cliente-servidor para Windows. Esse ecossistema acarreta graves limitações:
+### 1.2 Panorama das Abordagens Convencionais em Angola
+Durante décadas, as empresas angolanas dependeram de plataformas concebidas nos anos 90 construídas sobre o modelo cliente-servidor para Windows. Esse modelo apresenta limitações:
 
-* **Custos Elevados e Dependência Cambial:** Licenciamento cobrado por posto/módulo indexado ao Dólar ou Euro, que encarece brutalmente em períodos de desvalorização do Kwanza, acrescido de licenças Microsoft (Windows Server e MS SQL Server).
-* **Paralisação das Vendas por Queda de Internet:** Os sistemas cloud convencionais bloqueiam o ponto de venda quando há oscilação de sinal ou falha do operador de telecomunicações.
+* **Custos Elevados e Dependência Cambial:** Licenciamento cobrado por posto/módulo indexado ao Dólar ou Euro, sujeita a oscilações cambiais, acrescido de licenças de servidor e base de dados.
+* **Paralisação das Vendas por Queda de Internet:** Os sistemas convencionais condicionam o ponto de venda quando há oscilação de sinal ou falha do operador de telecomunicações.
 * **Complexidade e Lentidão Operacional:** Telas densas, excesso de janelas modais sobrepostas e lentidão que elevam o tempo de atendimento e aumentam os erros operacionais.
 * **Atualizações Regulatórias Onuosas:** Qualquer ajuste fiscal da AGT exige consultoria externa paga à hora e instalação morosa de *patches*.
 
@@ -43,9 +43,9 @@ Durante décadas, as empresas angolanas dependeram de plataformas concebidas nos
 
 ---
 
-### 1.4 Matriz Comparativa: Kudiba vs Sistemas Tradicionais
+### 1.4 Matriz Comparativa: Kudiba vs Abordagem Convencional
 
-| Vetor de Análise | ERPs Legados (Primavera, PHC, Sage) | Kudiba ERP (Nova Geração) |
+| Vetor de Análise | Abordagem Convencional | Kudiba ERP (Nova Geração) |
 | :--- | :--- | :--- |
 | **Arquitetura Base** | Monólito anos 90 adaptado para web | Microsserviços modernos em Rust + Python, Cloud & Edge |
 | **Operação Offline no Balcão** | Inexistente ou instável; queda de rede trava o POS | **Local-First nativo: vende offline e sincroniza em lote** |
@@ -53,7 +53,7 @@ Durante décadas, as empresas angolanas dependeram de plataformas concebidas nos
 | **Moeda e Preço** | Indexado a USD/EUR com risco cambial | **Preço fixo em Kwanzas (Kz), 100% previsível** |
 | **Validação de Alvarás** | Processo manual externo | **Verificação automática via SILAC/MINDCOM e AGT** |
 | **Curva de Aprendizagem** | 3 a 6 meses de treino | **Produtividade imediata em 48 horas** |
-| **Integração Externa** | Módulos pagos, APIs SOAP lentas | **API REST aberta, Webhooks e OpenAPI integrados** |
+| **Integração Externa** | Módulos pagos, APIs SOAP | **API REST aberta, Webhooks e OpenAPI integrados** |
 
 ---
 
@@ -121,7 +121,7 @@ Durante décadas, as empresas angolanas dependeram de plataformas concebidas nos
 ### 3.3 Curva de Aprendizagem e Onboarding
 - **Operadores de Caixa:** Produtivos em menos de 2 horas graças ao fluxo ergonómico do POS e atalhos rápidos (`F2`, `F4`, `F9`).
 - **Equipa Financeira / Administrativa:** Formação concluída em 48 horas com simulação em base de dados de testes.
-- **Migração de Dados:** Ferramentas automáticas para carregar artigos, preços e clientes a partir de ficheiros Excel ou SAF-T.
+- **Migração de Dados:** Ferramentas automáticas para carregar artigos, preços e clientes a partir de ficheiros de folhas de cálculo ou SAF-T.
 
 ---
 

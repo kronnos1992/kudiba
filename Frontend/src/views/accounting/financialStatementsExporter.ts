@@ -1529,7 +1529,7 @@ export const exportFinancialStatementPdf = (
       </div>
 
       <div class="footer-note">
-        <span>Kudiba ERP — Módulo de Contabilidade PGC & Relatório de Gestão</span>
+        <span>Kudiba ERP — Módulo de Contabilidade & Relatório de Gestão</span>
         <span>Emitido em ${nowStr} por utilizador autorizado</span>
         <span>Página Oficial de Relato Financeiro</span>
       </div>

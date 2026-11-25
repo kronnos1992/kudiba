@@ -9,18 +9,18 @@
 
 ## 1. Visão Executiva & Proposta de Valor (Diferenciais Competitivos)
 
-Os ERPs dominantes em Angola (Primavera/Cegid, PHC, Sage) foram idealizados no paradigma Desktop/Client-Server (anos 1990/2000) e adaptados posteriormente para a Web através de camadas legadas. Isso acarreta infraestruturas pesadas (dependência de Microsoft SQL Server e Windows Server), custos elevados de licenciamento e manutenção, interfaces pouco ergonómicas e APIs rígidas para integração externa.
+Os ERPs convencionais em Angola foram idealizados no paradigma Desktop/Client-Server (anos 1990/2000) e adaptados posteriormente para a Web através de camadas legadas. Isso acarreta infraestruturas pesadas (dependência de Microsoft SQL Server e Windows Server), custos elevados de licenciamento e manutenção, interfaces pouco ergonómicas e APIs rígidas para integração externa.
 
 ### Nossas Valências vs. ERPs Existentes
 
-| Vetor de Análise | ERPs Tradicionais (Primavera, PHC, Sage) | Nosso ERP (Cloud-Native / Edge-Ready) |
+| Vetor de Análise | Abordagem Convencional | Nosso ERP (Cloud-Native / Edge-Ready) |
 | :--- | :--- | :--- |
 | **Arquitetura Base** | Monolítica / Client-Server adaptada para Web. | *Modular Monolith* distribuído via Event-Driven Architecture, desacoplado e containerizado. |
-| **Infraestrutura e Custos** | Exigência frequente de Windows Server e MS SQL Server (licenças caras em USD/EUR). | 100% Open-Source stack (Linux, PostgreSQL, Redis), reduzindo o TCO (*Total Cost of Ownership*) em mais de 60%. |
-| **Resiliência de Rede (Offline)** | Operações dependentes de ligação local de rede (LAN) ou conexões VPN lentas e instáveis. | **Edge-First / Local-First POS**: opera autonomamente sem internet e sincroniza por CRDTs / fila de eventos assim que restabelecida a rede. |
+| **Infraestrutura e Custos** | Servidor dedicado com licenças de sistema operativo e base de dados em USD/EUR. | 100% Open-Source stack (Linux, PostgreSQL, Redis), reduzindo o TCO (*Total Cost of Ownership*) em mais de 60%. |
+| **Resiliência de Rede (Offline)** | Operações dependentes de ligação local de rede (LAN) ou conexões VPN com latência e disponibilidade variáveis. | **Edge-First / Local-First POS**: opera autonomamente sem internet e sincroniza por CRDTs / fila de eventos assim que restabelecida a rede. |
 | **Conformidade Fiscal AGT** | Módulo rígido, atualizações manuais ou via patches demorados. | Motor Fiscal isolado (*Fiscal Engine Service*) como microsserviço/biblioteca imutável, auditável e preparado para CI/CD regulatório. |
-| **Experiência do Utilizador (UX)** | Interfaces densas, lentas e com excesso de janelas modais. | SPA reativa, *keyboard-first* (atalhos eficientes para operadores de caixa e faturistas), latência de interação < 100ms. |
-| **Extensibilidade e Integrações** | APIs SOAP/COM proprietárias e lentas. | RESTful / gRPC com OpenAPI (Swagger) e Webhooks nativos para ligação direta com bancos, fintechs locais (ex: Multicaixa GPO) e CRMs. |
+| **Experiência do Utilizador (UX)** | Interfaces com múltiplas janelas modais. | SPA reativa, *keyboard-first* (atalhos eficientes para operadores de caixa e faturistas), latência de interação < 100ms. |
+| **Extensibilidade e Integrações** | APIs SOAP/COM proprietárias. | RESTful / gRPC com OpenAPI (Swagger) e Webhooks nativos para ligação direta com bancos, fintechs locais (ex: Multicaixa GPO) e CRMs. |
 
 ---
 

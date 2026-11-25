@@ -38,12 +38,12 @@ const scrollTo = (id: string) => {
 };
 
 const searchTargets: { label: string; hint: string; id: string; module?: LandingModuleId }[] = [
-  { label: 'Faturação & POS AGT', hint: 'Faturação, talões e QR Code', id: 'solucoes', module: 'invoicing' },
-  { label: 'Contabilidade PGC', hint: 'Classes 0 a 8 e balancetes', id: 'solucoes', module: 'accounting' },
+  { label: 'Faturação & POS', hint: 'Faturação, talões e QR Code', id: 'solucoes', module: 'invoicing' },
+  { label: 'Contabilidade', hint: 'Classes 0 a 8 e balancetes', id: 'solucoes', module: 'accounting' },
   { label: 'Stocks & Armazéns', hint: 'CMP, lotes e validade', id: 'solucoes', module: 'inventory' },
   { label: 'Salários, IRT & INSS', hint: 'Folha salarial e Lei 12/23', id: 'solucoes', module: 'payroll' },
   { label: 'Multi-Filial & Holding', hint: 'Consolidação de lojas', id: 'solucoes', module: 'multi' },
-  { label: 'Conformidade AGT', hint: 'Decreto 71/25 e SAF-T', id: 'conformidade-agt' },
+  { label: 'Conformidade Fiscal', hint: 'Decreto 71/25 e SAF-T', id: 'conformidade-agt' },
   { label: 'Simulador de Poupança', hint: 'Compare custos em Kwanzas', id: 'calculadora' },
   { label: 'Planos e Preços', hint: 'Subscrições em AOA', id: 'planos' },
   { label: 'Programa para Contabilistas', hint: 'Perfil de auditor gratuito', id: 'contabilistas' },
@@ -57,8 +57,8 @@ const solutionGroups: {
   {
     title: 'Empresas',
     items: [
-      { label: 'Faturação & POS AGT', desc: 'Documentos certificados e venda offline', module: 'invoicing', icon: Receipt },
-      { label: 'Contabilidade PGC', desc: 'Plano oficial e fecho de exercício', module: 'accounting', icon: Calculator },
+      { label: 'Faturação & POS', desc: 'Documentos certificados e venda offline', module: 'invoicing', icon: Receipt },
+      { label: 'Contabilidade', desc: 'Plano oficial e fecho de exercício', module: 'accounting', icon: Calculator },
       { label: 'Stocks & Armazéns', desc: 'CMP, lotes e multi-localização', module: 'inventory', icon: Boxes },
     ],
   },
@@ -74,7 +74,7 @@ const solutionGroups: {
     title: 'Contabilistas',
     items: [
       { label: 'Perfil de Auditor', desc: 'Acesso gratuito aos clientes', module: 'accounting', icon: ClipboardList },
-      { label: 'SAF-T (AO) v1.01', desc: 'Exportação validada pela AGT', module: 'accounting', icon: FileCheck },
+      { label: 'SAF-T (AO) v1.01', desc: 'Exportação validada', module: 'accounting', icon: FileCheck },
       { label: 'Mapas PGC e Modelo 1', desc: 'Balancetes a 4 e 6 colunas', module: 'accounting', icon: LayoutDashboard },
     ],
   },
@@ -329,7 +329,7 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ onOpenLogin, onOpe
               onClick={() => goTo('conformidade-agt')}
               className="px-3 text-sm font-semibold text-slate-700 transition hover:text-kudiba-primary dark:text-slate-300 dark:hover:text-emerald-400"
             >
-              Conformidade AGT
+              Conformidade Fiscal
             </button>
             <button
               type="button"
@@ -420,7 +420,7 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ onOpenLogin, onOpe
               </button>
             ))}
             {[
-              { label: 'Conformidade AGT', id: 'conformidade-agt' },
+              { label: 'Conformidade Fiscal', id: 'conformidade-agt' },
               { label: 'Simulador de Poupança', id: 'calculadora' },
               { label: 'Planos e Preços', id: 'planos' },
               { label: 'Contabilistas', id: 'contabilistas' },

@@ -13,7 +13,7 @@ const audiences = [
     title: 'Comércio Kudiba',
     icon: Store,
     description: 'Para lojas de proximidade, oficinas e pequenos negócios que precisam de faturar em conformidade sem depender de servidores caros.',
-    features: ['Faturação certificada AGT', 'POS com venda offline', 'Stocks essenciais', 'SAF-T (AO) mensal'],
+    features: ['Faturação certificada', 'POS com venda offline', 'Stocks essenciais', 'SAF-T (AO) mensal'],
     module: 'invoicing' as LandingModuleId,
   },
   {
@@ -29,7 +29,7 @@ const audiences = [
     title: 'Kudiba para Contabilistas',
     icon: FileSpreadsheet,
     description: 'Para gabinetes que acompanham vários clientes e precisam de informação fiscal e contabilística pronta para o fecho mensal.',
-    features: ['Perfil de auditor gratuito', 'SAF-T validado pela AGT', 'Balancetes 4 e 6 colunas', 'Mapas do Modelo 1'],
+    features: ['Perfil de auditor gratuito', 'SAF-T validado', 'Balancetes 4 e 6 colunas', 'Mapas do Modelo 1'],
     module: 'accounting' as LandingModuleId,
   },
 ];

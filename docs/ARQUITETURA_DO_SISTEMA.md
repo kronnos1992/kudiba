@@ -9,7 +9,7 @@
 
 ## 1. Visão Geral e Filosofia Arquitetural
 
-O **Kudiba ERP** foi concebido para o mercado empresarial e regulado da República de Angola e da África Subsaariana. Em substituição aos tradicionais softwares legados (Primavera/Cegid, PHC, Sage) que impõem elevadas dependências de licenciamento de software proprietário (Windows Server e Microsoft SQL Server), o Kudiba opera com uma arquitetura moderna, distribuída, baseada em tecnologias abertas de alto desempenho, resiliência de rede e conformidade fiscal contínua.
+O **Kudiba ERP** foi concebido para o mercado empresarial e regulado da República de Angola e da África Subsaariana. Em substituição às abordagens convencionais com elevadas dependências de licenciamento de software proprietário, o Kudiba opera com uma arquitetura moderna, distribuída, baseada em tecnologias abertas de alto desempenho, resiliência de rede e conformidade fiscal contínua.
 
 ### Pilares Fundamentais:
 1. **Desempenho Extremo e Custo Operacional Reduzido (TCO):** Componentes críticos e de alto volume de tráfego construídos em **Rust** (API Gateway e Motor Fiscal KudibaInvoicing) com tempo de resposta sub-milissegundo ($p99 < 0.8\text{ms}$) e consumo mínimo de memória RAM.

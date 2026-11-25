@@ -271,10 +271,10 @@ Registo de recebimentos, abertura e fecho de caixas (Fecho Z e X), conciliação
 | Secção do Documento | PDF Original ("Aplicativo de Faturação") | Especificação Kudiba Backend (PT-Kz) |
 | :--- | :--- | :--- |
 | **Moeda & Formatação** | Kz (misturado com símbolos $) | **Kwanza puro (Kz / AOA)** com separador de milhar (.) e decimal (,) |
-| **Regras Fiscais** | Genéricas (Stripe / ACH / Cartões EUA) | **Específicas de Angola (AGT)**: RSA-SHA1, Hash J-1, QR Code AGT, SAF-T (AO) |
+| **Regras Fiscais** | Genéricas (ACH / Cartões internacionais) | **Específicas de Angola (AGT)**: RSA-SHA1, Hash J-1, QR Code AGT, SAF-T (AO) |
 | **Tipos de Documentos** | Apenas "Invoices" genéricas | **FT, FR, FP, NC, ND, RC** em séries anuais auditáveis |
 | **Clientes & Impostos** | EIN / Tax ID americano | **NIF Angolano** (10 dígitos), Regimes de IVA (14%, 5%, Isenções Mxx, Retenção 6,5%) |
-| **Formas de Pagamento** | Stripe / Cartões Internacionais / ACH | **Multicaixa / EMIS TPA**, Numerário Kz, Transferência Bancária AO06, Multicaixa Express |
+| **Formas de Pagamento** | Cartões Internacionais / ACH | **Multicaixa / EMIS TPA**, Numerário Kz, Transferência Bancária AO06, Multicaixa Express |
 | **Backend & Arquitetura** | Não especificado / Monolítico web | **Microsserviços Rust + Python**, API Gateway perimétrico, Outbox Transacional, Postgres |
 | **Integração de Caixa** | Inexistente (Apenas e-commerce) | **Sessões de Caixa**, Fundo de Maneio, **Fecho X e Fecho Z** com bloqueio fiscal diário |
 | **Catálogo & Stock** | Simples lista de produtos | **KudibaInventory**: Controlo de Armazéns, CMP (Custo Médio Ponderado) e Lotes |

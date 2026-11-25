@@ -8,7 +8,7 @@
 [![RabbitMQ](https://img.shields.io/badge/RabbitMQ-3.13-orange.svg)](https://www.rabbitmq.com/)
 [![Conformidade](https://img.shields.io/badge/Conformidade-AGT%20Decreto%2071%2F25%20%26%20385%2F20-green.svg)](docs/ARQUITETURA_DO_SISTEMA.md)
 
-**Kudiba ERP** é um ecossistema de software empresarial de alto desempenho, desenhado sob medida para o mercado angolano e da África Subsaariana. Substitui soluções legadas (Primavera, PHC, Sage) com arquitetura distribuída moderna, custo total de posse (TCO) reduzido em mais de 60%, operação resiliente a falhas de rede e conformidade fiscal contínua certificada pela **Administração Geral Tributária (AGT)**.
+**Kudiba ERP** é um ecossistema de software empresarial de alto desempenho, desenhado sob medida para o mercado angolano e da África Subsaariana. Substitui abordagens convencionais com arquitetura distribuída moderna, custo total de posse (TCO) reduzido em mais de 60%, operação resiliente a falhas de rede e conformidade fiscal contínua certificada.
 
 ---
 

@@ -5,27 +5,27 @@ export const ComparisonSection: React.FC = () => {
   const comparisonItems = [
     {
       criteria: 'Estabilidade Cambial e Orçamento',
-      traditional: 'Faturação indexada ao Dólar ou Euro, encarecendo a cada oscilação cambial.',
+      traditional: 'Faturação indexada ao Dólar ou Euro, sujeita a oscilações cambiais.',
       kudiba: 'Contrato 100% em Kwanzas (AOA). Previsibilidade anual garantida para o seu fluxo de caixa.',
     },
     {
       criteria: 'Continuidade de Venda no Balcão',
-      traditional: 'Queda de internet ou sinal instável paralisa os caixas e gera filas no balcão.',
+      traditional: 'Queda de internet ou sinal instável condiciona a emissão de faturas no balcão.',
       kudiba: 'O Ponto de Venda emite faturas e imprime talões mesmo offline, sincronizando em lote ao restabelecer a rede.',
     },
     {
       criteria: 'Custo de Infraestrutura & Base de Dados',
-      traditional: 'Exigência de servidores dispendiosos com licenças Microsoft Windows e SQL Server cobradas à parte.',
+      traditional: 'Servidor dedicado com licenças de sistema operativo e base de dados cobradas à parte.',
       kudiba: 'Sem licenças ocultas de base de dados. Solução leve que opera nos equipamentos existentes da sua empresa.',
     },
     {
       criteria: 'Apoio e Implementação em Angola',
-      traditional: 'Atendimento demorado através de parceiros intermediários com fuso horário distante.',
+      traditional: 'Atendimento através de parceiros intermediários, com prazos de resposta dependentes do fuso horário.',
       kudiba: 'Apoio direto de proximidade com equipa técnica local em Luanda e nas províncias.',
     },
     {
-      criteria: 'Conformidade Fiscal e Regras da AGT',
-      traditional: 'Atualizações fiscais morosas com custos extras de consultoria técnica por hora.',
+      criteria: 'Conformidade Fiscal e Atualização Regulatória',
+      traditional: 'Atualizações fiscais com intervenção técnica e custos de consultoria por hora.',
       kudiba: 'Conformidade fiscal contínua (Decreto 71/25 e SAF-T AO) integrada na própria subscrição.',
     },
   ];
@@ -50,7 +50,7 @@ export const ComparisonSection: React.FC = () => {
           <div className="grid grid-cols-12 bg-slate-100 p-4 sm:p-5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:bg-slate-900 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800">
             <div className="col-span-12 sm:col-span-4">Critério de Negócio</div>
             <div className="col-span-12 sm:col-span-4 mt-2 sm:mt-0 text-slate-500">
-              Softwares Tradicionais
+              Abordagem Convencional
             </div>
             <div className="col-span-12 sm:col-span-4 mt-2 sm:mt-0 text-emerald-800 dark:text-emerald-400 font-extrabold">
               Kudiba ERP

@@ -43,6 +43,15 @@ import { useUiStore } from '../../stores/uiStore';
 
 type ActiveTab = 'endpoints' | 'mappings' | 'runs' | 'templates' | 'docs';
 
+const formatSystemType = (value: string) => {
+  const normalized = value.toUpperCase();
+  if (['PRIMAVERA', 'PHC', 'SAGE', 'SAP'].includes(normalized)) return 'ERP_EXTERNO';
+  if (['SHOPIFY', 'WOOCOMMERCE'].includes(normalized)) return 'ECOMMERCE';
+  if (normalized === 'EXCEL_CSV') return 'CSV';
+  if (['ZKTECO', 'HIKVISION'].includes(normalized)) return 'ATTENDANCE';
+  return value;
+};
+
 export const IntegrationsView: React.FC = () => {
   const { activeTenant } = useAuthStore();
   const queryClient = useQueryClient();
@@ -82,7 +91,7 @@ export const IntegrationsView: React.FC = () => {
 
   const [endpointForm, setEndpointForm] = useState<CreateEndpointPayload>({
     name: '',
-    system_type: 'PRIMAVERA',
+    system_type: 'ERP_EXTERNO',
     connector_type: 'REST_PULL' as ConnectorType,
     description: '',
     auth_type: 'BEARER' as AuthType,
@@ -138,7 +147,7 @@ export const IntegrationsView: React.FC = () => {
       setSelectedEndpointForImport(newEp.id);
       setEndpointForm({
         name: '',
-        system_type: 'PRIMAVERA',
+        system_type: 'ERP_EXTERNO',
         connector_type: 'REST_PULL',
         description: '',
         auth_type: 'BEARER',
@@ -597,7 +606,7 @@ export const IntegrationsView: React.FC = () => {
                   >
                     <div>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 block">
-                        {tmpl.system_type}
+                        {formatSystemType(tmpl.system_type)}
                       </span>
                       <h4 className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">
                         {tmpl.title}
@@ -663,7 +672,7 @@ export const IntegrationsView: React.FC = () => {
                             </span>
                           </td>
                           <td className="px-4 py-3 font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
-                            {ep.system_type}
+                            {formatSystemType(ep.system_type)}
                           </td>
                           <td className="px-4 py-3">
                             <span
@@ -992,7 +1001,7 @@ export const IntegrationsView: React.FC = () => {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 uppercase">
-                      {tmpl.system_type} • {tmpl.connector_type}
+                      {formatSystemType(tmpl.system_type)} • {tmpl.connector_type}
                     </span>
                     <span className="text-xs font-mono font-bold text-emerald-600">
                       {tmpl.data_format}
@@ -1140,7 +1149,7 @@ export const IntegrationsView: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="Ex: Primavera ERP Vendas / Catálogo PHC"
+                  placeholder="Ex: API de Catálogo / Integração Externa"
                   value={endpointForm.name}
                   onChange={(e) => setEndpointForm({ ...endpointForm, name: e.target.value })}
                   className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
@@ -1157,11 +1166,10 @@ export const IntegrationsView: React.FC = () => {
                     onChange={(e) => setEndpointForm({ ...endpointForm, system_type: e.target.value })}
                     className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
                   >
-                    <option value="PRIMAVERA">Primavera ERP</option>
-                    <option value="PHC">PHC Software</option>
-                    <option value="SAP">SAP ERP</option>
-                    <option value="SHOPIFY">Shopify / E-Commerce</option>
-                    <option value="EXCEL_CSV">Ficheiro CSV / Folha Excel</option>
+                    <option value="ERP_EXTERNO">ERP Externo / API</option>
+                    <option value="CSV">Ficheiro CSV</option>
+                    <option value="ECOMMERCE">Loja Online</option>
+                    <option value="ATTENDANCE">Relógio Biométrico</option>
                     <option value="CUSTOM">API Personalizada</option>
                   </select>
                 </div>
@@ -1367,7 +1375,7 @@ export const IntegrationsView: React.FC = () => {
                   >
                     {endpoints.map((ep) => (
                       <option key={ep.id} value={ep.id}>
-                        {ep.name} ({ep.system_type} — {ep.data_format})
+                        {ep.name} ({formatSystemType(ep.system_type)} — {ep.data_format})
                       </option>
                     ))}
                   </select>
@@ -1479,7 +1487,7 @@ export const IntegrationsView: React.FC = () => {
                   >
                     {endpoints.map((ep) => (
                       <option key={ep.id} value={ep.id}>
-                        {ep.name} ({ep.system_type})
+                        {ep.name} ({formatSystemType(ep.system_type)})
                       </option>
                     ))}
                   </select>
@@ -1494,7 +1502,7 @@ export const IntegrationsView: React.FC = () => {
                     required
                     value={mappingForm.name}
                     onChange={(e) => setMappingForm({ ...mappingForm, name: e.target.value })}
-                    placeholder="Ex: Mapeamento de Faturas Primavera"
+                    placeholder="Ex: Mapeamento de Artigos / Catálogo"
                     className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
                   />
                 </div>
@@ -1827,7 +1835,7 @@ export const IntegrationsView: React.FC = () => {
                   Instruções de Configuração Externa:
                 </span>
                 <p>
-                  1. Cole este URL no painel do seu provedor (Shopify, Stripe, WooCommerce ou ERP).
+                  1. Cole este URL no painel do seu provedor (loja online, gateway de pagamento ou ERP).
                 </p>
                 <p>2. Método HTTP: <span className="font-mono font-bold">POST</span></p>
                 <p>

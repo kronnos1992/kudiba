@@ -25,7 +25,7 @@ export const AccountantsPartnerSection: React.FC<AccountantsPartnerSectionProps>
               </h2>
 
               <p className="mt-4 text-sm sm:text-base text-slate-300 leading-relaxed">
-                O Kudiba ERP disponibiliza uma área exclusiva para gabinetes de contabilidade. Simplifique o fecho mensal e a entrega das obrigações fiscais da AGT sem perdas de tempo.
+                O Kudiba ERP disponibiliza uma área exclusiva para gabinetes de contabilidade. Simplifique o fecho mensal e a entrega das obrigações fiscais sem perdas de tempo.
               </p>
 
               <div className="mt-6 space-y-3.5 text-xs sm:text-sm text-slate-200">
@@ -38,7 +38,7 @@ export const AccountantsPartnerSection: React.FC<AccountantsPartnerSectionProps>
                 <div className="flex items-start gap-2.5">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
                   <span>
-                    <strong>Ficheiro SAF-T (AO) Sem Falhas:</strong> Emissão validada contra as regras da AGT, eliminando o retrabalho no portal tributário.
+                    <strong>Ficheiro SAF-T (AO) Sem Falhas:</strong> Emissão validada contra as regras oficiais, eliminando o retrabalho no portal tributário.
                   </span>
                 </div>
                 <div className="flex items-start gap-2.5">
@@ -73,7 +73,7 @@ export const AccountantsPartnerSection: React.FC<AccountantsPartnerSectionProps>
                     <p className="text-[11px] text-slate-400">NIF 5418290192 • SAF-T Mensal</p>
                   </div>
                   <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 font-bold text-emerald-400 text-[10px]">
-                    Validado AGT
+                    Validado
                   </span>
                 </div>
 

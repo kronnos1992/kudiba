@@ -20,13 +20,13 @@ export const FeaturesShowcaseSection: React.FC<FeaturesShowcaseSectionProps> = (
   const modules = [
     {
       id: 'invoicing' as const,
-      label: 'Faturação & POS AGT',
+      label: 'Faturação & POS',
       icon: Receipt,
       category: 'Comercial & Vendas',
       title: 'Faturação Comercial & POS com Rigor Fiscal Total',
       desc: 'Emita faturas, faturas-recibo, notas de crédito e guias de transporte com assinatura digital em tempo real e QR Code oficial. No balcão, a sua operação continua a vender e a imprimir talões mesmo se a ligação à internet falhar.',
       bullets: [
-        'Assinatura digital RSA-2048 em tempo real e QR Code oficial exigido pela AGT',
+        'Assinatura digital RSA-2048 em tempo real e QR Code fiscal oficial obrigatório',
         'Ponto de Venda (POS) resiliente: vende e imprime talões térmicos offline, sincronizando em lote',
         'Retenção na fonte de 6.5% calculada automaticamente em serviços sujeitos',
         'Exportação direta do ficheiro SAF-T (AO) v1.01_01 validado segundo as normas fiscais',
@@ -40,7 +40,7 @@ export const FeaturesShowcaseSection: React.FC<FeaturesShowcaseSectionProps> = (
     },
     {
       id: 'accounting' as const,
-      label: 'Contabilidade PGC',
+      label: 'Contabilidade',
       icon: Calculator,
       category: 'Finanças & Gestão',
       title: 'Contabilidade Geral e Analítica segundo o PGC Angolano',
@@ -137,7 +137,7 @@ export const FeaturesShowcaseSection: React.FC<FeaturesShowcaseSectionProps> = (
           </p>
         </div>
 
-        {/* Tab Navigation (Estilo SAP / Primavera) */}
+        {/* Tab Navigation */}
         <div className="mt-10 flex flex-wrap gap-2.5 border-b border-slate-200 pb-4 dark:border-slate-800">
           {modules.map((mod) => {
             const Icon = mod.icon;

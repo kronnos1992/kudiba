@@ -220,7 +220,7 @@ def build_pdf():
     elements.append(Paragraph("A Nova Geração de Gestão Empresarial para Angola", style_cover_sub))
     elements.append(Paragraph(
         "Plataforma modular cloud-native e edge-ready desenvolvida especificamente para a realidade operacional angolana: "
-        "faturação certificada pela AGT, ponto de venda offline com sincronização automática, gestão de stocks multi-unidade, "
+        "faturação certificada, ponto de venda offline com sincronização automática, gestão de stocks multi-unidade, "
         "processamento salarial com tabela IRT 2026/INSS, contabilidade PGC e verificação de alvarás comerciais em tempo real.",
         style_body
     ))
@@ -230,15 +230,15 @@ def build_pdf():
     # Destaques em Cartões
     badges = [
         [
-            Paragraph("<b>🛡️ Certificação AGT Nativa</b><br/><font size=7.5 color='#64748b'>Assinatura RSA-2048/SHA-256 encadeada, SAF-T (AO) 1.01 e QR Code fiscal homologado.</font>", style_tbl_cell),
+            Paragraph("<b>🛡️ Certificação Fiscal Nativa</b><br/><font size=7.5 color='#64748b'>Assinatura RSA-2048/SHA-256 encadeada, SAF-T (AO) 1.01 e QR Code fiscal homologado.</font>", style_tbl_cell),
             Paragraph("<b>⚡ Arquitetura Cloud & Offline</b><br/><font size=7.5 color='#64748b'>POS local-first funciona sem internet e sincroniza quando a ligação regressa.</font>", style_tbl_cell)
         ],
         [
             Paragraph("<b>🚀 Alto Desempenho em Rust</b><br/><font size=7.5 color='#64748b'>Microsserviços de faturação e inventário em Rust com latência sub-10ms.</font>", style_tbl_cell),
-            Paragraph("<b>📉 Poupança de até 65% no TCO</b><br/><font size=7.5 color='#64748b'>Sem custos de licenças Microsoft SQL Server ou Windows Server em divisas.</font>", style_tbl_cell)
+            Paragraph("<b>📉 Poupança de até 65% no TCO</b><br/><font size=7.5 color='#64748b'>Sem custos de licenças de servidor e base de dados em divisas.</font>", style_tbl_cell)
         ],
         [
-            Paragraph("<b>🏛️ Validação Oficial de Alvarás</b><br/><font size=7.5 color='#64748b'>Verificação em tempo real com SILAC/MINDCOM, GUE, SEPE e AGT.</font>", style_tbl_cell),
+            Paragraph("<b>🏛️ Validação Oficial de Alvarás</b><br/><font size=7.5 color='#64748b'>Verificação em tempo real com SILAC/MINDCOM, GUE e SEPE.</font>", style_tbl_cell),
             Paragraph("<b>👥 RH com IRT 2026 & INSS</b><br/><font size=7.5 color='#64748b'>Cálculo automático de escalões do IRT, INSS (3% + 8%) e ficheiro bancário PS2.</font>", style_tbl_cell)
         ]
     ]
@@ -292,11 +292,11 @@ def build_pdf():
     indice_data = [
         [Paragraph("<b>Capítulo 1: Introdução ao Kudiba ERP</b>", style_body_bold), Paragraph("<b>Pág. 3</b>", style_body_bold)],
         [Paragraph("  1.1 O que é o Kudiba ERP e Visão da Plataforma", style_body), Paragraph("3", style_body)],
-        [Paragraph("  1.2 O Diagnóstico dos Softwares Existentes em Angola (Primavera, PHC, Sage)", style_body), Paragraph("3", style_body)],
+        [Paragraph("  1.2 O Diagnóstico dos Softwares Existentes em Angola", style_body), Paragraph("3", style_body)],
         [Paragraph("  1.3 O que o Kudiba Traz de Novo (Inovações Chave)", style_body), Paragraph("4", style_body)],
-        [Paragraph("  1.4 Tabela Comparativa Detalhada: Kudiba vs Softwares Tradicionais", style_body), Paragraph("4", style_body)],
+        [Paragraph("  1.4 Tabela Comparativa Detalhada: Kudiba vs Abordagem Convencional", style_body), Paragraph("4", style_body)],
         [Paragraph("<b>Capítulo 2: Módulos e Funcionalidades Detalhadas</b>", style_body_bold), Paragraph("<b>Pág. 5</b>", style_body_bold)],
-        [Paragraph("  2.1 KudibaInvoicing — Faturação Comercial e Certificada AGT", style_body), Paragraph("5", style_body)],
+        [Paragraph("  2.1 KudibaInvoicing — Faturação Comercial e Certificada", style_body), Paragraph("5", style_body)],
         [Paragraph("  2.2 KudibaInventory — Gestão de Stocks, Armazéns e Conversão UoM", style_body), Paragraph("6", style_body)],
         [Paragraph("  2.3 KudibaTreasury — Tesouraria, Caixa, Contas a Pagar e Receber", style_body), Paragraph("7", style_body)],
         [Paragraph("  2.4 KudibaAccounting — Contabilidade Geral e Analítica PGC", style_body), Paragraph("8", style_body)],
@@ -311,7 +311,7 @@ def build_pdf():
         [Paragraph("<b>Capítulo 4: Screenshots e Guia Prático do Utilizador</b>", style_body_bold), Paragraph("<b>Pág. 13</b>", style_body_bold)],
         [Paragraph("  4.1 Painel Executivo & Dashboard Financeiro", style_body), Paragraph("13", style_body)],
         [Paragraph("  4.2 Ponto de Venda (POS) & Operação de Caixa Offline", style_body), Paragraph("14", style_body)],
-        [Paragraph("  4.3 Emissão de Faturas e Documentos Certificados AGT", style_body), Paragraph("15", style_body)],
+        [Paragraph("  4.3 Emissão de Faturas e Documentos Certificados", style_body), Paragraph("15", style_body)],
         [Paragraph("  4.4 Gestão de Inventário e Conversão de Embalagens", style_body), Paragraph("16", style_body)],
         [Paragraph("  4.5 Processamento de Salários e Emissão de Recibo de Vencimento", style_body), Paragraph("17", style_body)],
         [Paragraph("  4.6 Gestão de Tesouraria e Projeção de Fluxo de Caixa", style_body), Paragraph("18", style_body)],
@@ -333,7 +333,7 @@ def build_pdf():
         [Paragraph(
             "<b>MENSAGEM DA EQUIPA KUDIBA:</b><br/>"
             "O Kudiba foi concebido por engenheiros e consultores financeiros que viveram as dores reais do mercado angolano: "
-            "quedas repentinas de internet no ponto de venda que bloqueiam as vendas, faturas que falham nas validações da AGT, "
+            "quedas de internet no ponto de venda que condicionam as vendas, faturas que falham nas validações fiscais, "
             "custos astronómicos de licenças atreladas ao Dólar/Euro e sistemas pesados que exigem servidores caros. "
             "O Kudiba é a resposta tecnológica de Angola para a África contemporânea: leve, fiável, 100% legal e com custo justo.",
             style_callout
@@ -376,16 +376,16 @@ def build_pdf():
     ))
 
     elements.append(Spacer(1, 6))
-    elements.append(Paragraph("1.2 O Diagnóstico do Mercado: Por que os Softwares Tradicionais Falham em Angola?", style_h2))
+    elements.append(Paragraph("1.2 Panorama das Abordagens Convencionais em Angola", style_h2))
     elements.append(Paragraph(
-        "Durante mais de duas décadas, as empresas angolanas viram-se obrigadas a adotar softwares legados desenhados nos anos 90 "
-        "(como Primavera/Cegid, PHC ou Sage), construídos sob uma arquitetura cliente-servidor para Windows. Na prática, este modelo tradicional impõe:",
+        "Durante mais de duas décadas, as empresas angolanas utilizaram soluções desenhadas nos anos 90 "
+        "construídos sob uma arquitetura cliente-servidor para Windows. Na prática, este modelo tradicional impõe:",
         style_body
     ))
-    elements.append(Paragraph("• <b>Custos Proibitivos e Dependência Cambial:</b> Licenças cobradas por posto e por módulo, habitualmente indexadas ao Euro ou Dólar, somadas a custos exorbitantes de licenciamento Microsoft (Windows Server e MS SQL Server).", style_bullet))
-    elements.append(Paragraph("• <b>Paragem das Vendas na Queda da Internet:</b> Quando a ligação de internet ou a VPN da loja falha, os sistemas cloud tradicionais deixam de emitir faturas e registar vendas no balcão, paralisando a faturação e gerando filas de clientes insatisfeitos.", style_bullet))
-    elements.append(Paragraph("• <b>Morosidade nas Atualizações Fiscais da AGT:</b> Cada alteração legislativa (novos regimes de IVA, atualização do Código do IRT ou alterações ao ficheiro SAF-T AO) exige deslocações de consultores técnicos e aplicação de <i>patches</i> demorados e onerosos.", style_bullet))
-    elements.append(Paragraph("• <b>Interfaces Pesadas e Pouco Ergonómicas:</b> Centenas de janelas modais sobrepostas e navegação lenta que obrigam a semanas de formação e elevam o risco de erros humanos por operadores de caixa e faturistas.", style_bullet))
+    elements.append(Paragraph("• <b>Custos Adicionais e Dependência Cambial:</b> Licenças cobradas por posto e por módulo, habitualmente indexadas ao Euro ou Dólar, somadas a custos de licenciamento de servidor e base de dados.", style_bullet))
+    elements.append(Paragraph("• <b>Dependência de Conectividade no Balcão:</b> Quando a ligação de internet ou a VPN da loja falha, os sistemas convencionais condicionam a emissão de faturas e o registo de vendas no balcão.", style_bullet))
+    elements.append(Paragraph("• <b>Atualizações Fiscais:</b> Cada alteração legislativa (novos regimes de IVA, atualização do Código do IRT ou alterações ao ficheiro SAF-T AO) exige intervenção técnica e aplicação de <i>patches</i>.", style_bullet))
+    elements.append(Paragraph("• <b>Interfaces e Curva de Aprendizagem:</b> Centenas de janelas modais sobrepostas e navegação lenta que obrigam a semanas de formação e elevam o risco de erros humanos por operadores de caixa e faturistas.", style_bullet))
 
     elements.append(Spacer(1, 6))
     elements.append(Paragraph("1.3 O que o Kudiba Traz de Novo? (Diferenciais Inovadores)", style_h2))
@@ -398,10 +398,10 @@ def build_pdf():
     inovacoes = [
         ("⚡ Tecnologia Híbrida Cloud & Local-First (POS Offline Resiliente)",
          "O Ponto de Venda (POS) do Kudiba opera localmente na máquina do operador, sem qualquer dependência de internet. As vendas continuam a ser efetuadas, com cálculo de impostos e impressão instantânea. Assim que a conectividade é restabelecida, os documentos são sincronizados de forma transparente e segura com o servidor central."),
-        ("🛡️ Motor Fiscal e Criptográfico AGT Isolado e Imutável",
+        ("🛡️ Motor Fiscal e Criptográfico Isolado e Imutável",
          "O módulo de faturação implementa a estrita cadeia de assinaturas RSA-2048 com algoritmo SHA-256 (Decreto Presidencial n.º 71/25). A integridade do hash do documento anterior é mantida de forma matematicamente inviolável, garantindo que o ficheiro SAF-T (AO) mensal seja exportado com zero erros de validação."),
         ("🏛️ Verificação Oficial de Alvarás Comerciais em Tempo Real",
-         "Pela primeira vez num ERP em Angola, o Kudiba integra um motor de validação automatizada de Alvarás Comerciais cruzando os dados das plataformas oficiais: SILAC/MINDCOM, GUE, SEPE e AGT. O sistema valida prazos de validade, formato regulamentar e consistência com o NIF da empresa, prevenindo multas e irregularidades."),
+         "Pela primeira vez num ERP em Angola, o Kudiba integra um motor de validação automatizada de Alvarás Comerciais cruzando os dados das plataformas oficiais: SILAC/MINDCOM, GUE e SEPE. O sistema valida prazos de validade, formato regulamentar e consistência com o NIF da empresa, prevenindo multas e irregularidades."),
         ("🚀 Núcleo de Alta Velocidade em Rust",
          "Os serviços críticos de faturação, inventário e tesouraria são compilados em Rust. Isso garante latências de resposta inferiores a 10 milissegundos, consumo mínimo de memória RAM e capacidade para processar milhões de linhas de faturação sem lentidão."),
         ("🔒 Trilha de Auditoria Universal Imutável",
@@ -413,28 +413,28 @@ def build_pdf():
         elements.append(Paragraph(idesc, style_bullet))
 
     elements.append(Spacer(1, 6))
-    elements.append(Paragraph("1.4 Matriz Comparativa: Kudiba vs ERPs Tradicionais", style_h2))
+    elements.append(Paragraph("1.4 Matriz Comparativa: Kudiba vs Abordagem Convencional", style_h2))
 
     comp_headers = [
         Paragraph("<b>Critério de Comparação</b>", style_tbl_header),
-        Paragraph("<b>ERPs Legados (Primavera, PHC, Sage)</b>", style_tbl_header),
+        Paragraph("<b>Abordagem Convencional</b>", style_tbl_header),
         Paragraph("<b>Kudiba ERP (Nova Geração)</b>", style_tbl_header)
     ]
     comp_rows = [
         comp_headers,
         [
             Paragraph("<b>Arquitetura Base</b>", style_tbl_cell),
-            Paragraph("Monolítica anos 90, adaptada com camadas web lentas.", style_tbl_cell),
+            Paragraph("Arquitetura monolítica dos anos 90 adaptada com camadas web.", style_tbl_cell),
             Paragraph("<b>Microsserviços em Rust + Python, Cloud e Edge-Ready.</b>", style_tbl_cell)
         ],
         [
             Paragraph("<b>Operação Offline no Balcão</b>", style_tbl_cell),
-            Paragraph("Inexistente ou limitada. Queda de rede bloqueia o POS.", style_tbl_cell),
+            Paragraph("Dependente de conectividade contínua para emissão no balcão.", style_tbl_cell),
             Paragraph("<b>Local-First nativo: fatura offline e sincroniza em lote.</b>", style_tbl_cell)
         ],
         [
             Paragraph("<b>Infraestrutura & BD</b>", style_tbl_cell),
-            Paragraph("Obrigatório Windows Server e licenças caras MS SQL Server.", style_tbl_cell),
+            Paragraph("Servidor dedicado e licenciamento de base de dados.", style_tbl_cell),
             Paragraph("<b>100% Linux, PostgreSQL e containers leves (Zero licença BD).</b>", style_tbl_cell)
         ],
         [
@@ -445,7 +445,7 @@ def build_pdf():
         [
             Paragraph("<b>Validação de Alvarás</b>", style_tbl_cell),
             Paragraph("Manual, fora do sistema.", style_tbl_cell),
-            Paragraph("<b>Verificação automática em tempo real (SILAC/MINDCOM/AGT).</b>", style_tbl_cell)
+            Paragraph("<b>Verificação automática em tempo real (SILAC/MINDCOM).</b>", style_tbl_cell)
         ],
         [
             Paragraph("<b>Curva de Aprendizagem</b>", style_tbl_cell),
@@ -454,7 +454,7 @@ def build_pdf():
         ],
         [
             Paragraph("<b>Integração Externa</b>", style_tbl_cell),
-            Paragraph("Módulos de integração pagos, APIs SOAP lentas.", style_tbl_cell),
+            Paragraph("Módulos de integração pagos, APIs SOAP.", style_tbl_cell),
             Paragraph("<b>API REST moderna, Webhooks e documentação OpenAPI nativa.</b>", style_tbl_cell)
         ],
     ]
@@ -481,20 +481,20 @@ def build_pdf():
     elements.append(HRFlowable(width="100%", thickness=1.5, color=c_primary, spaceBefore=4, spaceAfter=10))
 
     # 2.1 KudibaInvoicing
-    elements.append(Paragraph("2.1 KudibaInvoicing — Faturação Comercial e Certificada AGT", style_h2))
+    elements.append(Paragraph("2.1 KudibaInvoicing — Faturação Comercial e Certificada", style_h2))
     elements.append(Paragraph(
         "O módulo <b>KudibaInvoicing</b> constitui o núcleo transacional e fiscal do sistema, construído em estrita obediência "
-        "ao <b>Decreto Presidencial n.º 71/25</b> e regulamentação da Administração Geral Tributária (AGT) de Angola.",
+        "ao <b>Decreto Presidencial n.º 71/25</b> e regulamentação fiscal de Angola.",
         style_body
     ))
     
     inv_features = [
         ("Tipologia Integral de Documentos Comerciais", "Emissão, impressão e gestão de Faturas (FT), Faturas-Recibo (FR), Notas de Crédito (NC), Notas de Débito (ND), Faturas Pró-Forma (PP), Orçamentos (OR) e Guias de Transporte/Remessa (GT/GR)."),
         ("Assinatura Criptográfica RSA em Cadeia", "Chaves assimétricas RSA-2048 bits com algoritmo de assinatura SHA-256 encadeado: cada fatura incorpora no cálculo do hash o hash do documento anterior, assegurando sequência cronológica inviolável."),
-        ("Geração Automática do QR Code Fiscal e 4 Caracteres", "Impressão direta no rodapé de cada fatura do QR Code fiscal exigido pela AGT com payload codificado e exibição destacada dos 4 caracteres de validação (1.º, 11.º, 21.º e 31.º do hash)."),
-        ("Gestão de Regimes de IVA e Isenções", "Configuração dinâmica do Regime Geral de IVA (14%), Regimes Simplificados ou Transitórios, e aplicação rigorosa das tabelas de códigos de motivo de isenção da AGT (ex: M00, M10, M20) com menção legal impressa."),
+        ("Geração Automática do QR Code Fiscal e 4 Caracteres", "Impressão direta no rodapé de cada fatura do QR Code fiscal obrigatório com payload codificado e exibição destacada dos 4 caracteres de validação (1.º, 11.º, 21.º e 31.º do hash)."),
+        ("Gestão de Regimes de IVA e Isenções", "Configuração dinâmica do Regime Geral de IVA (14%), Regimes Simplificados ou Transitórios, e aplicação rigorosa das tabelas de códigos de motivo de isenção (ex: M00, M10, M20) com menção legal impressa."),
         ("Retenção na Fonte Automatizada (6.5%)", "Cálculo e desconto automático da taxa de retenção na fonte de 6.5% na prestação de serviços a entidades obrigadas a reter, gerando os respetivos destaques na fatura e no balancete."),
-        ("Exportação Oficial SAF-T (AO) 1.01", "Geração do ficheiro XML SAF-T (AO) em conformidade estrita com o XSD oficial, com validador sintático prévio que bloqueia erros antes do envio ao portal do contribuinte da AGT.")
+        ("Exportação Oficial SAF-T (AO) 1.01", "Geração do ficheiro XML SAF-T (AO) em conformidade estrita com o XSD oficial, com validador sintático prévio que bloqueia erros antes do envio ao portal do contribuinte.")
     ]
     for ftitle, fdesc in inv_features:
         elements.append(Paragraph(f"• <b>{ftitle}:</b> {fdesc}", style_bullet))
@@ -590,9 +590,9 @@ def build_pdf():
     ))
     
     back_features = [
-        ("Verificador Oficial de Alvará Comercial", "Motor que valida em segundos a legitimidade, prazo e status do alvará nas plataformas SILAC/MINDCOM, GUE, SEPE e AGT, evitando que a empresa opere com documentos comerciais caducados."),
+        ("Verificador Oficial de Alvará Comercial", "Motor que valida em segundos a legitimidade, prazo e status do alvará nas plataformas SILAC/MINDCOM, GUE e SEPE, evitando que a empresa opere com documentos comerciais caducados."),
         ("Gestão de Estabelecimentos e Postos de Faturação", "Parametrização de séries documentais distintas por loja ou filial com controlo centralizado de licenças ativas e renovação anual."),
-        ("Trilha de Auditoria Universal", "Registo permanente de quem acedeu, quem criou ou quem alterou qualquer dado na plataforma, essencial para auditorias internas e inspeções da AGT.")
+        ("Trilha de Auditoria Universal", "Registo permanente de quem acedeu, quem criou ou quem alterou qualquer dado na plataforma, essencial para auditorias internas e inspeções fiscais.")
     ]
     for ftitle, fdesc in back_features:
         elements.append(Paragraph(f"• <b>{ftitle}:</b> {fdesc}", style_bullet))
@@ -639,9 +639,9 @@ def build_pdf():
         [
             Paragraph("<b>Kudiba Comercial<br/>(Starter)</b>", style_tbl_cell),
             Paragraph("Lojas de retalho, comércio a grosso, oficinas e prestadores de serviços.", style_tbl_cell),
-            Paragraph("Faturação AGT + POS Offline + Gestão de Stocks + Caixa Diário.", style_tbl_cell),
+            Paragraph("Faturação Certificada + POS Offline + Gestão de Stocks + Caixa Diário.", style_tbl_cell),
             Paragraph("Até 3 Postos de Faturação incluídos.", style_tbl_cell),
-            Paragraph("Suporte Remoto em dias úteis + Atualizações AGT.", style_tbl_cell)
+            Paragraph("Suporte Remoto em dias úteis + Atualizações fiscais.", style_tbl_cell)
         ],
         [
             Paragraph("<b>Kudiba PME Integrado<br/>(Recomendado)</b>", style_tbl_cell),
@@ -695,8 +695,8 @@ def build_pdf():
             Paragraph("<font color='#16a34a'><b>-60% de poupança</b></font>", style_tbl_cell)
         ],
         [
-            Paragraph("Licenças MS SQL Server + Windows Server", style_tbl_cell),
-            Paragraph("~ 6.500.000 Kz (Licenciamento Microsoft)", style_tbl_cell),
+            Paragraph("Licenças de Base de Dados e Servidor", style_tbl_cell),
+            Paragraph("~ 6.500.000 Kz (Licenciamento de infraestrutura)", style_tbl_cell),
             Paragraph("<b>0 Kz (Base PostgreSQL Linux aberta)</b>", style_tbl_cell),
             Paragraph("<font color='#16a34a'><b>-100% eliminado</b></font>", style_tbl_cell)
         ],
@@ -707,7 +707,7 @@ def build_pdf():
             Paragraph("<font color='#16a34a'><b>-76% de poupança</b></font>", style_tbl_cell)
         ],
         [
-            Paragraph("Consultoria de Instalação e Patches AGT", style_tbl_cell),
+            Paragraph("Consultoria de Instalação e Atualizações Fiscais", style_tbl_cell),
             Paragraph("~ 4.000.000 Kz (Cobrança hora-homem)", style_tbl_cell),
             Paragraph("<b>Incluído na subscrição anual</b>", style_tbl_cell),
             Paragraph("<font color='#16a34a'><b>-100% de poupança</b></font>", style_tbl_cell)
@@ -734,11 +734,11 @@ def build_pdf():
     elements.append(Spacer(1, 8))
     elements.append(Paragraph("3.4 Curva de Aprendizagem Acelerada & Metodologia de Onboarding", style_h2))
     elements.append(Paragraph(
-        "Enquanto os ERPs legados exigem meses de consultoria com produtividade nula, o Kudiba foi desenhado para adoção imediata:",
+        "O Kudiba foi desenhado para adoção imediata:",
         style_body
     ))
     elements.append(Paragraph("• <b>Operadores Produtivos em 48 Horas:</b> O ecrã do Ponto de Venda (POS) é dominado por qualquer operador em menos de 2 horas. As operações frequentes possuem atalhos universais no teclado ([F2] Nova Venda, [F4] Quantidade, [F9] Finalizar).", style_bullet))
-    elements.append(Paragraph("• <b>Migração Assistida de Dados:</b> Importadores integrados que carregam automaticamente artigos, tabelas de preços, clientes com NIF e saldos iniciais a partir de ficheiros Excel ou ficheiros SAF-T de sistemas anteriores.", style_bullet))
+    elements.append(Paragraph("• <b>Migração Assistida de Dados:</b> Importadores integrados que carregam automaticamente artigos, tabelas de preços, clientes com NIF e saldos iniciais a partir de ficheiros de folhas de cálculo ou ficheiros SAF-T de sistemas anteriores.", style_bullet))
     elements.append(Paragraph("• <b>Formação Prática Certificada:</b> Sessões de capacitação para a administração, equipa financeira, operadores de caixa e técnicos de armazém com guias ilustrados e acompanhamento pós-arranque.", style_bullet))
 
     elements.append(PageBreak())
@@ -768,8 +768,8 @@ def build_pdf():
     elements.append(Paragraph("<b>Guia Passo a Passo:</b>", style_body_bold))
     elements.append(Paragraph("1. <b>Filtro de Período:</b> No canto superior, selecione o período pretendido (Hoje, Mês Atual, Trimestre ou Ano Fiscal). Os indicadores são recalculados instantaneamente.", style_bullet))
     elements.append(Paragraph("2. <b>Monitorização de Cobranças:</b> Analise os cartões de KPI para verificar o total faturado versus total já liquidado em tesouraria.", style_bullet))
-    elements.append(Paragraph("3. <b>Supervisão Fiscal AGT:</b> No painel lateral direito, confirme o estado da cadeia de assinaturas RSA. O indicador '100% Íntegra' confirma conformidade legal.", style_bullet))
-    elements.append(Paragraph("4. <b>Exportação do SAF-T:</b> Ao final do mês, clique em <i>[Descarregar XML]</i> para obter o ficheiro pré-validado pronto a submeter no portal da AGT.", style_bullet))
+    elements.append(Paragraph("3. <b>Supervisão Fiscal:</b> No painel lateral direito, confirme o estado da cadeia de assinaturas RSA. O indicador '100% Íntegra' confirma conformidade legal.", style_bullet))
+    elements.append(Paragraph("4. <b>Exportação do SAF-T:</b> Ao final do mês, clique em <i>[Descarregar XML]</i> para obter o ficheiro pré-validado pronto a submeter no portal do contribuinte.", style_bullet))
 
     elements.append(PageBreak())
 
@@ -793,7 +793,7 @@ def build_pdf():
     elements.append(PageBreak())
 
     # --- 4.3 Invoicing ---
-    elements.append(Paragraph("4.3 Emissão de Faturas Certificadas AGT (Com Retenção e Impostos)", style_h2))
+    elements.append(Paragraph("4.3 Emissão de Faturas Certificadas (Com Retenção e Impostos)", style_h2))
     elements.append(Paragraph(
         "<b>Objetivo:</b> Emitir faturas comerciais formais (FT) com cálculo rigoroso de IVA (14%), retenção na fonte (6.5%) e validação do NIF do cliente.",
         style_body
@@ -806,7 +806,7 @@ def build_pdf():
     elements.append(Paragraph("1. <b>Identificação do Cliente:</b> Digite o NIF ou nome da entidade. O sistema valida o NIF (10 dígitos) e preenche os dados fiscais da empresa.", style_bullet))
     elements.append(Paragraph("2. <b>Inserção de Linhas:</b> Adicione as rubricas de serviços ou produtos. O Kudiba calcula o IVA correspondente e aplica a retenção na fonte de 6.5% automaticamente para serviços.", style_bullet))
     elements.append(Paragraph("3. <b>Verificação Fiscal Prévia:</b> A caixa verde inferior exibe em tempo real o hash calculado, a ligação à fatura anterior e os 4 caracteres de controlo.", style_bullet))
-    elements.append(Paragraph("4. <b>Emissão & Assinatura:</b> Clique em <i>[+ Emitir & Assinar RSA]</i>. O PDF com QR Code AGT homologado é gerado e disponibilizado para impressão ou envio por email.", style_bullet))
+    elements.append(Paragraph("4. <b>Emissão & Assinatura:</b> Clique em <i>[+ Emitir & Assinar RSA]</i>. O PDF com QR Code fiscal homologado é gerado e disponibilizado para impressão ou envio por email.", style_bullet))
 
     elements.append(PageBreak())
 
@@ -873,12 +873,12 @@ def build_pdf():
     elements.append(Paragraph("5.1 Perguntas Frequentes de Clientes (FAQ Comercial)", style_h2))
 
     faqs = [
-        ("O software está formalmente em conformidade com as regras da AGT?",
+        ("O software está formalmente em conformidade com as regras fiscais?",
          "Sim. O Kudiba ERP foi arquitetado com base no Decreto Presidencial n.º 71/25 e Decreto Executivo n.º 385/20. Emite assinaturas digitais RSA-2048 em cadeia com SHA-256, inclui QR Code fiscal e gera o ficheiro SAF-T (AO) 1.01 sem qualquer inconformidade."),
         ("O que acontece quando a nossa loja fica sem sinal de internet?",
          "A operação de venda de balcão (POS) continua a funcionar a 100%. O sistema armazena as transações localmente em modo seguro e emite os comprovativos. Assim que a internet regressa, o Kudiba sincroniza todos os registos com a base central automaticamente."),
-        ("É possível migrar os dados do nosso sistema atual (Primavera, PHC, etc.)?",
-         "Sim. Dispomos de rotinas de migração automática que importam a tabela de clientes, artigos, fornecedores, stocks e saldos iniciais a partir de ficheiros Excel normalizados ou diretamente do ficheiro SAF-T de faturação anterior."),
+        ("É possível migrar os dados do sistema atual da empresa?",
+         "Sim. Dispomos de rotinas de migração automática que importam a tabela de clientes, artigos, fornecedores, stocks e saldos iniciais a partir de ficheiros de folhas de cálculo normalizados ou diretamente do ficheiro SAF-T de faturação anterior."),
         ("Os valores da subscrição podem sofrer aumentos por variação do Dólar ou Euro?",
          "Não. Todos os nossos contratos são celebrados em Kwanzas (Kz), sem indexação cambial, garantindo total previsibilidade orçamental à sua empresa."),
         ("Como funciona a formação da nossa equipa?",

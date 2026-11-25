@@ -51,7 +51,7 @@ def draw_app_shell(width, height, title, active_tab="Dashboard"):
     
     # Right header items
     draw.rounded_rectangle([width - 240, 44, width - 110, 68], radius=4, fill="#f1f5f9")
-    draw.text((width - 230, 49), "AGT: Certificado 2026/04", fill="#0f766e", font=get_font(11, bold=True))
+    draw.text((width - 230, 49), "Certificado Fiscal 2026/04", fill="#0f766e", font=get_font(11, bold=True))
     draw.rounded_rectangle([width - 95, 44, width - 16, 68], radius=4, fill="#0f766e")
     draw.text((width - 85, 49), "Online (Sync)", fill="#ffffff", font=get_font(11, bold=True))
     
@@ -63,7 +63,7 @@ def draw_app_shell(width, height, title, active_tab="Dashboard"):
     modules = [
         ("Dashboard", "📊"),
         ("Ponto de Venda (POS)", "🛒"),
-        ("Faturação & AGT", "📄"),
+        ("Faturação & Fiscal", "📄"),
         ("Inventário & Stocks", "📦"),
         ("Tesouraria & Caixa", "💰"),
         ("Contabilidade PGC", "📑"),
@@ -112,20 +112,20 @@ def generate_dashboard_screenshot():
         draw.text((bx + 12, by + 32), val, fill="#0f172a", font=get_font(13, bold=True))
         draw.text((bx + 12, by + 60), sub, fill=col, font=get_font(9, bold=True))
         
-    # Lower Section: Left = Recent Invoices Table, Right = AGT Compliance & Cash Flow
+    # Lower Section: Left = Recent Invoices Table, Right = Compliance & Cash Flow
     tbl_x = cx
     tbl_y = 236
     tbl_w = 440
     tbl_h = 265
     draw.rounded_rectangle([tbl_x, tbl_y, tbl_x + tbl_w, tbl_y + tbl_h], radius=8, fill="#ffffff", outline="#e2e8f0")
-    draw.text((tbl_x + 14, tbl_y + 12), "Últimas Faturas Emitidas (Certificação AGT)", fill="#0f172a", font=get_font(12, bold=True))
+    draw.text((tbl_x + 14, tbl_y + 12), "Últimas Faturas Emitidas (Certificação Fiscal)", fill="#0f172a", font=get_font(12, bold=True))
     
     # Table headers
     draw.rectangle([tbl_x + 10, tbl_y + 36, tbl_x + tbl_w - 10, tbl_y + 58], fill="#f8fafc")
     draw.text((tbl_x + 16, tbl_y + 42), "Documento", fill="#64748b", font=get_font(9, bold=True))
     draw.text((tbl_x + 105, tbl_y + 42), "Cliente / NIF", fill="#64748b", font=get_font(9, bold=True))
     draw.text((tbl_x + 245, tbl_y + 42), "Total (Kz)", fill="#64748b", font=get_font(9, bold=True))
-    draw.text((tbl_x + 340, tbl_y + 42), "Hash AGT", fill="#64748b", font=get_font(9, bold=True))
+    draw.text((tbl_x + 340, tbl_y + 42), "Hash Fiscal", fill="#64748b", font=get_font(9, bold=True))
     
     rows = [
         ("FT 2026/00148", "Sonangol Distribuição (5401...)", "14.500.000", "g7K1 (Válido)", "#10b981"),
@@ -145,13 +145,13 @@ def generate_dashboard_screenshot():
         draw.line([tbl_x + 10, ry + 22, tbl_x + tbl_w - 10, ry + 22], fill="#f1f5f9", width=1)
         ry += 32
         
-    # Right Panel: AGT & System Health Box
+    # Right Panel: Conformidade & System Health Box
     r_x = cx + tbl_w + 14
     r_w = w - r_x - 18
     draw.rounded_rectangle([r_x, tbl_y, r_x + r_w, tbl_y + tbl_h], radius=8, fill="#ffffff", outline="#e2e8f0")
     draw.text((r_x + 14, tbl_y + 12), "Conformidade Fiscal & SAF-T (AO)", fill="#0f172a", font=get_font(12, bold=True))
     
-    # AGT badge
+    # Certification badge
     draw.rounded_rectangle([r_x + 14, tbl_y + 40, r_x + r_w - 14, tbl_y + 95], radius=6, fill="#f8fafc", outline="#cbd5e1")
     draw.text((r_x + 22, tbl_y + 48), "Cadeia RSA-SHA256: 100% Integra", fill="#0f766e", font=get_font(10, bold=True))
     draw.text((r_x + 22, tbl_y + 64), "Algoritmo: RSA 2048 / SHA-256 encadeado", fill="#475569", font=get_font(9))
@@ -269,11 +269,11 @@ def generate_pos_screenshot():
 
 def generate_invoicing_screenshot():
     w, h = 920, 520
-    img, draw, sb_w = draw_app_shell(w, h, "Kudiba ERP — Emissão e Certificação Fiscal AGT", "Faturação")
+    img, draw, sb_w = draw_app_shell(w, h, "Kudiba ERP — Emissão e Certificação Fiscal", "Faturação")
     
     cx = sb_w + 14
     # Header
-    draw.text((cx, 88), "Nova Fatura Comercial (FT) — Certificação AGT", fill="#0f172a", font=get_font(15, bold=True))
+    draw.text((cx, 88), "Nova Fatura Comercial (FT) — Certificação Fiscal", fill="#0f172a", font=get_font(15, bold=True))
     draw.rounded_rectangle([w - 180, 86, w - 18, 108], radius=4, fill="#0f766e")
     draw.text((w - 170, 92), "+ Emitir & Assinar RSA", fill="#ffffff", font=get_font(9, bold=True))
     
@@ -289,7 +289,7 @@ def generate_invoicing_screenshot():
     
     draw.rounded_rectangle([cx + 252, 148, cx + 420, 186], radius=4, fill="#f8fafc", outline="#cbd5e1")
     draw.text((cx + 258, 153), "NIF Empresa (10 dígitos):", fill="#64748b", font=get_font(8))
-    draw.text((cx + 258, 168), "5418092144 (Válido AGT)", fill="#16a34a", font=get_font(9, bold=True))
+    draw.text((cx + 258, 168), "5418092144 (Válido)", fill="#16a34a", font=get_font(9, bold=True))
     
     draw.rounded_rectangle([cx + 432, 148, cx + 570, 186], radius=4, fill="#f8fafc", outline="#cbd5e1")
     draw.text((cx + 438, 153), "Série Documental:", fill="#64748b", font=get_font(8))
@@ -331,10 +331,10 @@ def generate_invoicing_screenshot():
     # Bottom Certification Preview & Totals
     bot_y = 412
     draw.rounded_rectangle([cx, bot_y, cx + 460, 498], radius=6, fill="#f0fdf4", outline="#bbf7d0")
-    draw.text((cx + 14, bot_y + 8), "Verificação de Conformidade Fiscal (AGT Angola):", fill="#166534", font=get_font(9, bold=True))
+    draw.text((cx + 14, bot_y + 8), "Verificação de Conformidade Fiscal:", fill="#166534", font=get_font(9, bold=True))
     draw.text((cx + 14, bot_y + 24), "• Assinatura Digital RSA-SHA256 encadeada com a fatura FT 2026/00147.", fill="#15803d", font=get_font(8))
-    draw.text((cx + 14, bot_y + 38), "• 4 Caracteres de Controlo AGT gerados: a8F4", fill="#15803d", font=get_font(8, bold=True))
-    draw.text((cx + 14, bot_y + 52), "• QR Code Oficial AGT com payload fiscal pronto para impressão.", fill="#15803d", font=get_font(8))
+    draw.text((cx + 14, bot_y + 38), "• 4 Caracteres de Controlo gerados: a8F4", fill="#15803d", font=get_font(8, bold=True))
+    draw.text((cx + 14, bot_y + 52), "• QR Code Oficial com payload fiscal pronto para impressão.", fill="#15803d", font=get_font(8))
     draw.text((cx + 14, bot_y + 66), "• Código de Isenção / Motivo: N/A (Regime Geral de Tributação)", fill="#15803d", font=get_font(8))
     
     # Totals card

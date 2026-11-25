@@ -30,7 +30,7 @@ const slides: {
 }[] = [
   {
     id: 'fiscal',
-    tag: 'Faturação Eletrónica · AGT',
+    tag: 'Faturação Eletrónica',
     title: 'Prepare-se para a faturação eletrónica.',
     subtitle: 'Documentos certificados, QR Code oficial e SAF-T (AO) validado.',
     description:
@@ -77,7 +77,7 @@ const SlideVisual: React.FC<{ id: SlideId }> = ({ id }) => {
         <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Fatura Comercial</p>
-            <p className="mt-0.5 text-sm font-extrabold">FT 2026/000184 · AGT</p>
+            <p className="mt-0.5 text-sm font-extrabold">FT 2026/000184 · Certificada</p>
           </div>
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-800">
             <CheckCircle2 className="h-3 w-3" /> Validada

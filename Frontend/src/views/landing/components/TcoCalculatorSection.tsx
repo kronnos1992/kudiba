@@ -7,21 +7,13 @@ interface TcoCalculatorSectionProps {
 
 export const TcoCalculatorSection: React.FC<TcoCalculatorSectionProps> = ({ onOpenDemoWithPlan }) => {
   const [terminals, setTerminals] = useState<number>(4);
-  const [currentSystem, setCurrentSystem] = useState<string>('primavera');
   const [hasDedicatedServer, setHasDedicatedServer] = useState<boolean>(true);
 
   // Estimativa comercial realista em Angola (câmbio de referência e licenciamento em moeda externa)
   const usdExchangeRate = 950;
 
-  const legacySystemNames: Record<string, string> = {
-    primavera: 'Primavera / Cegid',
-    phc: 'PHC CS',
-    sage: 'Sage',
-    outro: 'Outro Sistema Tradicional',
-  };
-
   const calculateLegacyCostAoa = () => {
-    const licensePerTerminalUsd = currentSystem === 'primavera' ? 700 : currentSystem === 'phc' ? 650 : 600;
+    const licensePerTerminalUsd = 700;
     const maintenancePerYearUsd = 800;
     const dbServerCostUsd = hasDedicatedServer ? 1600 : 0;
     const totalUsd = terminals * licensePerTerminalUsd + maintenancePerYearUsd + dbServerCostUsd;
@@ -41,7 +33,7 @@ export const TcoCalculatorSection: React.FC<TcoCalculatorSectionProps> = ({ onOp
   const savingsPercentage = Math.round((annualSavingsAoa / legacyTotal) * 100);
 
   const handleApplySavings = () => {
-    const details = `Simulação de Poupança: ${terminals} postos, transição de ${legacySystemNames[currentSystem] || 'Legado'}, poupança prevista de ${annualSavingsAoa.toLocaleString('pt-AO')} Kz/ano`;
+    const details = `Simulação de Poupança: ${terminals} postos, poupança prevista de ${annualSavingsAoa.toLocaleString('pt-AO')} Kz/ano`;
     if (onOpenDemoWithPlan) {
       onOpenDemoWithPlan(details);
     }
@@ -62,7 +54,7 @@ export const TcoCalculatorSection: React.FC<TcoCalculatorSectionProps> = ({ onOp
           </p>
         </div>
 
-        {/* Calculator Widget (Estilo Corporativo Limpo) */}
+        {/* Calculator Widget */}
         <div className="mt-12 grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-center">
           {/* Controls */}
           <div className="lg:col-span-7 rounded-lg border border-slate-200 bg-slate-50 p-6 sm:p-8 dark:border-slate-800 dark:bg-slate-900">
@@ -88,33 +80,6 @@ export const TcoCalculatorSection: React.FC<TcoCalculatorSectionProps> = ({ onOp
                 <span>1 posto (Loja individual)</span>
                 <span>8 postos (PME em crescimento)</span>
                 <span>25 postos (Rede multi-loja)</span>
-              </div>
-            </div>
-
-            <div className="mt-8">
-              <label className="text-sm font-bold text-slate-900 dark:text-white block mb-3">
-                Software de faturação utilizado atualmente
-              </label>
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                {[
-                  { id: 'primavera', label: 'Primavera' },
-                  { id: 'phc', label: 'PHC CS' },
-                  { id: 'sage', label: 'Sage' },
-                  { id: 'outro', label: 'Outro' },
-                ].map((sys) => (
-                  <button
-                    key={sys.id}
-                    type="button"
-                    onClick={() => setCurrentSystem(sys.id)}
-                    className={`rounded-xl border p-3 text-center text-xs font-bold transition ${
-                      currentSystem === sys.id
-                        ? 'border-emerald-700 bg-white text-emerald-900 shadow-sm dark:bg-emerald-950 dark:border-emerald-500 dark:text-emerald-200 ring-2 ring-emerald-600/30'
-                        : 'border-slate-200 bg-white/70 text-slate-700 hover:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                    }`}
-                  >
-                    {sys.label}
-                  </button>
-                ))}
               </div>
             </div>
 
@@ -182,7 +147,7 @@ export const TcoCalculatorSection: React.FC<TcoCalculatorSectionProps> = ({ onOp
               <div className="mt-6 space-y-3 pt-6 border-t border-slate-800 text-xs">
                 <div>
                   <div className="flex justify-between text-slate-300 mb-1">
-                    <span>Custo Estimado Atual ({legacySystemNames[currentSystem] || 'Legado'})</span>
+                    <span>Custo Estimado Atual (Modelo Convencional)</span>
                     <span className="font-mono font-bold text-rose-300">
                       {legacyTotal.toLocaleString('pt-AO')} Kz/ano
                     </span>

@@ -18,7 +18,7 @@ const articles = [
   {
     category: 'Guias Práticos',
     date: '04 de novembro de 2026',
-    title: 'Como preparar o ficheiro SAF-T (AO) sem rejeições da AGT',
+    title: 'Como preparar o ficheiro SAF-T (AO) sem rejeições no portal tributário',
     excerpt:
       'Um checklist simples para validar os dados mestres, séries documentais e impostos antes de entregar o ficheiro mensal de auditoria tributária.',
     icon: BookOpen,

@@ -53,7 +53,7 @@ export const TermsAndPoliciesModal: React.FC<TermsAndPoliciesModalProps> = ({
                 Documentação Jurídica & Termos Oficiais
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Kudiba ERP • YHADI SOLUÇÕES (SU), LDA • Certificação AGT N.º FE/528/AGT/2026
+                Kudiba ERP • YHADI SOLUÇÕES (SU), LDA • Certificação N.º FE/528/AGT/2026
               </p>
             </div>
           </div>
@@ -191,7 +191,7 @@ export const TermsAndPoliciesModal: React.FC<TermsAndPoliciesModalProps> = ({
                   4. Arquivo Legal e Exportação SAF-T (AO)
                 </h4>
                 <p>
-                  Nos termos do Código Comercial de Angola, os registos de suporte fiscal e contabilístico são mantidos em arquivo eletrónico seguro pelo período legal de 10 (dez) anos civis. O Cliente pode exportar e descarregar a qualquer momento a totalidade dos seus registos no formato oficial SAF-T (AO) v1.01_01, para submissão mensal no Portal de Contribuintes da AGT.
+                  Nos termos do Código Comercial de Angola, os registos de suporte fiscal e contabilístico são mantidos em arquivo eletrónico seguro pelo período legal de 10 (dez) anos civis. O Cliente pode exportar e descarregar a qualquer momento a totalidade dos seus registos no formato oficial SAF-T (AO) v1.01_01, para submissão mensal no Portal de Contribuintes.
                 </p>
               </div>
 
@@ -231,7 +231,7 @@ export const TermsAndPoliciesModal: React.FC<TermsAndPoliciesModalProps> = ({
                   2. Dados de Clientes no Ponto de Venda e "Consumidor Final"
                 </h4>
                 <p>
-                  Nas vendas a dinheiro e operações de balcão atribuídas a "Consumidor Final" (NIF 999999999), o sistema não exige nem armazena moradas pessoais ou dados residenciais, assegurando a privacidade das transações diárias de retalho e conformidade com as normas da AGT.
+                  Nas vendas a dinheiro e operações de balcão atribuídas a "Consumidor Final" (NIF 999999999), o sistema não exige nem armazena moradas pessoais ou dados residenciais, assegurando a privacidade das transações diárias de retalho e conformidade com as normas fiscais aplicáveis.
                 </p>
               </div>
 
@@ -338,16 +338,16 @@ export const TermsAndPoliciesModal: React.FC<TermsAndPoliciesModalProps> = ({
                   1. Objeto e Âmbito de Licenciamento
                 </h4>
                 <p>
-                  A YHADI SOLUÇÕES concede ao Subscritor uma licença de uso do software Kudiba ERP na modalidade SaaS, não exclusiva e intransmissível, abrangendo os módulos subscritos (Facturação, Gestão de Stock, Tesouraria &amp; Caixa, Recursos Humanos, Contabilidade e Integrações), incluindo manutenção corretiva e atualizações regulamentares fiscais da AGT.
+                  A YHADI SOLUÇÕES concede ao Subscritor uma licença de uso do software Kudiba ERP na modalidade SaaS, não exclusiva e intransmissível, abrangendo os módulos subscritos (Facturação, Gestão de Stock, Tesouraria &amp; Caixa, Recursos Humanos, Contabilidade e Integrações), incluindo manutenção corretiva e atualizações regulamentares fiscais.
                 </p>
               </div>
 
               <div>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1.5">
-                  2. Garantia de Conformidade AGT (FE/528/AGT/2026)
+                  2. Garantia de Conformidade Fiscal (FE/528/AGT/2026)
                 </h4>
                 <p>
-                  A Fornecedora garante que o Kudiba ERP encontra-se devidamente homologado pela Administração Geral Tributária de Angola sob o certificado n.º <strong>FE/528/AGT/2026</strong>. Toda emissão cumpre o encadeamento de séries e regras de assinatura RSA-2048 / SHA-256 impostas pelo Decreto Presidencial 71/25.
+                  A Fornecedora garante que o Kudiba ERP encontra-se devidamente homologado sob o certificado n.º <strong>FE/528/AGT/2026</strong>. Toda emissão cumpre o encadeamento de séries e regras de assinatura RSA-2048 / SHA-256 impostas pelo Decreto Presidencial 71/25.
                 </p>
               </div>
 
@@ -356,7 +356,7 @@ export const TermsAndPoliciesModal: React.FC<TermsAndPoliciesModalProps> = ({
                   3. Nível de Disponibilidade (SLA) e Continuidade
                 </h4>
                 <p>
-                  É assegurado um nível de disponibilidade mensal de 99,5%, com backups diários encriptados e capacidade de operação em contingência fiscal local quando da ausência de internet ou indisponibilidade temporária de webservices da AGT.
+                  É assegurado um nível de disponibilidade mensal de 99,5%, com backups diários encriptados e capacidade de operação em contingência fiscal local quando da ausência de internet ou indisponibilidade temporária de webservices fiscais.
                 </p>
               </div>
 
@@ -384,7 +384,7 @@ export const TermsAndPoliciesModal: React.FC<TermsAndPoliciesModalProps> = ({
             <div className="space-y-4">
               <div className="p-3.5 bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xl text-amber-900 dark:text-amber-300 text-xs flex items-center justify-between">
                 <span className="font-semibold flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Software Certificado pela AGT: N.º FE/528/AGT/2026
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Software Certificado: N.º FE/528/AGT/2026
                 </span>
                 <span className="flex items-center gap-1 text-[11px] opacity-80">
                   Decreto Presidencial 71/25
@@ -393,10 +393,10 @@ export const TermsAndPoliciesModal: React.FC<TermsAndPoliciesModalProps> = ({
 
               <div>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1.5">
-                  1. Homologação e Certificação Tributária
+                  1. Homologação e Certificação Fiscal
                 </h4>
                 <p>
-                  O Kudiba ERP é oficialmente certificado pela Administração Geral Tributária (AGT) sob a licença de validação n.º <strong className="font-mono text-emerald-700 dark:text-emerald-400">FE/528/AGT/2026</strong>. Todo o motor de cálculo, regras de arredondamento comercial (arredondamento simétrico afastando de zero), taxas de IVA (14%, 7%, 5%, 0%) e códigos de isenção de M00 a M14 foram validados perante os padrões regulatórios nacionais.
+                  O Kudiba ERP é oficialmente certificado sob a licença de validação n.º <strong className="font-mono text-emerald-700 dark:text-emerald-400">FE/528/AGT/2026</strong>. Todo o motor de cálculo, regras de arredondamento comercial (arredondamento simétrico afastando de zero), taxas de IVA (14%, 7%, 5%, 0%) e códigos de isenção de M00 a M14 foram validados perante os padrões regulatórios nacionais.
                 </p>
               </div>
 
@@ -414,7 +414,7 @@ export const TermsAndPoliciesModal: React.FC<TermsAndPoliciesModalProps> = ({
                   3. Ficheiro SAF-T (AO) v1.01_01
                 </h4>
                 <p>
-                  O ficheiro SAF-T de faturação gerado na plataforma respeita integralmente o esquema XSD oficial da AGT (Portaria n.º 1.01_01), permitindo a validação direta e sem erros na plataforma de auditoria do Ministério das Finanças.
+                  O ficheiro SAF-T de faturação gerado na plataforma respeita integralmente o esquema XSD oficial (Portaria n.º 1.01_01), permitindo a validação direta e sem erros na plataforma de auditoria do Ministério das Finanças.
                 </p>
               </div>
 
@@ -423,7 +423,7 @@ export const TermsAndPoliciesModal: React.FC<TermsAndPoliciesModalProps> = ({
                   4. Conector em Tempo Real e Contingência
                 </h4>
                 <p>
-                  O conector fiscal implementa a comunicação assíncrona por lote via webservices AGT (endpoint <code className="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">/sigt/fe/v1/registarFactura</code>) com captura de <code className="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">requestID</code>. Na eventualidade de falha de ligação, os documentos são mantidos em contingência local e expedidos sem intervenção manual logo após a normalização.
+                  O conector fiscal implementa a comunicação assíncrona por lote via webservices fiscais (endpoint <code className="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">/sigt/fe/v1/registarFactura</code>) com captura de <code className="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">requestID</code>. Na eventualidade de falha de ligação, os documentos são mantidos em contingência local e expedidos sem intervenção manual logo após a normalização.
                 </p>
               </div>
             </div>

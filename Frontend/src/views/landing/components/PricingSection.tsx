@@ -16,7 +16,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) 
       popular: false,
       terminals: 'Até 3 postos de atendimento',
       features: [
-        'Faturação Comercial Certificada AGT (FT, FR, NC, ND, GT)',
+        'Faturação Comercial Certificada (FT, FR, NC, ND, GT)',
         'Ponto de Venda (POS) com emissão e talão térmico 100% offline',
         'QR Code oficial e assinatura digital em conformidade',
         'Gestão de stocks essencial e inventário físico',
@@ -80,11 +80,11 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) 
             Investimento 100% em Kwanzas, sem custos surpresa
           </h2>
           <p className="mt-4 text-base text-slate-600 dark:text-slate-300">
-            Escolha o plano ajustado à dimensão da sua empresa. Todas as subscrições incluem as atualizações legais da AGT e o suporte técnico especializado.
+            Escolha o plano ajustado à dimensão da sua empresa. Todas as subscrições incluem atualizações legais e fiscais e suporte técnico especializado.
           </p>
         </div>
 
-        {/* Pricing Cards Grid (Estilo Corporativo SAP / Primavera) */}
+        {/* Pricing Cards Grid */}
         <div className="mt-14 grid grid-cols-1 gap-8 lg:grid-cols-3 items-stretch">
           {plans.map((p, idx) => (
             <div

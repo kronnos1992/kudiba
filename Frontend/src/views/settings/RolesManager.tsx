@@ -90,7 +90,7 @@ export const CANONICAL_SYSTEM_PERMISSIONS: PermissionCatalogItem[] = [
 
   // Integrações & Biometria
   { id: 'integrations:read', module: 'integrations', name: 'Consultar Dispositivos & Presenças', description: 'Visualização de terminais biométricos conectados, webhooks e marcações de ponto' },
-  { id: 'integrations:manage', module: 'integrations', name: 'Gerir Terminais & Mapeamentos', description: 'Parametrização de terminais biométricos (Hikvision, ZKTeco, Anviz) e regras de sincronização' },
+  { id: 'integrations:manage', module: 'integrations', name: 'Gerir Terminais & Mapeamentos', description: 'Parametrização de terminais biométricos e regras de sincronização' },
 ];
 
 const normalizeModule = (module: string): string => {
