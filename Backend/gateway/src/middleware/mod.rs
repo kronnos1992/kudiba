@@ -53,6 +53,13 @@ pub fn is_auth_service_path(path: &str) -> bool {
         || clean.starts_with("/auth/")
         || clean == "/api/v1/auth"
         || clean.starts_with("/api/v1/auth/")
+        || clean == "/authorize"
+        || clean == "/token"
+        || clean == "/userinfo"
+        || clean == "/logout"
+        || clean == "/.well-known/jwks.json"
+        || clean == "/.well-known/openid-configuration"
+        || clean.starts_with("/.well-known/")
 }
 
 /// Centraliza a definição de rotas públicas isentas de autenticação e tenant
@@ -82,13 +89,23 @@ pub fn is_public_path(path: &str) -> bool {
         return true;
     }
 
-    // Autenticação Pública e JWKS
+    // Autenticação Pública, OAuth 2.0 e JWKS
     if clean == "/auth/login"
         || clean == "/auth/refresh"
         || clean == "/auth/.well-known/jwks.json"
+        || clean == "/auth/.well-known/openid-configuration"
+        || clean == "/auth/authorize"
+        || clean == "/auth/token"
         || clean == "/api/v1/auth/login"
         || clean == "/api/v1/auth/refresh"
         || clean == "/api/v1/auth/.well-known/jwks.json"
+        || clean == "/api/v1/auth/.well-known/openid-configuration"
+        || clean == "/api/v1/auth/authorize"
+        || clean == "/api/v1/auth/token"
+        || clean == "/authorize"
+        || clean == "/token"
+        || clean == "/.well-known/jwks.json"
+        || clean == "/.well-known/openid-configuration"
     {
         return true;
     }

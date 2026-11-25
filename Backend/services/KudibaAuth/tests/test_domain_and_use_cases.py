@@ -263,7 +263,7 @@ class MockPasswordHasher(IPasswordHasher):
 
 
 class MockTokenService(ITokenService):
-    def create_access_token(self, user_id, tenant_id, roles, permissions, tenant_slug=None, branch_id=None, expires_minutes=None, modules=None):
+    def create_access_token(self, user_id, tenant_id, roles, permissions, tenant_slug=None, branch_id=None, expires_minutes=None, modules=None, aud=None):
         return f"jwt_{user_id}_{tenant_id}", str(uuid.uuid4()), int(datetime.now(timezone.utc).timestamp()) + 900
 
     def decode_access_token(self, token: str):
@@ -276,12 +276,16 @@ class MockTokenService(ITokenService):
     def hash_refresh_token(self, raw_token: str) -> str:
         return f"hash_{raw_token}"
 
+    def get_jwks(self):
+        return {"keys": [{"kty": "RSA", "kid": "mock-kid", "alg": "RS256"}]}
+
 
 class MockCacheService(ICacheService):
     def __init__(self):
         self.blacklist = set()
         self.revoked_before: Dict[str, int] = {}
         self.user_revoked_before: Dict[str, int] = {}
+        self.auth_codes: Dict[str, str] = {}
 
     async def blacklist_token(self, jti: str, ttl_seconds: int) -> None:
         self.blacklist.add(jti)
@@ -300,6 +304,12 @@ class MockCacheService(ICacheService):
 
     async def get_user_revoked_before(self, user_id: str) -> int:
         return self.user_revoked_before.get(user_id, 0)
+
+    async def store_authorization_code(self, code: str, payload_json: str, ttl_seconds: int = 60) -> None:
+        self.auth_codes[code] = payload_json
+
+    async def pop_authorization_code(self, code: str) -> Optional[str]:
+        return self.auth_codes.pop(code, None)
 
 
 class MockAuditRepository(IAuditRepository):

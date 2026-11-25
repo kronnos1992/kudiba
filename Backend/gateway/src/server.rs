@@ -138,6 +138,11 @@ pub fn create_router(
         .route("/auth", any(forward_to_auth))
         .route("/api/v1/auth/{*path}", any(forward_to_auth))
         .route("/api/v1/auth", any(forward_to_auth))
+        .route("/authorize", any(forward_to_auth))
+        .route("/token", any(forward_to_auth))
+        .route("/userinfo", any(forward_to_auth))
+        .route("/logout", any(forward_to_auth))
+        .route("/.well-known/{*path}", any(forward_to_auth))
         .layer(axum_mw::from_fn_with_state(
             state.clone(),
             rate_limit_middleware,

@@ -54,6 +54,9 @@ class AppState:
     role_repo: SqlAlchemyRoleRepository
     audit_repo: SqlAlchemyAuditRepository
     tenant_repo: SqlAlchemyTenantRepository
+    user_repo: SqlAlchemyUserRepository
+    user_tenant_repo: SqlAlchemyUserTenantRepository
+    refresh_token_repo: SqlAlchemyRefreshTokenRepository
     backup_service: TenantBackupService
 
     # Casos de Uso (Commands)
@@ -255,6 +258,9 @@ def create_app_state(config: Settings, session_factory: async_sessionmaker[Async
         role_repo=role_repo,
         audit_repo=audit_repo,
         tenant_repo=tenant_repo,
+        user_repo=user_repo,
+        user_tenant_repo=user_tenant_repo,
+        refresh_token_repo=refresh_token_repo,
         backup_service=backup_service,
         authenticate_user=authenticate_user,
         rotate_refresh_token=rotate_refresh_token,

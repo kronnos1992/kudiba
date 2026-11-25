@@ -14,12 +14,18 @@ class ITokenService(ABC):
         branch_id: Optional[str] = None,
         expires_minutes: Optional[int] = None,
         modules: Optional[List[str]] = None,
+        aud: Optional[str] = None,
     ) -> Tuple[str, str, int]:
         """Retorna (token_jwt, jti, exp_timestamp)."""
         pass
 
     @abstractmethod
     def decode_access_token(self, token: str) -> Dict[str, Any]:
+        pass
+
+    @abstractmethod
+    def get_jwks(self) -> Dict[str, Any]:
+        """Retorna o conjunto de chaves públicas em formato standard JWKS (RFC 7517)."""
         pass
 
     @abstractmethod

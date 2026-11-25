@@ -12,7 +12,7 @@ from src.config import get_settings
 from src.domain.error import DomainError
 from src.presentation.http.error_handlers import domain_error_handler
 from src.presentation.http.gateway_signature import install_gateway_signature_middleware
-from src.presentation.http.routes import create_auth_router
+from src.presentation.http.routes import create_auth_router, create_oauth_router
 from src.state import create_app_state
 
 settings = get_settings()
@@ -148,6 +148,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.app_state = app_state
+
 # Registra o tratador global de erros de domínio RFC 7807
 app.add_exception_handler(DomainError, domain_error_handler)
 
@@ -256,7 +258,10 @@ async def readiness_check():
     )
 
 
-# Registra o router HTTP do Auth
+# Registra os routers HTTP: OAuth 2.0 / OIDC Core (raiz) e Auth Gestão (/auth, /api/v1/auth)
+oauth_router = create_oauth_router()
+app.include_router(oauth_router)
+
 auth_router = create_auth_router()
 app.include_router(auth_router, prefix="/auth", include_in_schema=False)
 app.include_router(auth_router, prefix="/api/v1/auth")

@@ -15,6 +15,7 @@ class KudibaClaims:
     tenant_slug: Optional[str] = None
     branch_id: Optional[str] = None
     modules: Optional[List[str]] = None
+    aud: Optional[str] = None
 
     def to_dict(self) -> dict:
         payload = {
@@ -30,4 +31,6 @@ class KudibaClaims:
         }
         if self.modules is not None:
             payload["modules"] = list(self.modules)
+        if self.aud is not None:
+            payload["aud"] = self.aud
         return payload

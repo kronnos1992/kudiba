@@ -27,6 +27,8 @@ pub struct KudibaClaims {
     #[serde(default)]
     pub iat: Option<usize>,
     pub jti: Option<String>,
+    #[serde(default)]
+    pub aud: Option<String>,
 }
 
 /// Mapeia o caminho da API ao módulo de negócio exigido pela licença do cliente.

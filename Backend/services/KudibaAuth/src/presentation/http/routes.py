@@ -1,11 +1,13 @@
 import asyncio
 import base64
+import json
+import secrets
 import shutil
 import time
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import asyncpg
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
@@ -50,6 +52,15 @@ class LoginHttpRequest(BaseModel):
 
 class RefreshHttpRequest(BaseModel):
     refresh_token: Optional[str] = Field(None, description="Refresh token emitido anteriormente (opcional se fornecido via Cookie HttpOnly)")
+
+
+class TokenHttpRequest(BaseModel):
+    grant_type: str = Field("authorization_code", description="Tipo de concessão OAuth 2.0 (authorization_code ou refresh_token)")
+    code: Optional[str] = Field(None, description="Código de autorização emitido por /authorize")
+    client_id: Optional[str] = Field(None, description="Identificador do cliente ou módulo (ex: gsin)")
+    redirect_uri: Optional[str] = Field(None, description="URI de redirecionamento para validação")
+    refresh_token: Optional[str] = Field(None, description="Refresh token para renovação de sessão")
+    client_secret: Optional[str] = Field(None, description="Segredo do cliente (opcional)")
 
 
 class SwitchTenantHttpRequest(BaseModel):
@@ -237,8 +248,324 @@ def _ensure_platform_admin(ctx: SecurityContext) -> None:
         )
 
 
+def create_oauth_router() -> APIRouter:
+    router = APIRouter(tags=["OAuth 2.0 / OIDC Core"])
+
+    @router.post(
+        "/logout",
+        status_code=status.HTTP_204_NO_CONTENT,
+        summary="Encerrar Sessão",
+        description="Executa o caso de uso LogoutUserUseCase revogando a sessão no banco e adicionando o JWT à blacklist no Redis.",
+    )
+    async def logout(
+        request: Request,
+        response: Response,
+        req: Optional[RefreshHttpRequest] = None,
+        authorization: Optional[str] = Header(None),
+    ):
+        app_state = get_app_state(request)
+        access_jti = None
+        access_exp = None
+        user_id = None
+        if authorization and authorization.startswith("Bearer "):
+            try:
+                claims = app_state.token_service.decode_access_token(authorization[7:].strip())
+                access_jti = claims.get("jti")
+                access_exp = claims.get("exp")
+                user_id = uuid.UUID(claims["sub"])
+            except Exception:
+                pass
+
+        token = (req.refresh_token if req and req.refresh_token else None) or request.cookies.get("refresh_token")
+        cmd = LogoutUserCommand(
+            user_id=user_id,
+            refresh_token=token,
+            access_token_jti=access_jti,
+            access_token_exp=access_exp,
+            ip_address=extract_client_ip(request),
+        )
+        await app_state.logout_user.execute(cmd)
+        response.delete_cookie(key="refresh_token", path="/api/v1/auth")
+
+    @router.get(
+        "/authorize",
+        summary="OAuth 2.0 Authorization Code Grant",
+        description="Inicia sessão e emite um código de autorização de curta duração (TTL 60s) para o client_id solicitado.",
+    )
+    async def authorize(
+        request: Request,
+        client_id: str = "gsin",
+        redirect_uri: Optional[str] = None,
+        state: Optional[str] = None,
+        response_type: str = "code",
+        scope: Optional[str] = None,
+        authorization: Optional[str] = Header(None),
+        token: Optional[str] = None,
+    ):
+        if response_type != "code":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Apenas response_type='code' é suportado pelo fluxo de autorização.",
+            )
+        app_state = get_app_state(request)
+        bearer = None
+        if authorization and authorization.startswith("Bearer "):
+            bearer = authorization[7:].strip()
+        elif token:
+            bearer = token
+
+        claims = None
+        if bearer:
+            try:
+                claims = app_state.token_service.decode_access_token(bearer)
+            except Exception:
+                pass
+
+        if not claims:
+            refresh_cookie = request.cookies.get("refresh_token")
+            if refresh_cookie:
+                try:
+                    ref_hash = app_state.token_service.hash_refresh_token(refresh_cookie)
+                    db_ref = await app_state.refresh_token_repo.find_by_token_hash(ref_hash)
+                    if db_ref and db_ref.is_active:
+                        user = await app_state.user_repo.find_by_id(db_ref.user_id)
+                        if user and user.is_active:
+                            memberships = await app_state.user_tenant_repo.find_user_memberships(user.id)
+                            active_m = next((m for m in memberships if m.tenant_id == db_ref.tenant_id and m.is_active), None)
+                            if active_m:
+                                claims = {
+                                    "sub": str(user.id),
+                                    "tenant_id": str(active_m.tenant_id),
+                                    "roles": [r.value for r in active_m.roles],
+                                    "permissions": [],
+                                    "branch_id": str(active_m.default_branch_id) if active_m.default_branch_id else None,
+                                }
+                except Exception:
+                    pass
+
+        if not claims:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Sessão não iniciada. Efetue login em /auth/login para autorizar a aplicação.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        code = secrets.token_urlsafe(32)
+        code_payload = {
+            "user_id": str(claims.get("sub")),
+            "tenant_id": str(claims.get("tenant_id")),
+            "tenant_slug": claims.get("tenant_slug"),
+            "branch_id": claims.get("branch_id"),
+            "roles": claims.get("roles", []),
+            "permissions": claims.get("permissions", []),
+            "modules": claims.get("modules"),
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": scope,
+            "state": state,
+        }
+        await app_state.cache.store_authorization_code(code, json.dumps(code_payload), ttl_seconds=60)
+
+        if redirect_uri:
+            url_parts = list(urlparse(redirect_uri))
+            query = dict(parse_qsl(url_parts[4]))
+            query["code"] = code
+            if state:
+                query["state"] = state
+            url_parts[4] = urlencode(query)
+            target_url = urlunparse(url_parts)
+            return Response(status_code=status.HTTP_302_FOUND, headers={"Location": target_url})
+
+        return {
+            "code": code,
+            "state": state,
+            "client_id": client_id,
+            "expires_in": 60,
+            "token_type": "Bearer",
+        }
+
+    @router.post(
+        "/token",
+        summary="Troca de Código por Access Token (OAuth 2.0)",
+        description="Troca o authorization code pelo access token com claim 'aud' do módulo alvo e emite refresh token.",
+    )
+    async def exchange_token(
+        request: Request,
+        response: Response,
+        body: Optional[TokenHttpRequest] = None,
+    ):
+        app_state = get_app_state(request)
+        grant_type = (body.grant_type if body else None) or "authorization_code"
+        code = body.code if body else None
+        client_id = body.client_id if body else None
+        refresh_tok = body.refresh_token if body else None
+
+        if request.headers.get("content-type", "").startswith("application/x-www-form-urlencoded"):
+            form_data = await request.form()
+            grant_type = form_data.get("grant_type", grant_type)
+            code = form_data.get("code", code)
+            client_id = form_data.get("client_id", client_id)
+            refresh_tok = form_data.get("refresh_token", refresh_tok)
+
+        if grant_type == "authorization_code":
+            if not code:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Parâmetro 'code' é obrigatório para grant_type='authorization_code'.",
+                )
+            raw_data = await app_state.cache.pop_authorization_code(code)
+            if not raw_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Código de autorização inválido ou expirado.",
+                )
+            code_data = json.loads(raw_data)
+            target_aud = client_id or code_data.get("client_id")
+
+            access_token, jti, exp = app_state.token_service.create_access_token(
+                user_id=code_data["user_id"],
+                tenant_id=code_data["tenant_id"],
+                tenant_slug=code_data.get("tenant_slug"),
+                branch_id=code_data.get("branch_id"),
+                roles=code_data.get("roles", []),
+                permissions=code_data.get("permissions", []),
+                modules=code_data.get("modules"),
+                aud=target_aud,
+            )
+
+            raw_ref, ref_hash = app_state.token_service.generate_refresh_token()
+            now = datetime.now(timezone.utc)
+            days = app_state.config.refresh_token_expiration_days
+            from src.domain.entities.refresh_token import RefreshToken
+            ref_entity = RefreshToken(
+                id=uuid.uuid4(),
+                user_id=uuid.UUID(code_data["user_id"]),
+                tenant_id=uuid.UUID(code_data["tenant_id"]),
+                token_hash=ref_hash,
+                family_id=uuid.uuid4(),
+                expires_at=now + timedelta(days=days),
+                is_revoked=False,
+                user_agent=request.headers.get("User-Agent"),
+                ip_address=extract_client_ip(request),
+                created_at=now,
+            )
+            try:
+                await app_state.refresh_token_repo.save(ref_entity)
+            except Exception:
+                pass
+
+            is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+            response.set_cookie(
+                key="refresh_token",
+                value=raw_ref,
+                max_age=30 * 24 * 3600,
+                httponly=True,
+                secure=is_secure,
+                samesite="lax",
+                path="/api/v1/auth",
+            )
+
+            return {
+                "access_token": access_token,
+                "token_type": "Bearer",
+                "expires_in": app_state.config.jwt_access_expiration_minutes * 60,
+                "refresh_token": raw_ref,
+                "aud": target_aud,
+                "scope": code_data.get("scope") or "",
+            }
+
+        elif grant_type == "refresh_token":
+            tok = refresh_tok or request.cookies.get("refresh_token")
+            if not tok:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Refresh token não fornecido.",
+                )
+            cmd = RotateRefreshTokenCommand(
+                refresh_token=tok,
+                ip_address=extract_client_ip(request),
+                user_agent=request.headers.get("User-Agent"),
+            )
+            res = await app_state.rotate_refresh_token.execute(cmd)
+            return {
+                "access_token": res.access_token,
+                "token_type": "Bearer",
+                "expires_in": app_state.config.jwt_access_expiration_minutes * 60,
+                "refresh_token": res.refresh_token,
+                "aud": client_id,
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"grant_type '{grant_type}' não suportado.",
+            )
+
+    @router.get(
+        "/userinfo",
+        summary="Informações do Utilizador (OIDC / OAuth 2.0)",
+        description="Retorna sub, email, nome e papel global do utilizador autenticado.",
+    )
+    async def userinfo(
+        request: Request,
+        ctx: SecurityContext = Depends(get_security_context),
+    ):
+        app_state = get_app_state(request)
+        try:
+            profile = await app_state.get_user_profile.execute(ctx.user_id)
+            email = profile.email
+            nome = profile.full_name
+        except Exception:
+            email = f"user_{str(ctx.user_id)[:8]}@kudiba.ao"
+            nome = "Utilizador do Sistema"
+
+        role = ctx.roles[0] if ctx.roles else "OPERADOR_CAIXA"
+        return {
+            "sub": str(ctx.user_id),
+            "email": email,
+            "nome": nome,
+            "name": nome,
+            "papel_global": role,
+            "roles": ctx.roles,
+            "tenant_id": str(ctx.tenant_id),
+            "branch_id": str(ctx.branch_id) if ctx.branch_id else None,
+        }
+
+    @router.get(
+        "/.well-known/jwks.json",
+        summary="JSON Web Key Set (RFC 7517)",
+        description="Disponibiliza as chaves públicas para validação criptográfica local e descentralizada pelos microsserviços.",
+    )
+    async def get_jwks(request: Request):
+        app_state = get_app_state(request)
+        return app_state.token_service.get_jwks()
+
+    @router.get(
+        "/.well-known/openid-configuration",
+        summary="Descoberta OpenID Connect",
+        description="Metadados de configuração e catálogo de endpoints de autenticação e identidade.",
+    )
+    async def get_openid_configuration(request: Request):
+        base_url = str(request.base_url).rstrip("/")
+        return {
+            "issuer": f"{base_url}",
+            "authorization_endpoint": f"{base_url}/auth/authorize",
+            "token_endpoint": f"{base_url}/auth/token",
+            "userinfo_endpoint": f"{base_url}/auth/userinfo",
+            "jwks_uri": f"{base_url}/auth/.well-known/jwks.json",
+            "response_types_supported": ["code"],
+            "subject_types_supported": ["public"],
+            "id_token_signing_alg_values_supported": ["RS256", "HS256"],
+            "scopes_supported": ["openid", "profile", "email"],
+            "token_endpoint_auth_methods_supported": ["client_secret_post", "none"],
+            "claims_supported": ["sub", "email", "nome", "name", "papel_global", "roles", "tenant_id"],
+        }
+
+    return router
+
+
 def create_auth_router() -> APIRouter:
     router = APIRouter(tags=["Kudiba Auth & Identity"])
+    router.include_router(create_oauth_router())
 
     @router.post(
         "/login",
@@ -298,42 +625,6 @@ def create_auth_router() -> APIRouter:
                 path="/api/v1/auth",
             )
         return res
-
-    @router.post(
-        "/logout",
-        status_code=status.HTTP_204_NO_CONTENT,
-        summary="Encerrar Sessão",
-        description="Executa o caso de uso LogoutUserUseCase revogando a sessão no banco e adicionando o JWT à blacklist no Redis.",
-    )
-    async def logout(
-        request: Request,
-        response: Response,
-        req: Optional[RefreshHttpRequest] = None,
-        authorization: Optional[str] = Header(None),
-    ):
-        app_state = get_app_state(request)
-        access_jti = None
-        access_exp = None
-        user_id = None
-        if authorization and authorization.startswith("Bearer "):
-            try:
-                claims = app_state.token_service.decode_access_token(authorization[7:].strip())
-                access_jti = claims.get("jti")
-                access_exp = claims.get("exp")
-                user_id = uuid.UUID(claims["sub"])
-            except Exception:
-                pass
-
-        token = (req.refresh_token if req and req.refresh_token else None) or request.cookies.get("refresh_token")
-        cmd = LogoutUserCommand(
-            user_id=user_id,
-            refresh_token=token,
-            access_token_jti=access_jti,
-            access_token_exp=access_exp,
-            ip_address=extract_client_ip(request),
-        )
-        await app_state.logout_user.execute(cmd)
-        response.delete_cookie(key="refresh_token", path="/api/v1/auth")
 
     @router.post(
         "/switch-tenant",

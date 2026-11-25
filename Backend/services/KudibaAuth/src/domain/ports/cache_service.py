@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Optional
 
 
 class ICacheService(ABC):
@@ -26,4 +27,14 @@ class ICacheService(ABC):
 
     @abstractmethod
     async def get_user_revoked_before(self, user_id: str) -> int:
+        pass
+
+    @abstractmethod
+    async def store_authorization_code(self, code: str, payload_json: str, ttl_seconds: int = 60) -> None:
+        """Armazena um código de autorização OAuth 2.0 temporário (de curta duração)."""
+        pass
+
+    @abstractmethod
+    async def pop_authorization_code(self, code: str) -> Optional[str]:
+        """Obtém e remove atomicamente o código de autorização (uso único)."""
         pass
