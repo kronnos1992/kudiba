@@ -22,9 +22,11 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ onOpenLogin, onOpe
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Brand: Minimal & Sophisticated */}
         <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-800 text-white shadow-sm dark:bg-emerald-700">
-            <span className="font-sans text-lg font-black tracking-tight text-amber-300">K</span>
-          </div>
+          <img
+            src="/favicon.svg"
+            alt="Kudiba"
+            className="h-9 w-9 rounded-xl shadow-sm"
+          />
           <div className="flex flex-col">
             <span className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white leading-none">
               Kudiba<span className="text-emerald-700 dark:text-emerald-400">ERP</span>

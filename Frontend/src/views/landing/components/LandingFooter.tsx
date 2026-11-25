@@ -31,9 +31,11 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
           {/* Brand info */}
           <div className="lg:col-span-2">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-800 to-teal-900 text-white shadow-md">
-                <span className="font-sans text-xl font-black text-amber-300">K</span>
-              </div>
+              <img
+                src="/favicon.svg"
+                alt="Kudiba"
+                className="h-10 w-10 rounded-xl shadow-md"
+              />
               <div className="flex flex-col">
                 <span className="text-xl font-extrabold tracking-tight text-white leading-none">
                   Kudiba<span className="text-emerald-400">ERP</span>

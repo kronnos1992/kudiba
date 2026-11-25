@@ -125,9 +125,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onBackToLanding }) => {
 
           <div className="relative z-10">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-emerald-900 shadow-lg shadow-black/10">
-                <span className="text-2xl font-black tracking-tighter">K</span>
-              </div>
+              <img
+                src="/favicon.svg"
+                alt="Kudiba"
+                className="h-12 w-12 rounded-2xl shadow-lg shadow-black/10"
+              />
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-2xl font-extrabold tracking-tight">Kudiba</span>
@@ -217,9 +219,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onBackToLanding }) => {
           <div className="mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center py-12">
             <div className="mb-9 lg:hidden">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-700 text-white">
-                  <span className="text-xl font-black">K</span>
-                </div>
+                <img
+                  src="/favicon.svg"
+                  alt="Kudiba"
+                  className="h-10 w-10 rounded-xl"
+                />
                 <span className="text-xl font-extrabold tracking-tight dark:text-white">Kudiba</span>
               </div>
             </div>

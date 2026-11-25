@@ -230,9 +230,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onSelectModule }
       >
         <div className="h-16 px-5 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center font-extrabold text-base shadow-sm">
-              K
-            </div>
+            <img
+              src="/favicon.svg"
+              alt="Kudiba"
+              className="w-8 h-8 rounded-lg shadow-xs"
+            />
             <div>
               <h1 className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight">
                 Kudiba <span className="text-amber-600 dark:text-amber-400">ERP</span>
@@ -341,9 +343,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onSelectModule }
             sidebarCollapsed ? 'justify-center px-2' : 'px-5 gap-3'
           }`}
         >
-          <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center font-extrabold text-base shadow-sm shrink-0">
-            K
-          </div>
+          <img
+            src="/favicon.svg"
+            alt="Kudiba"
+            className="w-8 h-8 rounded-lg shadow-xs shrink-0"
+          />
           {!sidebarCollapsed && (
             <div className="min-w-0">
               <h1 className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight truncate">

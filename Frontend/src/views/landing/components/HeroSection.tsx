@@ -1,26 +1,28 @@
-import React from 'react';
 import {
-  ShieldCheck,
-  CheckCircle2,
   ArrowRight,
   Calculator,
-  Award,
-} from 'lucide-react';
+  CheckCircle2,
+  ShieldCheck,
+} from "lucide-react";
+import React from "react";
 
 interface HeroSectionProps {
   onOpenDemo: () => void;
   onOpenLogin: () => void;
 }
 
-export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenDemo, onOpenLogin }) => {
+export const HeroSection: React.FC<HeroSectionProps> = ({
+  onOpenDemo,
+  onOpenLogin,
+}) => {
   const scrollToSolutions = () => {
-    const el = document.getElementById('solucoes');
-    if (el) el.scrollIntoView({ behavior: 'smooth' });
+    const el = document.getElementById("solucoes");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
   };
 
   const scrollToCalculator = () => {
-    const el = document.getElementById('calculadora');
-    if (el) el.scrollIntoView({ behavior: 'smooth' });
+    const el = document.getElementById("calculadora");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
   };
 
   return (
@@ -36,10 +38,6 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenDemo, onOpenLogi
           {/* Left Column: Commercial & Humanized Presentation */}
           <div className="lg:col-span-7">
             {/* AGT & Certification Badge */}
-            <div className="inline-flex items-center gap-2.5 rounded-full border border-emerald-700/20 bg-emerald-50/80 px-4 py-1.5 text-xs font-bold text-emerald-900 backdrop-blur-sm dark:bg-emerald-950/60 dark:border-emerald-500/30 dark:text-emerald-300">
-              <Award className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-              <span>Certificação AGT n.º FE/528/AGT/2026 • Decreto Presidencial 71/25</span>
-            </div>
 
             {/* Headline */}
             <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl lg:text-6xl dark:text-white leading-[1.14]">
@@ -48,10 +46,15 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenDemo, onOpenLogi
 
             {/* Description */}
             <p className="mt-6 text-base sm:text-lg text-slate-600 dark:text-slate-300 leading-relaxed">
-              O <strong>Kudiba ERP</strong> é a solução de gestão empresarial desenvolvida para responder com exatidão às exigências da Administração Geral Tributária (AGT) e ao Plano Geral de Contabilidade (PGC) de Angola.
+              O <strong>Kudiba ERP</strong> é a solução de gestão empresarial
+              desenvolvida para responder com exatidão às exigências da
+              Administração Geral Tributária (AGT) e ao Plano Geral de
+              Contabilidade (PGC) de Angola.
             </p>
             <p className="mt-2 text-sm sm:text-base font-medium text-slate-800 dark:text-slate-200">
-              Vendas no balcão que não param sem internet, controlo rigoroso de stocks e salários com IRT e INSS — tudo faturado em Kwanzas com estabilidade total para o seu negócio.
+              Vendas no balcão que não param sem internet, controlo rigoroso de
+              stocks e salários com IRT e INSS — tudo faturado em Kwanzas com
+              estabilidade total para o seu negócio.
             </p>
 
             {/* CTAs */}
@@ -86,23 +89,39 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenDemo, onOpenLogi
             {/* Business Pillars Bar */}
             <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-4 pt-6 border-t border-slate-200 dark:border-slate-800">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Moeda Operacional</p>
-                <p className="mt-0.5 text-sm font-extrabold text-slate-900 dark:text-white">Kwanza (AOA)</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Moeda Operacional
+                </p>
+                <p className="mt-0.5 text-sm font-extrabold text-slate-900 dark:text-white">
+                  Kwanza (AOA)
+                </p>
                 <p className="text-[11px] text-slate-500">Sem risco cambial</p>
               </div>
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Ponto de Venda</p>
-                <p className="mt-0.5 text-sm font-extrabold text-slate-900 dark:text-white">Vende Offline</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Ponto de Venda
+                </p>
+                <p className="mt-0.5 text-sm font-extrabold text-slate-900 dark:text-white">
+                  Vende Offline
+                </p>
                 <p className="text-[11px] text-slate-500">A loja nunca pára</p>
               </div>
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Fiscalidade</p>
-                <p className="mt-0.5 text-sm font-extrabold text-slate-900 dark:text-white">SAF-T (AO) 100%</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Fiscalidade
+                </p>
+                <p className="mt-0.5 text-sm font-extrabold text-slate-900 dark:text-white">
+                  SAF-T (AO) 100%
+                </p>
                 <p className="text-[11px] text-slate-500">Decreto 71/25</p>
               </div>
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Arquitetura</p>
-                <p className="mt-0.5 text-sm font-extrabold text-slate-900 dark:text-white">Multi-Filiais</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Arquitetura
+                </p>
+                <p className="mt-0.5 text-sm font-extrabold text-slate-900 dark:text-white">
+                  Multi-Filiais
+                </p>
                 <p className="text-[11px] text-slate-500">Lojas e Holding</p>
               </div>
             </div>
@@ -113,14 +132,18 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenDemo, onOpenLogi
             <div className="rounded-3xl border border-slate-200/90 bg-white p-7 shadow-xl shadow-slate-900/5 dark:border-slate-800 dark:bg-slate-900">
               <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
                 <div className="flex items-center gap-2.5">
-                  <div className="h-8 w-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-extrabold text-sm">
-                    M
-                  </div>
+                  <img
+                    src="/favicon.svg"
+                    alt="Kudiba"
+                    className="h-8 w-8 rounded-lg shadow-xs"
+                  />
                   <div>
                     <span className="text-xs font-bold text-slate-900 dark:text-white block">
                       Painel de Controlo Executivo
                     </span>
-                    <span className="text-[11px] text-slate-400">Visão consolidada em tempo real</span>
+                    <span className="text-[11px] text-slate-400">
+                      Visão consolidada em tempo real
+                    </span>
                   </div>
                 </div>
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
@@ -141,7 +164,8 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenDemo, onOpenLogi
                     </span>
                   </div>
                   <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white font-mono">
-                    12.450.000 <span className="text-sm font-bold text-slate-500">Kz</span>
+                    12.450.000{" "}
+                    <span className="text-sm font-bold text-slate-500">Kz</span>
                   </p>
                   <p className="text-[11px] text-slate-400 mt-0.5">
                     184 documentos assinados digitalmente com QR Code oficial
@@ -182,7 +206,9 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenDemo, onOpenLogi
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                    A sua equipa trabalha com tranquilidade: atualizações fiscais automáticas, apoio técnico em Angola e implementação assistida em 48 horas.
+                    A sua equipa trabalha com tranquilidade: atualizações
+                    fiscais automáticas, apoio técnico em Angola e implementação
+                    assistida em 48 horas.
                   </p>
                 </div>
               </div>
