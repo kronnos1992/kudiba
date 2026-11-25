@@ -17,7 +17,7 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
   const [nif, setNif] = useState('');
   const [phone, setPhone] = useState('');
   const [province, setProvince] = useState('Luanda');
-  const [interest, setInterest] = useState(initialPlan || 'Demonstração Geral do Kudiba ERP');
+  const [interest, setInterest] = useState(initialPlan || 'Apresentação Comercial Kudiba ERP');
   const [submitted, setSubmitted] = useState(false);
 
   if (!isOpen) return null;
@@ -29,9 +29,8 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
 
   const handleOpenWhatsApp = () => {
     const text = encodeURIComponent(
-      `*Olá, equipa Kudiba ERP!*\n\nGostaria de agendar uma demonstração / obter cotação.\n\n*Nome:* ${name || 'Não informado'}\n*Empresa:* ${company || 'Não informada'}\n*NIF:* ${nif || 'Não informado'}\n*Telemóvel:* ${phone || 'Não informado'}\n*Província:* ${province}\n*Interesse / Plano:* ${interest}`
+      `*Olá, equipa MONAIT!*\n\nGostaria de solicitar uma demonstração do Kudiba ERP.\n\n*Responsável:* ${name || 'Não informado'}\n*Empresa:* ${company || 'Não informada'}\n*NIF:* ${nif || 'Não informado'}\n*Telemóvel:* ${phone || 'Não informado'}\n*Província:* ${province}\n*Interesse / Plano:* ${interest}`
     );
-    // WhatsApp direct link (can be customized with real company number, default placeholder +244 923 000 000)
     window.open(`https://wa.me/244923000000?text=${text}`, '_blank');
   };
 
@@ -41,16 +40,21 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
       <div className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 p-6 dark:border-slate-800">
           <div>
-            <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">
-              {submitted ? 'Demonstração Solicitada!' : 'Agendar Demonstração ou Cotação'}
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Kudiba ERP • Resposta rápida da nossa equipa comercial em Angola
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-extrabold text-slate-900 dark:text-white">
+                {submitted ? 'Pedido Registado!' : 'Falar com um Consultor MONAIT'}
+              </span>
+              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                Kudiba ERP
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Apresentação executiva ou simulação de proposta comercial
             </p>
           </div>
           <button
@@ -66,36 +70,36 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
         <div className="p-6">
           {submitted ? (
             <div className="text-center py-4 space-y-4">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
                 <CheckCircle2 className="h-10 w-10" />
               </div>
               <h4 className="text-xl font-bold text-slate-900 dark:text-white">
-                Os seus dados foram registados com sucesso!
+                Obrigado pelo seu interesse!
               </h4>
               <p className="text-sm text-slate-600 dark:text-slate-300 max-w-sm mx-auto">
-                Para um atendimento prioritário e imediato, pode enviar a mensagem formatada diretamente para o nosso WhatsApp:
+                A nossa equipa comercial entrará em contacto brevemente. Se preferir um atendimento imediato, inicie a conversa no WhatsApp:
               </p>
               <button
                 type="button"
                 onClick={handleOpenWhatsApp}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-700/20 hover:bg-emerald-700 transition"
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-800 py-3 text-sm font-bold text-white shadow-md hover:bg-emerald-900 transition dark:bg-emerald-700 dark:hover:bg-emerald-600"
               >
                 <MessageCircle className="h-5 w-5" />
-                <span>Conversar no WhatsApp Agora</span>
+                <span>Conversar com a MONAIT no WhatsApp</span>
               </button>
               <button
                 type="button"
                 onClick={resetAndClose}
                 className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 underline mt-2 block mx-auto"
               >
-                Fechar janela
+                Concluir e fechar
               </button>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Nome do Responsável / Decisor *
+                  Nome do Responsável / Cargo *
                 </label>
                 <div className="relative">
                   <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
@@ -104,8 +108,8 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Ex: Manuel Silva"
-                    className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2 text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    placeholder="Ex: Dr. António Ferreira (Diretor Geral)"
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-1 focus:ring-emerald-700 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                   />
                 </div>
               </div>
@@ -122,8 +126,8 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
                       required
                       value={company}
                       onChange={(e) => setCompany(e.target.value)}
-                      placeholder="Ex: Supermercado Aliança, Lda"
-                      className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2 text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                      placeholder="Ex: Nova Aliança Comércio, Lda"
+                      className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-1 focus:ring-emerald-700 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                     />
                   </div>
                 </div>
@@ -137,7 +141,7 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
                     value={nif}
                     onChange={(e) => setNif(e.target.value)}
                     placeholder="Ex: 5418290192"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-1 focus:ring-emerald-700 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                   />
                 </div>
               </div>
@@ -155,7 +159,7 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="+244 923 000 000"
-                      className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2 text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                      className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-1 focus:ring-emerald-700 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                     />
                   </div>
                 </div>
@@ -167,7 +171,7 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
                   <select
                     value={province}
                     onChange={(e) => setProvince(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-1 focus:ring-emerald-700 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                   >
                     <option value="Luanda">Luanda</option>
                     <option value="Benguela">Benguela</option>
@@ -182,29 +186,29 @@ export const LeadCaptureModal: React.FC<LeadCaptureModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Interesse Principal / Plano
+                  Solução de Interesse
                 </label>
                 <input
                   type="text"
                   value={interest}
                   onChange={(e) => setInterest(e.target.value)}
-                  placeholder="Ex: Kudiba PME Integrado ou POS Offline"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                  placeholder="Ex: Faturação & POS, Stocks, PGC ou Plano PME"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-1 focus:ring-emerald-700 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                 />
               </div>
 
               <div className="pt-2">
                 <button
                   type="submit"
-                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-700/25 hover:bg-emerald-700 active:scale-[0.99] transition"
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-800 py-3 text-sm font-bold text-white shadow-md hover:bg-emerald-900 active:scale-[0.99] transition dark:bg-emerald-700 dark:hover:bg-emerald-600"
                 >
                   <Send className="h-4 w-4" />
-                  <span>Submeter Pedido de Demonstração</span>
+                  <span>Submeter e Solicitar Demonstração</span>
                 </button>
               </div>
 
               <p className="text-[11px] text-center text-slate-400 dark:text-slate-500 pt-1">
-                Ao submeter, os seus dados são protegidos nos termos da Lei de Proteção de Dados de Angola (Lei 22/11).
+                A MONAIT assegura a confidencialidade e proteção dos seus dados nos termos da legislação angolana (Lei 22/11).
               </p>
             </form>
           )}

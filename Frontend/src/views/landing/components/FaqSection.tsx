@@ -1,49 +1,44 @@
 import React, { useState } from 'react';
-import { ChevronDown, HelpCircle } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 
 export const FaqSection: React.FC = () => {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   const faqs = [
     {
-      q: 'O que acontece às minhas vendas se a internet ou o operador de telecomunicações falhar?',
-      a: 'Com o Kudiba POS, a operação não pára. O ponto de venda utiliza uma arquitetura Local-First que armazena localmente os artigos, assina as faturas com o algoritmo fiscal da AGT e imprime os talões térmicos com QR Code normalmente. Assim que a internet regressa, todas as vendas são sincronizadas automaticamente com o servidor central sem qualquer perda de dados.',
+      q: 'O que acontece às vendas no balcão quando o fornecedor de internet tem falhas?',
+      a: 'Com o Kudiba POS, o atendimento ao público não pára. O ponto de venda foi concebido para continuar a emitir faturas e a imprimir talões térmicos com QR Code mesmo sem internet. Assim que a rede estabiliza, os dados de venda são sincronizados automaticamente com a nuvem central.',
     },
     {
-      q: 'Como é feita a migração dos artigos, clientes e stocks do Primavera, PHC ou Sage para o Kudiba?',
-      a: 'O processo é rápido e assistido pela nossa equipa técnica. Podemos carregar a base de dados a partir do ficheiro SAF-T de faturação do seu sistema anterior ou através de ficheiros Excel/CSV. Em 24 a 48 horas a sua empresa já está a faturar no Kudiba com todos os clientes, artigos e preços atualizados.',
+      q: 'Como é realizada a migração a partir do nosso sistema atual (Primavera, PHC, Sage ou Excel)?',
+      a: 'A transição é assistida diretamente pela equipa técnica da MONAIT. Importamos a lista de artigos, clientes, preços de venda e saldos de stock a partir de cópias de segurança, ficheiros SAF-T anteriores ou folhas de cálculo. A sua equipa fica operacional num prazo médio de 24 a 48 horas.',
     },
     {
-      q: 'O Kudiba está em conformidade com o novo Decreto Presidencial n.º 71/25 da AGT?',
-      a: 'Sim. O Kudiba ERP foi desenvolvido e certificado estritamente de acordo com as exigências técnicas da AGT (Registo FE/528/AGT/2026). Possui criptografia RSA-2048, encadeamento SHA-256, os 4 caracteres impressos obrigatórios, QR Code e validação sintática do ficheiro SAF-T (AO) v1.01_01.',
+      q: 'O Kudiba ERP está homologado e certificado pela Administração Geral Tributária (AGT)?',
+      a: 'Sim. O Kudiba ERP é uma solução certificada pela AGT sob o Registo n.º FE/528/AGT/2026, com total conformidade com o Decreto Presidencial n.º 71/25 e o Decreto Executivo n.º 385/20, incluindo a geração e validação do ficheiro SAF-T (AO) v1.01.',
     },
     {
-      q: 'Preciso de comprar um servidor caro com Windows Server para a minha loja ou escritório?',
-      a: 'Não! Essa é uma das maiores vantagens do Kudiba. O sistema corre sobre Linux e PostgreSQL open-source, eliminando os elevados custos de licenciamento da Microsoft (Windows Server e MS SQL Server). Pode usar os computadores que já tem na loja ou um simples mini-PC como terminal.',
+      q: 'Os preços da subscrição são estáveis ou sofrem alterações cambiais ao longo do ano?',
+      a: 'Todos os planos do Kudiba ERP são fixados e faturados 100% em Kwanzas (AOA) pela MONAIT em Angola. A sua empresa tem total previsibilidade de custos operacionais, sem estar exposta à volatilidade do Dólar ou do Euro.',
     },
     {
-      q: 'Os preços apresentados são fixos em Kwanzas ou sofrem ajustes com o câmbio?',
-      a: 'Os preços do Kudiba são 100% fixados em Kwanzas (AOA) e faturados em território angolano. A sua empresa não corre o risco de ver a mensalidade duplicar de um mês para o outro devido à desvalorização cambial face ao Dólar ou Euro.',
-    },
-    {
-      q: 'Como funciona o suporte técnico e a assistência presencial nas províncias?',
-      a: 'Disponibilizamos suporte remoto imediato via WhatsApp, telefone e ligação remota para todo o país. Para clientes com planos PME e Corporate ou redes de lojas fora de Luanda (Benguela, Huambo, Huíla, Cabinda, etc.), dispomos de técnicos parceiros credenciados para instalação de hardware e apoio local.',
+      q: 'Como funciona a assistência técnica e formação nas diferentes províncias de Angola?',
+      a: 'Disponibilizamos apoio de proximidade com suporte telefónico, WhatsApp e assistência remota em tempo real. Para empresas com filiais fora de Luanda (Benguela, Huambo, Huíla, Cabinda e outras), prestamos apoio de implementação e formação operacional das equipas.',
     },
   ];
 
   return (
-    <section id="faq" className="py-16 sm:py-24 bg-slate-50/50 dark:bg-slate-900/30 border-t border-slate-200/80 dark:border-slate-800/80">
+    <section id="faq" className="py-16 sm:py-24 bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-200/90 dark:border-slate-800/90">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
         <div className="text-center">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 ring-1 ring-inset ring-emerald-600/20 dark:bg-emerald-950/50 dark:text-emerald-300">
-            <HelpCircle className="h-3.5 w-3.5" />
-            <span>Perguntas Frequentes</span>
-          </div>
-          <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
-            Tire todas as suas dúvidas sobre o Kudiba ERP
+          <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+            Esclarecimentos Frequentes
+          </span>
+          <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
+            Perguntas Frequentes sobre o Kudiba ERP
           </h2>
           <p className="mt-4 text-slate-600 dark:text-slate-300">
-            Tudo o que precisa de saber antes de modernizar a gestão da sua empresa.
+            Respostas diretas às principais dúvidas de empresários, administradores e contabilistas.
           </p>
         </div>
 
@@ -53,23 +48,23 @@ export const FaqSection: React.FC = () => {
             return (
               <div
                 key={index}
-                className="overflow-hidden rounded-2xl border border-slate-200 bg-white transition shadow-sm dark:border-slate-800 dark:bg-slate-950"
+                className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950 transition"
               >
                 <button
                   type="button"
                   onClick={() => setOpenIndex(isOpen ? null : index)}
-                  className="flex w-full items-center justify-between p-5 text-left text-sm sm:text-base font-bold text-slate-900 hover:text-emerald-600 dark:text-white dark:hover:text-emerald-400 transition"
+                  className="flex w-full items-center justify-between p-5 sm:p-6 text-left text-sm sm:text-base font-bold text-slate-900 hover:text-emerald-800 dark:text-white dark:hover:text-emerald-400 transition"
                 >
                   <span className="pr-4">{faq.q}</span>
                   <ChevronDown
                     className={`h-5 w-5 shrink-0 text-slate-400 transition-transform duration-200 ${
-                      isOpen ? 'rotate-180 text-emerald-600 dark:text-emerald-400' : ''
+                      isOpen ? 'rotate-180 text-emerald-800 dark:text-emerald-400' : ''
                     }`}
                   />
                 </button>
                 {isOpen && (
-                  <div className="px-5 pb-5 pt-0 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-100 dark:border-slate-800/80 mt-1">
-                    <p className="pt-3">{faq.a}</p>
+                  <div className="px-5 pb-5 sm:px-6 sm:pb-6 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-100 dark:border-slate-800/80 pt-3">
+                    <p>{faq.a}</p>
                   </div>
                 )}
               </div>

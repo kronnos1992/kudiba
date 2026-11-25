@@ -28,78 +28,75 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
     <footer className="border-t border-slate-200 bg-slate-900 text-white dark:border-slate-800 dark:bg-black">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
         <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-5">
-          {/* Brand info */}
+          {/* Brand info & MONAIT */}
           <div className="lg:col-span-2">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 to-teal-800 text-white shadow-md">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-800 to-teal-900 text-white shadow-md">
                 <span className="font-sans text-xl font-black text-amber-300">K</span>
               </div>
-              <span className="text-xl font-extrabold tracking-tight text-white">
-                Kudiba<span className="text-emerald-400">ERP</span>
-              </span>
+              <div>
+                <span className="text-xl font-extrabold tracking-tight text-white">
+                  Kudiba<span className="text-emerald-400">ERP</span>
+                </span>
+                <span className="ml-2 text-xs font-semibold text-slate-400">
+                  por MONAIT
+                </span>
+              </div>
             </div>
+
             <p className="mt-4 text-xs sm:text-sm text-slate-400 max-w-sm leading-relaxed">
-              Sistema Integrado de Gestão Empresarial e Ponto de Venda de 4.ª geração (*Cloud-Native* e *Edge-Ready*). Homologado e certificado pela Administração Geral Tributária (AGT).
+              Solução Integrada de Gestão Empresarial para o mercado de Angola. Rigor fiscal, contabilidade PGC, recursos humanos e vendas em balcão com operação ininterrupta.
             </p>
-            <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-950/40 px-3 py-1 text-xs font-semibold text-emerald-400">
+
+            <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-950/40 px-3.5 py-1 text-xs font-semibold text-emerald-400">
               <ShieldCheck className="h-4 w-4" />
-              <span>Certificado AGT N.º FE/528/AGT/2026</span>
+              <span>Certificação Oficial AGT n.º FE/528/AGT/2026</span>
             </div>
           </div>
 
-          {/* Quick links */}
+          {/* Soluções Empresariais */}
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-              Soluções & Módulos
+              Soluções
             </h4>
-            <ul className="mt-4 space-y-2 text-xs text-slate-400">
+            <ul className="mt-4 space-y-2.5 text-xs text-slate-400">
               <li>
-                <a href="#modulos" className="hover:text-emerald-400 transition">
-                  Kudiba POS (Ponto de Venda)
+                <a href="#solucoes" className="hover:text-emerald-400 transition">
+                  Faturação & POS AGT
                 </a>
               </li>
               <li>
-                <a href="#modulos" className="hover:text-emerald-400 transition">
-                  Faturação Comercial AGT
+                <a href="#solucoes" className="hover:text-emerald-400 transition">
+                  Contabilidade PGC Angola
                 </a>
               </li>
               <li>
-                <a href="#modulos" className="hover:text-emerald-400 transition">
-                  Gestão de Stocks & Armazéns
+                <a href="#solucoes" className="hover:text-emerald-400 transition">
+                  Gestão de Stocks & CMP
                 </a>
               </li>
               <li>
-                <a href="#modulos" className="hover:text-emerald-400 transition">
-                  Tesouraria & Caixa Diário
+                <a href="#solucoes" className="hover:text-emerald-400 transition">
+                  Salários, IRT & INSS
                 </a>
               </li>
               <li>
-                <a href="#modulos" className="hover:text-emerald-400 transition">
-                  Recursos Humanos (IRT 2026)
-                </a>
-              </li>
-              <li>
-                <a href="#modulos" className="hover:text-emerald-400 transition">
-                  Contabilidade PGC Angolano
+                <a href="#solucoes" className="hover:text-emerald-400 transition">
+                  Multi-Filial & Holding
                 </a>
               </li>
             </ul>
           </div>
 
-          {/* Tools & Resources */}
+          {/* Decisão & Recursos */}
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
               Recursos
             </h4>
-            <ul className="mt-4 space-y-2 text-xs text-slate-400">
+            <ul className="mt-4 space-y-2.5 text-xs text-slate-400">
               <li>
-                <a href="#calculadora" className="hover:text-emerald-400 transition">
-                  Calculadora de Poupança TCO
-                </a>
-              </li>
-              <li>
-                <a href="#comparativo" className="hover:text-emerald-400 transition">
-                  Kudiba vs ERPs Legados
+                <a href="#vantagens" className="hover:text-emerald-400 transition">
+                  Porquê o Kudiba?
                 </a>
               </li>
               <li>
@@ -108,13 +105,18 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
                 </a>
               </li>
               <li>
-                <a href="#contabilistas" className="hover:text-emerald-400 transition">
-                  Programa para Contabilistas
+                <a href="#calculadora" className="hover:text-emerald-400 transition">
+                  Simulador de Poupança
                 </a>
               </li>
               <li>
                 <a href="#planos" className="hover:text-emerald-400 transition">
-                  Planos em Kwanzas
+                  Planos em Kwanzas (AOA)
+                </a>
+              </li>
+              <li>
+                <a href="#contabilistas" className="hover:text-emerald-400 transition">
+                  Programa para Contabilistas
                 </a>
               </li>
               <li>
@@ -123,16 +125,16 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
                   onClick={onOpenLogin}
                   className="text-emerald-400 font-semibold hover:underline"
                 >
-                  Entrar no Sistema ERP
+                  Entrar no Kudiba ERP
                 </button>
               </li>
             </ul>
           </div>
 
-          {/* Contact & Support */}
+          {/* MONAIT Contact & Support */}
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-              Contactos em Angola
+              MONAIT · Angola
             </h4>
             <div className="mt-4 space-y-3 text-xs text-slate-400">
               <div className="flex items-center gap-2">
@@ -141,19 +143,19 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
               </div>
               <div className="flex items-center gap-2">
                 <Mail className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span>suporte@kudiba.ao</span>
+                <span>comercial@monait.ao</span>
               </div>
               <div className="flex items-center gap-2">
                 <Phone className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span>+244 923 000 000 (WhatsApp)</span>
+                <span>+244 923 000 000 (Atendimento)</span>
               </div>
               <div className="pt-2">
                 <button
                   type="button"
                   onClick={onOpenDemo}
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 transition"
+                  className="rounded-xl bg-emerald-800 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition"
                 >
-                  Solicitar Demonstração
+                  Agendar Apresentação
                 </button>
               </div>
             </div>
@@ -162,7 +164,9 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
 
         {/* Legal & Bottom bar */}
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-slate-800 pt-8 sm:flex-row text-xs text-slate-500">
-          <p>© {new Date().getFullYear()} Kudiba ERP. Todos os direitos reservados. Faturado em Kwanzas.</p>
+          <p>
+            © {new Date().getFullYear()} Kudiba ERP é uma marca e produto da <strong>MONAIT</strong>. Todos os direitos reservados. Faturado em Kwanzas na República de Angola.
+          </p>
 
           <div className="flex flex-wrap items-center gap-4">
             <button
@@ -194,7 +198,7 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
               onClick={() => openLegal('fiscal')}
               className="hover:text-slate-300 transition"
             >
-              Enquadramento Fiscal AGT
+              Certificação AGT
             </button>
           </div>
 

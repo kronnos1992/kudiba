@@ -18,82 +18,72 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ onOpenLogin, onOpe
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 bg-white/90 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-950/90 transition-colors">
+    <header className="sticky top-0 z-40 w-full border-b border-slate-200/90 bg-white/95 backdrop-blur-md dark:border-slate-800/90 dark:bg-slate-950/95 transition-colors">
       <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* Brand / Logo */}
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 to-teal-800 text-white shadow-md shadow-emerald-900/20">
-            <span className="font-sans text-2xl font-black tracking-tighter text-amber-300">K</span>
+        {/* Brand / Logo & MONAIT */}
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-800 via-emerald-700 to-teal-900 text-white shadow-md shadow-emerald-950/20">
+            <span className="font-sans text-2xl font-black tracking-tight text-amber-300">K</span>
           </div>
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-                Kudiba<span className="text-emerald-600 dark:text-emerald-400">ERP</span>
+                Kudiba<span className="text-emerald-700 dark:text-emerald-400">ERP</span>
               </span>
-              <span className="hidden items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-600/20 sm:inline-flex dark:bg-emerald-950/50 dark:text-emerald-400 dark:ring-emerald-500/30">
-                <ShieldCheck className="h-3 w-3" /> AGT FE/528/2026
+              <span className="rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300">
+                MONAIT
               </span>
             </div>
             <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-              Cloud-Native & Edge-Ready • Angola
+              Solução Integrada de Gestão Empresarial · Angola
             </p>
           </div>
         </div>
 
-        {/* Center Nav Links (Desktop) */}
-        <nav className="hidden items-center gap-7 lg:flex text-sm font-medium text-slate-600 dark:text-slate-300">
+        {/* Center Nav Links (Estilo SAP / Primavera) */}
+        <nav className="hidden items-center gap-8 lg:flex text-sm font-semibold text-slate-600 dark:text-slate-300">
           <button
             type="button"
-            onClick={() => scrollTo('modulos')}
-            className="transition hover:text-emerald-600 dark:hover:text-emerald-400"
+            onClick={() => scrollTo('solucoes')}
+            className="transition hover:text-emerald-700 dark:hover:text-emerald-400"
           >
-            Módulos
+            Soluções
           </button>
           <button
             type="button"
-            onClick={() => scrollTo('offline-pos')}
-            className="transition hover:text-emerald-600 dark:hover:text-emerald-400"
+            onClick={() => scrollTo('vantagens')}
+            className="transition hover:text-emerald-700 dark:hover:text-emerald-400"
           >
-            POS Offline
+            Porquê o Kudiba?
           </button>
           <button
             type="button"
-            onClick={() => scrollTo('comparativo')}
-            className="transition hover:text-emerald-600 dark:hover:text-emerald-400"
+            onClick={() => scrollTo('conformidade-agt')}
+            className="flex items-center gap-1.5 text-slate-700 hover:text-emerald-700 dark:text-slate-200 dark:hover:text-emerald-400 transition"
           >
-            Vantagens
+            <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            <span>Rigor Fiscal AGT</span>
           </button>
           <button
             type="button"
             onClick={() => scrollTo('calculadora')}
-            className="flex items-center gap-1.5 font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300"
+            className="transition hover:text-emerald-700 dark:hover:text-emerald-400"
           >
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
-            </span>
-            Calculadora TCO
+            Simulador de Poupança
           </button>
           <button
             type="button"
             onClick={() => scrollTo('planos')}
-            className="transition hover:text-emerald-600 dark:hover:text-emerald-400"
+            className="transition hover:text-emerald-700 dark:hover:text-emerald-400"
           >
             Planos
           </button>
           <button
             type="button"
             onClick={() => scrollTo('contabilistas')}
-            className="transition hover:text-emerald-600 dark:hover:text-emerald-400"
+            className="transition hover:text-emerald-700 dark:hover:text-emerald-400"
           >
             Contabilistas
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollTo('faq')}
-            className="transition hover:text-emerald-600 dark:hover:text-emerald-400"
-          >
-            Perguntas
           </button>
         </nav>
 
@@ -111,16 +101,16 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ onOpenLogin, onOpe
           <button
             type="button"
             onClick={onOpenDemo}
-            className="hidden sm:inline-flex items-center gap-2 rounded-lg border border-emerald-600/40 bg-emerald-50 px-3.5 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition dark:bg-emerald-950/40 dark:border-emerald-500/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50"
+            className="hidden sm:inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-800 hover:bg-slate-50 shadow-sm transition dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           >
-            <MessageSquareCode className="h-4 w-4" />
-            Demonstração
+            <MessageSquareCode className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            Falar com Consultor
           </button>
 
           <button
             type="button"
             onClick={onOpenLogin}
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 active:bg-emerald-800 transition"
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-800 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-900 active:bg-emerald-950 transition dark:bg-emerald-700 dark:hover:bg-emerald-600"
           >
             <span>Aceder ao ERP</span>
             <ArrowRight className="h-4 w-4" />
